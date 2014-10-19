@@ -1,0 +1,1 @@
+/Users/rorden/QT/5.2.1/clang_64/bin/macdeployqt /Users/rorden/dcm2/deploy/dcm2.app

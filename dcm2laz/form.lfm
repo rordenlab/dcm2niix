@@ -1,0 +1,134 @@
+object Form1: TForm1
+  Left = 126
+  Height = 480
+  Top = 178
+  Width = 760
+  AllowDropFiles = True
+  Caption = 'dcm2'
+  ClientHeight = 461
+  ClientWidth = 760
+  Constraints.MinHeight = 120
+  Constraints.MinWidth = 640
+  Menu = MainMenu1
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDropFiles = FormDropFiles
+  OnResize = FormResize
+  Position = poScreenCenter
+  LCLVersion = '1.2.4.0'
+  Visible = True
+  object Panel1: TPanel
+    Left = 0
+    Height = 34
+    Top = 0
+    Width = 760
+    Align = alTop
+    BevelOuter = bvNone
+    ClientHeight = 34
+    ClientWidth = 760
+    TabOrder = 0
+    object compressCheck: TCheckBox
+      Left = 80
+      Height = 17
+      Top = 9
+      Width = 20
+      Checked = True
+      OnClick = compressCheckClick
+      ParentBidiMode = False
+      State = cbChecked
+      TabOrder = 0
+    end
+    object outnameLabel: TLabel
+      Left = 104
+      Height = 13
+      Top = 9
+      Width = 64
+      Caption = 'Output Name'
+      ParentColor = False
+      ParentShowHint = False
+      ShowHint = True
+    end
+    object outnameEdit: TEdit
+      Left = 192
+      Height = 21
+      Hint = 'Name for NIfTI images. Special characters are %f (Folder name) %i (ID) %n (patient Name) %p (Protocol name) %s (Series number) %t (Time)'
+      Top = 8
+      Width = 232
+      OnKeyUp = outnameEditKeyUp
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 1
+      Text = 'outnameEdit'
+    end
+    object Label2: TLabel
+      Left = 8
+      Height = 13
+      Hint = 'Set whether NIfTI images are compressed (.nii.gz) or not (.nii)'
+      Top = 9
+      Width = 47
+      Caption = 'Compress'
+      ParentColor = False
+    end
+    object outputFolderLabel: TLabel
+      Left = 432
+      Height = 13
+      Top = 10
+      Width = 65
+      Caption = 'Output folder'
+      ParentColor = False
+    end
+    object outputFolderName: TButton
+      Left = 520
+      Height = 25
+      Hint = 'NIfTI files will be saved to this folder. Press this button and click Cancel if you want files NIfTI images saved to same folder as DICOM input'
+      Top = 5
+      Width = 240
+      Caption = 'input folder'
+      OnClick = outputFolderNameClick
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 2
+    end
+  end
+  object Memo1: TMemo
+    Left = 0
+    Height = 427
+    Top = 34
+    Width = 760
+    Align = alClient
+    ScrollBars = ssAutoBoth
+    TabOrder = 1
+  end
+  object MainMenu1: TMainMenu
+    left = 24
+    top = 48
+    object FileMenu: TMenuItem
+      Caption = 'File'
+      object DicomMenu: TMenuItem
+        Caption = 'DICOM to NIfTI...'
+        OnClick = DicomMenuClick
+      end
+      object ParRecMenu: TMenuItem
+        Caption = 'PAR/REC to NIfTI...'
+        OnClick = ParRecMenuClick
+      end
+      object ResetMenu: TMenuItem
+        Caption = 'Reset defaults'
+        OnClick = ResetMenuClick
+      end
+    end
+    object EditMenu: TMenuItem
+      Caption = 'Edit'
+      object CopyMenu: TMenuItem
+        Caption = 'Copy'
+        OnClick = CopyMenuClick
+      end
+    end
+  end
+  object OpenDialog1: TOpenDialog
+    Filter = 'Philips research (*.par)|*.PAR;*.par'
+    Options = [ofAllowMultiSelect, ofEnableSizing, ofViewDetail]
+    left = 96
+    top = 48
+  end
+end
