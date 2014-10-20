@@ -714,7 +714,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
 #define	kASL	48
     char buff[LINESZ];
     bool ADCwarning = false;
-    for (int n=0; kMaxDTIv < 4; n++)
+    for (int n=0; n <kMaxDTIv; n++)
         d.CSA.dtiV[n][0] = -1; //set to impossible value to detect re-usage by ADC map
     int parVers = 0;
     int nCols = 26;
