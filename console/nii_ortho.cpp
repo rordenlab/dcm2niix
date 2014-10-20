@@ -316,7 +316,7 @@ void reportMat44o(char *str, mat44 A) {
 #endif
 
 unsigned char *  nii_setOrtho(unsigned char* img, struct nifti_1_header *h) {
-    if ((h->dim[0] != 3) || (h->dim[1] < 1) || (h->dim[2] < 1) || (h->dim[3] < 1)) return img;
+    if ((h->dim[1] < 1) || (h->dim[2] < 1) || (h->dim[3] < 1)) return img;
     if ((h->sform_code == NIFTI_XFORM_UNKNOWN) && (h->qform_code != NIFTI_XFORM_UNKNOWN)) { //only q-form provided
         mat44 q = nifti_quatern_to_mat44(h->quatern_b, h->quatern_c, h->quatern_d,
                                          h->qoffset_x, h->qoffset_y, h->qoffset_z,
