@@ -1,0 +1,7 @@
+/dcm2laz	export-ignore
+/qtGui		export-ignore
+/wxWidgets	export-ignore
+/xcode		export-ignore
+*.command	export-ignore
+.gitattributes	export-ignore
+unused		export-ignore
