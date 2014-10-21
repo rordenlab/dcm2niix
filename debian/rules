@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+srcpkg = $(shell LC_ALL=C dpkg-parsechangelog | grep '^Source:' | cut -d ' ' -f 2,2)
+debver = $(shell LC_ALL=C dpkg-parsechangelog | grep '^Version:' | cut -d ' ' -f 2,2 )
+upstreamver = $(shell echo $(debver) | cut -d '-' -f 1,1 )
+
+# this figures out the last merge point from 'master' into the Debian branch and
+# then described this commit relative to the last release tag (release/...)
+# If this should make any sense the local upstream branch must track upstream's
+# master or whatever other source branch.
+gitver = $(shell [ -x /usr/bin/git ] && git describe --tags --match 'release/[0-9].[0-9]*.[0-9]*' $$(git merge-base -a HEAD master) | sed -e 's,^release/,,' -e 's/-/+git/')
+
+# one ring to rule them all ...
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_clean:
+	dh_clean
+	# remove stuff we don't carry in the upstream tarball
+	rm -rf dcm2laz qtGui wxWidgets xcode *.command console/unused
+
+dfsg-source-tree:
+	# at this point we are golden
+
+# make orig tarball from repository content
+get-orig-source: dfsg-source-tree
+	# orig tarball, turn directory into something nicer
+	git archive --format=tar --prefix=$(srcpkg)-$(gitver)/ HEAD | \
+		gzip -9 > $(srcpkg)_$(gitver).orig.tar.gz
