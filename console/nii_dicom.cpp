@@ -262,6 +262,7 @@ struct TDICOMdata clear_dicom_data() {
             d.imageNum = 0;
             d.intenScale = 1;
             d.intenIntercept = 0;
+            d.gantryTilt = 0.0;
             d.seriesNum = 1;
             d.acquNum = 0;
             d.imageNum = 1;
@@ -1378,6 +1379,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
+#define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
     //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value                         ;1;IS;1
@@ -1676,6 +1678,9 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
                 break;
             case 	kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
+            case kGantryTilt :
+                d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case 	kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);

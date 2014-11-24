@@ -9,8 +9,8 @@
 #ifdef  __cplusplus
 extern "C" {
 #endif
-    
-#define kDCMvers "19Oct2014"
+
+#define kDCMvers "24Nov2014"
 static const int kMaxDTIv = 4000;
 #define kDICOMStr  31
 #define kMaxDTIv  4000
@@ -34,7 +34,7 @@ static const int kSliceOrientMosaicNegativeDeterminant = 4;
         long seriesNum;
         int xyzDim[5];//, xyzOri[4];
         int sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition; //
-        float TE, TR,intenScale,intenIntercept, lastScanLoc, angulation[4];
+        float TE, TR,intenScale,intenIntercept, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
         double dateTime, acquisitionTime;
         bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed;

@@ -819,6 +819,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     return EXIT_SUCCESS;
 } //nii_saveNII()
 
+
 int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //save 4D series as sequence of 3D volumes
     struct nifti_1_header hdr1 = hdr;
@@ -891,9 +892,117 @@ int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     return nConvert; //all images in sequential order
 }
 
+int isSameFloatT (float a, float b, float tolerance) {
+    return (fabs (a - b) <= tolerance);
+}
+
+int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg ) {
+    //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
+    if (gantryTiltDeg == 0.0) return EXIT_FAILURE;
+    int nVox2D = hdr.dim[1]*hdr.dim[2];
+    if ((nVox2D < 1) || (hdr.dim[0] != 3) || (hdr.dim[3] < 3) || (hdr.datatype != DT_INT16)) {
+        printf("Only able to correct gantry tilt for 3D 16-bit volumes with at least 3 slices.");
+        return EXIT_FAILURE;
+    }
+    float GNTtanPx = tan(gantryTiltDeg / (180/M_PI))/hdr.pixdim[2]; //tangent(degrees->radian)
+    short * im16 = ( short*) im;
+    unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
+    short * imX16 = ( short*) imX;
+    memcpy(&imX[0], &im[0], nVox2D * hdr.dim[3] * 2); //memcpy( dest, src, bytes)
+    memset(&im[0], 0, nVox2D * hdr.dim[3] * 2);
+    for (int s = 0; s < hdr.dim[3]; s++) { //for each slice
+        float sliceMM = s * hdr.pixdim[3];
+        if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+        float Offset = GNTtanPx*sliceMM;
+        //printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
+        float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
+        //float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
+        float fracLo = 1.0f - fracHi;
+        for (int r = 0; r < hdr.dim[2]; r++) { //for each row of output
+            float rI = (float)r - Offset; //input row
+            if ((rI >= 0.0) && (rI < hdr.dim[2])) {
+                int rLo = floor(rI);
+                int rHi = rLo + 1;
+                if (rHi >= hdr.dim[2]) rHi = rLo;
+                //if (s == 21) printf("%g = %g %d %d (%g %g)\n",Offset, rI, rLo, rHi, fracLo, fracHi);
+                rLo = (rLo * hdr.dim[1]) + (s * nVox2D); //offset to start of row below
+                rHi = (rHi * hdr.dim[1]) + (s * nVox2D); //offset to start of row above
+                int rOut = (r * hdr.dim[1]) + (s * nVox2D); //offset to output row
+                for (int c = 0; c < hdr.dim[1]; c++) { //for each row
+                    im16[rOut+c] = round( ( ((float)imX16[rLo+c])*fracLo) + ((float)imX16[rHi+c])*fracHi);
+                } //for c (each column)
+            } //rI (input row) in range
+        } //for r (each row)
+    } //for s (each slice)
+    free(imX);
+    if (sliceMMarray != NULL) return EXIT_SUCCESS; //we will save after correcting for variable slice thicknesses
+    char niiFilenameTilt[2048] = {""};
+    strcat(niiFilenameTilt,niiFilename);
+    strcat(niiFilenameTilt,"_Tilt");
+    nii_saveNII3D(niiFilenameTilt, hdr, im, opts);
+    
+    return EXIT_SUCCESS;
+}
+
+int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
+    //convert image with unequal slice distances to equal slice distances
+    //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
+    int nVox2D = hdr.dim[1]*hdr.dim[2];
+    if ((nVox2D < 1) || (hdr.dim[0] != 3) || (hdr.dim[3] < 3) || (hdr.datatype != DT_INT16)) {
+        printf("Only able to make equidistant slices from 3D 16-bit volumes with at least 3 slices.");
+        return EXIT_FAILURE;
+    }
+    float mn = sliceMMarray[1] - sliceMMarray[0];
+    for (int i = 1; i < hdr.dim[3]; i++)
+        if ((sliceMMarray[i] - sliceMMarray[i-1]) < mn)
+            mn = sliceMMarray[i] - sliceMMarray[i-1];
+    if (mn <= 0.0f) return EXIT_FAILURE;
+    int slicesX = ceil(1+(sliceMMarray[hdr.dim[3]-1] )/mn);
+    if (slicesX < 3) return EXIT_FAILURE;
+    struct nifti_1_header hdrX = hdr;
+    hdrX.dim[3] = slicesX;
+     short * im16 = ( short*) im;
+    unsigned char *imX = (unsigned char *)malloc( (nVox2D * slicesX)  *  2);//sizeof( short) );
+     short * imX16 = ( short*) imX;
+    for (int s=0; s < slicesX; s++) {
+        float sliceXmm = s * mn; //distance from first slice
+        int sliceXi = (s * nVox2D);//offset for this slice
+        int sHi = 0;
+        while ((sHi < (hdr.dim[3] - 1) ) && (sliceMMarray[sHi] < sliceXmm))
+            sHi += 1;
+        int sLo = sHi - 1;
+        if (sLo < 0) sLo = 0;
+        float mmHi = sliceMMarray[sHi];
+        float mmLo = sliceMMarray[sLo];
+        sLo = sLo * nVox2D;
+        sHi = sHi * nVox2D;
+        if ((mmHi == mmLo) or (sliceXmm > mmHi)) { //select only from upper slice
+            //for (int v=0; v < nVox2D; v++)
+            //    imX16[sliceXi+v] = im16[sHi+v];
+            memcpy(&imX16[sliceXi], &im16[sHi], nVox2D* sizeof(unsigned short)); //memcpy( dest, src, bytes)
+            
+        } else {
+            float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
+            float fracLo = 1.0 - fracHi;
+            //weight between two slices
+            for (int v=0; v < nVox2D; v++)
+                imX16[sliceXi+v] = round( ( (float)im16[sLo+v]*fracLo) + (float)im16[sHi+v]*fracHi);
+        }
+    }
+    char niiFilenameEq[2048] = {""};
+    strcat(niiFilenameEq,niiFilename);
+    strcat(niiFilenameEq,"_Eq");
+    nii_saveNII3D(niiFilenameEq, hdrX, imX, opts);
+    free(imX);
+    return EXIT_SUCCESS;
+    //return nii_saveNII(niiFilename, hdr, im, opts);
+    
+}
+
 
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
+    float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     bool saveAs3D = dcmList[indx].isHasPhase;
@@ -911,9 +1020,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     unsigned char *imgM = (unsigned char *)malloc(imgsz* (uint64_t)nConvert);
     memcpy(&imgM[0], &img[0], imgsz);
     free(img);
-
     //printf(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
     if (nConvert > 1) {
+        if (dcmList[indx0].gantryTilt != 0.0f)
+            printf(" Warning: note these images have gantry tilt of %g degrees\n", dcmList[indx0].gantryTilt);
         if (hdr0.dim[3] < 2) {
             //stack volumes with multiple acquisitions
             int nAcq = 1;
@@ -941,6 +1051,29 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             } else
                 hdr0.dim[3] = nConvert;
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+            bool dxVaries = false;
+            for (int i = 1; i < nConvert; i++)
+                if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
+                    dxVaries = true;
+            if (dxVaries) {
+                sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
+                sliceMMarray[0] = 0.0f;
+                printf("Warning: interslice distance varies in this volume (incompatible with NIfTI format).\n");
+                printf(" Distance from first slice:\n");
+                printf("dx=[0");
+                for (int i = 1; i < nConvert; i++) {
+                    float dx0 = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+                    printf(" %g", dx0);
+                    sliceMMarray[i] = dx0;
+                }
+                printf("]\n");
+                /*printf("xyz=[");
+                for (int i = 0; i < nConvert; i++) {
+                    if (i > 0) printf("; ");
+                    printf("%g %g %g", dcmList[dcmSort[i].indx].patientPosition[1], dcmList[dcmSort[i].indx].patientPosition[2], dcmList[dcmSort[i].indx].patientPosition[3]);
+                }
+                printf("]\n");*/
+            }
             if ((hdr0.dim[4] > 0) && (dx ==0) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) {
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
@@ -1036,6 +1169,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         nii_saveNII(pathoutname, hdr0, imgM, opts);
     }
 #endif
+    if (dcmList[indx0].gantryTilt != 0.0)
+        nii_saveNII3Dtilt(pathoutname, hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt);
+    if (sliceMMarray != NULL) {
+        nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
+        free(sliceMMarray);
+    }
     free(imgM);
     return EXIT_SUCCESS;
 } //saveDcm2Nii()
@@ -1161,6 +1300,115 @@ bool isExt (char *file_name, const char* ext) {
     return false;
 } //isExt()
 
+/*int nii_readpic(char * fname, struct nifti_1_header *nhdr) {
+    //https://github.com/jefferis/pic2nifti/blob/master/libpic2nifti.c
+#define BIORAD_HEADER_SIZE 76
+#define BIORAD_NOTE_HEADER_SIZE 16
+#define BIORAD_NOTE_SIZE 80
+    typedef struct
+    {
+        unsigned short nx, ny;    //  0   2*2     image width and height in pixels
+        short npic;               //  4   2       number of images in file
+        short ramp1_min;          //  6   2*2     LUT1 ramp min. and max.
+        short ramp1_max;
+        int32_t notes;                // 10   4       no notes=0; has notes=non zero
+        short byte_format;        // 14   2       bytes=TRUE(1); words=FALSE(0)
+        unsigned short n;         // 16   2       image number within file
+        char name[32];            // 18   32      file name
+        short merged;             // 50   2       merged format
+        unsigned short color1;    // 52   2       LUT1 color status
+        unsigned short file_id;   // 54   2       valid .PIC file=12345
+        short ramp2_min;          // 56   2*2     LUT2 ramp min. and max.
+        short ramp2_max;
+        unsigned short color2;    // 60   2       LUT2 color status
+        short edited;             // 62   2       image has been edited=TRUE(1)
+        short lens;               // 64   2       Integer part of lens magnification
+        float mag_factor;         // 66   4       4 byte real mag. factor (old ver.)
+        unsigned short dummy[3];  // 70   6       NOT USED (old ver.=real lens mag.)
+    } biorad_header;
+    typedef struct
+    {
+        short blank;		// 0	2
+        int note_flag;		// 2	4
+        int blank2;			// 6	4
+        short note_type;	// 10	2
+        int blank3;			// 12	4
+    } biorad_note_header;
+    size_t n;
+    unsigned char buffer[BIORAD_HEADER_SIZE];
+    FILE *f = fopen(fname, "rb");
+    if (f)
+        n = fread(&buffer, BIORAD_HEADER_SIZE, 1, f);
+    if(!f || n!=1) {
+        printf("Problem reading biorad file!\n");
+        fclose(f);
+        return EXIT_FAILURE;
+    }
+    biorad_header bhdr;
+    memcpy( &bhdr.nx, buffer+0, sizeof( bhdr.nx ) );
+    memcpy( &bhdr.ny, buffer+2, sizeof( bhdr.ny ) );
+    memcpy( &bhdr.npic, buffer+4, sizeof( bhdr.npic ) );
+    memcpy( &bhdr.byte_format, buffer+14, sizeof( bhdr.byte_format ) );
+    memcpy( &bhdr.file_id, buffer+54, sizeof( bhdr.file_id ) );
+    if (bhdr.file_id != 12345) {
+        fclose(f);
+        return EXIT_FAILURE;
+    }
+    nhdr->dim[0]=3;//3D
+    nhdr->dim[1]=bhdr.nx;
+    nhdr->dim[2]=bhdr.ny;
+    nhdr->dim[3]=bhdr.npic;
+    nhdr->dim[4]=0;
+    nhdr->pixdim[1]=1.0;
+    nhdr->pixdim[2]=1.0;
+    nhdr->pixdim[3]=1.0;
+    if (bhdr.byte_format == 1)
+        nhdr->datatype = DT_UINT8; // 2
+    else
+        nhdr->datatype = DT_UINT16;
+    nhdr->vox_offset = BIORAD_HEADER_SIZE;
+    if(fseek(f, bhdr.nx*bhdr.ny*bhdr.npic*bhdr.byte_format, SEEK_CUR)==0) {
+        biorad_note_header nh;
+        char noteheaderbuf[BIORAD_NOTE_HEADER_SIZE];
+        char note[BIORAD_NOTE_SIZE];
+        while (!feof(f)) {
+            fread(&noteheaderbuf, BIORAD_NOTE_HEADER_SIZE, 1, f);
+            fread(&note, BIORAD_NOTE_SIZE, 1, f);
+            memcpy(&nh.note_flag, noteheaderbuf+2, sizeof(nh.note_flag));
+            memcpy(&nh.note_type, noteheaderbuf+10, sizeof(nh.note_type));
+            //		printf("regular note line %s\n",note);
+            //		printf("note flag = %d, note type = %d\n",nh.note_flag,nh.note_type);
+            // These are not interesting notes
+            if(nh.note_type==1) continue;
+            
+            // Look for calibration information
+            double d1, d2, d3;
+            if ( 3 == sscanf( note, "AXIS_2 %lf %lf %lf", &d1, &d2, &d3 ) )
+                nhdr->pixdim[1] = d3;
+            if ( 3 == sscanf( note, "AXIS_3 %lf %lf %lf", &d1, &d2, &d3 ) )
+                nhdr->pixdim[2] = d3;
+            if ( 3 == sscanf( note, "AXIS_4 %lf %lf %lf", &d1, &d2, &d3 ) )
+                nhdr->pixdim[3] = d3;
+            if(nh.note_flag==0) break;
+        }
+    }
+    nhdr->sform_code = 1;
+    nhdr->srow_x[0]=nhdr->pixdim[1];nhdr->srow_x[1]=0.0f;nhdr->srow_x[2]=0.0f;nhdr->srow_x[3]=0.0f;
+    nhdr->srow_y[0]=0.0f;nhdr->srow_y[1]=nhdr->pixdim[2];nhdr->srow_y[2]=0.0f;nhdr->srow_y[3]=0.0f;
+    nhdr->srow_z[0]=0.0f;nhdr->srow_z[1]=0.0f;nhdr->srow_z[2]=nhdr->pixdim[3];nhdr->srow_z[3]=0.0f;
+    fclose(f);
+    convertForeignToNifti(nhdr);
+    return EXIT_SUCCESS;
+}
+
+
+int convert_foreign(struct TDCMopts opts) {
+    nifti_1_header nhdr ;
+    int OK = EXIT_FAILURE;
+    OK = nii_readpic(opts.indir, &nhdr);
+    return OK;
+}*/
+
 int convert_parRec(struct TDCMopts opts) {
     //sample dataset from Ed Gronenschild <ed.gronenschild@maastrichtuniversity.nl>
     struct TSearchList nameList;
@@ -1211,7 +1459,7 @@ int nii_loadDir (struct TDCMopts* opts) {
         return EXIT_FAILURE;
     }
     #ifdef myUseCOut
-     std::cout << "Version  " <<kDCMvers <<std::endl; 
+     std::cout << "Version  " <<kDCMvers <<std::endl;
     #else
     printf("Version %s\n",kDCMvers);
     #endif
@@ -1240,6 +1488,10 @@ int nii_loadDir (struct TDCMopts* opts) {
          #endif
         #endif
     }*/
+    /*if (isFile && ((isExt(indir, ".mha")) || (isExt(indir, ".mhd"))) ) {
+        strcpy(opts->indir, indir); //set to original file name, not path
+        return convert_foreign(*opts);
+    }*/
     if (isFile && ((isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         strcpy(opts->indir, indir); //set to original file name, not path
         return convert_parRec(*opts);
@@ -1259,12 +1511,12 @@ int nii_loadDir (struct TDCMopts* opts) {
         //printf("Second pass required, found %ld images\n", nameList.numItems);
     }
     if (nameList.numItems < 1) { 
-            #ifdef myUseCOut
+        #ifdef myUseCOut
     	std::cout << "Error: unable to find any DICOM images in "<< opts->indir <<std::endl;
     	#else
         printf("Error: unable to find any DICOM images in %s\n", opts->indir);
         #endif
-        free(nameList.str);
+        free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
         return EXIT_FAILURE;
     }
     long long nDcm = nameList.numItems;
@@ -1276,7 +1528,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     // struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
     for (int i = 0; i < nameList.numItems; i++ )
-        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose);
+        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose); //ignore compile warning - memory only freed on first of 2 passes
     //3: stack DICOMs with the same Series
     int nConvertTotal = 0;
     for (int i = 0; i < nDcm; i++ ) {

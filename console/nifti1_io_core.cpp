@@ -13,9 +13,9 @@
 
 void nifti_swap_8bytes( size_t n , void *ar )    // 4 bytes at a time
 {
-    register size_t ii ;
+    size_t ii ;
     unsigned char * cp0 = (unsigned char *)ar, * cp1, * cp2 ;
-    register unsigned char tval ;
+    unsigned char tval ;
     for( ii=0 ; ii < n ; ii++ ){
         cp1 = cp0; cp2 = cp0+7;
         tval = *cp1;  *cp1 = *cp2;  *cp2 = tval;
@@ -32,9 +32,9 @@ void nifti_swap_8bytes( size_t n , void *ar )    // 4 bytes at a time
 
 void nifti_swap_4bytes( size_t n , void *ar )    // 4 bytes at a time
 {
-    register size_t ii ;
+    size_t ii ;
     unsigned char * cp0 = (unsigned char *)ar, * cp1, * cp2 ;
-    register unsigned char tval ;
+    unsigned char tval ;
     for( ii=0 ; ii < n ; ii++ ){
         cp1 = cp0; cp2 = cp0+3;
         tval = *cp1;  *cp1 = *cp2;  *cp2 = tval;
@@ -47,7 +47,7 @@ void nifti_swap_4bytes( size_t n , void *ar )    // 4 bytes at a time
 
 void nifti_swap_2bytes( size_t n , void *ar )    // 2 bytes at a time
 {
-    register size_t ii ;
+    size_t ii ;
     unsigned char * cp1 = (unsigned char *)ar, * cp2 ;
     unsigned char   tval;
     for( ii=0 ; ii < n ; ii++ ){
