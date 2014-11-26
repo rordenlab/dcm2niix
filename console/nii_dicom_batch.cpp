@@ -905,9 +905,11 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
         return EXIT_FAILURE;
     }
     float GNTtanPx = tan(gantryTiltDeg / (180/M_PI))/hdr.pixdim[2]; //tangent(degrees->radian)
+    //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
+    // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
+    // also validated with actual data...
+    if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx;
     //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
-    
-    
     short * im16 = ( short*) im;
     unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
     short * imX16 = ( short*) imX;
@@ -919,14 +921,10 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
         float Offset = GNTtanPx*sliceMM;
         //printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
         float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
-        if (gantryTiltDeg < 0) fracHi =  Offset - floor(Offset);
         //float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
         float fracLo = 1.0f - fracHi;
         for (int r = 0; r < hdr.dim[2]; r++) { //for each row of output
             float rI = (float)r - Offset; //input row
-            if (gantryTiltDeg < 0) rI = (float)r + Offset;//see http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
-            
-                
             if ((rI >= 0.0) && (rI < hdr.dim[2])) {
                 int rLo = floor(rI);
                 int rHi = rLo + 1;
