@@ -1057,27 +1057,23 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 hdr0.dim[3] = nConvert;
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             bool dxVaries = false;
-            for (int i = 1; i < nConvert; i++)
-                if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
-                    dxVaries = true;
-            if (dxVaries) {
-                sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
-                sliceMMarray[0] = 0.0f;
-                printf("Warning: interslice distance varies in this volume (incompatible with NIfTI format).\n");
-                printf(" Distance from first slice:\n");
-                printf("dx=[0");
-                for (int i = 1; i < nConvert; i++) {
-                    float dx0 = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
-                    printf(" %g", dx0);
-                    sliceMMarray[i] = dx0;
+            if (hdr0.dim[4] < 2) {
+                for (int i = 1; i < nConvert; i++)
+                    if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
+                        dxVaries = true;
+                if (dxVaries) {
+                    sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
+                    sliceMMarray[0] = 0.0f;
+                    printf("Warning: interslice distance varies in this volume (incompatible with NIfTI format).\n");
+                    printf(" Distance from first slice:\n");
+                    printf("dx=[0");
+                    for (int i = 1; i < nConvert; i++) {
+                        float dx0 = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+                        printf(" %g", dx0);
+                        sliceMMarray[i] = dx0;
+                    }
+                    printf("]\n");
                 }
-                printf("]\n");
-                /*printf("xyz=[");
-                for (int i = 0; i < nConvert; i++) {
-                    if (i > 0) printf("; ");
-                    printf("%g %g %g", dcmList[dcmSort[i].indx].patientPosition[1], dcmList[dcmSort[i].indx].patientPosition[2], dcmList[dcmSort[i].indx].patientPosition[3]);
-                }
-                printf("]\n");*/
             }
             if ((hdr0.dim[4] > 0) && (dx ==0) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) {
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
