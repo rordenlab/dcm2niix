@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define kDCMvers "26Nov2014"
+#define kDCMvers "11Dec2014"
 static const int kMaxDTIv = 4000;
 #define kDICOMStr  31
 #define kMaxDTIv  4000
@@ -23,8 +23,6 @@ static const int kSliceOrientTra = 1;
 static const int kSliceOrientSag = 2;
 static const int kSliceOrientCor = 3;
 static const int kSliceOrientMosaicNegativeDeterminant = 4;
-    
-
 
     struct TCSAdata {
         float dtiV[kMaxDTIv][4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
@@ -37,7 +35,7 @@ static const int kSliceOrientMosaicNegativeDeterminant = 4;
         float TE, TR,intenScale,intenIntercept, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
         double dateTime, acquisitionTime;
-        bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed;
+        bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat;
         char phaseEncodingRC;
         char  patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;

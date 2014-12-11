@@ -273,6 +273,7 @@ struct TDICOMdata clear_dicom_data() {
             d.samplesPerPixel = 1;
             d.isValid = false;
             d.isSigned = false; //default is unsigned!
+            d.isFloat = false; //default is for integers, not single or double precision
             d.isExplicitVR = true;
             d.isLittleEndian = true; //DICOM initially always little endian
             d.converted2NII = 0;
@@ -570,8 +571,12 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
         h->datatype = DT_INT16;
     else if ((d.bitsAllocated == 16) && (d.samplesPerPixel == 1) && (!d.isSigned))
         h->datatype = DT_UINT16;
+    else if ((d.bitsAllocated == 32) && (d.isFloat))
+        h->datatype = DT_FLOAT32;
     else if (d.bitsAllocated == 32)
         h->datatype = DT_INT32;
+    else if ((d.bitsAllocated == 64) && (d.isFloat))
+        h->datatype = DT_FLOAT64;
     else {
 #ifdef myUseCOut
      	std::cout<<"Unsupported DICOM bit-depth " <<d.bitsAllocated << " with " << d.samplesPerPixel << "samples per pixel" <<std::endl;
@@ -1291,7 +1296,6 @@ unsigned char * nii_byteswap(unsigned char *img, struct nifti_1_header *hdr){
 
 unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries) {
     //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
-
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img = nii_loadImgCore(imgname, *hdr);
     if (img == NULL) return img;
@@ -1309,7 +1313,7 @@ unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct T
          img = nii_flipImgY(img, hdr);
          #endif*/
     }
-    if (iVaries) img = nii_iVaries(img, hdr);
+    if ((!dcm.isFloat) && (iVaries)) img = nii_iVaries(img, hdr);
     int nAcq = dcm.locationsInAcquisition;
     if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3]%nAcq)==0) && (hdr->dim[3]>nAcq) ) {
         hdr->dim[4] = hdr->dim[3]/nAcq;
@@ -1429,6 +1433,8 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
 #define  k2005140F 0x2005+(0x140F << 16)
 #define  kWaveformSq 0x5400+(0x0100 << 16)
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
+#define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
+#define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
 #define  kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
 #define  kUnnest 0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 #define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
@@ -1532,7 +1538,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
 #else
                     printf("Unsupported transfer syntax '%s'\n",transferSyntax);
 #endif
-                    
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 }
                 break;} //{} provide scope for variable 'transferSyntax
@@ -1602,7 +1607,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
                     if (!is2005140FSQwarned)
                         printf("Warning: Philips R3.2.2 can report different positions for the same slice. Attempting patch.\n");
 #endif
-                    
                     is2005140FSQwarned = true;
                 } else {
                     patientPositionCount++;
@@ -1812,8 +1816,23 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
                 //geiisBug = false;
                 isIconImageSequence = false;
                 break;
+            case 	kImageStartFloat:
+                d.isFloat = true;
+                if (!isIconImageSequence) //do not exit for proprietary thumbnails
+                    d.imageStart = (int)lPos;
+                isIconImageSequence = false;
+                break;
+            case 	kImageStartDouble:
+                printf("WARNING: double-precision DICOM conversion untested: please provide samples to developer\n");
+                d.isFloat = true;
+                if (!isIconImageSequence) //do not exit for proprietary thumbnails
+                    d.imageStart = (int)lPos;
+                isIconImageSequence = false;
+                break;
+        
         } //switch/case for groupElement
-        //printf("VR=%c%c tag=%04x,%04x length=%lu, pos=%ld x=%d\n",vr[0],vr[1],groupElement & 65535,groupElement>>16, lLength, lPos, d.xyzDim[1]);
+        //if (isVerbose) printf("VR=%c%c tag=%04x,%04x length=%u, pos=%ld x=%d\n",vr[0],vr[1],groupElement & 65535,groupElement>>16, lLength, lPos, d.xyzDim[1]);
+        //printf(" tag=%04x,%04x length=%u pos=%ld\n",   groupElement & 65535,groupElement>>16, lLength, lPos);
         lPos = lPos + (lLength);
     }
     free (buffer);
@@ -1837,7 +1856,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
         printf("Please check voxel size\n");
         d.xyzMM[1] = d.xyzMM[2];
     }
-    
+      
     if ((d.xyzMM[3] < FLT_EPSILON)) {
         printf("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
