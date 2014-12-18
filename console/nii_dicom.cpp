@@ -3,6 +3,7 @@
 #include "nifti1.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
+#include <sys/stat.h> // discriminate files from folders
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h> //toupper
@@ -1338,6 +1339,14 @@ unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct T
 struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
+    //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
+    struct stat s;
+    if( stat(fname,&s) == 0 ) {
+        if( !(s.st_mode & S_IFREG) ){
+            printf( "DICOM read fail: not a valid file (perhaps a directory) %s\n",fname);
+            return d;
+        }
+    }
     FILE *file = fopen(fname, "rb");
 	if (!file) {
 #ifdef myUseCOut
