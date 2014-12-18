@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define kDCMvers "11Dec2014"
+#define kDCMvers "16Dec2014"
 static const int kMaxDTIv = 4000;
 #define kDICOMStr  31
 #define kMaxDTIv  4000

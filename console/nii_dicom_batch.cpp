@@ -361,7 +361,15 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir){
 	#endif
 } //siemensPhilipsCorrectBvecs()
 
+bool isNanPosition (struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
+    if (isnan(d.patientPosition[1])) return true;
+    if (isnan(d.patientPosition[2])) return true;
+    if (isnan(d.patientPosition[3])) return true;
+    return false;
+}
+
 bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
+    if ( isNanPosition(d) ||  isNanPosition(d2)) return false;
     if (!isSameFloat(d.patientPosition[1],d2.patientPosition[1])) return false;
     if (!isSameFloat(d.patientPosition[2],d2.patientPosition[2])) return false;
     if (!isSameFloat(d.patientPosition[3],d2.patientPosition[3])) return false;
@@ -493,6 +501,8 @@ float sqr(float v){
 
 float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
     //some MRI scans have gaps between slices, some CT have overlapping slices. Comparing adjacent slices provides measure for dx between slices
+    if ( isNanPosition(d1) ||  isNanPosition(d2))
+        return d1.xyzMM[3];
     return sqrt( sqr(d1.patientPosition[1]-d2.patientPosition[1])+
                 sqr(d1.patientPosition[2]-d2.patientPosition[2])+
                 sqr(d1.patientPosition[3]-d2.patientPosition[3]));
@@ -1053,8 +1063,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
-            } else
+            } else {
                 hdr0.dim[3] = nConvert;
+                if (nAcq > 1) {
+                    printf("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
+                }
+            }
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             bool dxVaries = false;
             if (hdr0.dim[4] < 2) {
@@ -1064,6 +1078,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 if (dxVaries) {
                     sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
                     sliceMMarray[0] = 0.0f;
+                    printf("Dims %d %d %d %d %d\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], nAcq);
                     printf("Warning: interslice distance varies in this volume (incompatible with NIfTI format).\n");
                     printf(" Distance from first slice:\n");
                     printf("dx=[0");
@@ -1075,10 +1090,19 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                     printf("]\n");
                 }
             }
-            if ((hdr0.dim[4] > 0) && (dx ==0) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) {
+
+            
+            
+            if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) {
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
                 //printf("swizzling 3rd and 4th dimensions (XYTZ -> XYZT), assuming interslice distance is %f\n",dx);
+            }
+            if ((dx == 0.0 ) && (!dxVaries)) { //all images are the same slice - 16 Dec 2014
+                printf(" Warning: all images appear to be a single slice - please check slice/vector orientation\n");
+                hdr0.dim[3] = 1;
+                hdr0.dim[4] = nConvert;
+                hdr0.dim[0] = 4;
             }
             dcmList[dcmSort[0].indx].xyzMM[3] = dx; //16Sept2014 : correct DICOM for true distance between slice centers:
             // e.g. MCBI Siemens ToF 0018:0088 reports 16mm SpacingBetweenSlices, but actually 0.5mm

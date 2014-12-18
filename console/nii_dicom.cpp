@@ -38,6 +38,7 @@ void reportMat33(char *str, mat33 A) {
 }
 
 void reportMat44(char *str, mat44 A) {
+//example: reportMat44((char*)"out",*R);
     printf("%s = [%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1]\n",str,
            deFuzz(A.m[0][0]),deFuzz(A.m[0][1]),deFuzz(A.m[0][2]),deFuzz(A.m[0][3]),
            deFuzz(A.m[1][0]),deFuzz(A.m[1][1]),deFuzz(A.m[1][2]),deFuzz(A.m[1][3]),
@@ -129,14 +130,19 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     //returns sliceDirection: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
     //
     int sliceDir = 0;
+    
     if (h->dim[3] < 2) return sliceDir; //don't care direction for single slice
     h->sform_code = NIFTI_XFORM_UNKNOWN;
     h->qform_code = NIFTI_XFORM_UNKNOWN;
     bool isOK = false;
     for (int i = 1; i <= 6; i++)
         if (d.orient[i] != 0.0) isOK = true;
-    if (!isOK) return sliceDir;
+    if (!isOK) {
+        printf("Serious error: header does not report slice orient (perhaps Siemens RGB from 2007)\n");
+        return sliceDir;
+    }
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
+    //reportMat44((char*)"out",*R);
     if (d.CSA.mosaicSlices > 1) {
         double nRowCol = ceil(sqrt(d.CSA.mosaicSlices));
         double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
@@ -451,6 +457,8 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
                 CSA->sliceNormV[1] = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
                 CSA->sliceNormV[2] = lFloats[2];
                 CSA->sliceNormV[3] = lFloats[3];
+                
+                //printf("SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
                 if (isVerbose)
                     printf("SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
             } else if (strcmp(tagCSA.name, "SliceMeasurementDuration") == 0)
@@ -497,13 +505,14 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
             else if (strcmp(tagCSA.name, "PhaseEncodingDirectionPositive") == 0)
                 CSA->phaseEncodingDirectionPositive = round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             /*if (strcmp(tagCSA.name, "SlicePosition_PCS") == 0) {
-             float f =  (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
-             for (int k = 1; k <= tagCSA.nitems; k++)
-             printf("PCS %d = %f\n",k, lFloats[k]);
+                csaMultiFloat (&buff[lPos], tagCSA.nitems, lFloats, &itemsOK);
+                for (int k = 1; k <= tagCSA.nitems; k++)
+                    printf("PCS %d = %f\n",k, lFloats[k]);
              }
-             else {
+            else {
              printf("unused CSA tag %s with %d items\n",tagCSA.name, tagCSA.nitems);
              }*/
+            //printf("CSA tag %s with %d items\n",tagCSA.name, tagCSA.nitems);
             for (int lI = 1; lI <= tagCSA.nitems; lI++) {
                 memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
                 lPos +=sizeof(itemCSA);
@@ -1861,14 +1870,15 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
         printf("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
     }
+    //printf("Patient Position %f %f %f\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
     if (coilNum > 0) //segment images with multiple coils
         d.seriesNum = d.seriesNum + (100*coilNum);
-        if (echoNum > 2) //segment images with multiple echoes
-            d.seriesNum = d.seriesNum + (100*echoNum);
-            if (isVerbose) {
-                printf("Patient Position %f %f %f\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-                printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq);
-            }
+    if (echoNum > 2) //segment images with multiple echoes
+        d.seriesNum = d.seriesNum + (100*echoNum);
+    if (isVerbose) {
+        printf("Patient Position %f %f %f\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq);
+    }
     return d;
 } // readDICOM()
 
