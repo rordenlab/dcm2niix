@@ -10,7 +10,12 @@
 extern "C" {
 #endif
 
-#define kDCMvers "31Dec2014"
+#ifdef myDisableJasper
+    #define kDCMvers "31Dec2014"
+#else
+    #define kDCMvers "31Dec2014+"
+#endif
+
 static const int kMaxDTIv = 4000;
 #define kDICOMStr  31
 #define kMaxDTIv  4000
