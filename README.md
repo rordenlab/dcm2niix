@@ -1,21 +1,28 @@
 Building command line version:
 
  This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following: 
+
     g++ -O3 -DmyDisableJasper -lz main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix 
+    
 if you do not have zlib,you can compile without it by defining "myDisableZLib ":
+
  g++ -O3 -DmyDisableJasper -DmyDisableZLib main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix 
  
- If you want to build this with JPEG2000 decompression support you will need to have the Jasper and LJPEG libraries installed. You can then run:
-  g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -s -o dcm2niix -lz -ljasper -ljpeg
- 
+ If you want to build this with JPEG2000 decompression support you will need to have the Jasper (http://www.ece.uvic.ca/~frodo/jasper/) and libjpeg (http://www.ijg.org) libraries installed (see http://www.ece.uvic.ca/~frodo/jasper/#doc). You can then run:
 
-  
+  g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -s -o dcm2niix -lz -ljasper -ljpeg
+   
 Building command line version universal binary from OSX 64 bit system:
  This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following: 
+
   g++ -O3  -DmyDisableJasper -lz main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix -s -arch i386 -o dcm2niix32
+
   g++ -O3  -DmyDisableJasper -lz main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix -s -o dcm2niix64
+
   lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
+
  To validate that the resulting executable supports both architectures type
+
   file ./dcm2niix
 
 Building OSX graphical user interface using XCode:
