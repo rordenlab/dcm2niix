@@ -12,5 +12,6 @@ if(ZLIB_FOUND)
 else(ZLIB_FOUND)
   ADD_DEFINITIONS(-DmyDisableZlib)
 endif(ZLIB_FOUND)
+ADD_DEFINITIONS(-DmyDisableJasper)
 
 install(TARGETS ${PROGRAMS} DESTINATION bin)

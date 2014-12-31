@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define kDCMvers "16Dec2014"
+#define kDCMvers "31Dec2014"
 static const int kMaxDTIv = 4000;
 #define kDICOMStr  31
 #define kMaxDTIv  4000
@@ -23,6 +23,9 @@ static const int kSliceOrientTra = 1;
 static const int kSliceOrientSag = 2;
 static const int kSliceOrientCor = 3;
 static const int kSliceOrientMosaicNegativeDeterminant = 4;
+    
+static const int kCompressNone = 0;
+static const int kCompressJasper = 1;
 
     struct TCSAdata {
         float dtiV[kMaxDTIv][4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
@@ -31,18 +34,18 @@ static const int kSliceOrientMosaicNegativeDeterminant = 4;
     struct TDICOMdata {
         long seriesNum;
         int xyzDim[5];//, xyzOri[4];
-        int sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition; //
+        int sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition; //
         float TE, TR,intenScale,intenIntercept, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
         double dateTime, acquisitionTime;
-        bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat;
+        bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isCompressed;
         char phaseEncodingRC;
         char  patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;
     };
     
     size_t nii_ImgBytes(struct nifti_1_header hdr);
-    struct TDICOMdata readDICOMv(char * fname, bool isVerbose);
+    struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag); //if compressFlag = 0, compressed DICOM will be reported as invalid
     struct TDICOMdata readDICOM(char * fname);
     struct TDICOMdata clear_dicom_data();
     unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h);
@@ -50,7 +53,8 @@ static const int kSliceOrientMosaicNegativeDeterminant = 4;
     struct TDICOMdata  nii_readParRec (char * parname);
     //void reportMat(struct nifti_1_header h);
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
-    unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
+    //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
+    unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);
     
 #ifdef  __cplusplus
 }

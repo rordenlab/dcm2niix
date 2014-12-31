@@ -94,8 +94,11 @@ bool is_fileNotDir(const char* path) { //returns false if path is a folder; requ
 
 bool is_exe(const char* path) { //requires #include <sys/stat.h>
     struct stat buf;
-    stat(path, &buf);
-    return (S_ISREG(buf.st_mode) && (buf.st_mode & 0111) );
+    if (stat(path, &buf) != 0) return false; //file does not eist
+    
+    if (!S_ISREG(buf.st_mode)) return false;
+    return (buf.st_mode & 0111) ;
+    //return (S_ISREG(buf.st_mode) && (buf.st_mode & 0111) );
 } //is_exe()
 
 int is_dir(const char *pathname, int follow_link) {
@@ -906,7 +909,7 @@ int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
 }
 
-int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg ) {
+int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
     if (gantryTiltDeg == 0.0) return EXIT_FAILURE;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
@@ -918,7 +921,10 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
     //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
     // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
     // also validated with actual data...
-    if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx;
+    if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
+        GNTtanPx = - GNTtanPx;
+    else //see GE examples from John Muschelli
+        if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx;
     //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
     short * im16 = ( short*) im;
     unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
@@ -1022,13 +1028,16 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     uint64_t indx0 = dcmSort[0].indx;
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
-    unsigned char * img = nii_loadImgX(nameList->str[indx], &hdr0,dcmList[indx], iVaries);
+    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag);
+    if ( (dcmList[indx0].isCompressed) && (opts.compressFlag != kCompressNone))
+        printf("Image Decompression is new: please validate conversions\n");
+    
     if (opts.isVerbose)
     #ifdef myUseCOut
     	std::cout<<"Converting "<<nameList->str[indx]<<std::endl;
-		#else
+	#else
         printf("Converting %s\n",nameList->str[indx]);
-        #endif
+    #endif
     if (img == NULL) return EXIT_FAILURE;
     //if (iVaries) img = nii_iVaries(img, &hdr0);
     size_t imgsz = nii_ImgBytes(hdr0);
@@ -1038,7 +1047,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     //printf(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
     if (nConvert > 1) {
         if (dcmList[indx0].gantryTilt != 0.0f)
-            printf(" Warning: note these images have gantry tilt of %g degrees\n", dcmList[indx0].gantryTilt);
+            printf(" Warning: note these images have gantry tilt of %g degrees (manufacturer ID = %d)\n", dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
         if (hdr0.dim[3] < 2) {
             //stack volumes with multiple acquisitions
             int nAcq = 1;
@@ -1119,7 +1128,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         for (int i = 1; i < nConvert; i++) { //stack additional images
             indx = dcmSort[i].indx;
             //if (headerDcm2Nii(dcmList[indx], &hdrI) == EXIT_FAILURE) return EXIT_FAILURE;
-            img = nii_loadImgX(nameList->str[indx], &hdrI, dcmList[indx],iVaries);
+            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag);
+            if (img == NULL) return EXIT_FAILURE;
             if ((hdr0.dim[1] != hdrI.dim[1]) || (hdr0.dim[2] != hdrI.dim[2]) || (hdr0.bitpix != hdrI.bitpix)) {
                     #ifdef myUseCOut
     	std::cout<<"Error: image dimensions differ "<<nameList->str[dcmSort[0].indx]<<"  "<<nameList->str[indx]<<std::endl;
@@ -1134,8 +1144,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             free(img);
         }
     }
-
-    //printf("Mango %zd\n", (imgsz* nConvert)); return 0;
     char pathoutname[2048] = {""};
     if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
         free(imgM);
@@ -1194,8 +1202,9 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         nii_saveNII(pathoutname, hdr0, imgM, opts);
     }
 #endif
+    
     if (dcmList[indx0].gantryTilt != 0.0)
-        nii_saveNII3Dtilt(pathoutname, hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt);
+        nii_saveNII3Dtilt(pathoutname, hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
     if (sliceMMarray != NULL) {
         nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
         free(sliceMMarray);
@@ -1553,7 +1562,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     // struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
     for (int i = 0; i < nameList.numItems; i++ )
-        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose); //ignore compile warning - memory only freed on first of 2 passes
+        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag); //ignore compile warning - memory only freed on first of 2 passes
     //3: stack DICOMs with the same Series
     int nConvertTotal = 0;
     for (int i = 0; i < nDcm; i++ ) {
@@ -1596,6 +1605,31 @@ int nii_loadDir (struct TDCMopts* opts) {
     //free(nameList.str);
     return EXIT_SUCCESS;
 } //nii_loadDir()
+
+
+/* cleaner than findPigz - perhaps validate someday
+ void findExe(char name[512], const char * argv[]) {
+    if (is_exe(name)) return; //name exists as provided
+    char basename[1024];
+    strcpy(basename, name); //basename = source
+    //check executable folder
+    strcpy(name,argv[0]);
+    dropFilenameFromPath(name);
+    char appendChar[2] = {"a"};
+    appendChar[0] = kPathSeparator;
+    if (name[strlen(name)-1] != kPathSeparator) strcat (name,appendChar);
+    strcat(name,basename);
+    if (is_exe(name)) return; //name exists as provided
+    //check /opt
+    strcpy (name,"/opt/local/bin/" );
+    strcat (name, basename);
+    if (is_exe(name)) return; //name exists as provided
+    //check /usr
+    strcpy (name,"/usr/local/bin/" );
+    strcat (name, basename);
+    if (is_exe(name)) return;
+    strcpy(name,""); //not found!
+}*/
 
 void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     #if defined(_WIN64) || defined(_WIN32)
@@ -1676,6 +1710,11 @@ DWORD dwValue    = opts.isGz;
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     readFindPigz(opts, argv);
+    #ifdef myDisableJasper
+        opts->compressFlag = kCompressNone;
+    #else
+        opts->compressFlag = kCompressJasper;
+    #endif
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");
     opts->isGz = false;
@@ -1713,6 +1752,13 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     readFindPigz(opts, argv);
+    #ifdef myDisableJasper
+    opts->compressFlag = kCompressNone;
+    #else
+    opts->compressFlag = kCompressJasper;
+    #endif
+    //printf("%d %s\n",opts->compressFlag, opts->compressname);
+
     sprintf(opts->optsname, "%s%s", getenv("HOME"), STATUSFILENAME);
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");

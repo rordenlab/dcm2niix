@@ -1,5 +1,7 @@
 //#define MY_DEBUG
-
+#if defined(_WIN64) || defined(_WIN32)
+#include <windows.h> //write to registry
+#endif
 #include "nifti1.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
@@ -17,6 +19,10 @@
 #ifdef myUseCOut
 #include <iostream>
 #endif
+#ifndef myDisableJasper
+#include <jasper/jasper.h>
+#endif
+
 
 #ifndef M_PI
 #define M_PI           3.14159265358979323846
@@ -105,7 +111,32 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
         return iSL;
 } //verify_slice_dir()
 
-void setQSForm(struct nifti_1_header *h, mat44 Q44) {
+
+
+mat44 noNaN(mat44 Q44) //simplify any headers that have NaN values
+{
+    mat44 ret = Q44;
+    bool isNaN44 = false;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            if (isnan(ret.m[i][j]))
+                isNaN44 = true;
+    if (isNaN44) {
+        printf("Warning: bogus spatial matrix (perhaps non-spatial image): inspect spatial orientation");
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                if (i == j)
+                    ret.m[i][j] = 1;
+                else
+                    ret.m[i][j] = 0;
+        ret.m[1][1] = -1;
+    } //if isNaN detected
+    //reportMat44((char*)"test", ret);
+    return ret;
+}
+
+void setQSForm(struct nifti_1_header *h, mat44 Q44i) {
+    mat44 Q44 = noNaN(Q44i);
     h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
     h->srow_x[0] = Q44.m[0][0];
     h->srow_x[1] = Q44.m[0][1];
@@ -267,6 +298,7 @@ struct TDICOMdata clear_dicom_data() {
             //d.locationsInAcquisition = 0;
             d.numberOfDynamicScans = 0;
             d.imageNum = 0;
+            d.imageBytes = 0;
             d.intenScale = 1;
             d.intenIntercept = 0;
             d.gantryTilt = 0.0;
@@ -281,6 +313,7 @@ struct TDICOMdata clear_dicom_data() {
             d.isValid = false;
             d.isSigned = false; //default is unsigned!
             d.isFloat = false; //default is for integers, not single or double precision
+            d.isCompressed = false;
             d.isExplicitVR = true;
             d.isLittleEndian = true; //DICOM initially always little endian
             d.converted2NII = 0;
@@ -1171,7 +1204,10 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
     }
 	fseek(file, 0, SEEK_END);
 	long long fileLen=ftell(file);
-    if (fileLen < (imgsz+hdr.vox_offset)) return NULL;
+    if (fileLen < (imgsz+hdr.vox_offset)) {
+        printf("File not large enough to store image data: %s\n", imgname);
+        return NULL;
+    }
 	fseek(file, hdr.vox_offset, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
 	fread(bImg, imgsz, 1, file);
@@ -1304,11 +1340,166 @@ unsigned char * nii_byteswap(unsigned char *img, struct nifti_1_header *hdr){
     return img;
 } //nii_byteswap()
 
-unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries) {
-    //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
+#ifndef myDisableJasper
+unsigned char * nii_loadImgCoreCompressed(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
+    if (jas_init()) {
+        return NULL;
+    }
+    //printf("libjasper %s\n", jas_getversion());
+    //static const char imgname[] = "/Users/rorden/Desktop/j2k/test/manix.jpg";
+    //static const char imgname[] = "/Users/rorden/Desktop/j2k/test/manix.dcm";
+    jas_stream_t *in;
+    //jas_stream_t *out;
+    jas_image_t *image;
+    //cmdopts_t *cmdopts;
+    //cmdopts = cmdopts_parse();
+    jas_setdbglevel(0);
+
+    //char inoptsbuf[OPTSMAX + 1];
+    if (!(in = jas_stream_fopen(imgname, "rb"))) {
+        printf( "Error: cannot open input image file %s\n", imgname);
+        return NULL;
+    }
+    //int isSeekable = jas_stream_isseekable(in);
+    jas_stream_seek(in, dcm.imageStart, 0);
+    int infmt = jas_image_getfmt(in);
+    if (infmt < 0) {
+        printf( "Error: input image has unknown format %s offset %d bytes %d\n", imgname, dcm.imageStart, dcm.imageBytes);
+        return NULL;
+    }
+    char opt[] = "\0";
+    char *inopts = opt;
+    if (!(image = jas_image_decode(in, infmt, inopts))) {
+        printf("Error: cannot decode image data %s offset %d bytes %d\n", imgname, dcm.imageStart, dcm.imageBytes);
+        return NULL;
+    }
+    //free(inopts);
+    int numcmpts;
+    int cmpts[4];
+    switch (jas_clrspc_fam(jas_image_clrspc(image))) {
+        case JAS_CLRSPC_FAM_RGB:
+            if (jas_image_clrspc(image) != JAS_CLRSPC_SRGB)
+                printf("Warning: inaccurate color\n");
+            numcmpts = 3;
+            if ((cmpts[0] = jas_image_getcmptbytype(image,
+                                                    JAS_IMAGE_CT_COLOR(JAS_CLRSPC_CHANIND_RGB_R))) < 0 ||
+                (cmpts[1] = jas_image_getcmptbytype(image,
+                                                    JAS_IMAGE_CT_COLOR(JAS_CLRSPC_CHANIND_RGB_G))) < 0 ||
+                (cmpts[2] = jas_image_getcmptbytype(image,
+                                                    JAS_IMAGE_CT_COLOR(JAS_CLRSPC_CHANIND_RGB_B))) < 0) {
+                printf("Error: missing color component\n");
+                return NULL;
+            }
+            break;
+        case JAS_CLRSPC_FAM_GRAY:
+            if (jas_image_clrspc(image) != JAS_CLRSPC_SGRAY)
+                printf("Warning: inaccurate color\n");
+            numcmpts = 1;
+            if ((cmpts[0] = jas_image_getcmptbytype(image,
+                                                    JAS_IMAGE_CT_COLOR(JAS_CLRSPC_CHANIND_GRAY_Y))) < 0) {
+                printf("Error: missing color component\n");
+                return NULL;
+            }
+            break;
+        default:
+            printf("error: unsupported color space\n");
+            return NULL;
+            break;
+    }
+    int width = jas_image_cmptwidth(image, cmpts[0]);
+    int height = jas_image_cmptheight(image, cmpts[0]);
+    int prec = jas_image_cmptprec(image, cmpts[0]);
+    int sgnd = jas_image_cmptsgnd(image, cmpts[0]);
+    //printf("w*h %d*%d bpp %d sgnd %d components %d\n",width, height, prec, sgnd, numcmpts);
+    for (int cmptno = 0; cmptno < numcmpts; ++cmptno) {
+        if (jas_image_cmptwidth(image, cmpts[cmptno]) != width ||
+            jas_image_cmptheight(image, cmpts[cmptno]) != height ||
+            jas_image_cmptprec(image, cmpts[cmptno]) != prec ||
+            jas_image_cmptsgnd(image, cmpts[cmptno]) != sgnd ||
+            jas_image_cmpthstep(image, cmpts[cmptno]) != jas_image_cmpthstep(image, 0) ||
+            jas_image_cmptvstep(image, cmpts[cmptno]) != jas_image_cmptvstep(image, 0) ||
+            jas_image_cmpttlx(image, cmpts[cmptno]) != jas_image_cmpttlx(image, 0) ||
+            jas_image_cmpttly(image, cmpts[cmptno]) != jas_image_cmpttly(image, 0)) {
+            printf("The NIfTI format cannot be used to represent an image with this geometry.\n");
+            return NULL;
+        }
+    }
+    //extract the data
+    int bpp = (prec + 7) >> 3; //e.g. 12 bits requires 2 bytes
+    int imgbytes = bpp * width * height * numcmpts;
+    if ((bpp < 1) || (bpp > 2) || (width < 1) || (height < 1) || (imgbytes < 1)) {
+        printf("Serious catastrophic error decompression error\n");
+        return NULL;
+    }
+    jas_seqent_t v;
+    unsigned char *img = (unsigned char *)malloc(imgbytes);
+    uint16_t * img16ui = (uint16_t*) img; //unsigned 16-bit
+    int16_t * img16i = (int16_t*) img; //signed 16-bit
+    if (sgnd) bpp = -bpp;
+    if (bpp == -1) {
+        printf("Error: Signed 8-bit DICOM?\n");
+        return NULL;
+    }
+    jas_matrix_t *data;
+    jas_seqent_t *d;
+    data = 0;
+    int cmptno, y, x;
+    int pix = 0;
+    for (cmptno = 0; cmptno < numcmpts; ++cmptno) {
+        if (!(data = jas_matrix_create(1, width))) {
+            free(img);
+            return NULL;
+        }
+    }
+    //n.b. NIfTI rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
+    for (cmptno = 0; cmptno < numcmpts; ++cmptno) {
+        for (y = 0; y < height; ++y) {
+            if (jas_image_readcmpt(image, cmpts[cmptno], 0, y, width, 1, data)) {
+                free(img);
+                return NULL;
+            }
+            d = jas_matrix_getref(data, 0, 0);
+            //pix = pix + width - 1; //flip LR
+            for (x = 0; x < width; ++x) {
+                v = *d;
+                switch (bpp) {
+                    case 1:
+                        img[pix] = v;
+                        break;
+                    case 2:
+                        img16ui[pix] = v;
+                        break;
+                    case -2:
+                        img16i[pix] = v;
+                        break;
+                }
+                pix ++;
+                ++d;
+            }//for x
+            //pix = pix + width; //flip LR
+        } //for y
+    } //for each component
+    return img;
+} //nii_loadImgCoreCompressed()
+#endif
+                    
+//unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries) {
+unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
+//provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
-    unsigned char * img = nii_loadImgCore(imgname, *hdr);
+    unsigned char * img;
+    #ifndef myDisableJasper
+    if ((dcm.isCompressed) && (compressFlag != kCompressNone) )
+        img = nii_loadImgCoreCompressed(imgname, *hdr, dcm, compressFlag);
+    else
+    #endif
+    if (dcm.isCompressed) {
+        printf("Software not set up to decompress DICOM\n");
+        return NULL;
+    } else
+        img = nii_loadImgCore(imgname, *hdr);
     if (img == NULL) return img;
+    if (!dcm.isCompressed) {
 #ifdef __BIG_ENDIAN__
     if ((dcm.isLittleEndian) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
@@ -1316,7 +1507,8 @@ unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct T
     if ((!dcm.isLittleEndian) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
 #endif
-    if (hdr->datatype ==DT_RGB24) img = nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
+    }
+    if ((!dcm.isCompressed) && (hdr->datatype ==DT_RGB24)) img = nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     if (dcm.CSA.mosaicSlices > 1) {
         img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, dcm.CSA.protocolSliceNumber1);
         /* we will do this in nii_dicom_batch #ifdef obsolete_mosaic_flip
@@ -1335,8 +1527,12 @@ unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct T
     headerDcm2NiiSForm(dcm,dcm, hdr);
     return img;
 } //nii_loadImgX()
-
-struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
+                    
+//unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries) {
+//    return nii_loadImgXL(imgname, hdr, dcm, iVaries, kCompressNone);
+//}
+                    
+struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
@@ -1453,7 +1649,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
-#define  kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
+#define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
 #define  kUnnest 0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 #define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
     double zSpacing = -1.0l; //includes slice thickness plus gap
@@ -1468,6 +1664,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
     printf("DICOM appears corrupt: first group:element should be 0x0002:0x0000\n");
 #endif
     char vr[2];
+    bool isEncapsulatedData = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
     bool isSwitchToBigEndian = false;
@@ -1494,13 +1691,24 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
         } //transfer syntax requests switching VR after group 0001
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
-        if ((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) {
+        if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) && (!isEncapsulatedData)) {
+        //if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) ) {
             vr[0] = 'N';
             vr[1] = 'A';
             
             //if (groupElement == kUnnest) geiisBug = false; //don't exit if there is a proprietary thumbnail
             //printf("xxx");
             lLength = 4;
+            /*if (isEncapsulatedData) {
+                //d.imageBytes = lLength;
+                d.imageBytes = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                if (d.imageBytes > 12)
+                    d.imageStart = (int)lPos+lLength;
+                lLength = 4;
+                printf("Mango! %d %d\n", d.imageStart, d.imageBytes);
+                lLength = 8;
+            }*/
+            
         } else if (d.isExplicitVR) {
             vr[0] = buffer[lPos]; vr[1] = buffer[lPos+1];
             if (buffer[lPos+1] < 'A') {//implicit vr with 32-bit length
@@ -1538,6 +1746,14 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
         } //if explicit else implicit VR
         if (lLength == 0xFFFFFFFF) lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
         //next: look for required tags
+        if ((groupElement == kNest)  && (isEncapsulatedData)) {
+            d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
+            //printf("compressed data %d-> %ld\n",d.imageBytes, lPos);
+            if (d.imageBytes > 12) {
+                d.imageStart = (int)lPos;
+            }
+            //printf("Mango? %ld %d %d %d %d\n", lPos, d.imageStart, d.imageBytes, lLength, d.isLittleEndian);
+        }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
         switch ( groupElement ) {
             case 	kTransferSyntax: {
@@ -1546,15 +1762,30 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
                 //printf("transfer syntax '%s'\n", transferSyntax);
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
-                else if (strcmp(transferSyntax, "1.2.840.10008.1.2.2") == 0)
+                else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0)) {
+                    d.isCompressed = true;
+                    //printf("JPEG lossy support is new: please validate conversion\n");
+                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0)) {
+                    //d.isCompressed = true;
+                    printf("Ancient JPEG-lossless (SOF type 0xc3) is not supported: decompress with Osirix or legacy dcm2nii\n");
+                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
+                    d.isCompressed = true;
+                    //printf("JPEG2000 Lossless support is new: please validate conversion\n");
+                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)) {
+                    d.isCompressed = true;
+                    //printf("JPEG2000 support is new: please validate conversion\n");
+                } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.2") == 0)
                     isSwitchToBigEndian = true; //isExplicitVR=true;
+                //else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)
+                //    ;
                 else if (strcmp(transferSyntax, "1.2.840.10008.1.2") == 0)
                     isSwitchToImplicitVR = true; //d.isLittleEndian=true
                 else {
 #ifdef myUseCOut
                     std::cout<<"Unsupported transfer syntax "<< transferSyntax<<std::endl;
 #else
-                    printf("Unsupported transfer syntax '%s'\n",transferSyntax);
+                    printf("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
 #endif
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 }
@@ -1827,11 +2058,20 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
             case 	kOrientation :
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 break;
+
+
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
-                if (!isIconImageSequence) //do not exit for proprietary thumbnails
+                if ((!d.isCompressed ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos;
                 //geiisBug = false;
+                //http://www.dclunie.com/medical-image-faq/html/part6.html
+                //unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
+                if (d.isCompressed) {
+                    lLength = 0;
+                    isEncapsulatedData = true;
+                }
+                
                 isIconImageSequence = false;
                 break;
             case 	kImageStartFloat:
@@ -1850,6 +2090,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
         
         } //switch/case for groupElement
         //if (isVerbose) printf("VR=%c%c tag=%04x,%04x length=%u, pos=%ld x=%d\n",vr[0],vr[1],groupElement & 65535,groupElement>>16, lLength, lPos, d.xyzDim[1]);
+        //mango
         //printf(" tag=%04x,%04x length=%u pos=%ld\n",   groupElement & 65535,groupElement>>16, lLength, lPos);
         lPos = lPos + (lLength);
     }
@@ -1879,7 +2120,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
         printf("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
     }
-    //printf("Patient Position %f %f %f\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+    //printf("Patient Position %f %f %f  Start = %d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.imageStart);
     if (coilNum > 0) //segment images with multiple coils
         d.seriesNum = d.seriesNum + (100*coilNum);
     if (echoNum > 2) //segment images with multiple echoes
@@ -1892,7 +2133,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose) {
 } // readDICOM()
 
 struct TDICOMdata readDICOM(char * fname) {
-    return readDICOMv(fname, false);
+    return readDICOMv(fname, false, 0);
 }
 
 
