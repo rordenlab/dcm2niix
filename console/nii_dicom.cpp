@@ -1428,6 +1428,9 @@ unsigned char * nii_loadImgCoreCompressed(char* imgname, struct nifti_1_header h
             }//for x
         } //for y
     } //for each component
+    jas_matrix_destroy(data);
+    jas_image_destroy(image);
+    jas_image_clearfmts();
     return img;
 } //nii_loadImgCoreCompressed()
 #endif
