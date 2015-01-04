@@ -136,7 +136,10 @@ bool isDICOMfile(const char * fname) {
 	if (!fp)  return false;
 	fseek(fp, 0, SEEK_END);
 	long long fileLen=ftell(fp);
-    if (fileLen < 256) return false;
+    if (fileLen < 256) {
+        fclose(fp);
+        return false;
+    }
 	fseek(fp, 0, SEEK_SET);
 	unsigned char buffer[256];
 	fread(buffer, 256, 1, fp);
@@ -506,7 +509,10 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
     //some MRI scans have gaps between slices, some CT have overlapping slices. Comparing adjacent slices provides measure for dx between slices
     if ( isNanPosition(d1) ||  isNanPosition(d2))
         return d1.xyzMM[3];
-    return sqrt( sqr(d1.patientPosition[1]-d2.patientPosition[1])+
+    float tilt = 1.0;
+    if (d1.gantryTilt != 0)
+        tilt = cos(d1.gantryTilt  * M_PI/180); //for CT scans with gantry tilt, we need to compute distance between slices, not distance along bed
+    return tilt * sqrt( sqr(d1.patientPosition[1]-d2.patientPosition[1])+
                 sqr(d1.patientPosition[2]-d2.patientPosition[2])+
                 sqr(d1.patientPosition[3]-d2.patientPosition[3]));
 } //intersliceDistance()
@@ -629,6 +635,17 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,opts.indirParent);
             if (f == 'I')
                 strcat (outname,dcm.patientID);
+            if (f == 'M') {
+                if (dcm.manufacturer == kMANUFACTURER_GE)
+                    strcat (outname,"GE");
+                else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
+                    strcat (outname,"Ph");
+                else if (dcm.manufacturer == kMANUFACTURER_SIEMENS)
+                    strcat (outname,"Si");
+                else
+                    strcat (outname,"NA"); //manufacturer name not available
+            }
+            
             if (f == 'N')
                 strcat (outname,dcm.patientName);
             if (f == 'P')
@@ -886,7 +903,6 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
 int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[]) {
     //Siemens CT bug: when a user draws an open object graphics object onto a 2D slice this is appended as an additional image,
     //regardless of slice position. These images do not report number of positions in the volume, so we need tedious leg work to detect
-
     uint64_t indx0 = dcmSort[0].indx;
     if ((nConvert < 2) ||(dcmList[indx0].manufacturer != kMANUFACTURER_SIEMENS) || (!isSameFloat(dcmList[indx0].TR ,0.0f))) return nConvert;
     float prevDx = 0.0;
@@ -978,14 +994,16 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
         if ((sliceMMarray[i] - sliceMMarray[i-1]) < mn)
             mn = sliceMMarray[i] - sliceMMarray[i-1];
     if (mn <= 0.0f) return EXIT_FAILURE;
-    int slicesX = ceil(1+(sliceMMarray[hdr.dim[3]-1] )/mn);
-    if (slicesX < 3) return EXIT_FAILURE;
+    int slices = hdr.dim[3];
+    //slices = roundf((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    slices = ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    if (slices < 3) return EXIT_FAILURE;
     struct nifti_1_header hdrX = hdr;
-    hdrX.dim[3] = slicesX;
+    hdrX.dim[3] = slices;
      short * im16 = ( short*) im;
-    unsigned char *imX = (unsigned char *)malloc( (nVox2D * slicesX)  *  2);//sizeof( short) );
+    unsigned char *imX = (unsigned char *)malloc( (nVox2D * slices)  *  2);//sizeof( short) );
      short * imX16 = ( short*) imX;
-    for (int s=0; s < slicesX; s++) {
+    for (int s=0; s < slices; s++) {
         float sliceXmm = s * mn; //distance from first slice
         int sliceXi = (s * nVox2D);//offset for this slice
         int sHi = 0;
@@ -1248,6 +1266,8 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         strcat(filename, file.name);
         if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.'))
             searchDirForDICOM(filename, nameList, maxDepth, depth+1);
+        else if (!file.is_reg) //ignore hidden files...
+            ;
         else if (isDICOMfile(filename)) {
             if (nameList->numItems < nameList->maxItems) {
                 nameList->str[nameList->numItems]  = (char *)malloc(strlen(filename)+1);
@@ -1282,11 +1302,11 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
         }
     }
-    if (nDuplicates > 0) 
+    if (nDuplicates > 0)
         #ifdef myUseCOut
-    	std::cout<<"Some images have identical time, series, acquisition and image values. Duplicates removed."<<std::endl;
+    	std::cout<<"Some images have identical time, series, acquisition and image values. DUPLICATES REMOVED."<<std::endl;
 		#else
-    	printf("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
+    	printf("Some images have identical time, series, acquisition and image values. DUPLICATES REMOVED.\n");
     	#endif
     return nConvert - nDuplicates;
 } //removeDuplicates()
@@ -1555,6 +1575,9 @@ int nii_loadDir (struct TDCMopts* opts) {
     }
     long long nDcm = nameList.numItems;
     #ifdef myUseCOut
+    //stdout is piped in XCode just like printf, if this works with QT then we could replace these duplicate commands...
+    //try this out the next QT build:
+    fprintf(stdout, "STDOUT PIPE TEST\n");
     std::cout << "Found "<< nameList.numItems <<" DICOM images" <<std::endl;
     #else
     printf( "Found %lu DICOM images\n", nameList.numItems);
@@ -1710,11 +1733,15 @@ DWORD dwValue    = opts.isGz;
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     readFindPigz(opts, argv);
-    #ifdef myDisableJasper
-        opts->compressFlag = kCompressNone;
-    #else
-        opts->compressFlag = kCompressJasper;
-    #endif
+    #ifdef myEnableJasper
+    opts->compressFlag = kCompressYes; //JASPER for JPEG2000
+	#else
+		#ifdef myDisableOpenJPEG
+		opts->compressFlag = kCompressNone; //no decompressor
+		#else
+		opts->compressFlag = kCompressYes; //OPENJPEG for JPEG2000
+		#endif
+	#endif
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");
     opts->isGz = false;
@@ -1752,11 +1779,15 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     readFindPigz(opts, argv);
-    #ifdef myDisableJasper
-    opts->compressFlag = kCompressNone;
-    #else
-    opts->compressFlag = kCompressJasper;
-    #endif
+    #ifdef myEnableJasper
+    opts->compressFlag = kCompressYes; //JASPER for JPEG2000
+	#else
+		#ifdef myDisableOpenJPEG
+		opts->compressFlag = kCompressNone; //no decompressor
+		#else
+		opts->compressFlag = kCompressYes; //OPENJPEG for JPEG2000
+		#endif
+	#endif
     //printf("%d %s\n",opts->compressFlag, opts->compressname);
 
     sprintf(opts->optsname, "%s%s", getenv("HOME"), STATUSFILENAME);

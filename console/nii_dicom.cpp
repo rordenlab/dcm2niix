@@ -19,9 +19,302 @@
 #ifdef myUseCOut
 #include <iostream>
 #endif
-#ifndef myDisableJasper
-#include <jasper/jasper.h>
+#ifdef myEnableJasper
+    #include <jasper/jasper.h>
 #endif
+
+#ifndef myDisableOpenJPEG
+    #include <openjpeg-2.1/openjpeg.h>//"openjpeg.h"
+
+#ifdef myEnableJasper
+ERROR: YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY
+#endif
+
+unsigned char * imagetoimg(opj_image_t * image)
+{
+    int numcmpts = image->numcomps;
+    int sgnd = image->comps[0].sgnd ;
+    int width = image->comps[0].w;
+    int height = image->comps[0].h;
+    int bpp = (image->comps[0].prec + 7) >> 3; //e.g. 12 bits requires 2 bytes
+    int imgbytes = bpp * width * height * numcmpts;
+    bool isOK = true;
+    if (numcmpts > 1) {
+        for (int comp = 1; comp < numcmpts; comp++) { //check RGB data
+            if (image->comps[0].w != image->comps[comp].w) isOK = false;
+            if (image->comps[0].h != image->comps[comp].h) isOK = false;
+            if (image->comps[0].dx != image->comps[comp].dx) isOK = false;
+            if (image->comps[0].dy != image->comps[comp].dy) isOK = false;
+            if (image->comps[0].prec != image->comps[comp].prec) isOK = false;
+            if (image->comps[0].sgnd != image->comps[comp].sgnd) isOK = false;
+        }
+        if (numcmpts != 3) isOK = false; //we only handle Gray and RedGreenBlue, not GrayAlpha or RedGreenBlueAlpha
+        if (image->comps[0].prec != 8) isOK = false; //only 8-bit for RGB data
+    }
+    if ((image->comps[0].prec < 1) || (image->comps[0].prec > 16)) isOK = false; //currently we only handle 1 and 2 byte data
+    if (!isOK) {
+        printf("jpeg decode failure w*h %d*%d bpp %d sgnd %d components %d OpenJPEG=%s\n", width, height, bpp, sgnd, numcmpts,  opj_version());
+        return NULL;
+    }
+    //#ifdef MY_DEBUG
+    printf("w*h %d*%d bpp %d sgnd %d components %d OpenJPEG=%s\n", width, height, bpp, sgnd, numcmpts,  opj_version());
+    //#endif
+    //extract the data
+    if ((bpp < 1) || (bpp > 2) || (width < 1) || (height < 1) || (imgbytes < 1)) {
+        printf("Serious catastrophic decompression error\n");
+        return NULL;
+    }
+    unsigned char *img = (unsigned char *)malloc(imgbytes);
+    uint16_t * img16ui = (uint16_t*) img; //unsigned 16-bit
+    int16_t * img16i = (int16_t*) img; //signed 16-bit
+    if (sgnd) bpp = -bpp;
+    if (bpp == -1) {
+        printf("Error: Signed 8-bit DICOM?\n");
+        return NULL;
+    }
+    //n.b. NIfTI rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
+    int pix = 0; //ouput pixel
+    for (int cmptno = 0; cmptno < numcmpts; ++cmptno) {
+        int cpix = 0; //component pixel
+        int* v = image->comps[cmptno].data;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                switch (bpp) {
+                    case 1:
+                        img[pix] = (unsigned char) v[cpix];
+                        break;
+                    case 2:
+                        img16ui[pix] = (uint16_t) v[cpix];
+                        break;
+                    case -2:
+                        img16i[pix] = (int16_t) v[cpix];
+                        break;
+                }
+                pix ++;
+                cpix ++;
+            }//for x
+        } //for y
+    } //for each component
+    return img;
+}// imagetoimg()
+
+typedef struct bufinfo {
+    unsigned char *buf;
+    unsigned char *cur;
+    size_t len;
+} BufInfo;
+
+static void my_stream_free (void * p_user_data) { //do nothing
+    //BufInfo d = (BufInfo) p_user_data;
+    //free(d.buf);
+} // my_stream_free()
+
+static OPJ_UINT32 opj_read_from_buffer(void * p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo* p_file) {
+    OPJ_UINT32 l_nb_read;
+    
+    if(p_file->cur + p_nb_bytes < p_file->buf + p_file->len )
+    {
+        l_nb_read = p_nb_bytes;
+    }
+    else
+    {
+        l_nb_read = (OPJ_UINT32)(p_file->buf + p_file->len - p_file->cur);
+    }
+    memcpy(p_buffer, p_file->cur, l_nb_read);
+    p_file->cur += l_nb_read;
+    
+    return l_nb_read ? l_nb_read : ((OPJ_UINT32)-1);
+} //opj_read_from_buffer()
+
+static OPJ_UINT32 opj_write_from_buffer(void * p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo* p_file) {
+    memcpy(p_file->cur,p_buffer, p_nb_bytes);
+    p_file->cur += p_nb_bytes;
+    p_file->len += p_nb_bytes;
+    return p_nb_bytes;
+} // opj_write_from_buffer()
+
+static OPJ_SIZE_T opj_skip_from_buffer(OPJ_SIZE_T p_nb_bytes, BufInfo * p_file) {
+    if(p_file->cur + p_nb_bytes < p_file->buf + p_file->len )
+    {
+        p_file->cur += p_nb_bytes;
+        return p_nb_bytes;
+    }
+    p_file->cur = p_file->buf + p_file->len;
+    return (OPJ_SIZE_T)-1;
+} //opj_skip_from_buffer()
+
+static OPJ_BOOL opj_seek_from_buffer(OPJ_SIZE_T p_nb_bytes, BufInfo * p_file) {
+    if(p_file->cur + p_nb_bytes < p_file->buf + p_file->len ) {
+        p_file->cur += p_nb_bytes;
+        return OPJ_TRUE;
+    }
+    p_file->cur = p_file->buf + p_file->len;
+    return OPJ_FALSE;
+} //opj_seek_from_buffer()
+
+opj_stream_t* opj_stream_create_buffer_stream(BufInfo* p_file, OPJ_UINT32 p_size, OPJ_BOOL p_is_read_stream) {
+    opj_stream_t* l_stream;
+    if(! p_file) return NULL;
+    l_stream = opj_stream_create(p_size, p_is_read_stream);
+    if(! l_stream) return NULL;
+    opj_stream_set_user_data(l_stream, p_file , my_stream_free);
+    opj_stream_set_user_data_length(l_stream, p_file->len);
+    opj_stream_set_read_function(l_stream,  (opj_stream_read_fn) opj_read_from_buffer);
+    opj_stream_set_write_function(l_stream, (opj_stream_write_fn) opj_write_from_buffer);
+    opj_stream_set_skip_function(l_stream, (opj_stream_skip_fn) opj_skip_from_buffer);
+    opj_stream_set_seek_function(l_stream, (opj_stream_seek_fn) opj_seek_from_buffer);
+    return l_stream;
+} //opj_stream_create_buffer_stream()
+
+unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
+    //OpenJPEG library is not well documented and has changed between versions
+    //Since the JPEG is embedded in a DICOM we need to skip bytes at the start of the file
+    // In theory we might also want to strip data that exists AFTER the image, see gdcmJPEG2000Codec.c
+    unsigned char * ret = NULL;
+    opj_dparameters_t params;
+    opj_codec_t *codec;
+    opj_image_t *jpx;
+    opj_stream_t *stream;
+    FILE *reader = fopen(imgname, "rb");
+    fseek(reader, 0, SEEK_END);
+    long size = ftell(reader)- dcm.imageStart;
+    if (size <= 8) return NULL;
+    fseek(reader, dcm.imageStart, SEEK_SET);
+    unsigned char *data = (unsigned char*) malloc(size);
+    fread(data, 1, size, reader);
+    fclose(reader);
+    OPJ_CODEC_FORMAT format = OPJ_CODEC_JP2;
+    //DICOM JPEG2k is SUPPOSED to start with codestream, but some vendors include a header
+    if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51) format = OPJ_CODEC_J2K;
+    opj_set_default_decoder_parameters(&params);
+    BufInfo dx;
+    dx.buf = data;
+    dx.cur = data;
+    dx.len = size;
+    stream = opj_stream_create_buffer_stream(&dx, (OPJ_UINT32)size, true);
+    if (stream == NULL) return NULL;
+    codec = opj_create_decompress(format);
+    // setup the decoder decoding parameters using user parameters
+    if ( !opj_setup_decoder(codec, &params) ) goto cleanup2;
+    // Read the main header of the codestream and if necessary the JP2 boxes
+    if(! opj_read_header( stream, codec, &jpx)){
+        printf( "OpenJPEG error: failed to read the header %s\n", imgname);
+        goto cleanup2;
+    }
+    // Get the decoded image
+    if ( !( opj_decode(codec, stream, jpx) && opj_end_decompress(codec,stream) ) ) {
+        printf( "OpenJPEG error: j2k_to_image: failed to decode %s\n",imgname);
+        goto cleanup1;
+    }
+    ret = imagetoimg(jpx);
+cleanup1:
+    opj_image_destroy(jpx);
+cleanup2:
+    free(dx.buf);
+    opj_stream_destroy(stream);
+    opj_destroy_codec(codec);
+    return ret;
+}
+
+/* OpenJPEG code very clumsy for common instance when JPEG is embedded in a file, like PDF, DICOM, etc. Perhaps future versions will allow foo2's simpler methods...
+int foo (float vx) {
+    const char *fn = "/Users/rorden/Desktop/tester/mecanix.dcm";
+    int dcmimageStart = 1282;
+    unsigned char * ret = NULL;
+    //OpenJPEG library is not well documented and has changed between versions
+    //Since the JPEG is embedded in a DICOM we need to skip bytes at the start of the file
+    // In theory we might also want to strip data that exists AFTER the image, see gdcmJPEG2000Codec.c
+    opj_dparameters_t params;
+    opj_codec_t *codec;
+    opj_image_t *jpx;
+    opj_stream_t *stream;
+    FILE *reader = fopen(fn, "rb");
+    fseek(reader, 0, SEEK_END);
+    long size = ftell(reader)- dcmimageStart;
+    if (size <= 8) return NULL;
+    fseek(reader, dcmimageStart, SEEK_SET);
+    unsigned char *data = (unsigned char*) malloc(size);
+    fread(data, 1, size, reader);
+    fclose(reader);
+    OPJ_CODEC_FORMAT format = OPJ_CODEC_JP2;
+    //DICOM JPEG2k is SUPPOSED to start with codestream, but some vendors include a header
+    if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51) format = OPJ_CODEC_J2K;
+    opj_set_default_decoder_parameters(&params);
+    BufInfo dx;
+    dx.buf = data;
+    dx.cur = data;
+    dx.len = size;
+    stream = opj_stream_create_buffer_stream(&dx, (OPJ_UINT32)size, true);
+    if (stream == NULL) return NULL;
+    codec = opj_create_decompress(format);
+    // setup the decoder decoding parameters using user parameters
+    if ( !opj_setup_decoder(codec, &params) ) goto cleanup2;
+    // Read the main header of the codestream and if necessary the JP2 boxes
+    if(! opj_read_header( stream, codec, &jpx)){
+        printf( "OpenJPEG error: failed to read the header %s\n",fn);
+        goto cleanup2;
+    }
+    // Get the decoded image
+    if ( !( opj_decode(codec, stream, jpx) && opj_end_decompress(codec,stream) ) ) {
+        printf( "OpenJPEG error: j2k_to_image: failed to decode %s\n",fn);
+        goto cleanup1;
+    }
+    ret = imagetoimg(jpx);
+    if (ret != NULL) free(ret);
+  cleanup1:
+    opj_image_destroy(jpx);
+  cleanup2:
+    free(dx.buf);
+    opj_stream_destroy(stream);
+    opj_destroy_codec(codec);
+    return NULL;
+} //foo()
+
+int foo2 (float vx) {
+    const char *fn = "/Users/rorden/Desktop/tester/mecanix.dcm";
+    unsigned char * ret = NULL;
+    opj_dparameters_t parameters;	// decompression parameters
+    opj_image_t *jpx = NULL;
+    opj_codec_t *l_codec = NULL;	// handle to a decompressor
+    opj_stream_t *l_stream = NULL;
+    // set decoding parameters to default values
+    opj_set_default_decoder_parameters(&parameters);
+    // set a byte stream
+    l_stream = opj_stream_create_default_file_stream( fn, OPJ_TRUE);
+    if (!l_stream){
+        printf("OpenJPEG error: failed to open the file %s\n", fn);
+        return NULL;
+    }
+    // get a decoder handle - DICOM specifies JPEG-2000 codestream
+    //l_codec = opj_create_decompress(OPJ_CODEC_JP2);
+    l_codec = opj_create_decompress(OPJ_CODEC_J2K);
+    // setup the decoder decoding parameters using user parameters
+    if ( !opj_setup_decoder(l_codec, &parameters) ) return NULL;
+    // Read the main header of the codestream and if necessary the JP2 boxes
+    if(! opj_read_header( l_stream, l_codec, &jpx)){
+        printf( "OpenJPEG error: failed to read the header %s\n",fn);
+        opj_stream_destroy(l_stream);
+        opj_destroy_codec(l_codec);
+        opj_image_destroy(jpx);
+        return NULL;
+    }
+    // Get the decoded image
+    if ( !( opj_decode(l_codec, l_stream, jpx) && opj_end_decompress(l_codec,l_stream) ) ) {
+        printf( "OpenJPEG error: j2k_to_image: failed to decode %s\n",fn);
+        opj_stream_destroy(l_stream);
+        opj_destroy_codec(l_codec);
+        opj_image_destroy(jpx);
+        return NULL;
+    }
+    printf("image is decoded!\n");
+    opj_stream_destroy(l_stream);
+    ret = imagetoimg(jpx);
+    if (ret != NULL) free(ret);
+    if(l_codec) opj_destroy_codec(l_codec);
+    opj_image_destroy(jpx);
+    return EXIT_SUCCESS;
+} //foo() */
+#endif //if
 
 #ifndef M_PI
 #define M_PI           3.14159265358979323846
@@ -1298,8 +1591,8 @@ unsigned char * nii_byteswap(unsigned char *img, struct nifti_1_header *hdr){
     return img;
 } //nii_byteswap()
 
-#ifndef myDisableJasper
-unsigned char * nii_loadImgCoreCompressed(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
+#ifdef myEnableJasper
+unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
     if (jas_init()) {
         return NULL;
     }
@@ -1360,7 +1653,7 @@ unsigned char * nii_loadImgCoreCompressed(char* imgname, struct nifti_1_header h
     int prec = jas_image_cmptprec(image, cmpts[0]);
     int sgnd = jas_image_cmptsgnd(image, cmpts[0]);
     #ifdef MY_DEBUG
-    printf("w*h %d*%d bpp %d sgnd %d components %d %s\n",width, height, prec, sgnd, numcmpts, jas_getversion());
+    printf("offset %d w*h %d*%d bpp %d sgnd %d components %d '%s' Jasper=%s\n",dcm.imageStart, width, height, prec, sgnd, numcmpts, imgname, jas_getversion());
     #endif
     for (int cmptno = 0; cmptno < numcmpts; ++cmptno) {
         if (jas_image_cmptwidth(image, cmpts[cmptno]) != width ||
@@ -1432,17 +1725,23 @@ unsigned char * nii_loadImgCoreCompressed(char* imgname, struct nifti_1_header h
     jas_image_destroy(image);
     jas_image_clearfmts();
     return img;
-} //nii_loadImgCoreCompressed()
+} //nii_loadImgCoreJasper()
 #endif
                     
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
-    #ifndef myDisableJasper
+    #ifndef myDisableOpenJPEG
     if ((dcm.isCompressed) && (compressFlag != kCompressNone) )
-        img = nii_loadImgCoreCompressed(imgname, *hdr, dcm, compressFlag);
+        img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
     else
+    #else
+       #ifdef myEnableJasper
+        if ((dcm.isCompressed) && (compressFlag != kCompressNone) )
+            img = nii_loadImgCoreJasper(imgname, *hdr, dcm, compressFlag);
+        else
+        #endif
     #endif
     if (dcm.isCompressed) {
         printf("Software not set up to decompress DICOM\n");
@@ -1477,7 +1776,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_XYTZ_XYZT(img, hdr,dcm.patientPositionSequentialRepeats );
     headerDcm2NiiSForm(dcm,dcm, hdr);
     return img;
-} //nii_loadImgX()
+} //nii_loadImgXL()
                     
 struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
     struct TDICOMdata d = clear_dicom_data();
@@ -2054,13 +2353,13 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
         printf("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
     }
-    //printf("Patient Position %f %f %f  Start = %d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.imageStart);
+    //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\tStart\t%d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3], d.imageStart);
     if (coilNum > 0) //segment images with multiple coils
         d.seriesNum = d.seriesNum + (100*coilNum);
     if (echoNum > 2) //segment images with multiple echoes
         d.seriesNum = d.seriesNum + (100*echoNum);
     if (isVerbose) {
-        printf("Patient Position %f %f %f\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq);
     }
     return d;

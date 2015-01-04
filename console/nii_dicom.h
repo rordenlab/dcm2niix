@@ -10,10 +10,14 @@
 extern "C" {
 #endif
 
-#ifdef myDisableJasper
-    #define kDCMvers "31Dec2014"
+#ifdef myEnableJasper
+    #define kDCMvers "1Jan2015j" //JASPER for JPEG2000
 #else
-    #define kDCMvers "31Dec2014+"
+	#ifdef myDisableOpenJPEG
+    #define kDCMvers "1Jan2015" //no decompressor
+	#else
+    #define kDCMvers "1Jan2015o" //OPENJPEG for JPEG2000
+    #endif
 #endif
 
 static const int kMaxDTIv = 4000;
@@ -30,7 +34,7 @@ static const int kSliceOrientCor = 3;
 static const int kSliceOrientMosaicNegativeDeterminant = 4;
     
 static const int kCompressNone = 0;
-static const int kCompressJasper = 1;
+static const int kCompressYes = 1;
 
     struct TCSAdata {
         float dtiV[kMaxDTIv][4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
@@ -60,7 +64,7 @@ static const int kCompressJasper = 1;
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
     //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
     unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);
-    
+    //int foo (float vx);
 #ifdef  __cplusplus
 }
 #endif
