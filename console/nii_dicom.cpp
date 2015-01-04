@@ -56,9 +56,9 @@ unsigned char * imagetoimg(opj_image_t * image)
         printf("jpeg decode failure w*h %d*%d bpp %d sgnd %d components %d OpenJPEG=%s\n", width, height, bpp, sgnd, numcmpts,  opj_version());
         return NULL;
     }
-    //#ifdef MY_DEBUG
+    #ifdef MY_DEBUG
     printf("w*h %d*%d bpp %d sgnd %d components %d OpenJPEG=%s\n", width, height, bpp, sgnd, numcmpts,  opj_version());
-    //#endif
+    #endif
     //extract the data
     if ((bpp < 1) || (bpp > 2) || (width < 1) || (height < 1) || (imgbytes < 1)) {
         printf("Serious catastrophic decompression error\n");
@@ -623,8 +623,10 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
     cString[lLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lLength);
     //memcpy(cString, test, lLength);
+    //printf("X%dX\n", (unsigned char)d.patientName[1]);
+
     for (int i = 0; i < lLength; i++)
-        if (cString[i]==' ') cString[i] = '_';
+        if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*')) cString[i] = '_';
     int len = 1;
     for (int i = 1; i < lLength; i++) { //remove repeated "_"
         if ((cString[i-1]!='_') || (cString[i]!='_')) {
@@ -1727,6 +1729,7 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
     return img;
 } //nii_loadImgCoreJasper()
 #endif
+                 
                     
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
@@ -2353,6 +2356,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
         printf("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
     }
+    //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3]);
     //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\tStart\t%d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3], d.imageStart);
     if (coilNum > 0) //segment images with multiple coils
         d.seriesNum = d.seriesNum + (100*coilNum);

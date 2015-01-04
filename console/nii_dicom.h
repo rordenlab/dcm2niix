@@ -32,10 +32,8 @@ static const int kSliceOrientTra = 1;
 static const int kSliceOrientSag = 2;
 static const int kSliceOrientCor = 3;
 static const int kSliceOrientMosaicNegativeDeterminant = 4;
-    
 static const int kCompressNone = 0;
 static const int kCompressYes = 1;
-
     struct TCSAdata {
         float dtiV[kMaxDTIv][4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int numDti, multiBandFactor, sliceOrder, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;

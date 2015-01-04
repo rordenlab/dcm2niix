@@ -6,7 +6,7 @@ Building command line version:
 
 if you do not have zlib,you can compile without it by defining "myDisableZLib ":
 
-  g++ -O3 -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -dead_strip -o dcm2niix 
+  g++ -O3 -dead_strip -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -dead_strip -o dcm2niix 
 
 
  If you want to build this with JPEG2000 decompression support using OpenJPEG. You will need to have the OpenJPEG 2.1 libraries installed (https://code.google.com/p/openjpeg/wiki/Installation). I suggest building static libraries...
@@ -20,7 +20,7 @@ You should then be able to run then run:
    
 But in my experience this works best if you explicitly tell the software how to find the libraries, so your compile will probably look like one of these two options:    
    
-   g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -lz  -I/usr/local/include /usr/local/lib/libopenjp2.a
+ g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -lz  -I/usr/local/include /usr/local/lib/libopenjp2.a
    
   g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -lz  -I/usr/local/lib /usr/local/lib/libopenjp2.a
  

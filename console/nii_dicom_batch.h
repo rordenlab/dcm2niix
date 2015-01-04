@@ -15,7 +15,7 @@ extern "C" {
 #include "nii_dicom.h"
 
     struct TDCMopts {
-        bool isGz, isFlipY,isVerbose;
+        bool isGz, isFlipY,isVerbose, isTiltCorrect;
         int compressFlag; //support for compressed data 0=none, 
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512];
     };

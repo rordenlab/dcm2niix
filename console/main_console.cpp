@@ -54,8 +54,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
     printf("  -h : show help\n");
-    printf("  -f : filename (%%c=comments %%f=folder name %%p=protocol %%i ID of patient %%n=name of patient %%s=series, %%t=time; default '%s')\n",opts.filename);
+    printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol %%s=series, %%t=time; default '%s')\n",opts.filename);
     printf("  -o : output directory (omit to save to input folder)\n");
+    printf("  -t : tilt correction (y/n, default y)\n");
+    printf("  -v : verbose (y/n, default n)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'n';
     printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
@@ -76,7 +78,6 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 #endif
 } //showHelp()
 
-  
 int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
@@ -98,7 +99,19 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
-            else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
+            else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isTiltCorrect = false;
+                else
+                    opts.isTiltCorrect = true;
+            } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isVerbose = false;
+                else
+                    opts.isVerbose = true;
+            } else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {
                     opts.isGz = true; //force use of internal compression instead of pigz
