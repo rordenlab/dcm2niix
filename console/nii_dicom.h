@@ -27,6 +27,7 @@ static const int kMaxDTIv = 4000;
 #define kMANUFACTURER_SIEMENS  1
 #define kMANUFACTURER_GE  2
 #define kMANUFACTURER_PHILIPS  3
+#define kMANUFACTURER_TOSHIBA  4
 static const int kSliceOrientUnknown = 0;
 static const int kSliceOrientTra = 1;
 static const int kSliceOrientSag = 2;
@@ -59,6 +60,7 @@ static const int kCompressYes = 1;
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
     struct TDICOMdata  nii_readParRec (char * parname);
     //void reportMat(struct nifti_1_header h);
+
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
     //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
     unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);

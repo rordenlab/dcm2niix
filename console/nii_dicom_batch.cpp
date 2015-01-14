@@ -635,6 +635,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'M') {
                 if (dcm.manufacturer == kMANUFACTURER_GE)
                     strcat (outname,"GE");
+                else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
+                    strcat (outname,"To");
                 else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
                     strcat (outname,"Ph");
                 else if (dcm.manufacturer == kMANUFACTURER_SIEMENS)
@@ -945,7 +947,13 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
         unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
         short * imX16 = ( short*) imX;
         memcpy(&imX[0], &im[0], nVox2D * hdr.dim[3] * 2); //memcpy( dest, src, bytes)
-        memset(&im[0], 0, nVox2D * hdr.dim[3] * 2);
+        //memset(&im[0], 0, nVox2D * hdr.dim[3] * 2);
+        if (hdr.scl_inter >= 0.0)
+            for (int v = 0; v < (nVox2D * hdr.dim[3]); v++)
+                im16[v] = -1024;
+        else
+            for (int v = 0; v < (nVox2D * hdr.dim[3]); v++)
+                im16[v] = 0;
         for (int s = 0; s < hdr.dim[3]; s++) { //for each slice
             float sliceMM = s * hdr.pixdim[3];
             if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
@@ -1025,8 +1033,12 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
             mn = sliceMMarray[i] - sliceMMarray[i-1];
     if (mn <= 0.0f) return EXIT_FAILURE;
     int slices = hdr.dim[3];
-    //slices = roundf((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
     slices = ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    if (slices > (hdr.dim[3] * 2)) {
+        slices = 2 * hdr.dim[3];
+        mn = (sliceMMarray[hdr.dim[3]-1]) / (slices-1);
+    }
+    //printf("-->%g mn slices %d orig %d\n", mn, slices, hdr.dim[3]);
     if (slices < 3) return EXIT_FAILURE;
     struct nifti_1_header hdrX = hdr;
     hdrX.dim[3] = slices;
@@ -1310,6 +1322,9 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2) {
     //returns true if d1 and d2 should be stacked together as a signle output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
+    //printf("%g %g %g %g %g %g\n", d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6]);
+    if (!isSameFloat(d1.orient[1], d2.orient[1]) || !isSameFloat(d1.orient[2], d2.orient[2]) ||  !isSameFloat(d1.orient[3], d2.orient[3]) ||
+        !isSameFloat(d1.orient[4], d2.orient[4]) || !isSameFloat(d1.orient[5], d2.orient[5]) ||  !isSameFloat(d1.orient[6], d2.orient[6]) ) return false;
     if ((d1.dateTime == d2.dateTime) && (d1.seriesNum == d2.seriesNum) && (d1.bitsAllocated == d2.bitsAllocated)
         && (d1.xyzDim[1] == d2.xyzDim[1]) && (d1.xyzDim[2] == d2.xyzDim[2]) && (d1.xyzDim[3] == d2.xyzDim[3]) )
         return true;
@@ -1579,7 +1594,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     #ifdef myUseCOut
      std::cout << "Version  " <<kDCMvers <<std::endl;
     #else
-    printf("Version %s\n",kDCMvers);
+    printf("Version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
     #endif
 
     

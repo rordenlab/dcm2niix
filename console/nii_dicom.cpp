@@ -23,6 +23,8 @@
     #include <jasper/jasper.h>
 #endif
 
+
+
 #ifndef myDisableOpenJPEG
     #include <openjpeg-2.1/openjpeg.h>//"openjpeg.h"
 
@@ -618,13 +620,40 @@ void dcmStrDigitsOnly(char* lStr) {
 void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
     //char test[] = " 1     2    3    ";
     //lLength = (int)strlen(test);
+
     if (lLength < 1) return;
     char cString[lLength+1];
     cString[lLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lLength);
     //memcpy(cString, test, lLength);
     //printf("X%dX\n", (unsigned char)d.patientName[1]);
-
+    for (int i = 0; i < lLength; i++)
+        //assume specificCharacterSet (0008,0005) is ISO_IR 100 http://en.wikipedia.org/wiki/ISO/IEC_8859-1
+        if (cString[i]< 1) {
+            unsigned char c = (unsigned char)cString[i];
+            if ((c >= 192) && (c <= 198)) cString[i] = 'A';
+            if (c == 199) cString[i] = 'C';
+            if ((c >= 200) && (c <= 203)) cString[i] = 'E';
+            if ((c >= 204) && (c <= 207)) cString[i] = 'I';
+            if (c == 208) cString[i] = 'D';
+            if (c == 209) cString[i] = 'N';
+            if ((c >= 210) && (c <= 214)) cString[i] = 'O';
+            if (c == 215) cString[i] = 'x';
+            if (c == 216) cString[i] = 'O';
+            if ((c >= 217) && (c <= 220)) cString[i] = 'O';
+            if (c == 221) cString[i] = 'Y';
+            if ((c >= 224) && (c <= 230)) cString[i] = 'a';
+            if (c == 231) cString[i] = 'c';
+            if ((c >= 232) && (c <= 235)) cString[i] = 'e';
+            if ((c >= 236) && (c <= 239)) cString[i] = 'i';
+            if (c == 240) cString[i] = 'o';
+            if (c == 241) cString[i] = 'n';
+            if ((c >= 242) && (c <= 246)) cString[i] = 'o';
+            if (c == 248) cString[i] = 'o';
+            if ((c >= 249) && (c <= 252)) cString[i] = 'u';
+            if (c == 253) cString[i] = 'y';
+            if (c == 255) cString[i] = 'y';
+        }
     for (int i = 0; i < lLength; i++)
         if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*')) cString[i] = '_';
     int len = 1;
@@ -694,6 +723,8 @@ int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float 
         return kMANUFACTURER_GE;
     if ((toupper(cString[0])== 'P') && (toupper(cString[1])== 'H'))
         return kMANUFACTURER_PHILIPS;
+    if ((toupper(cString[0])== 'T') && (toupper(cString[1])== 'O'))
+        return kMANUFACTURER_TOSHIBA;
     return kMANUFACTURER_UNKNOWN;
 } //dcmStrManufacturer
 
@@ -1830,6 +1861,8 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
+//#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
+    
 #define  kStudyDate 0x0008+(0x0020 << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )

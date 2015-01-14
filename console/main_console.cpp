@@ -86,7 +86,7 @@ int main(int argc, const char * argv[])
     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
      strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
 #else
-    printf("Chris Rorden's dcm2niiX version %s\n",kDCMvers);
+    printf("Chris Rorden's dcm2niiX version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
     if (argc < 2) {
         showHelp(argv, opts);
         return 0;
