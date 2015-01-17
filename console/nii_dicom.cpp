@@ -2,6 +2,7 @@
 #if defined(_WIN64) || defined(_WIN32)
 #include <windows.h> //write to registry
 #endif
+#include "jpg_0XC3.h"
 #include "nifti1.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
@@ -594,7 +595,8 @@ struct TDICOMdata clear_dicom_data() {
             d.isValid = false;
             d.isSigned = false; //default is unsigned!
             d.isFloat = false; //default is for integers, not single or double precision
-            d.isCompressed = false;
+            d.isResampled = false; //assume data not resliced to remove gantry tilt problems
+            d.compressionScheme = 0; //none
             d.isExplicitVR = true;
             d.isLittleEndian = true; //DICOM initially always little endian
             d.converted2NII = 0;
@@ -1761,29 +1763,37 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
 } //nii_loadImgCoreJasper()
 #endif
                  
-                    
+unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+    //printf("offset %d\n", dcm.imageStart);
+    int dimX, dimY, bits, frames;
+    return decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
+}
+                        
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
+    if (dcm.compressionScheme == kCompressC3)
+            img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
+    else
     #ifndef myDisableOpenJPEG
-    if ((dcm.isCompressed) && (compressFlag != kCompressNone) )
+    if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
         img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
     else
     #else
        #ifdef myEnableJasper
-        if ((dcm.isCompressed) && (compressFlag != kCompressNone) )
+        if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
             img = nii_loadImgCoreJasper(imgname, *hdr, dcm, compressFlag);
         else
         #endif
     #endif
-    if (dcm.isCompressed) {
+    if (dcm.compressionScheme == kCompressYes) {
         printf("Software not set up to decompress DICOM\n");
         return NULL;
     } else
         img = nii_loadImgCore(imgname, *hdr);
     if (img == NULL) return img;
-    if (!dcm.isCompressed) {
+    if (dcm.compressionScheme == kCompressNone) {
 #ifdef __BIG_ENDIAN__
     if ((dcm.isLittleEndian) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
@@ -1792,7 +1802,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_byteswap(img, hdr);
 #endif
     }
-    if ((!dcm.isCompressed) && (hdr->datatype ==DT_RGB24)) img = nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
+    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) img = nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     if (dcm.CSA.mosaicSlices > 1) {
         img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, dcm.CSA.protocolSliceNumber1);
         /* we will do this in nii_dicom_batch #ifdef obsolete_mosaic_flip
@@ -1868,6 +1878,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
 #define  kManufacturer 0x0008+(0x0070 << 16 )
 #define  kProtocolNameGE 0x0008+(0x103E << 16 )
+#define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
@@ -2032,17 +2043,24 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
                 else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0)) {
-                    d.isCompressed = true;
+                    d.compressionScheme = kCompressYes;;
                     //printf("JPEG lossy support is new: please validate conversion\n");
+                
+                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.57") == 0)) {
+                    //d.isCompressed = true;
+                    //https://www.medicalconnections.co.uk/kb/Transfer_Syntax should be SOF = 0xC3
+                    d.compressionScheme = kCompressC3;
+                    printf("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0)) {
                     //d.isCompressed = true;
-                    printf("Ancient JPEG-lossless (SOF type 0xc3) is not supported: decompress with Osirix or legacy dcm2nii\n");
-                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    d.compressionScheme = kCompressC3;
+                    printf("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
+                    //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
-                    d.isCompressed = true;
+                    d.compressionScheme = kCompressYes;
                     //printf("JPEG2000 Lossless support is new: please validate conversion\n");
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)) {
-                    d.isCompressed = true;
+                    d.compressionScheme = kCompressYes;
                     //printf("JPEG2000 support is new: please validate conversion\n");
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.2") == 0)
                     isSwitchToBigEndian = true; //isExplicitVR=true;
@@ -2088,7 +2106,13 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 if (d.manufacturer == kMANUFACTURER_GE)
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
                 break; }
-                
+            case kDerivationDescription : {
+                //strcmp(transferSyntax, "1.2.840.10008.1.2")
+                char derivationDescription[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], derivationDescription);//strcasecmp, strcmp
+                if (strcasecmp(derivationDescription, "MEDCOM_RESAMPLED") == 0) d.isResampled = true;
+                break;
+            }
             case 	kProtocolName : {
                 if (strlen(d.protocolName) < 1) //GE uses a generic session name here: do not overwrite kProtocolNameGE
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
@@ -2297,9 +2321,9 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
             case 	kWaveformSq:
                 d.imageStart = 1; //abort!!!
 #ifdef myUseCOut
-                std::cout<<"Warning: Unable to extract sound wave forms" <<std::endl;
+                std::cout<<"Skipping DICOM (audio not image) " <<std::endl;
 #else
-                printf("Warning: Unable to extract sound wave forms\n");
+                printf("Skipping DICOM (audio not image) '%s'\n", fname);
 #endif
                 break;
             case 	kCSAImageHeaderInfo:
@@ -2331,12 +2355,12 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
-                if ((!d.isCompressed ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
+                if ((d.compressionScheme == kCompressYes ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos;
                 //geiisBug = false;
                 //http://www.dclunie.com/medical-image-faq/html/part6.html
                 //unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
-                if (d.isCompressed) {
+                if (d.compressionScheme != kCompressYes) {
                     lLength = 0;
                     isEncapsulatedData = true;
                 }

@@ -35,6 +35,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+
 //gcc -O3 -o main main.c nii_dicom.c
 #if defined(_WIN64) || defined(_WIN32)
 const char kPathSeparator ='\\';
@@ -1121,7 +1122,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag);
-    if ( (dcmList[indx0].isCompressed) && (opts.compressFlag != kCompressNone))
+    if ( (dcmList[indx0].compressionScheme != kCompressYes) && (opts.compressFlag != kCompressNone))
         printf("Image Decompression is new: please validate conversions\n");
     if (opts.isVerbose)
     #ifdef myUseCOut
@@ -1190,9 +1191,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                     printf("]\n");
                 }
             }
-
-            
-            
             if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) {
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
@@ -1295,12 +1293,17 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 #endif
     
     if (dcmList[indx0].gantryTilt != 0.0) {
-        if (opts.isTiltCorrect)
+        if (dcmList[indx0].isResampled)
+            printf("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
+        else if (opts.isTiltCorrect)
             nii_saveNII3Dtilt(pathoutname, hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
         else
             printf("Tilt correction skipped\n");
     } if (sliceMMarray != NULL) {
-        nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
+        if (dcmList[indx0].isResampled)
+            printf("Slice thickness correction skipped: 0008,2111 reports RESAMPLED\n");
+        else
+            nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
         free(sliceMMarray);
     }
     free(imgM);
