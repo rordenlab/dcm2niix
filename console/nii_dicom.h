@@ -36,6 +36,7 @@ static const int kSliceOrientMosaicNegativeDeterminant = 4;
 static const int kCompressNone = 0;
 static const int kCompressYes = 1;
 static const int kCompressC3 = 2; //obsolete JPEG lossless
+static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TCSAdata {
         float dtiV[kMaxDTIv][4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int numDti, multiBandFactor, sliceOrder, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;

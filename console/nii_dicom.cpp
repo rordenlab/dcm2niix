@@ -3,6 +3,7 @@
 #include <windows.h> //write to registry
 #endif
 #include "jpg_0XC3.h"
+#include "ujpeg.h"
 #include "nifti1.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
@@ -1768,12 +1769,48 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     int dimX, dimY, bits, frames;
     return decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
 }
-                        
+                    
+unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+    printf("50 offset %d\n", dcm.imageStart);
+    if( access(imgname, F_OK ) == -1 ) {
+        printf("Error: unable to find '%s'\n", imgname);
+        return NULL;
+    }
+    //load compressed data
+    FILE *f = fopen(imgname, "rb");
+    fseek(f, 0, SEEK_END);
+    int size = (int) ftell(f);
+    size = size - dcm.imageStart;
+    if (size < 8) {
+        printf("Error file too small\n");
+        fclose(f);
+        return NULL;
+    }
+    char *buf = (char *)malloc(size);
+    fseek(f, dcm.imageStart, SEEK_SET);
+    size = (int) fread(buf, 1, size, f);
+    fclose(f);
+    //decode
+    njInit();
+    if (njDecode(buf, size)) {
+        printf("Error decoding the input file.\n");
+        return NULL;
+    }
+    free(buf);
+    unsigned char *bImg = (unsigned char *)malloc(njGetImageSize());
+    memcpy(bImg, njGetImage(), njGetImageSize()); //dest, src, size
+    njDone();
+    return bImg;
+}
+                    
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
-    if (dcm.compressionScheme == kCompressC3) {
+    if (dcm.compressionScheme == kCompress50) {
+        img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+        img = nii_rgb2Planar(img, hdr, false); //convert RGBRGB.. to RRR..RGGGG..GBBB..B
+    } else if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
     } else
     #ifndef myDisableOpenJPEG
@@ -2043,8 +2080,13 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
                 else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0)) {
-                    printf("Lossy JPEG : please decompress with Osirix\n");
-                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    d.compressionScheme = kCompress50;
+                    //printf("Lossy JPEG: please decompress with Osirix or dcmdjpg. %s\n", transferSyntax);
+                    //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.51") == 0)) {
+                        d.compressionScheme = kCompress50;
+                        //printf("Lossy JPEG: please decompress with Osirix or dcmdjpg. %s\n", transferSyntax);
+                        //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.57") == 0) {
                     //d.isCompressed = true;
                     //https://www.medicalconnections.co.uk/kb/Transfer_Syntax should be SOF = 0xC3
@@ -2418,10 +2460,14 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
         d.seriesNum = d.seriesNum + (100*coilNum);
     if (echoNum > 2) //segment images with multiple echoes
         d.seriesNum = d.seriesNum + (100*echoNum);
-    //if (true) {
+    if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
+        //dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
+        printf("Error: unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
+        d.isValid = false;
+    }
     if (isVerbose) {
         printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-        printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq);
+        printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated);
     }
     return d;
 } // readDICOM()

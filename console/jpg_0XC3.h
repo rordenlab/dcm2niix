@@ -1,9 +1,12 @@
-//This decodes DICOM images with Transfer Syntax 1.2.840.10008.1.2.4.70
-// "JPEG Lossless, Nonhierarchical, First- Order Prediction"
-// This format is described in http://www.w3.org/Graphics/JPEG/itu-t81.pdf
-// It is identified with the 'Start of Frame' (SOF) code 0xC3
+//Decode DICOM Transfer Syntax 1.2.840.10008.1.2.4.70 and 1.2.840.10008.1.2.4.57
+// JPEG Lossless, Nonhierarchical
+// see ISO/IEC 10918-1 / ITU T.81 
+//  specifically, format with 'Start of Frame' (SOF) code 0xC3
+//  http://www.w3.org/Graphics/JPEG/itu-t81.pdf
+// This code decodes data with 1..16 bits per pixel
 // It appears unique to medical imaging, and is not supported by most JPEG libraries
 // http://www.dicomlibrary.com/dicom/transfer-syntax/
+// https://en.wikipedia.org/wiki/Lossless_JPEG#Lossless_mode_of_operation
 #ifndef _JPEG_SOF_0XC3_
 #define _JPEG_SOF_0XC3_
 
