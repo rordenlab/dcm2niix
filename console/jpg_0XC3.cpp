@@ -247,7 +247,8 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             SOSse = readByte(lRawRA, &lRawPos, lRawSz);
             SOSahal = readByte(lRawRA, &lRawPos, lRawSz); //lower 4bits= pointtransform
             SOSpttrans = SOSahal & 16;
-            if (verbose) printf(" [Predictor: %d Transform %d]\n", SOSss, SOSahal);
+            if (verbose)
+                printf(" [Predictor: %d Transform %d]\n", SOSss, SOSahal);
             lRawPos = (lSegmentEnd);
         } else  //if SOS marker else skip marker
             lRawPos = (lSegmentEnd);
@@ -272,27 +273,18 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         lIncO++;
     } while (lIncO > 0);
     //NEXT: some RGB images use only a single Huffman table for all 3 colour planes. In this case, replicate the correct values
-    if (lnHufTables < SOFnf) { //use single Hufman table for each frame
-        for (int lFrameCount = 2; lFrameCount <= SOFnf; lFrameCount++) {
-            for (int lInc = 1; lInc <= 16; lInc++)
-                l[lFrameCount].DHTstartRA[lInc] = l[1].DHTstartRA[lInc];
-            for (int lInc = 0; lInc <= 31; lInc ++) {
-                l[lFrameCount].HufCode[lInc] = l[1].HufCode[lInc];
-                l[lFrameCount].HufVal[lInc] = l[1].HufVal[lInc];
-                l[lFrameCount].HufSz[lInc] = l[1].HufSz[lInc];
-                l[lFrameCount].DHTliRA[lInc] = l[1].DHTliRA[lInc];
-            } //for each table entry
-        } //for each frame
-    } // if lnHufTables < SOFnf
     //NEXT: prepare lookup table
-    for (int lFrameCount = 1; lFrameCount <= SOFnf; lFrameCount ++) {
+
+    for (int lFrameCount = 1; lFrameCount <= lnHufTables; lFrameCount ++) {
         for (int lInc = 0; lInc <= 17; lInc ++)
             l[lFrameCount].SSSSszRA[lInc] = 123; //Impossible value for SSSS, suggests 8-bits can not describe answer
         for (int lInc = 0; lInc <= 255; lInc ++)
             l[lFrameCount].LookUpRA[lInc] = 255; //Impossible value for SSSS, suggests 8-bits can not describe answer
     }
     //NEXT: fill lookuptable
-    for (int lFrameCount = 1; lFrameCount <= SOFnf; lFrameCount ++) {
+
+    
+    for (int lFrameCount = 1; lFrameCount <= lnHufTables; lFrameCount ++) {
         int lIncY = 0;
         for (int lSz = 1; lSz <= 8; lSz ++) { //set the huffman lookup table for keys with lengths <=8
             if (l[lFrameCount].DHTliRA[lSz]> 0) {
@@ -313,13 +305,18 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             } //Length of size lInc > 0
         } //for lInc := 1 to 8
     } //For each frame, e.g. once each for Red/Green/Blue
-    //Next: uncompress data: different loops for different predictors
+    //NEXT: some RGB images use only a single Huffman table for all 3 colour planes. In this case, replicate the correct values
+    if (lnHufTables < SOFnf) { //use single Hufman table for each frame
+        for (int lFrameCount = 2; lFrameCount <= SOFnf; lFrameCount++) {
+            l[lFrameCount] = l[1];
+        } //for each frame
+    } // if lnHufTables < SOFnf
+    //NEXT: uncompress data: different loops for different predictors
     int lItems =  SOFxdim*SOFydim*SOFnf;
     // lRawPos++;// <- only for Pascal where array is indexed from 1 not 0 first byte of data
     int lCurrentBitPos = 0; //read in a new byte
-    int lPredicted =  1 << (SOFprecision-1-SOSpttrans);
-    //depending on SOSss, we see Table H.1
     
+    //depending on SOSss, we see Table H.1
     int lPredA = 0;
     int lPredB = 0;
     int lPredC = 0;
@@ -337,9 +334,10 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         lPredC = SOFxdim; //Rc UpperLeft:above and to the left
     }   else
         lPredA = 0; //Ra: directly to left)
-    int lPx = -1; //pixel position
     if (SOFprecision > 8) { //start - 16 bit data
         *bits = 16;
+        int lPx = -1; //pixel position
+        int lPredicted =  1 << (SOFprecision-1-SOSpttrans);
         lImgRA8 = (unsigned char*) malloc(lItems * 2);
         uint16_t *lImgRA16 = (uint16_t*) lImgRA8;
         for (int i = 0; i < lItems; i++)
@@ -348,8 +346,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         for (int lIncX = 1; lIncX <= SOFxdim; lIncX++) { //for first row - here we ALWAYS use LEFT as predictor
             lPx++; //writenext voxel
             if (lIncX > 1) lPredicted = lImgRA16[lPx-1];
-            int dx = decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-            lImgRA16[lPx] = lPredicted+dx;
+            lImgRA16[lPx] = lPredicted+ decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
         }
         for (int lIncY = 2; lIncY <= SOFydim; lIncY++) {//for all subsequent rows
             lPx++; //write next voxel
@@ -381,49 +378,106 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                 } //for lIncX
             } // if..else possible predictors
         }//for lIncY
-    } else { //if 16bit data; else 8bit
+    } else if (SOFnf == 3) { //if 16-bit data; else 8-bit 3 frames
         *bits = 8;
         lImgRA8 = (unsigned char*) malloc(lItems );
+        int lPx[kmaxFrames+1], lPredicted[kmaxFrames+1]; //pixel position
+        for (int f = 1; f <= SOFnf; f++) {
+            lPx[f] = ((f-1) * (SOFxdim * SOFydim) ) -1;
+            lPredicted[f] = 1 << (SOFprecision-1-SOSpttrans);
+        }
+        for (int i = 0; i < lItems; i++)
+            lImgRA8[i] = 255; //zero array
+        for (int lIncX = 1; lIncX <= SOFxdim; lIncX++) { //for first row - here we ALWAYS use LEFT as predictor
+            for (int f = 1; f <= SOFnf; f++) {
+                lPx[f]++; //writenext voxel
+                if (lIncX > 1) lPredicted[f] = lImgRA8[lPx[f]-1];
+                lImgRA8[lPx[f]] = lPredicted[f] + decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[f]);
+            }
+        } //first row always predicted by LEFT
+        for (int lIncY = 2; lIncY <= SOFydim; lIncY++) {//for all subsequent rows
+            for (int f = 1; f <= SOFnf; f++) {
+                lPx[f]++; //write next voxel
+                lPredicted[f] = lImgRA8[lPx[f]-SOFxdim]; //use ABOVE
+                lImgRA8[lPx[f]] = lPredicted[f] + decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[f]);
+            }//first column of row always predicted by ABOVE
+            if (SOSss == 4) {
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    for (int f = 1; f <= SOFnf; f++) {
+                        lPredicted[f] = lImgRA8[lPx[f]-lPredA]+lImgRA8[lPx[f]-lPredB]-lImgRA8[lPx[f]-lPredC];
+                        lPx[f]++; //writenext voxel
+                        lImgRA8[lPx[f]] = lPredicted[f]+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[f]);
+                    }
+                } //for lIncX
+            } else if ((SOSss == 5) || (SOSss == 6)) {
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    for (int f = 1; f <= SOFnf; f++) {
+                        lPredicted[f] = lImgRA8[lPx[f]-lPredA]+ ((lImgRA8[lPx[f]-lPredB]-lImgRA8[lPx[f]-lPredC]) >> 1);
+                        lPx[f]++; //writenext voxel
+                        lImgRA8[lPx[f]] = lPredicted[f] + decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[f]);
+                    }
+                } //for lIncX
+            } else if (SOSss == 7) {
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    for (int f = 1; f <= SOFnf; f++) {
+                        lPx[f]++; //writenext voxel
+                        lPredicted[f] = (lImgRA8[lPx[f]-1]+lImgRA8[lPx[f]-SOFxdim]) >> 1;
+                        lImgRA8[lPx[f]] = lPredicted[f] + decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[f]);
+                    }
+                } //for lIncX
+            } else { //SOSss 1,2,3 read single values
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    for (int f = 1; f <= SOFnf; f++) {
+                        lPredicted[f] = lImgRA8[lPx[f]-lPredA];
+                        lPx[f]++; //writenext voxel
+                        lImgRA8[lPx[f]] = lPredicted[f] + decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[f]);
+                    }
+                } //for lIncX
+            } // if..else possible predictors
+        }//for lIncY
+    }else { //if 8-bit data 3frames; else 8-bit 1 frames
+        *bits = 8;
+        lImgRA8 = (unsigned char*) malloc(lItems );
+        int lPx = -1; //pixel position
+        int lPredicted =  1 << (SOFprecision-1-SOSpttrans);
         for (int i = 0; i < lItems; i++)
             lImgRA8[i] = 0; //zero array
-        for (int frame = 1; frame < SOFnf; frame ++) {
-            for (int lIncX = 1; lIncX <= SOFxdim; lIncX++) { //for first row - here we ALWAYS use LEFT as predictor
-                lPx++; //writenext voxel
-                if (lIncX > 1) lPredicted = lImgRA8[lPx-1];
-                int dx = decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-                lImgRA8[lPx] = lPredicted+dx;
-            }
-            for (int lIncY = 2; lIncY <= SOFydim; lIncY++) {//for all subsequent rows
-                lPx++; //write next voxel
-                lPredicted = lImgRA8[lPx-SOFxdim]; //use ABOVE
-                lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-                if (SOSss == 4) {
-                    for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
-                        lPredicted = lImgRA8[lPx-lPredA]+lImgRA8[lPx-lPredB]-lImgRA8[lPx-lPredC];
-                        lPx++; //writenext voxel
-                        lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-                    } //for lIncX
-                } else if ((SOSss == 5) || (SOSss == 6)) {
-                    for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
-                        lPredicted = lImgRA8[lPx-lPredA]+ ((lImgRA8[lPx-lPredB]-lImgRA8[lPx-lPredC]) >> 1);
-                        lPx++; //writenext voxel
-                        lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-                    } //for lIncX
-                } else if (SOSss == 7) {
-                    for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
-                        lPx++; //writenext voxel
-                        lPredicted = (lImgRA8[lPx-1]+lImgRA8[lPx-SOFxdim]) >> 1;
-                        lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-                    } //for lIncX
-                } else { //SOSss 1,2,3 read single values
-                    for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
-                        lPredicted = lImgRA8[lPx-lPredA];
-                        lPx++; //writenext voxel
-                        lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[frame]);
-                    } //for lIncX
-                } // if..else possible predictors
-            }//for lIncY
-        }//for frame
+        for (int lIncX = 1; lIncX <= SOFxdim; lIncX++) { //for first row - here we ALWAYS use LEFT as predictor
+            lPx++; //writenext voxel
+            if (lIncX > 1) lPredicted = lImgRA8[lPx-1];
+            int dx = decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[1]);
+            lImgRA8[lPx] = lPredicted+dx;
+        }
+        for (int lIncY = 2; lIncY <= SOFydim; lIncY++) {//for all subsequent rows
+            lPx++; //write next voxel
+            lPredicted = lImgRA8[lPx-SOFxdim]; //use ABOVE
+            lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[1]);
+            if (SOSss == 4) {
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    lPredicted = lImgRA8[lPx-lPredA]+lImgRA8[lPx-lPredB]-lImgRA8[lPx-lPredC];
+                    lPx++; //writenext voxel
+                    lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[1]);
+                } //for lIncX
+            } else if ((SOSss == 5) || (SOSss == 6)) {
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    lPredicted = lImgRA8[lPx-lPredA]+ ((lImgRA8[lPx-lPredB]-lImgRA8[lPx-lPredC]) >> 1);
+                    lPx++; //writenext voxel
+                    lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[1]);
+                } //for lIncX
+            } else if (SOSss == 7) {
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    lPx++; //writenext voxel
+                    lPredicted = (lImgRA8[lPx-1]+lImgRA8[lPx-SOFxdim]) >> 1;
+                    lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[1]);
+                } //for lIncX
+            } else { //SOSss 1,2,3 read single values
+                for (int lIncX = 2; lIncX <= SOFxdim; lIncX++) {
+                    lPredicted = lImgRA8[lPx-lPredA];
+                    lPx++; //writenext voxel
+                    lImgRA8[lPx] = lPredicted+decodePixelDifference(lRawRA, &lRawPos, &lCurrentBitPos, l[1]);
+                } //for lIncX
+            } // if..else possible predictors
+        }//for lIncY
     } //if 16bit else 8bit
     free(lRawRA);
     *dimX = SOFxdim;

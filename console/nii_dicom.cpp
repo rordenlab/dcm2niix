@@ -1773,9 +1773,9 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
-    if (dcm.compressionScheme == kCompressC3)
+    if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
-    else
+    } else
     #ifndef myDisableOpenJPEG
     if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
         img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
@@ -2043,18 +2043,17 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
                 else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0)) {
-                    d.compressionScheme = kCompressYes;;
-                    //printf("JPEG lossy support is new: please validate conversion\n");
-                
-                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.57") == 0)) {
+                    printf("Lossy JPEG : please decompress with Osirix\n");
+                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.57") == 0) {
                     //d.isCompressed = true;
                     //https://www.medicalconnections.co.uk/kb/Transfer_Syntax should be SOF = 0xC3
                     d.compressionScheme = kCompressC3;
-                    printf("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
-                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0)) {
+                    //printf("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
+                } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0) {
                     //d.isCompressed = true;
                     d.compressionScheme = kCompressC3;
-                    printf("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
+                    //printf("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
                     //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
                     d.compressionScheme = kCompressYes;
@@ -2355,12 +2354,12 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
-                if ((d.compressionScheme == kCompressYes ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
+                if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos;
                 //geiisBug = false;
                 //http://www.dclunie.com/medical-image-faq/html/part6.html
                 //unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
-                if (d.compressionScheme != kCompressYes) {
+                if (d.compressionScheme != kCompressNone) {
                     lLength = 0;
                     isEncapsulatedData = true;
                 }
@@ -2419,6 +2418,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
         d.seriesNum = d.seriesNum + (100*coilNum);
     if (echoNum > 2) //segment images with multiple echoes
         d.seriesNum = d.seriesNum + (100*echoNum);
+    //if (true) {
     if (isVerbose) {
         printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq);

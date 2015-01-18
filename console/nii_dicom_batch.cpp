@@ -1122,7 +1122,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag);
-    if ( (dcmList[indx0].compressionScheme != kCompressYes) && (opts.compressFlag != kCompressNone))
+    if ( (dcmList[indx0].compressionScheme != kCompressNone) && (opts.compressFlag != kCompressNone))
         printf("Image Decompression is new: please validate conversions\n");
     if (opts.isVerbose)
     #ifdef myUseCOut
