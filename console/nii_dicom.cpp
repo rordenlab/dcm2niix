@@ -1505,6 +1505,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
 
 unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
     //DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
+    if (bImg == NULL) return NULL;
     if (hdr->datatype != DT_RGB24) return bImg;
     if (isPlanar == 1) return bImg;//return nii_bgr2rgb(bImg,hdr);
     int dim3to7 = 1;
@@ -1771,7 +1772,7 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
 }
                     
 unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
-    printf("50 offset %d\n", dcm.imageStart);
+    //printf("50 offset %d\n", dcm.imageStart);
     if( access(imgname, F_OK ) == -1 ) {
         printf("Error: unable to find '%s'\n", imgname);
         return NULL;
@@ -1793,7 +1794,7 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
     //decode
     njInit();
     if (njDecode(buf, size)) {
-        printf("Error decoding the input file.\n");
+        printf("Error decoding JPEG image.\n");
         return NULL;
     }
     free(buf);
@@ -1809,6 +1810,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     unsigned char * img;
     if (dcm.compressionScheme == kCompress50) {
         img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+        //if (img == NULL) return NULL;
         img = nii_rgb2Planar(img, hdr, false); //convert RGBRGB.. to RRR..RGGGG..GBBB..B
     } else if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
@@ -2079,14 +2081,17 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 //printf("transfer syntax '%s'\n", transferSyntax);
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
-                else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0)) {
+                else if  (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
                     d.compressionScheme = kCompress50;
                     //printf("Lossy JPEG: please decompress with Osirix or dcmdjpg. %s\n", transferSyntax);
                     //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
-                } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.51") == 0)) {
+                } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.51") == 0) {
                         d.compressionScheme = kCompress50;
                         //printf("Lossy JPEG: please decompress with Osirix or dcmdjpg. %s\n", transferSyntax);
                         //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                //uJPEG does not decode these: ..53 ...55
+                // } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.53") == 0) {
+                //    d.compressionScheme = kCompress50;
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.57") == 0) {
                     //d.isCompressed = true;
                     //https://www.medicalconnections.co.uk/kb/Transfer_Syntax should be SOF = 0xC3
