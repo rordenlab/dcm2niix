@@ -2,6 +2,7 @@
 #if defined(_WIN64) || defined(_WIN32)
 #include <windows.h> //write to registry
 #endif
+//#include <time.h> //clock()
 #include "jpg_0XC3.h"
 #include "ujpeg.h"
 #include "nifti1.h"
@@ -1511,8 +1512,9 @@ unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, 
     int dim3to7 = 1;
     for (int i = 3; i < 8; i++)
         if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
-    int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
+    //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
     int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
+    int sliceBytes24 = sliceBytes8 * 3;
     unsigned char  slice24[ sliceBytes24 ];
     int sliceOffsetR = 0;
     for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
@@ -1768,7 +1770,11 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
 unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
     //printf("offset %d\n", dcm.imageStart);
     int dimX, dimY, bits, frames;
-    return decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
+    //clock_t start = clock();
+    //return decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
+    unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
+    //printf("JPEG %fms\n", ((double)(clock()-start))/1000);
+    return ret;
 }
                     
 unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
@@ -2470,6 +2476,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
         printf("Error: unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
         d.isValid = false;
     }
+    //printf("%d ----\n",d.imageStart);
     if (isVerbose) {
         printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated);

@@ -62,7 +62,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
     struct TDICOMdata  nii_readParRec (char * parname);
     //void reportMat(struct nifti_1_header h);
-
+    unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
     //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
     unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);
