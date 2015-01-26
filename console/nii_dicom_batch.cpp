@@ -66,6 +66,7 @@ void dropFilenameFromPath(char *path) { //
         path[dirPath - path] = 0; // please make sure there is enough space in TargetDirectory
 }
 
+
 void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
 {
     const char *filename = strrchr(path, '/'); //UNIX
@@ -1480,6 +1481,8 @@ bool isExt (char *file_name, const char* ext) {
     return false;
 } //isExt()
 
+
+
 /*int nii_readpic(char * fname, struct nifti_1_header *nhdr) {
     //https://github.com/jefferis/pic2nifti/blob/master/libpic2nifti.c
 #define BIORAD_HEADER_SIZE 76
@@ -1673,8 +1676,16 @@ int nii_loadDir (struct TDCMopts* opts) {
         return convert_foreign(*opts);
     }*/
     if (isFile && ((isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
-        strcpy(opts->indir, indir); //set to original file name, not path
-        return convert_parRec(*opts);
+        char pname[512], rname[512];
+        strcpy(pname,indir);
+        strcpy(rname,indir);
+        changeExt (pname, "PAR");
+        changeExt (rname, "REC");
+        if (is_fileNotDir(rname)  &&  is_fileNotDir(pname) ) {
+            strcpy(opts->indir, pname); //set to original file name, not path
+            return convert_parRec(*opts);
+        } else if (isExt(indir, ".par")) //Linux is case sensitive...
+            return convert_parRec(*opts);
     }
     getFileName(opts->indirParent, opts->indir);
     struct TSearchList nameList;

@@ -60,6 +60,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDICOMdata clear_dicom_data();
     unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h);
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
+    void changeExt (char *file_name, const char* ext);
     struct TDICOMdata  nii_readParRec (char * parname);
     //void reportMat(struct nifti_1_header h);
     unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);

@@ -1223,6 +1223,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
     }
     free (cols);
     fclose (fp);
+    d.manufacturer = kMANUFACTURER_PHILIPS ;
     d.isValid = true;
     d.isSigned = true;
     d.xyzDim[4] = slice/d.xyzDim[3];
