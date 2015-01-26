@@ -1,5 +1,7 @@
 //#define myNoSave //do not save images to disk
-
+#if defined(__APPLE__) && defined(__MACH__)
+//#include "nii_foreign.h"
+#endif
 #ifndef myDisableZLib
  #include <zlib.h>
  #ifndef myDisableTarGz 
@@ -1325,6 +1327,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2) {
     //returns true if d1 and d2 should be stacked together as a signle output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
+    if (d1.TE != d2.TE) return false;
     //printf("%g %g %g %g %g %g\n", d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6]);
     if (!isSameFloat(d1.orient[1], d2.orient[1]) || !isSameFloat(d1.orient[2], d2.orient[2]) ||  !isSameFloat(d1.orient[3], d2.orient[3]) ||
         !isSameFloat(d1.orient[4], d2.orient[4]) || !isSameFloat(d1.orient[5], d2.orient[5]) ||  !isSameFloat(d1.orient[6], d2.orient[6]) ) return false;
@@ -1334,7 +1337,45 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2) {
     return false;
 } //isSameSet()
 
-void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth) {
+/*
+#if defined(__APPLE__) && defined(__MACH__)
+void  convertForeign2Nii(char * fname, struct TDCMopts* opts) {//, struct TDCMopts opts) {
+
+    struct nifti_1_header niiHdr;
+    unsigned char * img =  nii_readForeignC(fname, &niiHdr, 0, 65535);
+    if (img == NULL) return;
+    char pth[1024] = {""};
+    if (strlen(opts->outdir) > 0) {
+        strcpy(pth, opts->outdir);
+        int w =access(pth,W_OK);
+        if (w != 0) {
+            if (getcwd(pth, sizeof(pth)) != NULL) {
+                w =access(pth,W_OK);
+                if (w != 0) {
+                    printf("Error: you do not have write permissions for the directory %s\n",opts->outdir);
+                    return;
+                }
+                printf("Warning: %s write permission denied. Saving to working directory %s \n", opts->outdir, pth);
+
+            }
+        }
+        char appendChar[2] = {"a"};
+        appendChar[0] = kPathSeparator;
+        if (pth[strlen(pth)-1] != kPathSeparator)
+            strcat (pth,appendChar);
+        char fn[1024] = {""};
+        getFileName(fn, fname);
+        strcat(pth,fn);
+    } else {
+        strcat(pth, fname);
+    }
+    printf("Converted foreign image '%s'\n",fname);
+    nii_saveNII(pth, niiHdr, img, *opts);
+    free(img);
+} //nii_createDummyFilename()
+#endif */
+
+void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth, struct TDCMopts* opts) {
     tinydir_dir dir;
     tinydir_open(&dir, path);
     while (dir.has_next) {
@@ -1347,7 +1388,7 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         strcat(filename,kFileSep);
         strcat(filename, file.name);
         if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.'))
-            searchDirForDICOM(filename, nameList, maxDepth, depth+1);
+            searchDirForDICOM(filename, nameList, maxDepth, depth+1, opts);
         else if (!file.is_reg) //ignore hidden files...
             ;
         else if (isDICOMfile(filename)) {
@@ -1359,6 +1400,9 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
             nameList->numItems++;
             //printf("dcm %lu %s \n",nameList->numItems, filename);
         } else {
+            #if defined(__APPLE__) && defined(__MACH__)
+            //convertForeign2Nii(filename, opts);
+            #endif
         #ifdef MY_DEBUG
             #ifdef myUseCOut
                 std::cout<<"Not a dicom"<< filename <<std::endl;
@@ -1639,7 +1683,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
         nameList.numItems = 0;
-        searchDirForDICOM(opts->indir, &nameList,  5,1);
+        searchDirForDICOM(opts->indir, &nameList,  5,1, opts);
         if (nameList.numItems <= nameList.maxItems)
             break;
         freeNameList(nameList);
