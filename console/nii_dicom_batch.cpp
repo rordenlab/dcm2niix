@@ -70,8 +70,10 @@ void dropFilenameFromPath(char *path) { //
 void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
 {
     const char *filename = strrchr(path, '/'); //UNIX
-    if (filename == 0)
+    if (filename == 0) {
        filename = strrchr(path, '\\'); //Windows
+       if (filename == NULL) filename = strrchr(path, ':'); //Windows
+     }
     //const char *filename = strrchr(path, kPathSeparator); //x
     if (filename == NULL) {//no path separator
         strcpy(pathParent,path);
@@ -798,6 +800,8 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 } //writeNiiGz()
 #endif
 
+
+
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
@@ -825,20 +829,19 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
         strcat(command, fname);
         strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
     	#if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
-    	PROCESS_INFORMATION ProcessInfo; //This is what we get as an [out] parameter
-    	STARTUPINFO StartupInfo; //This is an [in] parameter
-    	ZeroMemory(&StartupInfo, sizeof(StartupInfo));
-    	StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
-    	if(CreateProcess(NULL, command, NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL, NULL,&StartupInfo,&ProcessInfo)) { 
-        	WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
-        	CloseHandle(ProcessInfo.hThread);
-        	CloseHandle(ProcessInfo.hProcess);
-    	} else
-    	#ifdef myUseCOut
-    	std::cout<<"compression failed "<<command<<std::endl;
-		#else
-		printf("compression failed %s\n",command);
-    	#endif
+    		DWORD exitCode;
+   		PROCESS_INFORMATION ProcessInfo = {0};
+   		STARTUPINFO startupInfo= {0};
+   		startupInfo.cb = sizeof(startupInfo);
+    		
+    		//StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
+    		if(CreateProcess(NULL, command, NULL,NULL,FALSE,NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,NULL, NULL,&startupInfo,&ProcessInfo)) { 
+printf("compression --- %s\n",command);
+        		WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
+        		CloseHandle(ProcessInfo.hThread);
+        		CloseHandle(ProcessInfo.hProcess);
+    		} else
+    			printf("compression failed %s\n",command);
     	#else //if win else linux
         system(command);
         #endif //else linux
@@ -1648,6 +1651,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     #endif
 
     
+    
     char indir[512];
     strcpy(indir,opts->indir);
     bool isFile = is_fileNotDir(opts->indir);
@@ -1675,6 +1679,8 @@ int nii_loadDir (struct TDCMopts* opts) {
         strcpy(opts->indir, indir); //set to original file name, not path
         return convert_foreign(*opts);
     }*/
+    getFileName(opts->indirParent, opts->indir);
+    //printf("XXXXXXX %s\n XXX\n", opts->indirParent); return EXIT_FAILURE;
     if (isFile && ((isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         char pname[512], rname[512];
         strcpy(pname,indir);
@@ -1687,7 +1693,6 @@ int nii_loadDir (struct TDCMopts* opts) {
         } else if (isExt(indir, ".par")) //Linux is case sensitive...
             return convert_parRec(*opts);
     }
-    getFileName(opts->indirParent, opts->indir);
     struct TSearchList nameList;
     nameList.maxItems = 68000; //an arbitrary number: larger uses more memory, smaller is slower as two passes are required
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory

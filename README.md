@@ -16,7 +16,17 @@ Building command line version:
 
  This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following: 
 
-   g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -dead_strip -o dcm2niix -lz
+   g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz
+
+If you use the (osbsolete) MinGW on Windows
+
+g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -static-libgcc
+
+
+Or  for MinGW users who  "mingw-get install libz-dev"
+ g++ -O3 -s -DmyDisableOpenJPEG  -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -static-libgcc -lz
+
+
 
 if you do not have zlib,you can compile without it by defining "myDisableZLib ":
 
