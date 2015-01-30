@@ -800,8 +800,6 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 } //writeNiiGz()
 #endif
 
-
-
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
@@ -825,7 +823,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	char command[768];
     	strcpy(command, "\"" );
         strcat(command, opts.pigzname );
-        strcat(command, "\" \"");
+        strcat(command, "\" -n \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
         strcat(command, fname);
         strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
     	#if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
