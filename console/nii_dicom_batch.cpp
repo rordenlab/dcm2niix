@@ -944,8 +944,12 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
     // also validated with actual data...
     if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
         GNTtanPx = - GNTtanPx;
-    else //see GE examples from John Muschelli
-        if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx;
+    else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
+        GNTtanPx = - GNTtanPx; //do nothing
+    else if (manufacturer == kMANUFACTURER_GE)
+        ; //do nothing
+    else
+        if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
     //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
     if (hdr.datatype == DT_INT16) {
         short * im16 = ( short*) im;

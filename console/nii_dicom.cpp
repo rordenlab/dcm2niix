@@ -1775,7 +1775,7 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     //printf("JPEG %fms\n", ((double)(clock()-start))/1000);
     return ret;
 }
-                    
+ 
 unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
     //printf("50 offset %d\n", dcm.imageStart);
     if( access(imgname, F_OK ) == -1 ) {
