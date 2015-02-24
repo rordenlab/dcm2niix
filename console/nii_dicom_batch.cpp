@@ -1,12 +1,25 @@
 //#define myNoSave //do not save images to disk
+
+#ifdef _MSC_VER //libz not available for microsoft - use tinyz.c clone instead
+    #define tinyZ
+#else
+    #ifdef myDisableTinyZ
+   		#undef tinyZ
+    #else
+    	#define tinyZ
+    #endif
+#endif
+
 #if defined(__APPLE__) && defined(__MACH__)
 //#include "nii_foreign.h"
 #endif
 #ifndef myDisableZLib
- #include <zlib.h>
- #ifndef myDisableTarGz 
- // #include "untgz.h"
- #endif
+    #ifdef tinyZ
+        #include "tinyz.c" //single file clone of libz
+    #else
+        #include <zlib.h>
+    #endif
+
 #endif
 #ifdef myUseCOut
  #include <iostream>
@@ -26,7 +39,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
+
+
+#ifndef _MSC_VER
+	#include <unistd.h>
+#else
+	#  include <direct.h>
+	#  define getcwd _getcwd
+	#  define chdir _chrdir
+	#include "io.h"
+	#include <math.h>
+#endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
@@ -91,6 +114,14 @@ bool is_fileexists(const char * filename) {
     }
     return false;
 }
+
+#ifndef S_ISDIR
+#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
+#endif
+
+#ifndef S_ISREG
+#define S_ISREG(mode)  (((mode) & S_IFMT) == S_IFREG)
+#endif
 
 bool is_fileNotDir(const char* path) { //returns false if path is a folder; requires #include <sys/stat.h>
     struct stat buf;
@@ -421,6 +452,13 @@ bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],stru
     for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
         if (dcmList[indx0].CSA.dtiV[i][0] != dcmList[indx0].CSA.dtiV[0][0]) bValueVaries = true;
     if (!bValueVaries) {
+        bool bVecVaries = false;
+        for (int i = 1; i < numDti; i++) {//check if all bvalues match first volume
+            if (dcmList[indx0].CSA.dtiV[i][1] != dcmList[indx0].CSA.dtiV[0][1]) bVecVaries = true;
+            if (dcmList[indx0].CSA.dtiV[i][1] != dcmList[indx0].CSA.dtiV[0][1]) bVecVaries = true;
+            if (dcmList[indx0].CSA.dtiV[i][1] != dcmList[indx0].CSA.dtiV[0][1]) bVecVaries = true;
+        }
+        if (!bVecVaries) return false;
         for (int i = 1; i < numDti; i++)
                 printf("bxyz %g %g %g %g\n",dcmList[indx0].CSA.dtiV[i][0],dcmList[indx0].CSA.dtiV[i][1],dcmList[indx0].CSA.dtiV[i][2],dcmList[indx0].CSA.dtiV[i][3]);
         printf("Error: only one B-value reported for all volumes: %g\n",dcmList[indx0].CSA.dtiV[0][0]);
@@ -515,7 +553,7 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
         return d1.xyzMM[3];
     float tilt = 1.0;
     if (d1.gantryTilt != 0)
-        tilt = cos(d1.gantryTilt  * M_PI/180); //for CT scans with gantry tilt, we need to compute distance between slices, not distance along bed
+        tilt = (float) cos(d1.gantryTilt  * M_PI/180); //for CT scans with gantry tilt, we need to compute distance between slices, not distance along bed
     return tilt * sqrt( sqr(d1.patientPosition[1]-d2.patientPosition[1])+
                 sqr(d1.patientPosition[2]-d2.patientPosition[2])+
                 sqr(d1.patientPosition[3]-d2.patientPosition[3]));
@@ -524,7 +562,11 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
     //swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...
     int nConvert = d3 * d4;
+#ifdef _MSC_VER
+	TDCMsort * dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
+#else
     struct TDCMsort dcmSortIn[nConvert];
+#endif
     for (int i = 0; i < nConvert; i++) dcmSortIn[i] = dcmSort[i];
     int i = 0;
     for (int b = 0; b < d3; b++)
@@ -534,6 +576,9 @@ void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
             dcmSort[k] = dcmSortIn[i];
             i++;
         }
+#ifdef _MSC_VER
+	free(dcmSortIn);
+#endif
 } //swapDim3Dim4()
 
 bool intensityScaleVaries(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[]){
@@ -589,6 +634,10 @@ bool niiExists(const char*pathoutname) {
     return false;
 } //niiExists()
 
+#ifndef W_OK
+#define W_OK 2 /* write mode check */
+#endif
+
 int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts) {
     char pth[1024] = {""};
     if (strlen(opts.outdir) > 0) {
@@ -622,7 +671,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     }
     int start = 0;
     int pos = 0;
-    while (pos<strlen(inname)) {
+    while (pos < strlen(inname)) {
         if (inname[pos] == '%') {
             if (pos > start) {
                 strncpy(&newstr[0], &inname[0] + start, pos - start);
@@ -631,7 +680,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             }
             pos++; //extra increment: skip both % and following character
             char f = 'P';
-            if (pos<strlen(inname)) f = toupper(inname[pos]);
+            if (pos < strlen(inname)) f = toupper(inname[pos]);
             if (f == 'C')
                 strcat (outname,dcm.imageComments);
             if (f == 'F')
@@ -735,6 +784,17 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
 } //nii_createDummyFilename()
 
 #ifndef myDisableZLib
+
+#ifndef tinyZ
+unsigned long tz_compressBound(unsigned long source_len) {
+	return compressBound(source_len);
+}
+
+uint32_t tdefl_crc32(const uint8_t *ptr, size_t buf_len, uint32_t crc) {
+    return (uint32_t) crc32(crc, ptr, (unsigned int)buf_len);
+}
+#endif
+
 void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len) {
     //create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
     // in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
@@ -742,12 +802,11 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     strcpy (fname,baseName);
     strcat (fname,".nii.gz");
     unsigned long hdrPadBytes = sizeof(hdr) + 4; //348 byte header + 4 byte pad
-    unsigned long cmp_len = compressBound(src_len+hdrPadBytes);
+    unsigned long cmp_len = tz_compressBound(src_len+hdrPadBytes);
     unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
     z_stream strm;
-    uLong file_crc32 = crc32(0L, Z_NULL, 0);
-    //strm.adler = crc32(0L, Z_NULL, 0);
     strm.total_in = 0;
+    strm.total_out = 0;
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
@@ -757,18 +816,28 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     if (deflateInit(&strm, Z_DEFAULT_COMPRESSION)!= Z_OK) return;
     //add header
     unsigned char *pHdr = (unsigned char *)malloc(hdrPadBytes);
+    pHdr[hdrPadBytes-1] = 0; pHdr[hdrPadBytes-2] = 0; pHdr[hdrPadBytes-3] = 0; pHdr[hdrPadBytes-4] = 0;
     memcpy(pHdr,&hdr, sizeof(hdr));
     strm.avail_in = (unsigned int)hdrPadBytes; // size of input
-    strm.next_in = (Bytef *)pHdr; // input header
+	strm.next_in = (uint8_t *)pHdr; // input header -- TPX  strm.next_in = (Bytef *)pHdr; uint32_t
     deflate(&strm, Z_NO_FLUSH);
-    file_crc32 = crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
+    
     //add image
     strm.avail_in = (unsigned int)src_len; // size of input
-    strm.next_in = (Bytef *)src_buffer; // input image
+	strm.next_in = (uint8_t *)src_buffer; // input image -- TPX strm.next_in = (Bytef *)src_buffer;
     deflate(&strm, Z_FINISH); //Z_NO_FLUSH;
     //finish up
     deflateEnd(&strm);
-    file_crc32 = crc32(file_crc32, src_buffer, (unsigned int)src_len);
+//#ifdef tinyZ
+    uint32_t file_crc32 = tdefl_crc32(Z_NULL, 0, 0L);
+    file_crc32 = tdefl_crc32(pHdr, (unsigned int)hdrPadBytes, file_crc32);
+    file_crc32 = tdefl_crc32(src_buffer, (unsigned int)src_len, file_crc32);
+//#else
+//    uLong file_crc32 = crc32(0L, Z_NULL, 0);
+//    file_crc32 = crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
+//    file_crc32 = crc32(file_crc32, src_buffer, (unsigned int)src_len);
+//#endif
+    //printf("crc %lu %d %d %d %lu -> %lu \n", file_crc32, pCmp[0],pCmp[1], Z_DEFAULT_COMPRESSION, strm.total_in, strm.total_out ); //120 56 0x789C
     cmp_len = strm.total_out;
     if (cmp_len <= 0) return;
     FILE *fileGz = fopen(fname, "wb");
@@ -785,7 +854,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     fputc((char)0x00, fileGz); //XFL
     fputc((char)0xff, fileGz); //OS
     //write Z-compressed data
-    fwrite (&pCmp[2] , sizeof(char), cmp_len-6, fileGz); //-6 as LZ78 format has 2 bytes header and 4 bytes tail
+    fwrite (&pCmp[2] , sizeof(char), cmp_len-6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
     //write tail: write redundancy check and uncompressed size as bytes to ensure LITTLE-ENDIAN order
     fputc((unsigned char)(file_crc32), fileGz);
     fputc((unsigned char)(file_crc32 >> 8), fileGz);
@@ -797,6 +866,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     fputc((unsigned char)(strm.total_in >> 24), fileGz);
     fclose(fileGz);
     free(pCmp);
+    free(pHdr);
 } //writeNiiGz()
 #endif
 
@@ -804,7 +874,8 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
     #ifndef myDisableZLib
-        if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
+    if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
+    //if (true) {//TPX
         writeNiiGz (niiFilename, hdr,  im,imgsz);
         return EXIT_SUCCESS;
     }
@@ -823,7 +894,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	char command[768];
     	strcpy(command, "\"" );
         strcat(command, opts.pigzname );
-        strcat(command, "\" -n \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+        strcat(command, "\" -n -f \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
         strcat(command, fname);
         strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
     	#if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
@@ -831,10 +902,9 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
    		PROCESS_INFORMATION ProcessInfo = {0};
    		STARTUPINFO startupInfo= {0};
    		startupInfo.cb = sizeof(startupInfo);
-    		
     		//StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
     		if(CreateProcess(NULL, command, NULL,NULL,FALSE,NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,NULL, NULL,&startupInfo,&ProcessInfo)) { 
-printf("compression --- %s\n",command);
+                //printf("compression --- %s\n",command);
         		WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
         		CloseHandle(ProcessInfo.hThread);
         		CloseHandle(ProcessInfo.hProcess);
@@ -866,7 +936,8 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     size_t pos = 0;
     char fname[2048] = {""};
     char zeroPad[1024] = {""};
-    int zeroPadLen = (1 + log10(nVol));
+	double fnVol = nVol;
+	int zeroPadLen = (1 + log10( fnVol));
     sprintf(zeroPad,"%%s_%%0%dd",zeroPadLen);
     for (int i = 1; i <= nVol; i++) {
         sprintf(fname,zeroPad,niiFilename,i);
@@ -875,8 +946,6 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     }
     return EXIT_SUCCESS;
 } //nii_saveNII3D
-
-
 
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
     //default NIfTI 16-bit is signed, set to unusual 16-bit unsigned if required...
@@ -1042,7 +1111,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
             mn = sliceMMarray[i] - sliceMMarray[i-1];
     if (mn <= 0.0f) return EXIT_FAILURE;
     int slices = hdr.dim[3];
-    slices = ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    slices = (int)ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
     if (slices > (hdr.dim[3] * 2)) {
         slices = 2 * hdr.dim[3];
         mn = (sliceMMarray[hdr.dim[3]-1]) / (slices-1);
@@ -1076,7 +1145,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
             float mmLo = sliceMMarray[sLo];
             sLo = sLo * nVox2D;
             sHi = sHi * nVox2D;
-            if ((mmHi == mmLo) or (sliceXmm > mmHi)) { //select only from upper slice
+            if ((mmHi == mmLo) || (sliceXmm > mmHi)) { //select only from upper slice TPX
                 //for (int v=0; v < nVox2D; v++)
                 //    imX16[sliceXi+v] = im16[sHi+v];
                 memcpy(&imX16[sliceXi], &im16[sHi], nVox2D* sizeof(unsigned short)); //memcpy( dest, src, bytes)
@@ -1104,7 +1173,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
             float mmLo = sliceMMarray[sLo];
             sLo = sLo * nVox2D;
             sHi = sHi * nVox2D;
-            if ((mmHi == mmLo) or (sliceXmm > mmHi)) { //select only from upper slice
+            if ((mmHi == mmLo) || (sliceXmm > mmHi)) { //select only from upper slice TPX
                 memcpy(&imX[sliceXi], &im[sHi], nVox2D); //memcpy( dest, src, bytes)
             } else {
                 float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
@@ -1158,17 +1227,20 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 nConvert = siemensCtKludge(nConvert, dcmSort,dcmList);
             }
             if ((nAcq == 1 ) && (dcmList[indx0].locationsInAcquisition > 0)) nAcq = nConvert/dcmList[indx0].locationsInAcquisition;
+            
             if (nAcq < 2 ) {
                 nAcq = 0;
                 for (int i = 0; i < nConvert; i++)
                     if (isSamePosition(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx])) nAcq++;
             }
+            
             /*int nImg = 1+abs( dcmList[dcmSort[nConvert-1].indx].imageNum-dcmList[dcmSort[0].indx].imageNum);
             if (((nConvert/nAcq) > 1) && ((nConvert%nAcq)==0) && (nImg == nConvert) && (dcmList[dcmSort[0].indx].locationsInAcquisition == 0) ) {
                 printf(" stacking %d acquisitions as a single volume\n", nAcq);
                 //some Siemens CT scans use multiple acquisitions for a single volume, perhaps also check that slice position does not repeat?
                 hdr0.dim[3] = nConvert;
             } else*/ if ( (nAcq > 1) && ((nConvert/nAcq) > 1) && ((nConvert%nAcq)==0) ) {
+                
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
@@ -1180,10 +1252,11 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             }
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             bool dxVaries = false;
+            for (int i = 1; i < nConvert; i++)
+                if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
+                    dxVaries = true;
             if (hdr0.dim[4] < 2) {
-                for (int i = 1; i < nConvert; i++)
-                    if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
-                        dxVaries = true;
+
                 if (dxVaries) {
                     sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
                     sliceMMarray[0] = 0.0f;
@@ -1724,7 +1797,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     fprintf(stdout, "STDOUT PIPE TEST\n");
     std::cout << "Found "<< nameList.numItems <<" DICOM images" <<std::endl;
     #else
-    printf( "Found %lu DICOM images\n", nameList.numItems);
+    printf( "Found %lu DICOM image(s)\n", nameList.numItems);
     #endif
     // struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
@@ -1733,29 +1806,37 @@ int nii_loadDir (struct TDCMopts* opts) {
     //3: stack DICOMs with the same Series
     int nConvertTotal = 0;
     for (int i = 0; i < nDcm; i++ ) {
-        if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
-            int nConvert = 0;
-            for (int j = i; j < nDcm; j++)
-                if (isSameSet(dcmList[i],dcmList[j]) )
-                    nConvert ++;
-            if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
-            struct TDCMsort dcmSort[nConvert];
-            nConvert = 0;
-            for (int j = i; j < nDcm; j++)
-                if (isSameSet(dcmList[i],dcmList[j]) ) {
-                    dcmSort[nConvert].indx = j;
-                    dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32)+ dcmList[j].imageNum;
-                    dcmList[j].converted2NII = 1;
-                    nConvert ++;
-                }
-            qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
-            if (opts->isVerbose)
-                nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
-            else
-                nConvert = removeDuplicates(nConvert, dcmSort);
-            nConvertTotal += nConvert;
-            saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts);
-        }//convert all images of this series
+		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
+			int nConvert = 0;
+			for (int j = i; j < nDcm; j++)
+				if (isSameSet(dcmList[i], dcmList[j]))
+					nConvert++;
+			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
+
+#ifdef _MSC_VER
+			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
+#else
+			struct TDCMsort dcmSort[nConvert];
+#endif
+			nConvert = 0;
+			for (int j = i; j < nDcm; j++)
+				if (isSameSet(dcmList[i], dcmList[j])) {
+					dcmSort[nConvert].indx = j;
+					dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32) + dcmList[j].imageNum;
+					dcmList[j].converted2NII = 1;
+					nConvert++;
+				}
+			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
+			if (opts->isVerbose)
+				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
+			else
+				nConvert = removeDuplicates(nConvert, dcmSort);
+			nConvertTotal += nConvert;
+			saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts);
+#ifdef _MSC_VER
+			free(dcmSort);
+#endif
+		}//convert all images of this series
     }
     free(dcmList);
     if (nConvertTotal == 0) {

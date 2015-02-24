@@ -1,7 +1,21 @@
 //#define MY_DEBUG
 #if defined(_WIN64) || defined(_WIN32)
-#include <windows.h> //write to registry
+	#include <windows.h> //write to registry
+#else
+	#include <unistd.h>
 #endif
+#ifdef _MSC_VER
+#  include <direct.h>
+#  define getcwd _getcwd
+#  define chdir _chrdir
+#include "io.h"
+#include <math.h>
+#define snprintf _snprintf 
+#define vsnprintf _vsnprintf 
+#define strcasecmp _stricmp 
+#define strncasecmp _strnicmp 
+#endif
+
 //#include <time.h> //clock()
 #include "jpg_0XC3.h"
 #include "ujpeg.h"
@@ -15,7 +29,6 @@
 #include <math.h>
 #include <string.h>
 #include <stddef.h>
-#include <unistd.h>
 #include <float.h>
 #include <stdint.h>
 #include "nifti1_io_core.h"
@@ -376,7 +389,7 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     if (isnan(pos) && ( !isnan(d.lastScanLoc)) )
         pos = d.lastScanLoc;
     vec4 x;
-    x.v[0] = 0; x.v[1] = 0; x.v[2]=h->dim[3]-1; x.v[3] = 1;
+    x.v[0] = 0.0; x.v[1] = 0.0; x.v[2]=(float)(h->dim[3]-1.0); x.v[3] = 1.0;
     vec4 pos1v = nifti_vect44mat44_mul(x, *R);
     float pos1 = pos1v.v[iSL-1];//-1 as C indexed from 0
     bool flip = false;
@@ -465,12 +478,12 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
     //reportMat44((char*)"out",*R);
     if (d.CSA.mosaicSlices > 1) {
-        double nRowCol = ceil(sqrt(d.CSA.mosaicSlices));
+        double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
         double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
         double lFactorY = (d.xyzDim[2] -(d.xyzDim[2]/nRowCol)   )/2.0;
-        Q44.m[0][3] =(Q44.m[0][0]*lFactorX)+(Q44.m[0][1]*lFactorY)+Q44.m[0][3];
-        Q44.m[1][3] =(Q44.m[1][0]*lFactorX)+(Q44.m[1][1]*lFactorY)+Q44.m[1][3];
-        Q44.m[2][3] =(Q44.m[2][0]*lFactorX)+(Q44.m[2][1]*lFactorY)+Q44.m[2][3];
+        Q44.m[0][3] =(float)((Q44.m[0][0]*lFactorX)+(Q44.m[0][1]*lFactorY)+Q44.m[0][3]);
+		Q44.m[1][3] = (float)((Q44.m[1][0] * lFactorX) + (Q44.m[1][1] * lFactorY) + Q44.m[1][3]);
+		Q44.m[2][3] = (float)((Q44.m[2][0] * lFactorX) + (Q44.m[2][1] * lFactorY) + Q44.m[2][3]);
         /* #ifdef obsolete_mosaic_flip
          double val = d.xyzDim[2]/nRowCol; //obsolete!!!
          //Q44 now equals 'dicom_to_patient' in spm_dicom_convert
@@ -511,6 +524,38 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     setQSForm(h,Q44);
     return sliceDir;
 } //headerDcm2NiiSForm()
+
+#ifdef _MSC_VER
+/*
+#define snprintf c99_snprintf
+
+inline int c99_vsnprintf(char* str, size_t size, const char* format, va_list ap)
+{
+	int count = -1;
+
+	if (size != 0)
+		count = _vsnprintf_s(str, size, _TRUNCATE, format, ap);
+	if (count == -1)
+		count = _vscprintf(format, ap);
+
+	return count;
+}
+
+inline int c99_snprintf(char* str, size_t size, const char* format, ...)
+{
+	int count;
+	va_list ap;
+
+	va_start(ap, format);
+	count = c99_vsnprintf(str, size, format, ap);
+	va_end(ap);
+
+	return count;
+}
+*/
+
+
+#endif // _MSC_VER
 
 int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h) { //final pass after de-mosaic
     char txt[1024] = {""};
@@ -613,7 +658,7 @@ void dcmStrDigitsOnly(char* lStr) {
     //e.g. change "H11" to " 11"
     size_t len = strlen(lStr);
     if (len < 1) return;
-    for (int i = 0; i < len; i++)
+    for (int i = 0; i < (int) len; i++)
         if (!isdigit(lStr[i]) )
             lStr[i] = ' ';
     
@@ -624,7 +669,11 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
     //lLength = (int)strlen(test);
 
     if (lLength < 1) return;
-    char cString[lLength+1];
+#ifdef _MSC_VER
+	char * cString = (char *)malloc(sizeof(char) * (lLength + 1));
+#else
+	char cString[lLength + 1];
+#endif
     cString[lLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lLength);
     //memcpy(cString, test, lLength);
@@ -671,6 +720,9 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
     len = dcmStrLen(len);
     memcpy(lOut,cString,len-1);
     lOut[len-1] = 0;
+#ifdef _MSC_VER
+	free(cString);
+#endif
 } //dcmStr()
 
 float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
@@ -706,41 +758,74 @@ int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //rea
 } //dcmInt()
 
 int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
-    char cString[lByteLength+1];
+#ifdef _MSC_VER
+	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
+#else
+	char cString[lByteLength + 1];
+#endif
+	
     cString[lByteLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
     //printf(" --> *%s* %s%s\n",cString, &lBuffer[0],&lBuffer[1]);
-    return atoi(cString);
+    int ret = atoi(cString);
+#ifdef _MSC_VER
+	free(cString);
+#endif
+	return ret;
 } //dcmStrInt()
 
 int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
     if (lByteLength < 2) return kMANUFACTURER_UNKNOWN;
-    char cString[lByteLength+1];
+#ifdef _MSC_VER
+	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
+#else
+	char cString[lByteLength + 1];
+#endif
+	int ret = kMANUFACTURER_UNKNOWN;
     cString[lByteLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
     //printf("MANU %s\n",cString);
     if ((toupper(cString[0])== 'S') && (toupper(cString[1])== 'I'))
-        return kMANUFACTURER_SIEMENS;
+        ret = kMANUFACTURER_SIEMENS;
     if ((toupper(cString[0])== 'G') && (toupper(cString[1])== 'E'))
-        return kMANUFACTURER_GE;
+        ret = kMANUFACTURER_GE;
     if ((toupper(cString[0])== 'P') && (toupper(cString[1])== 'H'))
-        return kMANUFACTURER_PHILIPS;
+        ret = kMANUFACTURER_PHILIPS;
     if ((toupper(cString[0])== 'T') && (toupper(cString[1])== 'O'))
-        return kMANUFACTURER_TOSHIBA;
-    return kMANUFACTURER_UNKNOWN;
+        ret = kMANUFACTURER_TOSHIBA;
+#ifdef _MSC_VER
+	free(cString);
+#endif    
+	return ret;
 } //dcmStrManufacturer
 
-typedef struct __attribute__((packed)) {
-    char name[64]; //null-terminated
-    int32_t vm;
-    char vr[4]; //  possibly nul-term string
-    int32_t syngodt;//  ??
-    int32_t nitems;// number of items in CSA
-    int32_t xx;// maybe == 77 or 205
-} TCSAtag; //Siemens csa tag structure
-typedef struct __attribute__((packed)) {
-    int32_t xx1, xx2_Len, xx3_77, xx4;
-} TCSAitem; //Siemens csa item structure
+#ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...
+    #pragma pack(2)
+    typedef struct {
+        char name[64]; //null-terminated
+        int32_t vm;
+        char vr[4]; //  possibly nul-term string
+        int32_t syngodt;//  ??
+        int32_t nitems;// number of items in CSA
+        int32_t xx;// maybe == 77 or 205
+    } TCSAtag; //Siemens csa tag structure
+    typedef struct {
+        int32_t xx1, xx2_Len, xx3_77, xx4;
+    } TCSAitem; //Siemens csa item structure
+    #pragma pack()
+#else
+    typedef struct __attribute__((packed)) {
+        char name[64]; //null-terminated
+        int32_t vm;
+        char vr[4]; //  possibly nul-term string
+        int32_t syngodt;//  ??
+        int32_t nitems;// number of items in CSA
+        int32_t xx;// maybe == 77 or 205
+    } TCSAtag; //Siemens csa tag structure
+    typedef struct __attribute__((packed)) {
+        int32_t xx1, xx2_Len, xx3_77, xx4;
+    } TCSAitem; //Siemens csa item structure
+#endif 
 
 float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *ItemsOK) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
@@ -754,12 +839,20 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
         memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
         lPos +=sizeof(itemCSA);
         if (itemCSA.xx2_Len > 0) {
-            char cString[itemCSA.xx2_Len];
-            memcpy(&cString, &buff[lPos], sizeof(cString));
+#ifdef _MSC_VER
+			char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
+#else
+			char cString[itemCSA.xx2_Len];
+#endif
+            memcpy(cString, &buff[lPos], sizeof(cString)); //TPX memcpy(&cString, &buff[lPos], sizeof(cString));
             lPos += ((itemCSA.xx2_Len +3)/4)*4;
             //printf(" %d item length %d = %s\n",lI, itemCSA.xx2_Len, cString);
-            Floats[lI] = atof(cString);
+            Floats[lI] = (float) atof(cString);
             *ItemsOK = lI; //some sequences have store empty items
+
+#ifdef _MSC_VER
+			free(cString);
+#endif
         }
     } //for each item
     return Floats[1];
@@ -784,7 +877,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
         //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         if (tagCSA.nitems > 0) {
             if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
-                CSA->mosaicSlices = round(csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
+                CSA->mosaicSlices = (int) round(csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             else if (strcmp(tagCSA.name, "B_value") == 0) {
                 CSA->dtiV[0][0] = csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK);
                 CSA->numDti = 1; //triggered by b-value, as B0 images do not have DiffusionGradientDirection tag
@@ -808,20 +901,24 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
-                float sliceTimes[tagCSA.nitems+1];
+#ifdef _MSC_VER
+				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
+#else
+				float sliceTimes[tagCSA.nitems + 1];
+#endif
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
                 float minTimeIndex, minTimeValue, timeValue1;
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
                 minTimeIndex = 1;
                 minTimeValue= sliceTimes[1];
-                for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-                    if (sliceTimes[z] < minTimeValue) {
-                        minTimeValue = sliceTimes[z];
-                        minTimeIndex = z;
-                    }
-                    if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
-                }
+				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
+					if (sliceTimes[z] < minTimeValue) {
+						minTimeValue = sliceTimes[z];
+						minTimeIndex = (float) z;
+					}
+					if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
+				}
                 if (minTimeIndex == 2)
                     CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
                 else if (minTimeIndex == (itemsOK-1))
@@ -842,19 +939,13 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
                      */
                     printf("Warning: unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
                 }
+#ifdef _MSC_VER
+				free(sliceTimes);
+#endif
             } else if (strcmp(tagCSA.name, "ProtocolSliceNumber") == 0)
-                CSA->protocolSliceNumber1 = round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
+                CSA->protocolSliceNumber1 = (int) round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             else if (strcmp(tagCSA.name, "PhaseEncodingDirectionPositive") == 0)
-                CSA->phaseEncodingDirectionPositive = round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
-            /*if (strcmp(tagCSA.name, "SlicePosition_PCS") == 0) {
-                csaMultiFloat (&buff[lPos], tagCSA.nitems, lFloats, &itemsOK);
-                for (int k = 1; k <= tagCSA.nitems; k++)
-                    printf("PCS %d = %f\n",k, lFloats[k]);
-             }
-            else {
-             printf("unused CSA tag %s with %d items\n",tagCSA.name, tagCSA.nitems);
-             }*/
-            //printf("CSA tag %s with %d items\n",tagCSA.name, tagCSA.nitems);
+                CSA->phaseEncodingDirectionPositive = (int) round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             for (int lI = 1; lI <= tagCSA.nitems; lI++) {
                 memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
                 lPos +=sizeof(itemCSA);
@@ -868,7 +959,11 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
 void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
     if ((lnFloats < 1) || (lByteLength < 1)) return;
-    char cString[lByteLength+1];
+#ifdef _MSC_VER
+	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
+#else
+	char cString[lByteLength + 1];
+#endif
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
     cString[lByteLength] = 0; //null terminate
     char *temp=( char *)malloc(lByteLength+1);
@@ -882,20 +977,31 @@ void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloat
             //printf("dcmMultiFloat %s\n",temp);
             if (f < lnFloats) {
                 f ++;
-                lFloats[f] = atof(temp);
+                lFloats[f] = (float) atof(temp);
                 //printf("%d == %f\n", f, atof(temp));
             } //if f <= nFloats
             lStart = i+1;
         } //if isOK
     }  //for i to length
     free(temp);
+#ifdef _MSC_VER
+	free(cString);
+#endif
 } //dcmMultiFloat()
 
 float dcmStrFloat (int lByteLength, unsigned char lBuffer[]) { //read float stored as a string
-    char cString[lByteLength+1];
+#ifdef _MSC_VER
+	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
+#else
+	char cString[lByteLength + 1];
+#endif
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
     cString[lByteLength] = 0; //null terminate
-    return atof(cString);
+    float ret = (float) atof(cString);
+#ifdef _MSC_VER
+	free(cString);
+#endif
+	return ret;
 } //dcmStrFloat()
 
 int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
@@ -943,7 +1049,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     h->magic[1]='+';
     h->magic[2]='1';
     h->magic[3]='\0';
-    h->vox_offset = d.imageStart;
+    h->vox_offset = (float) d.imageStart;
     h->bitpix = d.bitsAllocated * d.samplesPerPixel;
     h->pixdim[1] = d.xyzMM[1];
     h->pixdim[2] = d.xyzMM[2];
@@ -966,9 +1072,9 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     h->srow_x[0] = -1;
     h->srow_y[2] = 1;
     h->srow_z[1] = -1;
-    h->srow_x[3] =  (h->dim[1] /2);
-    h->srow_y[3] = -(h->dim[3] /2);
-    h->srow_z[3] =  (h->dim[2] /2);
+	h->srow_x[3] = ((float) h->dim[1] / 2);
+	h->srow_y[3] = -((float)h->dim[3] / 2);
+	h->srow_z[3] = ((float)h->dim[2] / 2);
     h->qform_code = NIFTI_XFORM_UNKNOWN;
     h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
     h->toffset = 0;
@@ -1074,7 +1180,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
             if (strcmp(Comment[1], "TRYOUT") == 0) {
                 sscanf(buff, "# %s %s %s %s %s %s V%s\n", Comment[0], Comment[1], Comment[2], Comment[3]
                        ,Comment[4], Comment[5],Comment[6]);
-                parVers = (atof(Comment[6])*10); //4.2 = 42 etc
+                parVers = (int)round(atof(Comment[6])*10); //4.2 = 42 etc
                 if (parVers < 40) {
 #ifdef myUseCOut
                     std::cout<<"This software is unable to convert ancient PAR files: please use legacy dcm2nii" <<std::endl;
@@ -1102,7 +1208,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
                 d.seriesNum = d.acquNum;
             }
             if ((strcmp(Comment[0], "Repetition") == 0) && (strcmp(Comment[1], "time") == 0))
-                d.TR = atof(Comment[4]);
+                d.TR = (float) atof(Comment[4]);
             if ((strcmp(Comment[0], "Patient") == 0) && (strcmp(Comment[1], "name") == 0)) {
                 strcpy(d.patientName, Comment[3]);
                 strcat(d.patientName, Comment[4]);
@@ -1127,9 +1233,9 @@ struct TDICOMdata  nii_readParRec (char * parname) {
             }
             if ((strcmp(Comment[0], "Off") == 0) && (strcmp(Comment[1], "Centre") == 0)) {
                 //Off Centre midslice(ap,fh,rl) [mm]
-                d.stackOffcentre[2] = atof(Comment[5]);
-                d.stackOffcentre[3] = atof(Comment[6]);
-                d.stackOffcentre[1] = atof(Comment[7]);
+                d.stackOffcentre[2] = (float) atof(Comment[5]);
+				d.stackOffcentre[3] = (float) atof(Comment[6]);
+				d.stackOffcentre[1] = (float) atof(Comment[7]);
             }
             if ((strcmp(Comment[0], "Patient") == 0) && (strcmp(Comment[1], "position") == 0)) {
                 //Off Centre midslice(ap,fh,rl) [mm]
@@ -1164,8 +1270,8 @@ struct TDICOMdata  nii_readParRec (char * parname) {
         if (slice == 1) {
             //for (int i = 0; i < nCols; i++)
             //    cols1[i] = cols[i]; //store first slice to see if dimensions or intensity scale varies between slices
-            d.xyzDim[1] = cols[kXdim];
-            d.xyzDim[2] = cols[kYdim];
+            d.xyzDim[1] = (int) cols[kXdim];
+			d.xyzDim[2] = (int) cols[kYdim];
             d.xyzMM[1] = cols[kXmm];
             d.xyzMM[2] = cols[kYmm];
             d.xyzMM[3] = cols[kThickmm] + cols[kGapmm];
@@ -1175,10 +1281,10 @@ struct TDICOMdata  nii_readParRec (char * parname) {
             d.angulation[1] = cols[kAngulationRLs];
             d.angulation[2] = cols[kAngulationAPs];
             d.angulation[3] = cols[kAngulationFHs];
-            d.sliceOrient = cols[kSliceOrients];
+			d.sliceOrient = (int) cols[kSliceOrients];
             d.TE = cols[kTEcho];
-            d.bitsAllocated = cols[kBitsPerVoxel];
-            d.bitsStored = cols[kBitsPerVoxel];
+			d.bitsAllocated = (int) cols[kBitsPerVoxel];
+			d.bitsStored = (int) cols[kBitsPerVoxel];
             d.intenIntercept = cols[kRI];
             d.intenScale = cols[kRS];
         } else {
@@ -1201,7 +1307,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kGradientNumber] > 0) {
-            int dir = cols[kGradientNumber];
+			int dir = (int) cols[kGradientNumber];
             if ((cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
                 if (d.CSA.dtiV[dir-1][0] >= 0) dir = dir + 1; //Philips often stores an ADC map along with B0 and weighted images, unfortunately they give it the same kGradientNumber as the B0! (seen in PAR V4.2)
                 //the logic here is that IF the gradient was previously used we increment the gradient number. This should provide compatibility when Philips fixes this bug
@@ -1250,7 +1356,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
             //see Xiangrui Li 's dicm2nii (also BSD license)
             // http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
             // Rotation order and signs are figured out by try and err, not 100% sure
-            float d2r = M_PI/180;
+            float d2r = (float) (M_PI/180.0);
             vec3 ca = setVec3(cos(d.angulation[1]*d2r),cos(d.angulation[2]*d2r),cos(d.angulation[3]*d2r));
             vec3 sa = setVec3(sin(d.angulation[1]*d2r),sin(d.angulation[2]*d2r),sin(d.angulation[3]*d2r));
             mat33 rx,ry,rz;
@@ -1292,7 +1398,7 @@ struct TDICOMdata  nii_readParRec (char * parname) {
     eye= nifti_mat44_inverse( eye ); //we wish to compute R/eye, so compute invEye and calculate R*invEye
     R44= nifti_mat44_mul( R44 , eye );
     vec4 y;
-    y.v[0]=0.0f; y.v[1]=0.0f; y.v[2]=d.xyzDim[3]-1; y.v[3]=1.0f;
+    y.v[0]=0.0f; y.v[1]=0.0f; y.v[2]=(float) d.xyzDim[3]-1.0f; y.v[3]=1.0f;
     y= nifti_vect44mat44_mul(y, R44 );
     int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
     if (d.sliceOrient == kSliceOrientSag) iOri = 0; //for sagittal, slices are 1st dimension (i)
@@ -1335,7 +1441,7 @@ unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, i
     if (nMosaicSlices < 2) return inImg;
     //Byte inImg[ [img length] ];
     //[img getBytes:&inImg length:[img length]];
-    int nRowCol = ceil(sqrt(nMosaicSlices));
+    int nRowCol = (int) ceil(sqrt((double) nMosaicSlices));
     int colBytes = hdr->dim[1]/nRowCol * hdr->bitpix/8;
     int lineBytes = hdr->dim[1] * hdr->bitpix/8;
     int rowBytes = hdr->dim[1] * hdr->dim[2]/nRowCol * hdr->bitpix/8;
@@ -1393,7 +1499,11 @@ unsigned char * nii_flipImgY(unsigned char* bImg, struct nifti_1_header *hdr){
         lineBytes = hdr->dim[1];
         dim3to7 = dim3to7 * 3;
     } //rgb data saved planar (RRR..RGGGG..GBBB..B
-    unsigned char line[lineBytes];
+#ifdef _MSC_VER
+	unsigned char * line = (unsigned char *)malloc(sizeof(unsigned char) * (lineBytes));
+#else
+	unsigned char line[lineBytes];
+#endif
     size_t sliceBytes = hdr->dim[2] * lineBytes;
     int halfY = hdr->dim[2] / 2; //note truncated toward zero, so halfY=2 regardless of 4 or 5 columns
     for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
@@ -1401,13 +1511,16 @@ unsigned char * nii_flipImgY(unsigned char* bImg, struct nifti_1_header *hdr){
         size_t slTop = (((size_t)sl+1)*sliceBytes)-lineBytes;
         for (int y = 0; y < halfY; y++) {
             //swap order of lines
-            memcpy(&line, &bImg[slBottom], lineBytes);
+            memcpy(line, &bImg[slBottom], lineBytes);//memcpy(&line, &bImg[slBottom], lineBytes);
             memcpy(&bImg[slBottom], &bImg[slTop], lineBytes);
-            memcpy(&bImg[slTop], &line, lineBytes);
+            memcpy(&bImg[slTop], line, lineBytes);//tpx memcpy(&bImg[slTop], &line, lineBytes);
             slTop -= lineBytes;
             slBottom += lineBytes;
         } //for y
     } //for each slice
+#ifdef _MSC_VER
+	free(line);
+#endif
     return bImg;
 } // nii_flipImgY()
 
@@ -1420,20 +1533,26 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
         if (hdr->dim[i] > 1) dim4to7 = dim4to7 * hdr->dim[i];
     int sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
     long long volBytes = sliceBytes * hdr->dim[3];
-    unsigned char slice[sliceBytes];
-    
+#ifdef _MSC_VER
+	unsigned char * slice = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes));
+#else
+	unsigned char slice[sliceBytes];
+#endif
     for (int vol = 0; vol < dim4to7; vol++) { //for each 2D slice
         long long slBottom = vol*volBytes;
         long long slTop = ((vol+1)*volBytes)-sliceBytes;
         for (int z = 0; z < halfZ; z++) {
             //swap order of lines
-            memcpy(&slice, &bImg[slBottom], sliceBytes);
+            memcpy(slice, &bImg[slBottom], sliceBytes); //TPX memcpy(&slice, &bImg[slBottom], sliceBytes);
             memcpy(&bImg[slBottom], &bImg[slTop], sliceBytes);
-            memcpy(&bImg[slTop], &slice, sliceBytes);
+            memcpy(&bImg[slTop], slice, sliceBytes); //TPX
             slTop -= sliceBytes;
             slBottom += sliceBytes;
         } //for Z
     } //for each volume
+#ifdef _MSC_VER
+	free(slice);
+#endif
     return bImg;
 } // nii_flipImgZ()
 
@@ -1447,7 +1566,7 @@ unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h){
     LOAD_MAT44(Q44,h->srow_x[0],h->srow_x[1],h->srow_x[2],h->srow_x[3],
                h->srow_y[0],h->srow_y[1],h->srow_y[2],h->srow_y[3],
                h->srow_z[0],h->srow_z[1],h->srow_z[2],h->srow_z[3]);
-    vec4 v= setVec4(0,0,h->dim[3]-1);
+    vec4 v=  setVec4(0.0f,0.0f,(float) h->dim[3]-1.0f);
     v = nifti_vect44mat44_mul(v, Q44); //after flip this voxel will be the origin
     mat33 mFlipZ;
     LOAD_MAT33(mFlipZ,1.0f, 0.0f, 0.0f, 0.0f,1.0f,0.0f, 0.0f,0.0f,-1.0f);
@@ -1469,7 +1588,7 @@ unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h){
     LOAD_MAT44(Q44,h->srow_x[0],h->srow_x[1],h->srow_x[2],h->srow_x[3],
                h->srow_y[0],h->srow_y[1],h->srow_y[2],h->srow_y[3],
                h->srow_z[0],h->srow_z[1],h->srow_z[2],h->srow_z[3]);
-    vec4 v= setVec4(0,h->dim[2]-1,0);
+    vec4 v= setVec4(0,(float) h->dim[2]-1,0);
     v = nifti_vect44mat44_mul(v, Q44); //after flip this voxel will be the origin
     mat33 mFlipY;
     LOAD_MAT33(mFlipY,1.0f, 0.0f, 0.0f, 0.0f,-1.0f,0.0f, 0.0f,0.0f,1.0f);
@@ -1496,7 +1615,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
         printf("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
-	fseek(file, hdr.vox_offset, SEEK_SET);
+	fseek(file, (long) hdr.vox_offset, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
 	fread(bImg, imgsz, 1, file);
 	fclose(file);
@@ -1514,10 +1633,15 @@ unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, 
     //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
     int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
     int sliceBytes24 = sliceBytes8 * 3;
-    unsigned char  slice24[ sliceBytes24 ];
+    
+#ifdef _MSC_VER
+	unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
+#else
+	unsigned char  slice24[ sliceBytes24 ];
+#endif
     int sliceOffsetR = 0;
     for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
-        memcpy(&slice24, &bImg[sliceOffsetR], sliceBytes24);
+        memcpy(slice24, &bImg[sliceOffsetR], sliceBytes24); //TPX memcpy(&slice24, &bImg[sliceOffsetR], sliceBytes24);
         int sliceOffsetG = sliceOffsetR + sliceBytes8;
         int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
         int i = 0;
@@ -1533,6 +1657,9 @@ unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, 
         }
         sliceOffsetR += sliceBytes24;
     } //for each slice
+#ifdef _MSC_VER
+	free(slice24);
+#endif
     return bImg;
 } //nii_rgb2Planar()
 
@@ -1561,7 +1688,7 @@ unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr){
     } else if (hdr->datatype == DT_INT32) {
         int32_t * img32i = (int32_t*) img;
         for (int i=0; i < nVox; i++)
-            img32[i] = img32i[i];
+            img32[i] = (float) img32i[i];
     }
     free (img); //release previous image
     for (int i=0; i < nVox; i++)
@@ -1600,7 +1727,7 @@ unsigned char * nii_XYTZ_XYZT(unsigned char* bImg, struct nifti_1_header *hdr, i
     
     uint64_t imgSz = nii_ImgBytes(*hdr);
     //this uses a lot of RAM, someday this could be done in place...
-    unsigned char *outImg = (unsigned char *)malloc(imgSz);
+    unsigned char *outImg = (unsigned char *)malloc( imgSz);
     //memcpy(&tempImg[0], &bImg[0], imgSz);
     uint64_t origPos = 0;
     uint64_t Pos = 0; //
@@ -1776,6 +1903,10 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     return ret;
 }
  
+#ifndef F_OK
+#define F_OK 0 /* existence check */
+#endif
+
 unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
     //printf("50 offset %d\n", dcm.imageStart);
     if( access(imgname, F_OK ) == -1 ) {
@@ -1867,9 +1998,10 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 } //nii_loadImgXL()
                     
 struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
-    struct TDICOMdata d = clear_dicom_data();
+	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
+	
     struct stat s;
     if( stat(fname,&s) == 0 ) {
         if( !(s.st_mode & S_IFREG) ){
@@ -1927,6 +2059,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
+#define  kSequenceName 0x0018+(0x0024 << 16)
 #define  kZThick  0x0018+(0x0050 << 16 )
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
@@ -2165,8 +2298,8 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 break;
             }
             case 	kProtocolName : {
-                if (strlen(d.protocolName) < 1) //GE uses a generic session name here: do not overwrite kProtocolNameGE
-                    dcmStr (lLength, &buffer[lPos], d.protocolName);
+                if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
+                    dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
             case 	kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
@@ -2288,7 +2421,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
             case 	kZThick :
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-                
             case 	kCoilSiemens : {
                 if (d.manufacturer == kMANUFACTURER_SIEMENS) {
                     //see if image from single coil "H12" or an array "HEA;HEP"
@@ -2317,6 +2449,10 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
             case	kMRAcquisitionType:
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
                 break;
+            case kSequenceName : {
+                if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
+                    dcmStr (lLength, &buffer[lPos], d.protocolName);
+            }
             case	kMRAcquisitionTypePhilips: //kMRAcquisitionType
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
                 break;

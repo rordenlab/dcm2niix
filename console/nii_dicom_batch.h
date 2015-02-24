@@ -21,6 +21,7 @@ extern "C" {
     };
     void saveIniFile (struct TDCMopts opts);
     void readIniFile (struct TDCMopts *opts, const char * argv[]);
+    int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts);
     //void readIniFile (struct TDCMopts *opts);
     int nii_loadDir (struct TDCMopts *opts) ;
     //int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts);

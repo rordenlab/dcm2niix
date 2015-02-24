@@ -7,9 +7,10 @@
 #include <string.h>
 #include <stddef.h>
 #include <float.h>
-#include <unistd.h>
 #include <stdio.h>
-
+#ifndef _MSC_VER
+#include <unistd.h>
+#endif
 
 void nifti_swap_8bytes( size_t n , void *ar )    // 4 bytes at a time
 {

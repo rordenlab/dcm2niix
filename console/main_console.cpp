@@ -31,7 +31,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <float.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include <stdio.h>
 #include "nii_dicom_batch.h"
@@ -58,8 +58,16 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -v : verbose (y/n, default n)\n");
     char gzCh = 'n';
-    if (opts.isGz) gzCh = 'n';
-    printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
+    if (opts.isGz) gzCh = 'y';
+    #ifdef myDisableZLib
+		if (strlen(opts.pigzname) > 0)
+			printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
+		else
+			printf("  -z : gz compress images (y/n, default %c) [REQUIRES pigz]\n", gzCh);    
+    #else
+		printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal, n=no]\n", gzCh);
+    #endif
+    
 #if defined(_WIN64) || defined(_WIN32)
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
@@ -77,13 +85,16 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 #endif
 } //showHelp()
 
+//#define mydebugtest
+
 int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
     readIniFile(&opts, argv);
 #ifdef mydebugtest
     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
-     strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
+     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
+	 strcpy(opts.indir, "e:\\t1s");
 #else
     printf("Chris Rorden's dcm2niiX version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
     if (argc < 2) {
