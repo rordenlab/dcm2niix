@@ -3,7 +3,7 @@ Versions
 
 2-Feb-2015
  - Support for Visual Studio
- - Remove dependency on zlib (now uses tinyz)
+ - Remove dependency on zlib (now uses miniz)
 1-Jan-2015
  - Images separated based on TE (fieldmaps)
  - Support for JPEG2000 using OpenJPEG or Jasper libraries
@@ -23,8 +23,8 @@ DEFAULT BUILD
    g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix
    
 ZLIB BUILD
- If we have zlib, we can use it (-lz) and disable tinyZ (-myDisableTinyZ)
-   g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -myDisableTinyZ
+ If we have zlib, we can use it (-lz) and disable miniz (-myDisableMiniZ)
+   g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -myDisableMiniZ
    
 MINGW BUILD
   

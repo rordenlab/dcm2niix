@@ -7,7 +7,7 @@ add_executable(dcm2niix
   nifti1_io_core.cpp
   nii_ortho.cpp
   nii_dicom_batch.cpp)
-#We now use tinyz, removing zlib dependency
+#We now use miniz, removing zlib dependency
 #if(ZLIB_FOUND)
 #  TARGET_LINK_LIBRARIES(dcm2niix z)
 #else(ZLIB_FOUND)

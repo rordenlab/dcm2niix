@@ -1,12 +1,12 @@
 //#define myNoSave //do not save images to disk
 
-#ifdef _MSC_VER //libz not available for microsoft - use tinyz.c clone instead
-    #define tinyZ
+#ifdef _MSC_VER //libz not available for microsoft - use miniz.c clone instead
+    #define MiniZ
 #else
-    #ifdef myDisableTinyZ
-   		#undef tinyZ
+    #ifdef myDisableMiniZ
+   		#undef MiniZ
     #else
-    	#define tinyZ
+    	#define MiniZ
     #endif
 #endif
 
@@ -14,8 +14,8 @@
 //#include "nii_foreign.h"
 #endif
 #ifndef myDisableZLib
-    #ifdef tinyZ
-        #include "tinyz.c" //single file clone of libz
+    #ifdef MiniZ
+        #include "miniz.c"  //single file clone of libz
     #else
         #include <zlib.h>
     #endif
@@ -785,13 +785,13 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
 
 #ifndef myDisableZLib
 
-#ifndef tinyZ
-unsigned long tz_compressBound(unsigned long source_len) {
+#ifndef MiniZ
+unsigned long mz_compressBound(unsigned long source_len) {
 	return compressBound(source_len);
 }
 
-uint32_t tdefl_crc32(const uint8_t *ptr, size_t buf_len, uint32_t crc) {
-    return (uint32_t) crc32(crc, ptr, (unsigned int)buf_len);
+unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_len) {
+    return crc32(crc, ptr, (uInt) buf_len);
 }
 #endif
 
@@ -802,7 +802,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     strcpy (fname,baseName);
     strcat (fname,".nii.gz");
     unsigned long hdrPadBytes = sizeof(hdr) + 4; //348 byte header + 4 byte pad
-    unsigned long cmp_len = tz_compressBound(src_len+hdrPadBytes);
+    unsigned long cmp_len = mz_compressBound(src_len+hdrPadBytes);
     unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
     z_stream strm;
     strm.total_in = 0;
@@ -821,23 +821,15 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     strm.avail_in = (unsigned int)hdrPadBytes; // size of input
 	strm.next_in = (uint8_t *)pHdr; // input header -- TPX  strm.next_in = (Bytef *)pHdr; uint32_t
     deflate(&strm, Z_NO_FLUSH);
-    
     //add image
     strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer; // input image -- TPX strm.next_in = (Bytef *)src_buffer;
     deflate(&strm, Z_FINISH); //Z_NO_FLUSH;
     //finish up
     deflateEnd(&strm);
-//#ifdef tinyZ
-    uint32_t file_crc32 = tdefl_crc32(Z_NULL, 0, 0L);
-    file_crc32 = tdefl_crc32(pHdr, (unsigned int)hdrPadBytes, file_crc32);
-    file_crc32 = tdefl_crc32(src_buffer, (unsigned int)src_len, file_crc32);
-//#else
-//    uLong file_crc32 = crc32(0L, Z_NULL, 0);
-//    file_crc32 = crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
-//    file_crc32 = crc32(file_crc32, src_buffer, (unsigned int)src_len);
-//#endif
-    //printf("crc %lu %d %d %d %lu -> %lu \n", file_crc32, pCmp[0],pCmp[1], Z_DEFAULT_COMPRESSION, strm.total_in, strm.total_out ); //120 56 0x789C
+    unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
+    file_crc32 = mz_crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
+    file_crc32 = mz_crc32(file_crc32, src_buffer, (unsigned int)src_len);
     cmp_len = strm.total_out;
     if (cmp_len <= 0) return;
     FILE *fileGz = fopen(fname, "wb");
