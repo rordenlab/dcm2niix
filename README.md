@@ -3,13 +3,16 @@
 2-Feb-2015
  - Support for Visual Studio
  - Remove dependency on zlib (now uses miniz)
+ 
 1-Jan-2015
  - Images separated based on TE (fieldmaps)
  - Support for JPEG2000 using OpenJPEG or Jasper libraries
  - Support for JPEG using NanoJPEG library
  - Support for lossless JPEG using custom library
+ 
 24-Nov-2014
  - Support for CT scans with gantry tilt and varying distance between slices
+ 
 11-Oct-2014
  - Initial public release
 
