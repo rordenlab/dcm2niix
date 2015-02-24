@@ -1,6 +1,6 @@
 ##### About
 
-dcm2nii is a designed to convert neuroimaging data from the NIfTI format to the DICOM format. For details and compiled versions visit http://www.nitrc.org/projects/dcm2nii/
+dcm2nii is a designed to convert neuroimaging data from the NIfTI format to the DICOM format. For details and compiled versions visit http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage
 
 ##### Versions
 
