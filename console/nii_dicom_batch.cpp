@@ -43,17 +43,11 @@
 
 #ifndef _MSC_VER
 	#include <unistd.h>
-#else
-	#  include <direct.h>
-	#  define getcwd _getcwd
-	#  define chdir _chrdir
-	#include "io.h"
-	#include <math.h>
 #endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
-#include <windows.h> //write to registry
+    #include <windows.h> //write to registry
 #endif
 
 #ifndef M_PI
@@ -784,6 +778,7 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
 } //nii_createDummyFilename()
 
 #ifndef myDisableZLib
+
 
 #ifndef MiniZ
 unsigned long mz_compressBound(unsigned long source_len) {

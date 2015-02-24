@@ -26,7 +26,7 @@ Building command line version:
    
 ##### ZLIB BUILD
  If we have zlib, we can use it (-lz) and disable miniz (-myDisableMiniZ)
-   g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -myDisableMiniZ
+   g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -DmyDisableMiniZ
    
 ##### MINGW BUILD
   
