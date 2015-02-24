@@ -1,5 +1,4 @@
-
-Versions
+ ##### Versions
 
 2-Feb-2015
  - Support for Visual Studio
@@ -18,22 +17,22 @@ Building command line version:
 
  This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following: 
 
-##### DEFAULT BUILD ##### 
+##### DEFAULT BUILD
 
    g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix
    
-##### ZLIB BUILD ##### 
+##### ZLIB BUILD
  If we have zlib, we can use it (-lz) and disable miniz (-myDisableMiniZ)
    g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -myDisableMiniZ
    
-##### MINGW BUILD ##### 
+##### MINGW BUILD
   
 If you use the (osbsolete) MinGW on Windows (optional -DmyDisableZLib to remove zip support)
 
 g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -static-libgcc
 
 
-##### JPEG2000 BUILD ##### 
+##### JPEG2000 BUILD
 
  If you want to build this with JPEG2000 decompression support using OpenJPEG. You will need to have the OpenJPEG 2.1 libraries installed (https://code.google.com/p/openjpeg/wiki/Installation). I suggest building static libraries...
  svn checkout http://openjpeg.googlecode.com/svn/trunk/ openjpeg-read-only
@@ -54,8 +53,11 @@ But in my experience this works best if you explicitly tell the software how to 
 
   g++ -O3 -DmyDisableOpenJPEG -DmyEnableJasper -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp  -s -o dcm2niix -ljasper -ljpeg
    
+##### VISUAL STUDIO BUILD
+
+You should be able to click on the Visual Studio icons to open and build this code. For details regarding support of Windows XP, see http://blogs.msdn.com/b/vcblog/archive/2012/10/08/windows-xp-targeting-with-c-in-visual-studio-2012.aspx
    
-##### OSX BUILD WITH BOTH 32 AND 64-BIT SUPPORT ##### 
+##### OSX BUILD WITH BOTH 32 AND 64-BIT SUPPORT
    
 Building command line version universal binary from OSX 64 bit system:
  This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following: 
@@ -74,7 +76,7 @@ Building OSX graphical user interface using XCode:
  Copy contents of "console" folder to /xcode/dcm2/core
  Open and compile "dcm2.xcodeproj" with XCode 4.6 or later
  
-##### THE QT AND wxWIDGETS GUIs ARE NOT YET SUPPORT - FOLLOWING LINES FOR FUTURE VERSIONS ##### 
+##### THE QT AND wxWIDGETS GUIs ARE NOT YET SUPPORT - FOLLOWING LINES FOR FUTURE VERSIONS
  
 Building QT graphical user interface:
   Open "dcm2.pro" with QTCreator. This should work on OSX and Linux. On Windows the printf information is not redirected to the user interface 
