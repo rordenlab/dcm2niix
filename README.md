@@ -63,7 +63,7 @@ But in my experience this works best if you explicitly tell the software how to 
    
 ##### VISUAL STUDIO BUILD
 
-You should be able to click on the Visual Studio icons to open and build this code. For details regarding support of Windows XP, see http://blogs.msdn.com/b/vcblog/archive/2012/10/08/windows-xp-targeting-with-c-in-visual-studio-2012.aspx
+You should be able to click on the Visual Studio icons to open and build this code. Here are links for for building with [Windows XP support](http://blogs.msdn.com/b/vcblog/archive/2012/10/08/windows-xp-targeting-with-c-in-visual-studio-2012.aspx) and [64-bit support](https://msdn.microsoft.com/en-us/library/9yb4317s.aspx).
    
 ##### OSX BUILD WITH BOTH 32 AND 64-BIT SUPPORT
    

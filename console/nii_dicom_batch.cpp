@@ -1,8 +1,13 @@
 //#define myNoSave //do not save images to disk
-
-#ifdef _MSC_VER //libz not available for microsoft - use miniz.c clone instead
+#ifdef _MSC_VER
+	#include <direct.h>
+	#define getcwd _getcwd
+	#define chdir _chrdir
+	#include "io.h"
+	//#include <math.h>
     #define MiniZ
 #else
+	#include <unistd.h>
     #ifdef myDisableMiniZ
    		#undef MiniZ
     #else
@@ -39,11 +44,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-
-
-#ifndef _MSC_VER
-	#include <unistd.h>
-#endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
