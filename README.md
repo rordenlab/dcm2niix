@@ -1,3 +1,7 @@
+##### About
+
+dcm2nii is a designed to convert neuroimaging data from the NIfTI format to the DICOM format. For details and compiled versions visit http://www.nitrc.org/projects/dcm2nii/
+
 ##### Versions
 
 2-Feb-2015
@@ -31,7 +35,7 @@ Building command line version:
    
 ##### MINGW BUILD
   
-If you use the (osbsolete) MinGW on Windows (optional -DmyDisableZLib to remove zip support)
+If you use the (osbsolete) compiler MinGW on Windows you will want to include the rare libgcc libraries with your executable so others can use it. Here I also demonstrate the optional "-DmyDisableZLib" to remove zip support.
 
  - g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -static-libgcc
 
@@ -75,6 +79,8 @@ Building command line version universal binary from OSX 64 bit system:
  To validate that the resulting executable supports both architectures type
 
  - file ./dcm2niix
+
+##### OSX GRAPHICAL INTERFACE BUILD
 
 Building OSX graphical user interface using XCode:
  Copy contents of "console" folder to /xcode/dcm2/core
