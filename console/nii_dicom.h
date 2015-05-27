@@ -20,9 +20,8 @@ extern "C" {
     #endif
 #endif
 
-static const int kMaxDTIv = 4000;
+static const int kMaxDTIv = 4000; //#define kMaxDTIv  4000
 #define kDICOMStr  31
-#define kMaxDTIv  4000
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
 #define kMANUFACTURER_GE  2

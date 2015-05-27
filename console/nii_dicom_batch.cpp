@@ -1767,7 +1767,6 @@ int nii_loadDir (struct TDCMopts* opts) {
 	#elif UINTPTR_MAX == 0xffffffffffffffff
 		nameList.maxItems = 34000; // 64-bit larger requires more memory, smaller more passes 
 	#endif
-     required
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
