@@ -1,10 +1,16 @@
 //#define myNoSave //do not save images to disk
 #ifdef _MSC_VER
+
 	#include <direct.h>
+
 	#define getcwd _getcwd
+
 	#define chdir _chrdir
+
 	#include "io.h"
+
 	//#include <math.h>
+
     #define MiniZ
 #else
 	#include <unistd.h>
@@ -1756,7 +1762,12 @@ int nii_loadDir (struct TDCMopts* opts) {
             return convert_parRec(*opts);
     }
     struct TSearchList nameList;
-    nameList.maxItems = 68000; //an arbitrary number: larger uses more memory, smaller is slower as two passes are required
+    #if UINTPTR_MAX == 0xffffffff
+		nameList.maxItems = 68000; // 32-bit larger requires more memory, smaller more passes 
+	#elif UINTPTR_MAX == 0xffffffffffffffff
+		nameList.maxItems = 34000; // 64-bit larger requires more memory, smaller more passes 
+	#endif
+     required
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
