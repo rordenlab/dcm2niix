@@ -7,6 +7,7 @@
 //
 
 #import "myWindow.h"
+#import "AppDelegate.h"
 
 @implementation myWindow
 
@@ -32,12 +33,14 @@
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
     NSPasteboard *pboard = [sender draggingPasteboard];
     NSArray *filenames = [pboard propertyListForType:NSFilenamesPboardType];
-    
     if (1 == filenames.count)
-        if ([[NSApp delegate] respondsToSelector:@selector(application:openFile:)])
-            return [[NSApp delegate] application:NSApp openFile:[filenames lastObject]];
+        if ([[NSApp delegate] respondsToSelector:@selector(application:openFile:)]) {
+            //return [[NSApp delegate] application:NSApp openFile:[filenames lastObject]];
+            [(AppDelegate *)[NSApp  delegate] processFile:[filenames lastObject]];
+            return TRUE;
+        }
     
-    return NO;
+    return FALSE;
 }
 
 @end

@@ -312,6 +312,7 @@ NJ_INLINE void njDecodeSOF(void) {
     }
     nj.mbsizex = ssxmax << 3;
     nj.mbsizey = ssymax << 3;
+    if ((nj.mbsizex == 0) || (nj.mbsizey == 0)) return;
     nj.mbwidth = (nj.width + nj.mbsizex - 1) / nj.mbsizex;
     nj.mbheight = (nj.height + nj.mbsizey - 1) / nj.mbsizey;
     for (i = 0, c = nj.comp;  i < nj.ncomp;  ++i, ++c) {
@@ -550,7 +551,7 @@ NJ_INLINE void njUpsample(nj_component_t* c) {
     while (c->height < nj.height) { c->height <<= 1; ++yshift; }
     out = (unsigned char *)njAllocMem(c->width * c->height);
     if (!out) njThrow(NJ_OUT_OF_MEM);
-    lin = c->pixels;
+    //lin = c->pixels;
     lout = out;
     for (y = 0;  y < c->height;  ++y) {
         lin = &c->pixels[(y >> yshift) * c->stride];

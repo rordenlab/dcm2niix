@@ -14,6 +14,8 @@
 #define vsnprintf _vsnprintf 
 #define strcasecmp _stricmp 
 #define strncasecmp _strnicmp 
+#else
+#include <unistd.h> //access
 #endif
 
 //#include <time.h> //clock()
@@ -592,10 +594,10 @@ int dcmStrLen (int len) {
 
 struct TDICOMdata clear_dicom_data() {
     struct TDICOMdata d;
+    //d.dti4D = NULL;
     d.locationsInAcquisition = 0;
     for (int i=0; i < 4; i++) {
-        for (int n=0; n < kMaxDTIv; n++)
-            d.CSA.dtiV[n][i] = 0;
+            d.CSA.dtiV[i] = 0;
         d.patientPosition[i] = NAN;
         //d.patientPosition2nd[i] = NAN; //used to distinguish XYZT vs XYTZ for Philips 4D
         d.patientPositionLast[i] = NAN; //used to compute slice direction for Philips 4D
@@ -879,13 +881,13 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
             if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
                 CSA->mosaicSlices = (int) round(csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             else if (strcmp(tagCSA.name, "B_value") == 0) {
-                CSA->dtiV[0][0] = csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK);
+                CSA->dtiV[0] = csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK);
                 CSA->numDti = 1; //triggered by b-value, as B0 images do not have DiffusionGradientDirection tag
             }
             else if ((strcmp(tagCSA.name, "DiffusionGradientDirection") == 0) && (tagCSA.nitems > 2)){
-                CSA->dtiV[0][1] = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
-                CSA->dtiV[0][2] = lFloats[2];
-                CSA->dtiV[0][3] = lFloats[3];
+                CSA->dtiV[1] = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
+                CSA->dtiV[2] = lFloats[2];
+                CSA->dtiV[3] = lFloats[3];
                 if (isVerbose)
                     printf("DiffusionGradientDirection %f %f %f\n",lFloats[1],lFloats[2],lFloats[3]);
             } else if ((strcmp(tagCSA.name, "SliceNormalVector") == 0) && (tagCSA.nitems > 2)){
@@ -1121,7 +1123,9 @@ void changeExt (char *file_name, const char* ext) {
     }
 } //changeExt()
 
-struct TDICOMdata  nii_readParRec (char * parname) {
+
+
+struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
     FILE *fp = fopen(parname, "r");
     if (fp == NULL) return d;
@@ -1160,8 +1164,6 @@ struct TDICOMdata  nii_readParRec (char * parname) {
 #define	kASL	48
     char buff[LINESZ];
     bool ADCwarning = false;
-    for (int n=0; n <kMaxDTIv; n++)
-        d.CSA.dtiV[n][0] = -1; //set to impossible value to detect re-usage by ADC map
     int parVers = 0;
     int nCols = 26;
     int slice = 0;
@@ -1171,6 +1173,9 @@ struct TDICOMdata  nii_readParRec (char * parname) {
     char *p = fgets (buff, LINESZ, fp);
     bool isIntenScaleVaries = false;
     bool isIndexSequential = true;
+    for (int i = 0; i < kMaxDTI4D; i++)
+        dti4D->S[i].V[0] = -1;
+    //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
     while (p) {
         if (strlen(buff) < 1)
             continue;
@@ -1308,25 +1313,28 @@ struct TDICOMdata  nii_readParRec (char * parname) {
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kGradientNumber] > 0) {
 			int dir = (int) cols[kGradientNumber];
-            if ((cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
-                if (d.CSA.dtiV[dir-1][0] >= 0) dir = dir + 1; //Philips often stores an ADC map along with B0 and weighted images, unfortunately they give it the same kGradientNumber as the B0! (seen in PAR V4.2)
+            if ((dir > 0) && (cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
+                if (dti4D->S[dir-1].V[0] >= 0) dir = dir + 1; //Philips often stores an ADC map along with B0 and weighted images, unfortunately they give it the same kGradientNumber as the B0! (seen in PAR V4.2)
                 //the logic here is that IF the gradient was previously used we increment the gradient number. This should provide compatibility when Philips fixes this bug
                 //it seems like the ADC is always saved as the final volume, so this solution SHOULD be foolproof.
                 ADCwarning = true;
             }
             if (dir > d.CSA.numDti) d.CSA.numDti = dir;
 
-            if (cols[dir] <= kMaxDTIv) {
-                d.CSA.dtiV[dir-1][0] = cols[kbval];
-                d.CSA.dtiV[dir-1][1] = cols[kv1];
-                d.CSA.dtiV[dir-1][2] = cols[kv2];
-                d.CSA.dtiV[dir-1][3] = cols[kv3];
+            if (dir <= kMaxDTI4D) {
+                if ((isVerbose ) && (dti4D->S[dir-1].V[0] < 0))
+                    printf("%d %g %gx%gx%g %d\n", dir-1, cols[kbval], cols[kv1], cols[kv2], cols[kv3], d.CSA.numDti);
+                dti4D->S[dir-1].V[0] = cols[kbval];
+                dti4D->S[dir-1].V[1] = cols[kv1];
+                dti4D->S[dir-1].V[2] = cols[kv2];
+                dti4D->S[dir-1].V[3] = cols[kv3];
 
             } //save DTI direction
         } //if DTI directions
         //printf("%f %f %lu\n",cols[9],cols[kGradientNumber], strlen(buff))
         p = fgets (buff, LINESZ, fp);//get next line
     }
+                    
     free (cols);
     fclose (fp);
     d.manufacturer = kMANUFACTURER_PHILIPS ;
@@ -1424,6 +1432,11 @@ struct TDICOMdata  nii_readParRec (char * parname) {
     d.locationsInAcquisition = d.xyzDim[3];
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.imageStart = 0;
+    if (d.CSA.numDti >= kMaxDTI4D) {
+        printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
+        d.CSA.numDti = 0;
+    };
+     
     return d;
 } //nii_readParRec()
 
@@ -1997,7 +2010,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     return img;
 } //nii_loadImgXL()
                     
-struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
+                    struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+//struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
@@ -2313,14 +2327,14 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                  
                  break;*/
             case kDiffusionDirectionGEX :
-                if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[0][1] =  dcmStrFloat(lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[1] =  dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kDiffusionDirectionGEY :
-                if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[0][2] =  dcmStrFloat(lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[2] =  dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kDiffusionDirectionGEZ :
                 if (d.manufacturer == kMANUFACTURER_GE) {
-                    d.CSA.dtiV[0][3] =  dcmStrFloat(lLength, &buffer[lPos]);
+                    d.CSA.dtiV[3] =  dcmStrFloat(lLength, &buffer[lPos]);
                     d.CSA.numDti = 1;
                 }
                 break;
@@ -2488,21 +2502,47 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
             case	kDiffusionBFactor:
                 if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
                     d.CSA.numDti++; //increment with BFactor: on Philips slices with B=0 have B-factor but no diffusion directions
-                    if ((d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                        d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                    if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
+                        //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
+                        dti4D->S[0].V[0] = d.CSA.dtiV[0];
+                        dti4D->S[0].V[1] = d.CSA.dtiV[1];
+                        dti4D->S[0].V[2] = d.CSA.dtiV[2];
+                        dti4D->S[0].V[3] = d.CSA.dtiV[3];
+                    }
+                    d.CSA.dtiV[0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+                        dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
+                    /*if ((d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+                       d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 }
                 break;
             case    kDiffusionDirectionRL:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                    d.CSA.dtiV[d.CSA.numDti-1][1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+                    d.CSA.dtiV[1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+                        dti4D->S[d.CSA.numDti-1].V[1] = d.CSA.dtiV[1];
+                }
+                /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+                    d.CSA.dtiV[d.CSA.numDti-1][1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 break;
             case kDiffusionDirectionAP:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                    d.CSA.dtiV[d.CSA.numDti-1][2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+                    d.CSA.dtiV[2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+                        dti4D->S[d.CSA.numDti-1].V[2] = d.CSA.dtiV[2];
+                }
+                /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+                    d.CSA.dtiV[d.CSA.numDti-1][2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 break;
             case	kDiffusionDirectionFH:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                    d.CSA.dtiV[d.CSA.numDti-1][3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+                    d.CSA.dtiV[3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+                        dti4D->S[d.CSA.numDti-1].V[3] = d.CSA.dtiV[3];
+                    //printf("dti XYZ %g %g %g\n",d.CSA.dtiV[1],d.CSA.dtiV[2],d.CSA.dtiV[3]);
+                }
+                /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+                    d.CSA.dtiV[d.CSA.numDti-1][3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 //http://www.na-mic.org/Wiki/index.php/NAMIC_Wiki:DTI:DICOM_for_DWI_and_DTI
                 break;
             case 	kWaveformSq:
@@ -2520,7 +2560,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
                 //    printf("---->%d,",lLength);
                 //    break;
             case kDiffusionBFactorGE :
-                if (d.manufacturer == kMANUFACTURER_GE) d.CSA.dtiV[0][0] =  dcmStrInt(lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE) d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case kGeiisFlag:
                 if ((lLength > 4) && (buffer[lPos]=='G') && (buffer[lPos+1]=='E') && (buffer[lPos+2]=='I')  && (buffer[lPos+3]=='I')) {
@@ -2614,13 +2654,18 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
     //printf("%d ----\n",d.imageStart);
     if (isVerbose) {
         printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-        printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated);
+        printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian);
+    }
+    if (d.CSA.numDti >= kMaxDTI4D) {
+        printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
+        d.CSA.numDti = 0;
     }
     return d;
 } // readDICOM()
 
 struct TDICOMdata readDICOM(char * fname) {
-    return readDICOMv(fname, false, 0);
+    TDTI4D unused;
+    return readDICOMv(fname, false, 0, &unused);
 } // readDICOM()
 
 

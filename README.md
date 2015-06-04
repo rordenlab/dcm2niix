@@ -4,6 +4,9 @@ dcm2nii is a designed to convert neuroimaging data from the NIfTI format to the 
 
 ##### Versions
 
+2-June-2015
+ - Uses less memory (helpful for large datasets)
+ 
 2-Feb-2015
  - Support for Visual Studio
  - Remove dependency on zlib (now uses miniz)

@@ -16,6 +16,9 @@
 		4F1D666D19F422D6004BEC23 /* nii_ortho.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666619F422D6004BEC23 /* nii_ortho.cpp */; };
 		4F1D666E19F422D6004BEC23 /* nii_ortho.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666619F422D6004BEC23 /* nii_ortho.cpp */; };
 		4F20AC5E191D67F600EA3B33 /* libz.1.2.5.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F20AC5D191D67F600EA3B33 /* libz.1.2.5.dylib */; };
+		4F7688E21B173D7D00E959F3 /* miniz.c in Sources */ = {isa = PBXBuildFile; fileRef = 4F7688E11B173D7D00E959F3 /* miniz.c */; };
+		4F7688E51B173EBB00E959F3 /* jpg_0XC3.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F7688E31B173EBB00E959F3 /* jpg_0XC3.cpp */; };
+		4F7688E81B17402B00E959F3 /* ujpeg.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F7688E61B17402B00E959F3 /* ujpeg.cpp */; };
 		4F9EB64718F333DF00F6A696 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F9EB64618F333DF00F6A696 /* Cocoa.framework */; };
 		4F9EB65118F333DF00F6A696 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4F9EB64F18F333DF00F6A696 /* InfoPlist.strings */; };
 		4F9EB65318F333DF00F6A696 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EB65218F333DF00F6A696 /* main.m */; };
@@ -50,6 +53,11 @@
 		4F1D666519F422D6004BEC23 /* nii_dicom.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = nii_dicom.cpp; sourceTree = "<group>"; };
 		4F1D666619F422D6004BEC23 /* nii_ortho.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = nii_ortho.cpp; sourceTree = "<group>"; };
 		4F20AC5D191D67F600EA3B33 /* libz.1.2.5.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.1.2.5.dylib; path = ../../../../../../usr/lib/libz.1.2.5.dylib; sourceTree = "<group>"; };
+		4F7688E11B173D7D00E959F3 /* miniz.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = miniz.c; sourceTree = "<group>"; };
+		4F7688E31B173EBB00E959F3 /* jpg_0XC3.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = jpg_0XC3.cpp; sourceTree = "<group>"; };
+		4F7688E41B173EBB00E959F3 /* jpg_0XC3.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = jpg_0XC3.h; sourceTree = "<group>"; };
+		4F7688E61B17402B00E959F3 /* ujpeg.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ujpeg.cpp; sourceTree = "<group>"; };
+		4F7688E71B17402B00E959F3 /* ujpeg.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ujpeg.h; sourceTree = "<group>"; };
 		4F9EB64318F333DF00F6A696 /* dcm2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = dcm2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F9EB64618F333DF00F6A696 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		4F9EB64918F333DF00F6A696 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
@@ -161,16 +169,21 @@
 		4FADC891190AD70F00010758 /* core */ = {
 			isa = PBXGroup;
 			children = (
+				4F7688E61B17402B00E959F3 /* ujpeg.cpp */,
+				4F7688E71B17402B00E959F3 /* ujpeg.h */,
 				4F1D665D19F422D6004BEC23 /* nifti1_io_core.h */,
 				4F1D665E19F422D6004BEC23 /* nifti1.h */,
-				4F1D665F19F422D6004BEC23 /* nii_dicom_batch.h */,
+				4F7688E31B173EBB00E959F3 /* jpg_0XC3.cpp */,
+				4F7688E41B173EBB00E959F3 /* jpg_0XC3.h */,
 				4F1D666019F422D6004BEC23 /* nii_dicom.h */,
+				4F1D666519F422D6004BEC23 /* nii_dicom.cpp */,
+				4F1D665F19F422D6004BEC23 /* nii_dicom_batch.h */,
+				4F1D666419F422D6004BEC23 /* nii_dicom_batch.cpp */,
 				4F1D666119F422D6004BEC23 /* nii_ortho.h */,
 				4F1D666219F422D6004BEC23 /* tinydir.h */,
 				4F1D666319F422D6004BEC23 /* nifti1_io_core.cpp */,
-				4F1D666419F422D6004BEC23 /* nii_dicom_batch.cpp */,
-				4F1D666519F422D6004BEC23 /* nii_dicom.cpp */,
 				4F1D666619F422D6004BEC23 /* nii_ortho.cpp */,
+				4F7688E11B173D7D00E959F3 /* miniz.c */,
 			);
 			path = core;
 			sourceTree = "<group>";
@@ -212,7 +225,7 @@
 			name = dcm2Tests;
 			productName = dcm2Tests;
 			productReference = 4F9EB66318F333DF00F6A696 /* dcm2Tests.octest */;
-			productType = "com.apple.product-type.bundle";
+			productType = "com.apple.product-type.bundle.ocunit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -220,7 +233,8 @@
 		4F9EB63B18F333DF00F6A696 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0460;
+				LastTestingUpgradeCheck = 0610;
+				LastUpgradeCheck = 0610;
 				ORGANIZATIONNAME = "Chris Rorden";
 			};
 			buildConfigurationList = 4F9EB63E18F333DF00F6A696 /* Build configuration list for PBXProject "dcm2" */;
@@ -283,13 +297,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4F7688E51B173EBB00E959F3 /* jpg_0XC3.cpp in Sources */,
 				4F9EB65318F333DF00F6A696 /* main.m in Sources */,
 				4FE5DACC18F33AEE003B4508 /* myWindow.m in Sources */,
 				4FE4DAD318FF778100EDF667 /* AppDelegate.m in Sources */,
 				4F1D666719F422D6004BEC23 /* nifti1_io_core.cpp in Sources */,
+				4F7688E81B17402B00E959F3 /* ujpeg.cpp in Sources */,
 				4F1D666919F422D6004BEC23 /* nii_dicom_batch.cpp in Sources */,
 				4F1D666B19F422D6004BEC23 /* nii_dicom.cpp in Sources */,
 				4F1D666D19F422D6004BEC23 /* nii_ortho.cpp in Sources */,
+				4F7688E21B173D7D00E959F3 /* miniz.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -346,7 +363,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libstdc++";
 				CLANG_ENABLE_OBJC_ARC = NO;
@@ -361,8 +377,8 @@
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
+					myDisableMiniZ,
+					myDisableOpenJPEG,
 				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -379,7 +395,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libstdc++";
 				CLANG_ENABLE_OBJC_ARC = NO;
@@ -392,6 +407,10 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					myDisableMiniZ,
+					myDisableOpenJPEG,
+				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
@@ -419,7 +438,6 @@
 		4F9EB67618F333DF00F6A696 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
 				CLANG_ENABLE_OBJC_ARC = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;

@@ -11,16 +11,16 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "2Feb2015j" //JASPER for JPEG2000
+    #define kDCMvers "2June2015j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "2Feb2015" //no decompressor
+    #define kDCMvers "2June2015" //no decompressor
 	#else
-    #define kDCMvers "2Feb2015o" //OPENJPEG for JPEG2000
+    #define kDCMvers "2June2015o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
-static const int kMaxDTIv = 4000; //#define kMaxDTIv  4000
+static const int kMaxDTI4D = 4000; //#define kMaxDTIv  4000
 #define kDICOMStr  31
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
@@ -36,11 +36,20 @@ static const int kCompressNone = 0;
 static const int kCompressYes = 1;
 static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
+    struct TDTI {
+        float V[4];
+    };
+   // TDTI arrayName[ kMaxDTI4D ];
+    struct TDTI4D {
+        struct TDTI S[kMaxDTI4D];
+    };
+    
     struct TCSAdata {
-        float dtiV[kMaxDTIv][4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
+        float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int numDti, multiBandFactor, sliceOrder, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
     };
     struct TDICOMdata {
+        //struct TDTI * dti4D; //only for 4D diffusion volumes - otherwise use more compact CSA.dtiV
         long seriesNum;
         int xyzDim[5];//, xyzOri[4];
         int sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme; //
@@ -54,13 +63,14 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     };
     
     size_t nii_ImgBytes(struct nifti_1_header hdr);
-    struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag); //if compressFlag = 0, compressed DICOM will be reported as invalid
+    struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D);
+    //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag); //if compressFlag = 0, compressed DICOM will be reported as invalid
     struct TDICOMdata readDICOM(char * fname);
     struct TDICOMdata clear_dicom_data();
     unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h);
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
     void changeExt (char *file_name, const char* ext);
-    struct TDICOMdata  nii_readParRec (char * parname);
+    struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D);
     //void reportMat(struct nifti_1_header h);
     unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);

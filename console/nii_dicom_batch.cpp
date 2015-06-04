@@ -185,7 +185,7 @@ bool isDICOMfile(const char * fname) {
     return true;
 } //isDICOMfile()
 
-void geCorrectBvecs(struct TDICOMdata *d, int sliceDir){
+void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //0018,1312 phase encoding is either in row or column direction
     //0043,1039 (or 0043,a039). b value (as the first number in the string).
     //0019,10bb (or 0019,a0bb). phase diffusion direction
@@ -231,120 +231,33 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir){
     #else
     printf("Reorienting %d GE DTI gradients. Please validate if you are conducting DTI analyses. isCol=%d\n", d->CSA.numDti, col);
     #endif
+
     for (int i = 0; i < d->CSA.numDti; i++) {
-        float vLen = sqrt( (d->CSA.dtiV[i][1]*d->CSA.dtiV[i][1])
-                          + (d->CSA.dtiV[i][2]*d->CSA.dtiV[i][2])
-                          + (d->CSA.dtiV[i][3]*d->CSA.dtiV[i][3]));
-        if ((d->CSA.dtiV[i][0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
+        float vLen = sqrt( (vx[i].V[1]*vx[i].V[1])
+                          + (vx[i].V[2]*vx[i].V[2])
+                          + (vx[i].V[3]*vx[i].V[3]));
+        if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
             for (int v= 0; v < 4; v++)
-                d->CSA.dtiV[i][v] =0.0f;
+                vx[i].V[v] =0.0f;
             continue; //do not normalize or reorient b0 vectors
         }
-        d->CSA.dtiV[i][1] = -d->CSA.dtiV[i][1];
+        vx[i].V[1] = -vx[i].V[1];
         if (!col) { //rows need to be swizzled
-            float swap = d->CSA.dtiV[i][1];
-            d->CSA.dtiV[i][1] = -d->CSA.dtiV[i][2];
-            d->CSA.dtiV[i][2] = swap;
+            float swap = vx[i].V[1];
+            vx[i].V[1] = -vx[i].V[2];
+            vx[i].V[2] = swap;
         }
         if (sliceDir < 0)
-                d->CSA.dtiV[i][3] = -d->CSA.dtiV[i][3];
-        if (isSameFloat(d->CSA.dtiV[i][1],-0)) d->CSA.dtiV[i][1] = 0.0f;
-        if (isSameFloat(d->CSA.dtiV[i][2],-0)) d->CSA.dtiV[i][2] = 0.0f;
-        if (isSameFloat(d->CSA.dtiV[i][3],-0)) d->CSA.dtiV[i][3] = 0.0f;
+                vx[i].V[3] = -vx[i].V[3];
+        if (isSameFloat(vx[i].V[1],-0)) vx[i].V[1] = 0.0f;
+        if (isSameFloat(vx[i].V[2],-0)) vx[i].V[2] = 0.0f;
+        if (isSameFloat(vx[i].V[3],-0)) vx[i].V[3] = 0.0f;
         
     }
+    
 } //geCorrectBvecs()
 
-/*void philipsCorrectBvecs(struct TDICOMdata *d){
-    //Philips DICOM data stored in patient (LPH) space, regardless of settings in Philips user interface
-    //algorithm from PARtoNRRD/CATNAP (with July 20, 2007 patch) http://godzilla.kennedykrieger.org/~jfarrell/software_web.htm
-    //0018,5100. patient orientation - 'HFS'
-    //2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
-    //2005,1071 MRStackAngulationAP
-    //2005,1072 MRStackAngulationFH
-    //2005,1073 MRStackAngulationRL
-    if (d->manufacturer != kMANUFACTURER_PHILIPS) return;
-    if (d->CSA.numDti < 1) return;
-    mat33 tpp,tpo;
-    if ((toupper(d->patientOrient[0])== 'F') && (toupper(d->patientOrient[1])== 'F'))
-        LOAD_MAT33(tpp, 0,-1,0, -1,0,0, 0,0,1); //feet first
-    else if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F'))
-        LOAD_MAT33(tpp, 0,1,0,-1,0,0, 0,0,-1); //head first
-    else {
-        printf("Unable to correct Philips DTI vectors: patient position must be head or feet first\n");
-        return;
-    }
-    //unused? mat33 rev_tpp =nifti_mat33_transpose(tpp);
-    if (toupper(d->patientOrient[2])== 'S')//supine
-        LOAD_MAT33 (tpo, 1,0,0, 0,1,0, 0,0,1);
-    else if (toupper(d->patientOrient[2])== 'P')//prone
-        LOAD_MAT33 (tpo,-1,0,0, 0,-1,0, 0,0,1);
-    else if ((toupper(d->patientOrient[2])== 'D') && (toupper(d->patientOrient[3])== 'R'))   //DR
-        LOAD_MAT33 (tpo,0,-1,0, 1,0,0, 0,0,1);
-    else if ((toupper(d->patientOrient[2])== 'D') && (toupper(d->patientOrient[3])== 'L'))//DL
-        LOAD_MAT33 (tpo,0,1,0, -1,0,0, 0,0,1);
-    else {
-        printf("DTI vector error: Position is not HFS,HFP,HFDR,HFDL,FFS,FFP,FFDR, or FFDL: %s\n",d->patientOrient);
-        return;
-    }
-    //unused? mat33 rev_tpo =nifti_mat33_transpose(tpo);
-    //unused? mat33 tpom = nifti_mat33_mul( tpo, tpp);
-    //unused? mat33 rev_tpom = nifti_mat33_mul( rev_tpp,rev_tpo  );
-    printf("Reorienting %d Philip DTI gradients with angulations %f %f %f. Please validate if you are conducting DTI analyses.\n", d->CSA.numDti, d->angulation[1], d->angulation[2], d->angulation[3]);
-    
-    float rl = d->angulation[1]  * M_PI /180; //as radian
-    float ap = d->angulation[2]  * M_PI /180;
-    float fh = d->angulation[3]  * M_PI /180;
-    //printf(" %f %f %f \n",ap,fh,rl);
-    mat33 trl, tap, tfh, rev_tsom, dtiextra;
-    LOAD_MAT33 (trl,1,0,0,  0, cos(rl),- sin(rl),  0, sin(rl),cos(rl));
-    LOAD_MAT33 (tap, cos(ap),0, sin(ap),  0,1,0,                 - sin(ap),0, cos(ap));
-    LOAD_MAT33 (tfh,cos(fh),- sin(fh),0, sin(fh), cos(fh),0,    0,0,1);
-    mat33 rev_trl =nifti_mat33_transpose(trl);
-    mat33 rev_tap =nifti_mat33_transpose(tap);
-    mat33 rev_tfh =nifti_mat33_transpose(tfh);
-    mat33 mtemp1 = nifti_mat33_mul( trl, tap);
-    //unused? mat33 tang = nifti_mat33_mul( mtemp1, tfh);
-    mtemp1 = nifti_mat33_mul( rev_tfh, rev_tap );
-    mat33 rev_tang = nifti_mat33_mul( mtemp1, rev_trl);
-    //kSliceOrientSag
-    if (d->sliceOrient == kSliceOrientSag)//SAGITTAL
-        LOAD_MAT33 (rev_tsom, 0,0,1,  0,-1,0, -1,0,0 );
-    else if (d->sliceOrient == 2)//CORONAL
-        LOAD_MAT33 (rev_tsom, 0,0,1,  -1,0,0, 0,1,0 );
-    else
-        LOAD_MAT33 (rev_tsom, 0,-1,0,  -1,0,0, 0,0,1 );
-    LOAD_MAT33 (dtiextra, 0,-1,0,  -1,0,0, 0,0,1 );
-    mat33 mtemp2 = nifti_mat33_mul( dtiextra, rev_tsom);
-    mtemp1 = nifti_mat33_mul( mtemp2, rev_tang);
-    for (int i = 0; i < d->CSA.numDti; i++) {
-        //printf("%d\tvin=[\t%f\t%f\t%f\t]; bval=\t%f\n",i,d->CSA.dtiV[i][1],d->CSA.dtiV[i][2],d->CSA.dtiV[i][3],d->CSA.dtiV[i][0]);
-        float vLen = sqrt( (d->CSA.dtiV[i][1]*d->CSA.dtiV[i][1])
-                          + (d->CSA.dtiV[i][2]*d->CSA.dtiV[i][2])
-                          + (d->CSA.dtiV[i][3]*d->CSA.dtiV[i][3]));
-        if ((d->CSA.dtiV[i][0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
-            for (int v= 0; v < 4; v++)
-                d->CSA.dtiV[i][v] =0.0f;
-            continue; //do not normalize or reorient b0 vectors
-        }
-        vec3 v3;
-        
-        for (int v= 1; v < 4; v++) //normalize and reverse vector directions
-            v3.v[v-1] =-d->CSA.dtiV[i][v]/vLen;
-        v3 = nifti_vect33mat33_mul(v3,mtemp1);
-        v3 = nifti_vect33_norm(v3);
-        d->CSA.dtiV[i][1] = v3.v[0];
-        d->CSA.dtiV[i][2] = v3.v[1]; //NIfTI Y reversed relative to DICOM
-        d->CSA.dtiV[i][3] = v3.v[2];
-        //printf("%d\tvoutt=[\t%f\t%f\t%f\t]; bval=\t%f\n",i,d->CSA.dtiV[i][1],d->CSA.dtiV[i][2],d->CSA.dtiV[i][3],d->CSA.dtiV[i][0]);
-        
-    }
-    if ( d->sliceOrient != kSliceOrientTra)
-        printf("Warning: Philips DTI gradients only evaluated for axial (transverse) acquisitions. Please verify sign and direction\n");
-} //philipsCorrectBvecs()
-*/
-
-void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir){
+void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //see Matthew Robson's  http://users.fmrib.ox.ac.uk/~robson/internal/Dicom2Nifti111.m
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
@@ -368,24 +281,25 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir){
     phase_vector = nifti_vect33_norm(phase_vector);
     slice_vector = nifti_vect33_norm(slice_vector);
     for (int i = 0; i < d->CSA.numDti; i++) {
-        float vLen = sqrt( (d->CSA.dtiV[i][1]*d->CSA.dtiV[i][1])
-                          + (d->CSA.dtiV[i][2]*d->CSA.dtiV[i][2])
-                          + (d->CSA.dtiV[i][3]*d->CSA.dtiV[i][3]));
-        if ((d->CSA.dtiV[i][0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
+        float vLen = sqrt( (vx[i].V[1]*vx[i].V[1])
+                          + (vx[i].V[2]*vx[i].V[2])
+                          + (vx[i].V[3]*vx[i].V[3]));
+        if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
             for (int v= 0; v < 4; v++)
-                d->CSA.dtiV[i][v] =0.0f;
+                vx[i].V[v] =0.0f;
             continue; //do not normalize or reorient b0 vectors
         }//if bvalue=0
-        vec3 bvecs_old =setVec3(d->CSA.dtiV[i][1],d->CSA.dtiV[i][2],d->CSA.dtiV[i][3]);
+        vec3 bvecs_old =setVec3(vx[i].V[1],vx[i].V[2],vx[i].V[3]);
         vec3 bvecs_new =setVec3(dotProduct(bvecs_old,read_vector),dotProduct(bvecs_old,phase_vector),dotProduct(bvecs_old,slice_vector) );
         bvecs_new = nifti_vect33_norm(bvecs_new);
-        d->CSA.dtiV[i][1] = bvecs_new.v[0];
-        d->CSA.dtiV[i][2] = -bvecs_new.v[1];
-        d->CSA.dtiV[i][3] = bvecs_new.v[2];
-        if (sliceDir == kSliceOrientMosaicNegativeDeterminant) d->CSA.dtiV[i][2] = -d->CSA.dtiV[i][2];
+        vx[i].V[1] = bvecs_new.v[0];
+        vx[i].V[2] = -bvecs_new.v[1];
+        vx[i].V[3] = bvecs_new.v[2];
+        if (sliceDir == kSliceOrientMosaicNegativeDeterminant) vx[i].V[2] = -vx[i].V[2];
         for (int v= 0; v < 4; v++)
-            if (d->CSA.dtiV[i][v] == -0.0f) d->CSA.dtiV[i][v] = 0.0f; //remove sign from values that are virtually zero
+            if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
     } //for each direction
+    
     #ifdef myUseCOut
     if (sliceDir == kSliceOrientMosaicNegativeDeterminant)
         std::cout<<"WARNING: please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal)."<<std::endl;
@@ -418,56 +332,58 @@ bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
     return true;
 } //isSamePosition()
 
-bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir) {
+bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
+    
     //reports true if last volume is excluded (e.g. philip stores an ADC map)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
-
+    
     if (numDti < 1) return false;
     if ((numDti < 3) && (nConvert < 3)) return false;
-    if (numDti == 1) {//extract DTI from different slices
+    TDTI * vx = NULL;
+    if (numDti > 2) {
+        vx = (TDTI *)malloc(numDti * sizeof(TDTI));
+        for (int i = 0; i < numDti; i++) //for each direction
+            for (int v = 0; v < 4; v++) //for each vector+B-value
+                    vx[i].V[v] = dti4D->S[i].V[v];
+    } else { //if (numDti == 1) {//extract DTI from different slices
+        vx = (TDTI *)malloc(nConvert * sizeof(TDTI));
         numDti = 0;
         for (int i = 0; i < nConvert; i++) { //for each image
             if ((dcmList[indx0].CSA.mosaicSlices > 1)  || (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx]))) {
-                if (numDti < kMaxDTIv) 
-                    for (int v = 0; v < 4; v++) //for each vector+B-value
-                        dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
+                //if (numDti < kMaxDTIv)
+                for (int v = 0; v < 4; v++) //for each vector+B-value
+                    vx[numDti].V[v] = dcmList[dcmSort[i].indx].CSA.dtiV[v];  //dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
                 numDti++;
                 
             } //for slices with repeats
         }//for each file
         dcmList[indx0].CSA.numDti = numDti;
     }
-    if (numDti < 3) return false;
-    if (numDti > kMaxDTIv) {
-    	#ifdef myUseCOut
-    	std::cout<<"Error: more than "<<kMaxDTIv<<" DTI directions detected (check for a new software)"<<std::endl;
-		#else
-        printf("Error: more than %d DTI directions detected (check for a new software)", kMaxDTIv);
-        #endif
-        return false;
-    }
     bool bValueVaries = false;
     for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
-        if (dcmList[indx0].CSA.dtiV[i][0] != dcmList[indx0].CSA.dtiV[0][0]) bValueVaries = true;
+        if (vx[i].V[0] != vx[0].V[0]) bValueVaries = true;
     if (!bValueVaries) {
         bool bVecVaries = false;
         for (int i = 1; i < numDti; i++) {//check if all bvalues match first volume
-            if (dcmList[indx0].CSA.dtiV[i][1] != dcmList[indx0].CSA.dtiV[0][1]) bVecVaries = true;
-            if (dcmList[indx0].CSA.dtiV[i][1] != dcmList[indx0].CSA.dtiV[0][1]) bVecVaries = true;
-            if (dcmList[indx0].CSA.dtiV[i][1] != dcmList[indx0].CSA.dtiV[0][1]) bVecVaries = true;
+            if (vx[i].V[1] != vx[0].V[1]) bVecVaries = true;
+            if (vx[i].V[2] != vx[0].V[2]) bVecVaries = true;
+            if (vx[i].V[3] != vx[0].V[3]) bVecVaries = true;
         }
-        if (!bVecVaries) return false;
+        if (!bVecVaries) {
+                free(vx);
+                return false;
+        }
         for (int i = 1; i < numDti; i++)
-                printf("bxyz %g %g %g %g\n",dcmList[indx0].CSA.dtiV[i][0],dcmList[indx0].CSA.dtiV[i][1],dcmList[indx0].CSA.dtiV[i][2],dcmList[indx0].CSA.dtiV[i][3]);
-        printf("Error: only one B-value reported for all volumes: %g\n",dcmList[indx0].CSA.dtiV[0][0]);
+                printf("bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
+        printf("Error: only one B-value reported for all volumes: %g\n",vx[0].V[0]);
+        free(vx);
         return false;
     }
-        
     int firstB0 = -1;
     for (int i = 0; i < numDti; i++) //check if all bvalues match first volume
-        if (isSameFloat(dcmList[indx0].CSA.dtiV[i][0],0) ) {
+        if (isSameFloat(vx[i].V[0],0) ) {
             firstB0 = i;
             break;
         }
@@ -488,58 +404,65 @@ bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],stru
      )
      printf("xxx-->%f\n", dcmList[indx0].CSA.dtiV[numDti-1][3]);*/
     if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)
-        && (!isSameFloat(dcmList[indx0].CSA.dtiV[numDti-1][0],0.0f))  //not a B-0 image
-        && ((isSameFloat(dcmList[indx0].CSA.dtiV[numDti-1][1],0.0f)) ||
-            (isSameFloat(dcmList[indx0].CSA.dtiV[numDti-1][2],0.0f)) ||
-            (isSameFloat(dcmList[indx0].CSA.dtiV[numDti-1][3],0.0f)) )) {//yet all vectors are zero!!!! must be ADC
+        && (!isSameFloat(vx[numDti-1].V[0],0.0f))  //not a B-0 image
+        && ((isSameFloat(vx[numDti-1].V[1],0.0f)) ||
+            (isSameFloat(vx[numDti-1].V[2],0.0f)) ||
+            (isSameFloat(vx[numDti-1].V[3],0.0f)) )) {//yet all vectors are zero!!!! must be ADC
             isFinalADC = true; //final volume is ADC map
             numDti --; //remove final volume - it is a computed ADC map!
             dcmList[indx0].CSA.numDti = numDti;
         }
     // philipsCorrectBvecs(&dcmList[indx0]); //<- replaced by unified siemensPhilips solution
-    geCorrectBvecs(&dcmList[indx0],sliceDir);
-    siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir);
-    if (opts.isVerbose) {
-        for (int i = 0; i < (numDti-1); i++) {
-        	#ifdef myUseCOut
-    		std::cout<<i<<"\tB=\t"<<dcmList[indx0].CSA.dtiV[i][0]<<"\tVec=\t"<<
-                   dcmList[indx0].CSA.dtiV[i][1]<<"\t"<<dcmList[indx0].CSA.dtiV[i][2]
-                   <<"\t"<<dcmList[indx0].CSA.dtiV[i][3]<<std::endl;
-			#else
-            printf("%d\tB=\t%g\tVec=\t%g\t%g\t%g\n",i, dcmList[indx0].CSA.dtiV[i][0],
-                   dcmList[indx0].CSA.dtiV[i][1],dcmList[indx0].CSA.dtiV[i][2],dcmList[indx0].CSA.dtiV[i][3]);
-            
-        	#endif
-        } //for each direction
-    }
+    geCorrectBvecs(&dcmList[indx0],sliceDir, vx);
+    siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx);
     if (!opts.isFlipY ) { //!FLIP_Y&& (dcmList[indx0].CSA.mosaicSlices < 2) mosaics are always flipped in the Y direction
-        for (int i = 0; i < (numDti-1); i++) {
-            if (fabs(dcmList[indx0].CSA.dtiV[i][2]) > FLT_EPSILON)
-                dcmList[indx0].CSA.dtiV[i][2] = -dcmList[indx0].CSA.dtiV[i][2];
+        for (int i = 0; i < (numDti); i++) {
+            if (fabs(vx[i].V[2]) > FLT_EPSILON)
+                vx[i].V[2] = -vx[i].V[2];
         } //for each direction
     } //if not a mosaic
+    if (opts.isVerbose) {
+        for (int i = 0; i < (numDti); i++) {
+#ifdef myUseCOut
+            std::cout<<i<<"\tB=\t"<<dcmList[indx0].CSA.dtiV[i][0]<<"\tVec=\t"<<
+            dcmList[indx0].CSA.dtiV[i][1]<<"\t"<<dcmList[indx0].CSA.dtiV[i][2]
+            <<"\t"<<dcmList[indx0].CSA.dtiV[i][3]<<std::endl;
+#else
+            printf("%d\tB=\t%g\tVec=\t%g\t%g\t%g\n",i, vx[i].V[0],
+                   vx[i].V[1],vx[i].V[2],vx[i].V[3]);
+            
+#endif
+        } //for each direction
+    }
     //printf("%f\t%f\t%f",dcmList[indx0].CSA.dtiV[1][1],dcmList[indx0].CSA.dtiV[1][2],dcmList[indx0].CSA.dtiV[1][3]);
     char txtname[2048] = {""};
     strcpy (txtname,pathoutname);
     strcat (txtname,".bval");
     //printf("Saving DTI %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
-    if (fp == NULL) return isFinalADC;
+    if (fp == NULL) {
+        free(vx);
+        return isFinalADC;
+    }
     for (int i = 0; i < (numDti-1); i++)
-        fprintf(fp, "%g\t", dcmList[indx0].CSA.dtiV[i][0]);
-    fprintf(fp, "%g\n", dcmList[indx0].CSA.dtiV[numDti-1][0]);
+        fprintf(fp, "%g\t", vx[i].V[0]);
+    fprintf(fp, "%g\n", vx[numDti-1].V[0]);
     fclose(fp);
     strcpy(txtname,pathoutname);
     strcat (txtname,".bvec");
     //printf("Saving DTI %s\n",txtname);
     fp = fopen(txtname, "w");
-    if (fp == NULL) return isFinalADC;
+    if (fp == NULL) {
+        free(vx);
+        return isFinalADC;
+    }
     for (int v = 1; v < 4; v++) {
         for (int i = 0; i < (numDti-1); i++)
-            fprintf(fp, "%g\t", dcmList[indx0].CSA.dtiV[i][v]);
-        fprintf(fp, "%g\n", dcmList[indx0].CSA.dtiV[numDti-1][v]);
+            fprintf(fp, "%g\t", vx[i].V[v]);
+        fprintf(fp, "%g\n", vx[numDti-1].V[v]);
     }
     fclose(fp);
+    free(vx);
     return isFinalADC;
 } //nii_SaveDTI()
 
@@ -1184,7 +1107,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     return EXIT_SUCCESS;
 }
 
-int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts) {
+int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
@@ -1323,7 +1246,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir);
     }
-    bool isFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir);
+    bool isFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     isFinalADC =isFinalADC; //simply to silence compiler warning when myNoSave defined
 
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
@@ -1672,10 +1595,11 @@ int convert_parRec(struct TDCMopts opts) {
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
     nameList.str[0]  = (char *)malloc(strlen(opts.indir)+1);
     strcpy(nameList.str[0],opts.indir);
-    dcmList[0] = nii_readParRec(nameList.str[0]);
+    TDTI4D dti4D;
+    dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D);
     struct TDCMsort dcmSort[1];
     dcmSort[0].indx = 0;
-    saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts);
+    saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, &dti4D);
     free(dcmList);//if (nConvertTotal == 0)
     if (nameList.numItems < 1) {
      #ifdef myUseCOut
@@ -1717,9 +1641,6 @@ int nii_loadDir (struct TDCMopts* opts) {
     #else
     printf("Version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
     #endif
-
-    
-    
     char indir[512];
     strcpy(indir,opts->indir);
     bool isFile = is_fileNotDir(opts->indir);
@@ -1762,11 +1683,11 @@ int nii_loadDir (struct TDCMopts* opts) {
             return convert_parRec(*opts);
     }
     struct TSearchList nameList;
-    #if UINTPTR_MAX == 0xffffffff
-		nameList.maxItems = 68000; // 32-bit larger requires more memory, smaller more passes 
-	#elif UINTPTR_MAX == 0xffffffffffffffff
-		nameList.maxItems = 34000; // 64-bit larger requires more memory, smaller more passes 
-	#endif
+    //#if UINTPTR_MAX == 0xffffffff //optional: 32-bit vs 64-bit assumptions
+		nameList.maxItems = 68000; 
+	//#elif UINTPTR_MAX == 0xffffffffffffffff
+	//	nameList.maxItems = 34000; // 64-bit larger requires more memory, smaller more passes 
+	//#endif	
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
@@ -1798,10 +1719,20 @@ int nii_loadDir (struct TDCMopts* opts) {
     #endif
     // struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
-    for (int i = 0; i < nameList.numItems; i++ )
-        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag); //ignore compile warning - memory only freed on first of 2 passes
-    //3: stack DICOMs with the same Series
+    struct TDTI4D dti4D;
     int nConvertTotal = 0;
+    for (int i = 0; i < nDcm; i++ ) {
+        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+        if (dcmList[i].CSA.numDti > 1) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+            struct TDCMsort dcmSort[1];
+            dcmSort[0].indx = i;
+            dcmSort[0].img = ((uint64_t)dcmList[i].seriesNum << 32) + dcmList[i].imageNum;
+            dcmList[i].converted2NII = 1;
+            saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+            nConvertTotal++;
+        }
+    }
+    //3: stack DICOMs with the same Series
     for (int i = 0; i < nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
@@ -1829,7 +1760,7 @@ int nii_loadDir (struct TDCMopts* opts) {
 			else
 				nConvert = removeDuplicates(nConvert, dcmSort);
 			nConvertTotal += nConvert;
-			saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts);
+			saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
 #ifdef _MSC_VER
 			free(dcmSort);
 #endif
