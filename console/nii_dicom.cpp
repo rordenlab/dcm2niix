@@ -14,8 +14,6 @@
 #define vsnprintf _vsnprintf 
 #define strcasecmp _stricmp 
 #define strncasecmp _strnicmp 
-#else
-#include <unistd.h> //access
 #endif
 
 //#include <time.h> //clock()
@@ -90,7 +88,7 @@ unsigned char * imagetoimg(opj_image_t * image)
         printf("Error: Signed 8-bit DICOM?\n");
         return NULL;
     }
-    //n.b. NIfTI rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
+    //n.b. Analyze rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
     int pix = 0; //ouput pixel
     for (int cmptno = 0; cmptno < numcmpts; ++cmptno) {
         int cpix = 0; //component pixel
@@ -1013,9 +1011,10 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     for (int i = 0; i < 18; i++) h->db_name[i] = 0;
     for (int i = 0; i < 10; i++) h->data_type[i] = 0;
     for (int i = 0; i < 16; i++) h->intent_name[i] = 0;
-    if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3))
+    if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3)) {
+        h->intent_code = NIFTI_INTENT_ESTIMATE; //make sure we treat this as RGBRGB...RGB
         h->datatype = DT_RGB24;
-    else if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 1))
+    } else if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 1))
         h->datatype = DT_UINT8;
     else if ((d.bitsAllocated == 16) && (d.samplesPerPixel == 1) && (d.isSigned))
         h->datatype = DT_INT16;
@@ -1312,24 +1311,29 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kGradientNumber] > 0) {
-			int dir = (int) cols[kGradientNumber];
+			/*int dir = (int) cols[kGradientNumber];
             if ((dir > 0) && (cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
                 if (dti4D->S[dir-1].V[0] >= 0) dir = dir + 1; //Philips often stores an ADC map along with B0 and weighted images, unfortunately they give it the same kGradientNumber as the B0! (seen in PAR V4.2)
                 //the logic here is that IF the gradient was previously used we increment the gradient number. This should provide compatibility when Philips fixes this bug
                 //it seems like the ADC is always saved as the final volume, so this solution SHOULD be foolproof.
                 ADCwarning = true;
+            }*/
+            if (cols[kSlice] == 1) { //only first slice
+                d.CSA.numDti++;
+                int dir = d.CSA.numDti;
+                if (dir <= kMaxDTI4D) {
+                    if (isVerbose ) {
+                        if (d.CSA.numDti == 1) printf("n\tdir\tbValue\tV1\tV2\tV3\n");
+                        printf("%d\t%g\t%g\t%g\t%g\t%g\n", dir-1, cols[kGradientNumber], cols[kbval], cols[kv1], cols[kv2], cols[kv3]);
+                    }
+                    dti4D->S[dir-1].V[0] = cols[kbval];
+                    dti4D->S[dir-1].V[1] = cols[kv1];
+                    dti4D->S[dir-1].V[2] = cols[kv2];
+                    dti4D->S[dir-1].V[3] = cols[kv3];
+
+                } //save DTI direction
+                
             }
-            if (dir > d.CSA.numDti) d.CSA.numDti = dir;
-
-            if (dir <= kMaxDTI4D) {
-                if ((isVerbose ) && (dti4D->S[dir-1].V[0] < 0))
-                    printf("%d %g %gx%gx%g %d\n", dir-1, cols[kbval], cols[kv1], cols[kv2], cols[kv3], d.CSA.numDti);
-                dti4D->S[dir-1].V[0] = cols[kbval];
-                dti4D->S[dir-1].V[1] = cols[kv1];
-                dti4D->S[dir-1].V[2] = cols[kv2];
-                dti4D->S[dir-1].V[3] = cols[kv3];
-
-            } //save DTI direction
         } //if DTI directions
         //printf("%f %f %lu\n",cols[9],cols[kGradientNumber], strlen(buff))
         p = fgets (buff, LINESZ, fp);//get next line
@@ -1337,9 +1341,13 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
                     
     free (cols);
     fclose (fp);
-    d.manufacturer = kMANUFACTURER_PHILIPS ;
+    d.manufacturer = kMANUFACTURER_PHILIPS;
     d.isValid = true;
     d.isSigned = true;
+    if ((slice % d.xyzDim[3]) != 0) {
+        printf("Error: slices (%d) not divisible by slices (%d) [acquisition aborted]. Try nii_rescue_par to fix this: %s\n", slice, d.xyzDim[3], parname);
+        d.isValid = true;
+    }
     d.xyzDim[4] = slice/d.xyzDim[3];
     d.locationsInAcquisition = d.xyzDim[3];
 #ifdef myUseCOut
@@ -1508,7 +1516,8 @@ unsigned char * nii_flipImgY(unsigned char* bImg, struct nifti_1_header *hdr){
     for (int i = 3; i < 8; i++)
         if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
     size_t lineBytes = hdr->dim[1] * hdr->bitpix/8;
-    if ((hdr->datatype == DT_RGB24) && (hdr->bitpix == 24)) {
+    if ((hdr->datatype == DT_RGB24) && (hdr->bitpix == 24) && (hdr->intent_code == NIFTI_INTENT_NONE)) {
+        //we use the intent code to indicate planar vs triplet...
         lineBytes = hdr->dim[1];
         dim3to7 = dim3to7 * 3;
     } //rgb data saved planar (RRR..RGGGG..GBBB..B
@@ -1634,9 +1643,44 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
 	fclose(file);
     return bImg;
 } //nii_loadImg()
+                    
+unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
+                        //DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
+        if (bImg == NULL) return NULL;
+                        if (hdr->datatype != DT_RGB24) return bImg;
+                        if (isPlanar == 0) return bImg;//return nii_bgr2rgb(bImg,hdr);
+                        int dim3to7 = 1;
+                        for (int i = 3; i < 8; i++)
+                            if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
+                        //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
+                        int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
+                        int sliceBytes24 = sliceBytes8 * 3;
+#ifdef _MSC_VER
+                        unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
+#else
+                        unsigned char  slice24[ sliceBytes24 ];
+#endif
+                        int sliceOffsetR = 0;
+                        for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
+                            memcpy(slice24, &bImg[sliceOffsetR], sliceBytes24);
+                            int sliceOffsetG = sliceOffsetR + sliceBytes8;
+                            int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
+                            int i = 0;
+                            for (int rgb = 0; rgb < sliceBytes8; rgb++) {
+                                bImg[i++] =slice24[sliceOffsetR+rgb];
+                                bImg[i++] =slice24[sliceOffsetG+rgb];
+                                bImg[i++] =slice24[sliceOffsetB+rgb];
+                            }
+                            sliceOffsetR += sliceBytes24;
+                        } //for each slice
+#ifdef _MSC_VER
+                        free(slice24);
+#endif
+                        return bImg;
+} //nii_rgb2Planar()
 
-unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
-    //DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
+unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
+    //DICOM data saved in triples RGBRGBRGB, Analyze RGB saved in planes RRR..RGGG..GBBBB..B
     if (bImg == NULL) return NULL;
     if (hdr->datatype != DT_RGB24) return bImg;
     if (isPlanar == 1) return bImg;//return nii_bgr2rgb(bImg,hdr);
@@ -1646,7 +1690,6 @@ unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, 
     //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
     int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
     int sliceBytes24 = sliceBytes8 * 3;
-    
 #ifdef _MSC_VER
 	unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
 #else
@@ -1660,12 +1703,9 @@ unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, 
         int i = 0;
         int j = 0;
         for (int rgb = 0; rgb < sliceBytes8; rgb++) {
-            bImg[sliceOffsetR+j] =slice24[i];
-            i++;
-            bImg[sliceOffsetG+j] =slice24[i];
-            i++;
-            bImg[sliceOffsetB+j] =slice24[i];
-            i++;
+            bImg[sliceOffsetR+j] =slice24[i++];
+            bImg[sliceOffsetG+j] =slice24[i++];
+            bImg[sliceOffsetB+j] =slice24[i++];
             j++;
         }
         sliceOffsetR += sliceBytes24;
@@ -1719,25 +1759,15 @@ unsigned char * nii_XYTZ_XYZT(unsigned char* bImg, struct nifti_1_header *hdr, i
     for (int i = 4; i < 8; i++)
         if (hdr->dim[i] > 1) dim4to7 = dim4to7 * hdr->dim[i];
     if ((hdr->dim[3] < 2) || (dim4to7 < 2)) return bImg;
-#ifdef myUseCOut
-    std::cout<<"Converting XYTZ to XYZT with "<<hdr->dim[3]<<" slices (Z) and "<<  dim4to7<< "volumes" <<std::endl;
-    if ((dim4to7 % seqRepeats) != 0) {
-        std::cout<<"Error: patient position repeats "<<seqRepeats<<"  times, but this does not evenly divide number of volumes: "<<  dim4to7 <<std::endl;
-        seqRepeats = 1;
-    }
-    
-#else
     printf("Converting XYTZ to XYZT with %d slices (Z) and %d volumes (T).\n",hdr->dim[3], dim4to7);
     if ((dim4to7 % seqRepeats) != 0) {
-        printf("Error: patient position repeats %d times, but this does not evenly divide number of volumes (%d)", seqRepeats,dim4to7);
+        printf("Error: patient position repeats %d times, but this does not evenly divide number of volumes (%d)\n", seqRepeats,dim4to7);
         seqRepeats = 1;
     }
-#endif
     uint64_t typeRepeats = dim4to7 / seqRepeats;
     uint64_t sliceBytes = hdr->dim[1]*hdr->dim[2]*hdr->bitpix/8;
     uint64_t seqBytes = sliceBytes * seqRepeats;
     uint64_t typeBytes = seqBytes * hdr->dim[3];
-    
     uint64_t imgSz = nii_ImgBytes(*hdr);
     //this uses a lot of RAM, someday this could be done in place...
     unsigned char *outImg = (unsigned char *)malloc( imgSz);
@@ -1873,7 +1903,7 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
             return NULL;
         }
     }
-    //n.b. NIfTI rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
+    //n.b. Analyze rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
     for (cmptno = 0; cmptno < numcmpts; ++cmptno) {
         for (y = 0; y < height; ++y) {
             if (jas_image_readcmpt(image, cmpts[cmptno], 0, y, width, 1, data)) {
@@ -1959,8 +1989,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     unsigned char * img;
     if (dcm.compressionScheme == kCompress50) {
         img = nii_loadImgJPEG50(imgname, *hdr, dcm);
-        //if (img == NULL) return NULL;
-        img = nii_rgb2Planar(img, hdr, false); //convert RGBRGB.. to RRR..RGGGG..GBBB..B
+        //img = nii_rgb2planar(img, hdr, false); //convert RGBRGB.. to RRR..RGGGG..GBBB..B
     } else if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
     } else
@@ -1990,7 +2019,14 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_byteswap(img, hdr);
 #endif
     }
-    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) img = nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
+    //if ((hdr->datatype ==DT_RGB24) && (dcm.compressionScheme != kCompressNone))
+    //    dcm.isPlanarRGB = true;
+    //if (hdr->datatype ==DT_RGB24) img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB);
+    //dcm.isPlanarRGB = false;
+    //xxxxx
+    //dcm.isLittleEndian = !dcm.isLittleEndian; //xxxxx
+    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB); //nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
+    dcm.isPlanarRGB = true;
     if (dcm.CSA.mosaicSlices > 1) {
         img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, dcm.CSA.protocolSliceNumber1);
         /* we will do this in nii_dicom_batch #ifdef obsolete_mosaic_flip

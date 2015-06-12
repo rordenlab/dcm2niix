@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "2June2015j" //JASPER for JPEG2000
+    #define kDCMvers "12June2015j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "2June2015" //no decompressor
+    #define kDCMvers "12June2015" //no decompressor
 	#else
-    #define kDCMvers "2June2015o" //OPENJPEG for JPEG2000
+    #define kDCMvers "12June2015o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
@@ -72,7 +72,9 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     void changeExt (char *file_name, const char* ext);
     struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D);
     //void reportMat(struct nifti_1_header h);
-    unsigned char * nii_rgb2Planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);
+    //unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);
+    unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);
+    
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
     //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
     unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);

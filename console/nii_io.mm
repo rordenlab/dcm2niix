@@ -441,7 +441,7 @@ NSData * ungz(NSData* data, NSInteger DecompBytes)
             [decompressed setLength: strm.total_out];
         return [NSData dataWithData: decompressed];
     }
-    else return nil;
+    return nil;
 }
 
 void char2uchar (FSLIO* fslio)
@@ -458,7 +458,10 @@ void char2uchar (FSLIO* fslio)
 
 void swapByteOrder (FSLIO* fslio) {
     if (fslio->niftiptr->nbyper == 1) return; //byte order does not matter for one byte image
+    //NSLog(@"Swap?");
     if (fslio->niftiptr->byteorder == nifti_short_order()) return; //already native byte order
+    //NSLog(@"Swap!");
+    
     if (fslio->niftiptr->datatype == DT_RGBA32) return;
     if ( fslio->niftiptr->datatype == DT_RGB24) return;
     size_t nvox = fslio->niftiptr->nvox;
@@ -558,6 +561,11 @@ void nii_zeroHdr(struct nifti_1_header *nhdr)
     return bImg;
 } //nii_rgb2Planar()*/
 
+struct TDICOMdata nii_readParRecV(char * fname) {
+    TDTI4D unused;
+    return nii_readParRec(fname, false, &unused);
+} // readDICOM()
+
 
 int FslReadVolumes(FSLIO* fslio, char* filename, int skipVol, int loadVol, bool dicomWarn)
 //returns volumes loaded, 0 when unable to load images
@@ -641,7 +649,7 @@ int FslReadVolumes(FSLIO* fslio, char* filename, int skipVol, int loadVol, bool 
         strcat(fnameC,[fname cStringUsingEncoding:1]);
         struct TDICOMdata d;
         if ([ext rangeOfString:@"PAR" options:NSCaseInsensitiveSearch].location != NSNotFound) {
-            d =nii_readParRec(fnameC);
+            d =nii_readParRecV(fnameC);
             imgname = [NSString stringWithCString:fnameC encoding:NSASCIIStringEncoding];
             if (!checkSandAccess3(imgname)) {
                 NSLog(@"You do not have permission to open %@", imgname);

@@ -285,8 +285,10 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
                           + (vx[i].V[2]*vx[i].V[2])
                           + (vx[i].V[3]*vx[i].V[3]));
         if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
-            for (int v= 0; v < 4; v++)
-                vx[i].V[v] =0.0f;
+            if (vx[i].V[0] > FLT_EPSILON)
+                printf("Warning: volume %d appears to be an ADC map (non-zero b-value with zero vector length)\n", i);
+            //for (int v= 0; v < 4; v++)
+            //    vx[i].V[v] =0.0f;
             continue; //do not normalize or reorient b0 vectors
         }//if bvalue=0
         vec3 bvecs_old =setVec3(vx[i].V[1],vx[i].V[2],vx[i].V[3]);
@@ -332,9 +334,8 @@ bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
     return true;
 } //isSamePosition()
 
-bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
-    
-    //reports true if last volume is excluded (e.g. philip stores an ADC map)
+int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
+    //reports non-zero if last volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
@@ -398,20 +399,33 @@ bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],stru
     if (firstB0 < 0) printf("Warning: this diffusion series does not have a B0 (reference) volume\n");
     if (firstB0 > 0) printf("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", firstB0);
 	#endif
-    bool isFinalADC = false;
+    int numFinalADC = 0;
     /*if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)
      && (!isSameFloat(dcmList[indx0].CSA.dtiV[numDti-1][0],0.0f))
      )
      printf("xxx-->%f\n", dcmList[indx0].CSA.dtiV[numDti-1][3]);*/
-    if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)
-        && (!isSameFloat(vx[numDti-1].V[0],0.0f))  //not a B-0 image
-        && ((isSameFloat(vx[numDti-1].V[1],0.0f)) ||
-            (isSameFloat(vx[numDti-1].V[2],0.0f)) ||
-            (isSameFloat(vx[numDti-1].V[3],0.0f)) )) {//yet all vectors are zero!!!! must be ADC
-            isFinalADC = true; //final volume is ADC map
-            numDti --; //remove final volume - it is a computed ADC map!
-            dcmList[indx0].CSA.numDti = numDti;
-        }
+    if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS) {
+        int i = numDti - 1;
+        while ((i > 0) && (!isSameFloat(vx[i].V[0],0.0f)) && //not a B-0 image
+                   ((isSameFloat(vx[i].V[1],0.0f)) &&
+                   (isSameFloat(vx[i].V[2],0.0f)) &&
+                   (isSameFloat(vx[i].V[3],0.0f)) ) ){//yet all vectors are zero!!!! must be ADC
+                numFinalADC++; //final volume is ADC map
+                numDti --; //remove final volume - it is a computed ADC map!
+                dcmList[indx0].CSA.numDti = numDti;
+                i --;
+        } //
+        if (numFinalADC > 0)
+            printf("Note: final %d volumes appear to be ADC images that will be removed to allow processing\n", numFinalADC);
+        /*for (int i = 0; i < (numDti); i++) {
+            if ((!isSameFloat(vx[i].V[0],0.0f)) && //not a B-0 image
+                ((isSameFloat(vx[i].V[1],0.0f)) &&
+                 (isSameFloat(vx[i].V[2],0.0f)) &&
+                 (isSameFloat(vx[i].V[3],0.0f)) ) )
+                printf("Warning: volume %d appears to be an ADC volume %g %g %g\n", i+1, vx[i].V[1], vx[i].V[2], vx[i].V[3]);
+            
+        }*/
+    }
     // philipsCorrectBvecs(&dcmList[indx0]); //<- replaced by unified siemensPhilips solution
     geCorrectBvecs(&dcmList[indx0],sliceDir, vx);
     siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx);
@@ -442,7 +456,7 @@ bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],stru
     FILE *fp = fopen(txtname, "w");
     if (fp == NULL) {
         free(vx);
-        return isFinalADC;
+        return numFinalADC;
     }
     for (int i = 0; i < (numDti-1); i++)
         fprintf(fp, "%g\t", vx[i].V[0]);
@@ -454,7 +468,7 @@ bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],stru
     fp = fopen(txtname, "w");
     if (fp == NULL) {
         free(vx);
-        return isFinalADC;
+        return numFinalADC;
     }
     for (int v = 1; v < 4; v++) {
         for (int i = 0; i < (numDti-1); i++)
@@ -463,7 +477,7 @@ bool nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],stru
     }
     fclose(fp);
     free(vx);
-    return isFinalADC;
+    return numFinalADC;
 } //nii_SaveDTI()
 
 float sqr(float v){
@@ -1246,8 +1260,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir);
     }
-    bool isFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
-    isFinalADC =isFinalADC; //simply to silence compiler warning when myNoSave defined
+    int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
+    numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
 
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     #ifdef myUseCOut
@@ -1268,27 +1282,28 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_setOrtho(imgM, &hdr0); //printf("ortho %d\n", echoInt (33));
     else if (opts.isFlipY)//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
         imgM = nii_flipY(imgM, &hdr0);
-    else    
+    else
     #ifdef myUseCOut
     	std::cout<<"DICOM row order preserved: may appear upside down in tools that ignore spatial transforms"<<std::endl;
 		#else
         printf("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
         #endif
 #ifndef myNoSave
+    if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
+        imgM = nii_planar2rgb(imgM, &hdr0, true);
     if ((hdr0.dim[4] > 1) && (saveAs3D))
         nii_saveNII3D(pathoutname, hdr0, imgM,opts);
     else {
-        if ((isFinalADC) && (hdr0.dim[4] > 2)) { //ADC maps can disrupt analysis: save a copy with the ADC map, and another without
+        if ((numFinalADC > 0) && (hdr0.dim[4] > (numFinalADC+1))) { //ADC maps can disrupt analysis: save a copy with the ADC map, and another without
             char pathoutnameADC[2048] = {""};
             strcat(pathoutnameADC,pathoutname);
             strcat(pathoutnameADC,"_ADC");
             nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
-            hdr0.dim[4] = hdr0.dim[4]-1;
+            hdr0.dim[4] = hdr0.dim[4]-numFinalADC;
         };
         nii_saveNII(pathoutname, hdr0, imgM, opts);
     }
 #endif
-    
     if (dcmList[indx0].gantryTilt != 0.0) {
         if (dcmList[indx0].isResampled)
             printf("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
@@ -1683,11 +1698,11 @@ int nii_loadDir (struct TDCMopts* opts) {
             return convert_parRec(*opts);
     }
     struct TSearchList nameList;
-    //#if UINTPTR_MAX == 0xffffffff //optional: 32-bit vs 64-bit assumptions
-		nameList.maxItems = 68000; 
-	//#elif UINTPTR_MAX == 0xffffffffffffffff
-	//	nameList.maxItems = 34000; // 64-bit larger requires more memory, smaller more passes 
-	//#endif	
+    #if UINTPTR_MAX == 0xffffffff
+		nameList.maxItems = 68000; // 32-bit larger requires more memory, smaller more passes 
+	#elif UINTPTR_MAX == 0xffffffffffffffff
+		nameList.maxItems = 34000; // 64-bit larger requires more memory, smaller more passes 
+	#endif
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
@@ -1733,6 +1748,7 @@ int nii_loadDir (struct TDCMopts* opts) {
         }
     }
     //3: stack DICOMs with the same Series
+
     for (int i = 0; i < nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
@@ -1899,6 +1915,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     strcpy(opts->outdir,"");
     opts->isGz = false;
     opts->isFlipY = true;
+    opts->isRGBplanar = false;
 #ifdef myDebug
     opts->isVerbose =   true;
 #else
@@ -1949,6 +1966,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     strcpy(opts->outdir,"");
     opts->isGz = false;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
+    opts->isRGBplanar = false;
 #ifdef myDebug
         opts->isVerbose =   true;
 #else

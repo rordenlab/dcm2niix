@@ -11,10 +11,11 @@ extern "C" {
 #include <stdbool.h>
 #include <string.h>
 #include "nifti1.h"
+#include "nifti1.h"
 #include "nii_dicom.h"
 
     struct TDCMopts {
-        bool isGz, isFlipY,isVerbose, isTiltCorrect;
+        bool isGz, isFlipY,isVerbose, isTiltCorrect, isRGBplanar;
         int compressFlag; //support for compressed data 0=none, 
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512];
     };
