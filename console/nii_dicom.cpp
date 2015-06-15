@@ -1,8 +1,6 @@
 //#define MY_DEBUG
 #if defined(_WIN64) || defined(_WIN32)
 	#include <windows.h> //write to registry
-#else
-	#include <unistd.h>
 #endif
 #ifdef _MSC_VER
 #  include <direct.h>
@@ -14,6 +12,8 @@
 #define vsnprintf _vsnprintf 
 #define strcasecmp _stricmp 
 #define strncasecmp _strnicmp 
+#else
+	#include <unistd.h>
 #endif
 
 //#include <time.h> //clock()
