@@ -27,7 +27,7 @@ endif()
 #  TARGET_LINK_LIBRARIES(dcm2niix z)
 #else(ZLIB_FOUND)
 #  ADD_DEFINITIONS(-DmyDisableZlib)
-endif(ZLIB_FOUND)
+#endif(ZLIB_FOUND)
 ADD_DEFINITIONS(-DmyDisableJasper)
 ADD_DEFINITIONS(-DmyDisableOpenJPEG)
 
