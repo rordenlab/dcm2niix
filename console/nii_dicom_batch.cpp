@@ -1385,7 +1385,7 @@ void  convertForeign2Nii(char * fname, struct TDCMopts* opts) {//, struct TDCMop
 } //nii_createDummyFilename()
 #endif */
 
-void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth, struct TDCMopts* opts) {
+void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth) {
     tinydir_dir dir;
     tinydir_open(&dir, path);
     while (dir.has_next) {
@@ -1398,7 +1398,7 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         strcat(filename,kFileSep);
         strcat(filename, file.name);
         if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.'))
-            searchDirForDICOM(filename, nameList, maxDepth, depth+1, opts);
+            searchDirForDICOM(filename, nameList, maxDepth, depth+1);
         else if (!file.is_reg) //ignore hidden files...
             ;
         else if (isDICOMfile(filename)) {
@@ -1707,7 +1707,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
         nameList.numItems = 0;
-        searchDirForDICOM(opts->indir, &nameList,  5,1, opts);
+        searchDirForDICOM(opts->indir, &nameList,  5,1);
         if (nameList.numItems <= nameList.maxItems)
             break;
         freeNameList(nameList);
