@@ -1698,7 +1698,7 @@ int nii_loadDir (struct TDCMopts* opts) {
             return convert_parRec(*opts);
     }
     struct TSearchList nameList;
-	nameList.maxItems = 8000; // 64-bit larger requires more memory, smaller more passes 
+	nameList.maxItems = 32000; // larger requires more memory, smaller more passes 
 
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
