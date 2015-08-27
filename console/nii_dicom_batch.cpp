@@ -751,7 +751,10 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     strm.next_out = pCmp; // output char array
     strm.avail_out = (unsigned int)cmp_len; // size of output
     //if ( deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15, 8, Z_DEFAULT_STRATEGY)!= Z_OK) return;
-    if (deflateInit(&strm, Z_DEFAULT_COMPRESSION)!= Z_OK) return;
+    if (deflateInit(&strm, Z_DEFAULT_COMPRESSION)!= Z_OK) {
+        free(pCmp);
+        return;
+    }
     //add header
     unsigned char *pHdr = (unsigned char *)malloc(hdrPadBytes);
     pHdr[hdrPadBytes-1] = 0; pHdr[hdrPadBytes-2] = 0; pHdr[hdrPadBytes-3] = 0; pHdr[hdrPadBytes-4] = 0;
@@ -769,9 +772,17 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     file_crc32 = mz_crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
     file_crc32 = mz_crc32(file_crc32, src_buffer, (unsigned int)src_len);
     cmp_len = strm.total_out;
-    if (cmp_len <= 0) return;
+    if (cmp_len <= 0) {
+        free(pCmp);
+        free(src_buffer);
+        return;
+    }
     FILE *fileGz = fopen(fname, "wb");
-    if (!fileGz) return;
+    if (!fileGz) {
+        free(pCmp);
+        free(src_buffer);
+        return;
+    }
     //write header http://www.gzip.org/zlib/rfc-gzip.html
     fputc((char)0x1f, fileGz); //ID1
     fputc((char)0x8b, fileGz); //ID2
@@ -1289,6 +1300,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         printf("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
         #endif
 #ifndef myNoSave
+    //printf(" x--> %d ----\n", nConvert);
     if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
         imgM = nii_planar2rgb(imgM, &hdr0, true);
     if ((hdr0.dim[4] > 1) && (saveAs3D))
@@ -1341,10 +1353,11 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2) {
     //printf("%g %g %g %g %g %g\n", d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6]);
     if (!isSameFloat(d1.orient[1], d2.orient[1]) || !isSameFloat(d1.orient[2], d2.orient[2]) ||  !isSameFloat(d1.orient[3], d2.orient[3]) ||
         !isSameFloat(d1.orient[4], d2.orient[4]) || !isSameFloat(d1.orient[5], d2.orient[5]) ||  !isSameFloat(d1.orient[6], d2.orient[6]) ) return false;
-    if ((d1.dateTime == d2.dateTime) && (d1.seriesNum == d2.seriesNum) && (d1.bitsAllocated == d2.bitsAllocated)
-        && (d1.xyzDim[1] == d2.xyzDim[1]) && (d1.xyzDim[2] == d2.xyzDim[2]) && (d1.xyzDim[3] == d2.xyzDim[3]) )
-        return true;
-    return false;
+    if ((d1.dateTime != d2.dateTime) || (d1.seriesNum != d2.seriesNum) || (d1.bitsAllocated != d2.bitsAllocated)|| (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) )
+        return false;
+    if (strcmp(d1.protocolName, d2.protocolName) != 0)
+        return false;
+    return true;
 } //isSameSet()
 
 /*
@@ -1384,6 +1397,30 @@ void  convertForeign2Nii(char * fname, struct TDCMopts* opts) {//, struct TDCMop
     free(img);
 } //nii_createDummyFilename()
 #endif */
+
+int singleDICOM(struct TDCMopts* opts, char *fname) {
+    char filename[768] ="";
+    strcat(filename, fname);
+    if (!isDICOMfile(filename)) {
+        printf("Error: not a DICOM image : %s\n", filename);
+        return 0;
+    }
+    struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc( sizeof(struct  TDICOMdata));
+    struct TDTI4D dti4D;
+    struct TSearchList nameList;
+    nameList.maxItems = 1; // larger requires more memory, smaller more passes
+    nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
+    nameList.numItems = 0;
+    nameList.str[nameList.numItems]  = (char *)malloc(strlen(filename)+1);
+    strcpy(nameList.str[nameList.numItems],filename);
+    nameList.numItems++;
+    struct TDCMsort dcmSort[1];
+    dcmSort[0].indx = 0;
+    dcmSort[0].img = ((uint64_t)dcmList[0].seriesNum << 32) + dcmList[0].imageNum;
+    dcmList[0].converted2NII = 1;
+    dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+    return saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+}
 
 void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth) {
     tinydir_dir dir;
@@ -1489,8 +1526,6 @@ bool isExt (char *file_name, const char* ext) {
     //if(strcmp(p_extension,ext) == 0) return true;
     return false;
 } //isExt()
-
-
 
 /*int nii_readpic(char * fname, struct nifti_1_header *nhdr) {
     //https://github.com/jefferis/pic2nifti/blob/master/libpic2nifti.c
@@ -1697,6 +1732,8 @@ int nii_loadDir (struct TDCMopts* opts) {
         } else if (isExt(indir, ".par")) //Linux is case sensitive...
             return convert_parRec(*opts);
     }
+    if ((isFile) && (opts->isOnlySingleFile))
+        return singleDICOM(opts, indir);
     struct TSearchList nameList;
 	nameList.maxItems = 32000; // larger requires more memory, smaller more passes 
 
@@ -1910,6 +1947,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
 	#endif
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");
+    opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isGz = false;
     opts->isFlipY = true;
     opts->isRGBplanar = false;
@@ -1961,6 +1999,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     sprintf(opts->optsname, "%s%s", getenv("HOME"), STATUSFILENAME);
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");
+    opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isGz = false;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;

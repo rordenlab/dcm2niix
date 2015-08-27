@@ -124,8 +124,8 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     unsigned char btS1, btS2, SOSss, SOSse, SOSahal, SOSpttrans, btMarkerType, SOSns = 0x00; //tag
     uint8_t SOFnf, SOFprecision;
     uint16_t SOFydim, SOFxdim; //, lRestartSegmentSz;
-    long SOFarrayPos, SOSarrayPos;
-    int lnHufTables;
+    // long SOSarrayPos; //SOFarrayPos
+    int lnHufTables = 0;
     const int kmaxFrames = 4;
     struct HufTables l[kmaxFrames+1];
     do { //read each marker in the header
@@ -153,7 +153,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             SOFydim = readWord(lRawRA, &lRawPos, lRawSz);
             SOFxdim = readWord(lRawRA, &lRawPos, lRawSz);
             SOFnf = readByte(lRawRA, &lRawPos, lRawSz);
-            SOFarrayPos = lRawPos;
+            //SOFarrayPos = lRawPos;
             lRawPos = (lSegmentEnd);
             if (verbose) printf(" [Precision %d X*Y %d*%d Frames %d]\n", SOFprecision, SOFxdim, SOFydim, SOFnf);
             if (btMarkerType != 0xC3) { //lImgTypeC3 = true;
@@ -170,6 +170,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             int lFrameCount = 1;
             do {
                 uint8_t DHTnLi = readByte(lRawRA, &lRawPos, lRawSz ); //we read but ignore DHTtcth.
+                #pragma unused(DHTnLi) //we need to increment the input file position, but we do not care what the value is
                 DHTnLi = 0;
                 for (int lInc = 1; lInc <= 16; lInc++) {
                     l[lFrameCount].DHTliRA[lInc] = readByte(lRawRA, &lRawPos, lRawSz);
@@ -236,15 +237,18 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         } else if (btMarkerType == 0xDA) {  //if DRI marker else if read Start of Scan (SOS) marker
             SOSns = readByte(lRawRA, &lRawPos, lRawSz);
             //if Ns = 1 then NOT interleaved, else interleaved: see B.2.3
-            SOSarrayPos = lRawPos;
+            // SOSarrayPos = lRawPos; //not required...
             if (SOSns > 0) {
                 for (int lInc = 1; lInc <= SOSns; lInc++) {
                     btS1 = readByte(lRawRA, &lRawPos, lRawSz); //component identifier 1=Y,2=Cb,3=Cr,4=I,5=Q
+                    #pragma unused(btS1) //dummy value used to increment file position
                     btS2 = readByte(lRawRA, &lRawPos, lRawSz); //horizontal and vertical sampling factors
+                    #pragma unused(btS2) //dummy value used to increment file position
                 }
             }
             SOSss = readByte(lRawRA, &lRawPos, lRawSz); //predictor selection B.3
             SOSse = readByte(lRawRA, &lRawPos, lRawSz);
+            #pragma unused(SOSse) //dummy value used to increment file position
             SOSahal = readByte(lRawRA, &lRawPos, lRawSz); //lower 4bits= pointtransform
             SOSpttrans = SOSahal & 16;
             if (verbose)

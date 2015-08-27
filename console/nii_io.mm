@@ -157,10 +157,15 @@ nifti_image* nifti_convert_nhdr2nim(struct nifti_1_header nhdr, const char * fna
         swap_nifti_header( &nhdr , is_nifti ) ;
 //    if ( g_opts.debug > 2 ) disp_nifti_1_header("-d nhdr2nim : ", &nhdr);
     if( nhdr.datatype == DT_BINARY || nhdr.datatype == DT_UNKNOWN_DT  )  {
-        NSLog(@"unknown or unsupported datatype %d", nhdr.datatype);
-        ERREX("bad datatype") ;
+        NSLog(@"unknown or unsupported datatype (%d). Will attempt to view as unsigned 8-bit (assuming ImageJ export)", nhdr.datatype);
+        nhdr.datatype =DT_UNSIGNED_CHAR;
+        
+        //ERREX("bad datatype") ;
     }
-    if( nhdr.dim[1] <= 0 ) ERREX("bad dim[1]") ;
+    if( nhdr.dim[1] <= 0 ) {
+        free(nim);
+        ERREX("bad dim[1]") ;
+    }
     // fix bad dim[] values in the defined dimension range
     for( ii=2 ; ii <= nhdr.dim[0] ; ii++ )
         if( nhdr.dim[ii] <= 0 ) nhdr.dim[ii] = 1 ;

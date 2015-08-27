@@ -56,6 +56,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -h : show help\n");
     printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol %%s=series, %%t=time; default '%s')\n",opts.filename);
     printf("  -o : output directory (omit to save to input folder)\n");
+    printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -v : verbose (y/n, default n)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
@@ -109,7 +110,14 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
-            else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
+            else if ((argv[i][1] == 's') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isOnlySingleFile = false;
+                else
+                    opts.isOnlySingleFile = true;
+                    
+            } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isVerbose = false;

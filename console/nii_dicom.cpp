@@ -85,6 +85,7 @@ unsigned char * imagetoimg(opj_image_t * image)
     int16_t * img16i = (int16_t*) img; //signed 16-bit
     if (sgnd) bpp = -bpp;
     if (bpp == -1) {
+        free(img);
         printf("Error: Signed 8-bit DICOM?\n");
         return NULL;
     }
@@ -464,16 +465,24 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     //returns sliceDirection: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
     //
     int sliceDir = 0;
-    
     if (h->dim[3] < 2) return sliceDir; //don't care direction for single slice
     h->sform_code = NIFTI_XFORM_UNKNOWN;
     h->qform_code = NIFTI_XFORM_UNKNOWN;
     bool isOK = false;
     for (int i = 1; i <= 6; i++)
         if (d.orient[i] != 0.0) isOK = true;
+    
+    //for (int i = 1; i <= 6; i++)
+    //    printf ("%g\n",d.orient[i]);
     if (!isOK) {
-        printf("Serious error: header does not report slice orient (perhaps Siemens RGB from 2007)\n");
-        return sliceDir;
+        //we will have to guess, assume axial acquisition saved in standard Siemens style?
+        d.orient[1] = 1.0f; d.orient[2] = 0.0f;  d.orient[3] = 0.0f;
+        d.orient[1] = 0.0f; d.orient[2] = 1.0f;  d.orient[3] = 0.0f;
+        if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))
+           printf("Unable to determine spatial orientation: old Siemens RGB header does not report slice orient (DICOM 0020,0037)!\n");
+        else
+            printf("Unable to determine spatial orientation: header does not report slice orient (DICOM 0020,0037)!\n");
+        //return sliceDir;
     }
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
     //reportMat44((char*)"out",*R);
@@ -744,6 +753,32 @@ float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//r
     //printf("swapped val = %f\n",retVal);
     return retVal;
 } //dcmFloat()
+
+double dcmFloatDouble(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
+    //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
+#ifdef __BIG_ENDIAN__
+    bool swap = littleEndian;
+#else
+    bool swap = !littleEndian;
+#endif
+    double retVal = 0.0f;
+    if (lByteLength < 8) return retVal;
+    memcpy(&retVal, (char*)&lBuffer[0], 8);
+    if (!swap) return retVal;
+    char *floatToConvert = ( char* ) & lBuffer;
+    char *returnFloat = ( char* ) & retVal;
+    //swap the bytes into a temporary buffer
+    returnFloat[0] = floatToConvert[7];
+    returnFloat[1] = floatToConvert[6];
+    returnFloat[2] = floatToConvert[5];
+    returnFloat[3] = floatToConvert[4];
+    returnFloat[4] = floatToConvert[3];
+    returnFloat[5] = floatToConvert[2];
+    returnFloat[6] = floatToConvert[1];
+    returnFloat[7] = floatToConvert[0];
+    //printf("swapped val = %f\n",retVal);
+    return retVal;
+} //dcmFloatDouble()
 
 int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //read binary 16 or 32 bit integer
     if (littleEndian) {
@@ -1649,7 +1684,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
                     
 unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
                         //DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
-        if (bImg == NULL) return NULL;
+    if (bImg == NULL) return NULL;
                         if (hdr->datatype != DT_RGB24) return bImg;
                         if (isPlanar == 0) return bImg;//return nii_bgr2rgb(bImg,hdr);
                         int dim3to7 = 1;
@@ -1658,23 +1693,27 @@ unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, 
                         //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
                         int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
                         int sliceBytes24 = sliceBytes8 * 3;
+    //printf("planar->rgb %dx%dx%d\n", hdr->dim[1],hdr->dim[2], dim3to7);
 #ifdef _MSC_VER
                         unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
 #else
                         unsigned char  slice24[ sliceBytes24 ];
 #endif
+    int sliceOffsetRGB = 0;
                         int sliceOffsetR = 0;
+                        int sliceOffsetG = sliceOffsetR + sliceBytes8;
+                        int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
                         for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
-                            memcpy(slice24, &bImg[sliceOffsetR], sliceBytes24);
-                            int sliceOffsetG = sliceOffsetR + sliceBytes8;
-                            int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
+                            memcpy(slice24, &bImg[sliceOffsetRGB], sliceBytes24);
+                            //int sliceOffsetG = sliceOffsetR + sliceBytes8;
+                            //int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
                             int i = 0;
                             for (int rgb = 0; rgb < sliceBytes8; rgb++) {
                                 bImg[i++] =slice24[sliceOffsetR+rgb];
                                 bImg[i++] =slice24[sliceOffsetG+rgb];
                                 bImg[i++] =slice24[sliceOffsetB+rgb];
                             }
-                            sliceOffsetR += sliceBytes24;
+                            sliceOffsetRGB += sliceBytes24;
                         } //for each slice
 #ifdef _MSC_VER
                         free(slice24);
@@ -1698,6 +1737,7 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
 #else
 	unsigned char  slice24[ sliceBytes24 ];
 #endif
+    //printf("rgb->planar %dx%dx%d\n", hdr->dim[1],hdr->dim[2], dim3to7);
     int sliceOffsetR = 0;
     for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
         memcpy(slice24, &bImg[sliceOffsetR], sliceBytes24); //TPX memcpy(&slice24, &bImg[sliceOffsetR], sliceBytes24);
@@ -2035,7 +2075,10 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     //dcm.isPlanarRGB = false;
     //xxxxx
     //dcm.isLittleEndian = !dcm.isLittleEndian; //xxxxx
-    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB); //nii_rgb2Planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
+    //printf("x--> %s\n", imgname);
+    //NSLog(@"--->%s",imgname);
+    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) //img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB); //
+        img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     dcm.isPlanarRGB = true;
     if (dcm.CSA.mosaicSlices > 1) {
         img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, dcm.CSA.protocolSliceNumber1);
@@ -2155,6 +2198,9 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
     //#define  kObjectGraphics  0x0029+(0x1210 << 16 )    //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
+#define  kRealWorldIntercept  0x0040+uint32_t(0x9224 << 16 ) //IS dicm2nii's SlopInt_6_9
+#define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
+
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
@@ -2182,6 +2228,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 #define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
 #define  kUnnest 0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 #define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
+    int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
     int locationsInAcquisitionGE = 0; int locationsInAcquisitionPhilips = 0;
     long lPos = 128+4; //4-byte signature starts at 128
@@ -2223,7 +2270,9 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         } //transfer syntax requests switching VR after group 0001
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
-        if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) && (!isEncapsulatedData)) {
+
+        
+    if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) && (!isEncapsulatedData)) {
         //if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) ) {
             vr[0] = 'N';
             vr[1] = 'A';
@@ -2279,6 +2328,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
             sqDepth++;
             //printf("SQstart %d\n", sqDepth);
         }
+        if ((groupElement == kNest) || ((vr[0] == 'S') && (vr[1] == 'Q'))) nest++;
+        if (groupElement == kUnnest) nest--;
         //next: look for required tags
         if ((groupElement == kNest)  && (isEncapsulatedData)) {
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
@@ -2289,6 +2340,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
             //printf("Mango? %ld %d %d %d %d\n", lPos, d.imageStart, d.imageBytes, lLength, d.isLittleEndian);
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
+        if (true) { //(nest <= 0) { //some Philips images have different 0020,0013
         switch ( groupElement ) {
             case 	kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
@@ -2352,8 +2404,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
-                
-                break; }
+                break;}
             case 	kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
                 break;
@@ -2364,7 +2415,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
             case 	kProtocolNameGE: {
-                if (d.manufacturer == kMANUFACTURER_GE)
+                if (strlen(d.protocolName) < 1) //if (d.manufacturer == kMANUFACTURER_GE)
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
                 break; }
             case kDerivationDescription : {
@@ -2438,8 +2489,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 d.acquNum = dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case 	kImageNum:
-                if (d.imageNum == 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image as image1 in 2001,9000
-                //printf("%d**\n",d.imageNum);
+                //int dx = 3;
+                if (d.imageNum <= 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image as image1 in 2001,9000
                 break;
             case 	kPlanarRGB:
                 d.isPlanarRGB = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -2500,7 +2551,6 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 
             case 	kIntercept :
                 d.intenIntercept = dcmStrFloat(lLength, &buffer[lPos]);
-                printf("inter %g\n", d.intenIntercept);
                 break;
             case 	kZThick :
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
@@ -2629,6 +2679,14 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 //case kObjectGraphics:
                 //    printf("---->%d,",lLength);
                 //    break;
+            case 	kRealWorldIntercept:
+                if (isSameFloat(0.0, d.intenIntercept)) //give precedence to standard value
+                    d.intenIntercept = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                break;
+            case 	kRealWorldSlope:
+                if (isSameFloat(1.0, d.intenScale))  //give precedence to standard value
+                    d.intenScale = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                break;
             case kDiffusionBFactorGE :
                 if (d.manufacturer == kMANUFACTURER_GE) d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
@@ -2679,9 +2737,11 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 break;
         
         } //switch/case for groupElement
-        #ifdef MY_DEBUG
-        printf(" tag=%04x,%04x length=%u pos=%ld %c%c\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1]);
-        #endif
+        } //if nest
+        //#ifdef MY_DEBUG
+        if (isVerbose)
+            printf(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
+        //#endif
         lPos = lPos + (lLength);
     }
     free (buffer);
@@ -2722,6 +2782,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         d.isValid = false;
     }
     //printf("%d ----\n",d.imageStart);
+    //printf("realWorldSlope %g\n",  d.intenScale);
     //if (true) {
     if (isVerbose) {
         printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
@@ -2732,7 +2793,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         d.CSA.numDti = 0;
     }
     if (intenScalePhilips != 0.0) {
-        //printf("intenscale\t%g\t%g\t%g\n",d.intenScale,d.intenIntercept,intenScalePhilips);
+        printf("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
         //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
         float l0 = PhilipsPreciseVal (0, d.intenScale, d.intenIntercept, intenScalePhilips);
         float l1 = PhilipsPreciseVal (1, d.intenScale, d.intenIntercept, intenScalePhilips);
