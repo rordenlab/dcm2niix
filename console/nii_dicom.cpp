@@ -613,54 +613,57 @@ struct TDICOMdata clear_dicom_data() {
         d.xyzMM[i] = 1;
     }
     d.CSA.numDti = 0;
-    for (int i=0; i < 5; i++) d.xyzDim[i] = 1;
-        for (int i = 0; i < 7; i++) d.orient[i] = 0.0f;
-            d.patientPositionSequentialRepeats = 0;//d.isHasMixed = false;
-            d.isHasPhase = false;
-            d.isHasMagnitude = false;
-            d.sliceOrient = kSliceOrientUnknown;
-            strcpy(d.patientName, "John_Doe");
-            strcpy(d.patientID, "ID123");
-            strcpy(d.imageComments, "imgComments");
-            strcpy(d.studyDate, "1/1/1977");
-            strcpy(d.studyTime, "11:11:11");
-            d.dateTime = (double)19770703150928.0;
-            d.acquisitionTime = 0.0f;
-            strcpy(d.protocolName, "MPRAGE");
-            strcpy(d.scanningSequence, "GR");
-            d.manufacturer = kMANUFACTURER_UNKNOWN;
-            d.isPlanarRGB = false;
-            d.lastScanLoc = NAN;
-            d.TR = 0;
-            d.TE = 0;
-            d.numberOfDynamicScans = 0;
-            d.imageBytes = 0;
-            d.intenScale = 1;
-            d.intenIntercept = 0;
-            d.gantryTilt = 0.0;
-            d.seriesNum = 1;
-            d.acquNum = 0;
-            d.imageNum = 1;
-            d.imageStart = 0;
-            d.is3DAcq = false; //e.g. MP-RAGE, SPACE, TFE
-            d.bitsAllocated = 16;//bits
-            d.bitsStored = 0;
-            d.samplesPerPixel = 1;
-            d.isValid = false;
-            d.isSigned = false; //default is unsigned!
-            d.isFloat = false; //default is for integers, not single or double precision
-            d.isResampled = false; //assume data not resliced to remove gantry tilt problems
-            d.compressionScheme = 0; //none
-            d.isExplicitVR = true;
-            d.isLittleEndian = true; //DICOM initially always little endian
-            d.converted2NII = 0;
-            d.phaseEncodingRC = '?';
-            d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
-            d.CSA.mosaicSlices = 0;
-            d.CSA.sliceOrder = NIFTI_SLICE_UNKNOWN;
-            d.CSA.protocolSliceNumber1 = 0;
-            d.CSA.phaseEncodingDirectionPositive = -1; //unknown
-            return d;
+    for (int i=0; i < 5; i++)
+        d.xyzDim[i] = 1;
+    for (int i = 0; i < 7; i++)
+        d.orient[i] = 0.0f;
+    d.patientPositionSequentialRepeats = 0;//d.isHasMixed = false;
+    d.isHasPhase = false;
+    d.isHasMagnitude = false;
+    d.sliceOrient = kSliceOrientUnknown;
+    strcpy(d.patientName, "John_Doe");
+    strcpy(d.patientID, "ID123");
+    strcpy(d.imageComments, "imgComments");
+    strcpy(d.studyDate, "1/1/1977");
+    strcpy(d.studyTime, "11:11:11");
+    d.dateTime = (double)19770703150928.0;
+    d.acquisitionTime = 0.0f;
+    strcpy(d.protocolName, "MPRAGE");
+    strcpy(d.scanningSequence, "GR");
+    d.manufacturer = kMANUFACTURER_UNKNOWN;
+    d.isPlanarRGB = false;
+    d.lastScanLoc = NAN;
+    d.TR = 0;
+    d.TE = 0;
+    d.numberOfDynamicScans = 0;
+    d.echoNum = 1;
+    d.imageBytes = 0;
+    d.intenScale = 1;
+    d.intenIntercept = 0;
+    d.gantryTilt = 0.0;
+    d.seriesNum = 1;
+    d.acquNum = 0;
+    d.imageNum = 1;
+    d.imageStart = 0;
+    d.is3DAcq = false; //e.g. MP-RAGE, SPACE, TFE
+    d.bitsAllocated = 16;//bits
+    d.bitsStored = 0;
+    d.samplesPerPixel = 1;
+    d.isValid = false;
+    d.isSigned = false; //default is unsigned!
+    d.isFloat = false; //default is for integers, not single or double precision
+    d.isResampled = false; //assume data not resliced to remove gantry tilt problems
+    d.compressionScheme = 0; //none
+    d.isExplicitVR = true;
+    d.isLittleEndian = true; //DICOM initially always little endian
+    d.converted2NII = 0;
+    d.phaseEncodingRC = '?';
+    d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
+    d.CSA.mosaicSlices = 0;
+    d.CSA.sliceOrder = NIFTI_SLICE_UNKNOWN;
+    d.CSA.protocolSliceNumber1 = 0;
+    d.CSA.phaseEncodingDirectionPositive = -1; //unknown
+    return d;
 } //clear_dicom_data()
 
 void dcmStrDigitsOnly(char* lStr) {
@@ -2258,7 +2261,6 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     int patientPositionCount = 0;
     int sqDepth = 0;
     long coilNum = 0; //Siemens can save one image per coil (H12,H13,etc) or one combined image for array (HEA;HEP)
-    long echoNum = 0;
     while ((d.imageStart == 0) && ((lPos+8) <  fileLen)) {
         if (d.isLittleEndian)
             groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -2538,7 +2540,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                 d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kEchoNum :
-                echoNum =  dcmStrInt(lLength, &buffer[lPos]);
+                d.echoNum =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case 	kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
@@ -2786,13 +2788,13 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     // printf("ser %ld\n", d.seriesNum);
     
 
-    int kEchoMult = 100; //For Siemens/GE Series 1,2,3... save 2nd echo as 201, 3rd as 301, etc
-    if (d.seriesNum > 100)
-        kEchoMult = 10; //For Philips data Saved as Series 101,201,301... save 2nd echo as 111, 3rd as 121, etc
+    //int kEchoMult = 100; //For Siemens/GE Series 1,2,3... save 2nd echo as 201, 3rd as 301, etc
+    //if (d.seriesNum > 100)
+    //    kEchoMult = 10; //For Philips data Saved as Series 101,201,301... save 2nd echo as 111, 3rd as 121, etc
     if (coilNum > 0) //segment images with multiple coils
-        d.seriesNum = d.seriesNum + (kEchoMult*coilNum);
-    if (echoNum > 1) //segment images with multiple echoes
-        d.seriesNum = d.seriesNum + (kEchoMult*echoNum);
+        d.seriesNum = d.seriesNum + (100*coilNum);
+    //if (d.echoNum > 1) //segment images with multiple echoes
+    //    d.seriesNum = d.seriesNum + (kEchoMult*d.echoNum);
     if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
         //dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
         printf("Error: unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
@@ -2802,9 +2804,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     //printf("realWorldSlope %g\n",  d.intenScale);
     //if (true) {
     if (isVerbose) {
-        
         printf("%s Patient Position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-        printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %ld coil %ld\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, echoNum, coilNum);
+        printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %ld\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, coilNum);
     }
     if (d.CSA.numDti >= kMaxDTI4D) {
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
