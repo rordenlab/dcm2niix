@@ -640,6 +640,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,dcm.patientName);
             if (f == 'P')
                 strcat (outname,dcm.protocolName);
+            if (f == 'Q')
+                strcat (outname,dcm.scanningSequence);
             if ((f >= '0') && (f <= '9')) {
                 if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'S')) {
                     char zeroPad[12] = {""};

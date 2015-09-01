@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "27Aug2015j" //JASPER for JPEG2000
+    #define kDCMvers "30Aug2015j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "27Aug2015" //no decompressor
+    #define kDCMvers "30Aug2015" //no decompressor
 	#else
-    #define kDCMvers "27Aug2015o" //OPENJPEG for JPEG2000
+    #define kDCMvers "30Aug2015o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
@@ -58,7 +58,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
         double dateTime, acquisitionTime;
         bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC;
-        char  patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
+        char  patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],scanningSequence[kDICOMStr], studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;
     };
     

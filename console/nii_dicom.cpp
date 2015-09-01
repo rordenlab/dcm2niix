@@ -627,6 +627,7 @@ struct TDICOMdata clear_dicom_data() {
             d.dateTime = (double)19770703150928.0;
             d.acquisitionTime = 0.0f;
             strcpy(d.protocolName, "MPRAGE");
+            strcpy(d.scanningSequence, "");
             d.manufacturer = kMANUFACTURER_UNKNOWN;
             d.isPlanarRGB = false;
             d.lastScanLoc = NAN;
@@ -2103,6 +2104,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
+                        
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 	
     struct stat s;
@@ -2161,6 +2163,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
 #define  kSequenceName 0x0018+(0x0024 << 16)
 #define  kZThick  0x0018+(0x0050 << 16 )
@@ -2583,9 +2586,15 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
             case	kMRAcquisitionType:
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
                 break;
+            case kScanningSequence : {
+                if (strlen(d.scanningSequence) < 1) //precedence given to kProtocolName and kProtocolNameGE
+                    dcmStr (lLength, &buffer[lPos], d.scanningSequence);
+                break;
+            }
             case kSequenceName : {
                 if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
+                break;
             }
             case	kMRAcquisitionTypePhilips: //kMRAcquisitionType
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
@@ -2738,10 +2747,10 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         
         } //switch/case for groupElement
         } //if nest
-        //#ifdef MY_DEBUG
+        #ifdef MY_DEBUG
         if (isVerbose)
             printf(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
-        //#endif
+        #endif
         lPos = lPos + (lLength);
     }
     free (buffer);
@@ -2772,10 +2781,16 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     }
     //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3]);
     //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\tStart\t%d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3], d.imageStart);
+    // printf("ser %ld\n", d.seriesNum);
+    
+
+    int kEchoMult = 100; //For Siemens/GE Series 1,2,3... save 2nd echo as 201, 3rd as 301, etc
+    if (d.seriesNum > 100)
+        kEchoMult = 10; //For Philips data Saved as Series 101,201,301... save 2nd echo as 111, 3rd as 121, etc
     if (coilNum > 0) //segment images with multiple coils
-        d.seriesNum = d.seriesNum + (100*coilNum);
-    if (echoNum > 2) //segment images with multiple echoes
-        d.seriesNum = d.seriesNum + (100*echoNum);
+        d.seriesNum = d.seriesNum + (kEchoMult*coilNum);
+    if (echoNum > 1) //segment images with multiple echoes
+        d.seriesNum = d.seriesNum + (kEchoMult*echoNum);
     if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
         //dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
         printf("Error: unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
@@ -2785,8 +2800,9 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     //printf("realWorldSlope %g\n",  d.intenScale);
     //if (true) {
     if (isVerbose) {
-        printf("Patient Position\t%g\t%g\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-        printf("DICOM acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian);
+        
+        printf("%s Patient Position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %ld coil %ld\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, echoNum, coilNum);
     }
     if (d.CSA.numDti >= kMaxDTI4D) {
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
