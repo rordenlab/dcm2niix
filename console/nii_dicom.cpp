@@ -627,7 +627,7 @@ struct TDICOMdata clear_dicom_data() {
             d.dateTime = (double)19770703150928.0;
             d.acquisitionTime = 0.0f;
             strcpy(d.protocolName, "MPRAGE");
-            strcpy(d.scanningSequence, "");
+            strcpy(d.scanningSequence, "GR");
             d.manufacturer = kMANUFACTURER_UNKNOWN;
             d.isPlanarRGB = false;
             d.lastScanLoc = NAN;
@@ -1165,6 +1165,8 @@ void changeExt (char *file_name, const char* ext) {
 
 struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
+    strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
+    strcpy(d.scanningSequence, "");
     FILE *fp = fopen(parname, "r");
     if (fp == NULL) return d;
 #define LINESZ 2048
@@ -2104,7 +2106,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
-                        
+    strcpy(d.scanningSequence, "");
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 	
     struct stat s;
