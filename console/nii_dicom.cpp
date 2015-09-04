@@ -637,6 +637,7 @@ struct TDICOMdata clear_dicom_data() {
     d.TE = 0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
+        d.coilNum = 1;
     d.imageBytes = 0;
     d.intenScale = 1;
     d.intenIntercept = 0;
@@ -2260,7 +2261,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     int patientPositionCount = 0;
     int sqDepth = 0;
-    long coilNum = 0; //Siemens can save one image per coil (H12,H13,etc) or one combined image for array (HEA;HEP)
+    //long coilNum = 0; //Siemens can save one image per coil (H12,H13,etc) or one combined image for array (HEA;HEP)
     while ((d.imageStart == 0) && ((lPos+8) <  fileLen)) {
         if (d.isLittleEndian)
             groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -2570,9 +2571,9 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
                     //long coilNum = 0;
                     char *ptr;
                     dcmStrDigitsOnly(coilStr);
-                    coilNum = strtol(coilStr, &ptr, 10);
+                    d.coilNum = (int)strtol(coilStr, &ptr, 10);
                     if (*ptr != '\0')
-                        coilNum = 0;
+                        d.coilNum = 0;
                 }
                 break; }
             case 	kLocationsInAcquisition :
@@ -2791,8 +2792,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     //int kEchoMult = 100; //For Siemens/GE Series 1,2,3... save 2nd echo as 201, 3rd as 301, etc
     //if (d.seriesNum > 100)
     //    kEchoMult = 10; //For Philips data Saved as Series 101,201,301... save 2nd echo as 111, 3rd as 121, etc
-    if (coilNum > 0) //segment images with multiple coils
-        d.seriesNum = d.seriesNum + (100*coilNum);
+    //if (coilNum > 0) //segment images with multiple coils
+    //    d.seriesNum = d.seriesNum + (100*coilNum);
     //if (d.echoNum > 1) //segment images with multiple echoes
     //    d.seriesNum = d.seriesNum + (kEchoMult*d.echoNum);
     if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
@@ -2805,7 +2806,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     //if (true) {
     if (isVerbose) {
         printf("%s Patient Position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-        printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %ld\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, coilNum);
+        printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
     }
     if (d.CSA.numDti >= kMaxDTI4D) {
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");

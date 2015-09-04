@@ -668,6 +668,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         pos++;
     } //for each character in input
     if (dcm.echoNum > 1) {
+        sprintf(newstr, "_c%d", dcm.coilNum);
+        strcat (outname,newstr);
+    }
+    if (dcm.echoNum > 1) {
         sprintf(newstr, "_%d", dcm.echoNum);
         strcat (outname,newstr);
     }
@@ -1363,7 +1367,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2) {
     //printf("%g %g %g %g %g %g\n", d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6]);
     if (!isSameFloat(d1.orient[1], d2.orient[1]) || !isSameFloat(d1.orient[2], d2.orient[2]) ||  !isSameFloat(d1.orient[3], d2.orient[3]) ||
         !isSameFloat(d1.orient[4], d2.orient[4]) || !isSameFloat(d1.orient[5], d2.orient[5]) ||  !isSameFloat(d1.orient[6], d2.orient[6]) ) return false;
-    if ((d1.echoNum != d2.echoNum)  ||(d1.dateTime != d2.dateTime) || (d1.seriesNum != d2.seriesNum) || (d1.bitsAllocated != d2.bitsAllocated)|| (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) )
+    if ((d1.coilNum != d2.coilNum)  ||  (d1.echoNum != d2.echoNum)  || (d1.dateTime != d2.dateTime) || (d1.seriesNum != d2.seriesNum) || (d1.bitsAllocated != d2.bitsAllocated)|| (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) )
         return false;
     if (strcmp(d1.protocolName, d2.protocolName) != 0)
         return false;
