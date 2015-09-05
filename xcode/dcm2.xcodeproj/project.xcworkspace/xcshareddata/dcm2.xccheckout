@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
+	<false/>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>C798AF42-BE64-44EE-87C0-C50C9566D382</string>
+	<key>IDESourceControlProjectName</key>
+	<string>dcm2</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>D94D2C5489FA4C6F294552E6DEAD453AC2154E05</key>
+		<string>https://github.com/neurolabusc/dcm2niix.git</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>xcode/dcm2.xcodeproj</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>D94D2C5489FA4C6F294552E6DEAD453AC2154E05</key>
+		<string>../../..</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>https://github.com/neurolabusc/dcm2niix.git</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>111</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>D94D2C5489FA4C6F294552E6DEAD453AC2154E05</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>D94D2C5489FA4C6F294552E6DEAD453AC2154E05</string>
+			<key>IDESourceControlWCCName</key>
+			<string>dcm2niix</string>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -1,14 +1,18 @@
 #!/bin/sh
-cd /Users/rorden/Documents/cocoa/dcm2/console
+cd /Users/rorden/Documents/cocoa/dcm2niix/console
 
-cp ni*.cpp ../qtGui
-cp ni*.h ../qtGui
-cp tinydir.h ../qtGui
+#cp ni*.c ../qtGui
+#cp ni*.cpp ../qtGui
+#cp ni*.h ../qtGui
+#cp tinydir.h ../qtGui
 
-cp ni*.cpp ../wxWidgets
-cp ni*.h ../wxWidgets
-cp tinydir.h ../wxWidgets
+#cp ni*.c ../wxWidgets
+#cp ni*.cpp ../wxWidgets
+#cp ni*.h ../wxWidgets
+#cp tinydir.h ../wxWidgets
 
-cp ni*.cpp ../xcode/dcm2/core
-cp ni*.h ../xcode/dcm2/core
-cp tinydir.h ../xcode/dcm2/core
+cp *.c ../xcode/dcm2/core
+cp *.cpp ../xcode/dcm2/core
+cp *.h ../xcode/dcm2/core
+
+#myDisableMiniZ

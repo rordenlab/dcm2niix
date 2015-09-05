@@ -31,7 +31,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <float.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include <stdio.h>
 #include "nii_dicom_batch.h"
@@ -54,11 +54,21 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
     printf("  -h : show help\n");
-    printf("  -f : filename (%%c=comments %%f=folder name %%p=protocol %%i ID of patient %%n=name of patient %%s=series, %%t=time; default '%s')\n",opts.filename);
+    printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol, %%q=sequence %%s=series, %%t=time; default '%s')\n",opts.filename);
     printf("  -o : output directory (omit to save to input folder)\n");
+    printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
+    printf("  -v : verbose (y/n, default n)\n");
     char gzCh = 'n';
-    if (opts.isGz) gzCh = 'n';
-    printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
+    if (opts.isGz) gzCh = 'y';
+    #ifdef myDisableZLib
+		if (strlen(opts.pigzname) > 0)
+			printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
+		else
+			printf("  -z : gz compress images (y/n, default %c) [REQUIRES pigz]\n", gzCh);    
+    #else
+		printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal, n=no]\n", gzCh);
+    #endif
+    
 #if defined(_WIN64) || defined(_WIN32)
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
@@ -76,16 +86,18 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 #endif
 } //showHelp()
 
-  
+//#define mydebugtest
+
 int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
     readIniFile(&opts, argv);
 #ifdef mydebugtest
     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
-     strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
+     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
+	 strcpy(opts.indir, "e:\\t1s");
 #else
-    printf("Chris Rorden's dcm2niiX version %s\n",kDCMvers);
+    printf("Chris Rorden's dcm2niiX version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
     if (argc < 2) {
         showHelp(argv, opts);
         return 0;
@@ -98,7 +110,20 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
-            else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
+            else if ((argv[i][1] == 's') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isOnlySingleFile = false;
+                else
+                    opts.isOnlySingleFile = true;
+                    
+            } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isVerbose = false;
+                else
+                    opts.isVerbose = true;
+            } else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {
                     opts.isGz = true; //force use of internal compression instead of pigz

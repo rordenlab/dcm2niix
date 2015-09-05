@@ -27,6 +27,7 @@
     struct TDCMopts optsTemp;
     optsTemp = opts; //conversion may change values like the outdir (if not specified)
     strcpy(optsTemp.indir, [fname cStringUsingEncoding:1]);
+    optsTemp.isVerbose = true;
     clock_t start = clock();
     nii_loadDir (&(optsTemp));
     printf("required %fms\n", ((double)(clock()-start))/1000);

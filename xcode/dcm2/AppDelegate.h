@@ -29,9 +29,7 @@
 @property (assign) IBOutlet NSButton *folderButton;
 @property (assign) IBOutlet NSWindow *window;
 @property (assign) IBOutlet NSTextView *theTextView;
-
-
-
+- (void) processFile: (NSString*) fname;
 - (IBAction)outputFolderClick:(id)sender;
 - (IBAction)par2niiClick:(id)sender;
 - (IBAction)dicom2niiClick:(id)sender;

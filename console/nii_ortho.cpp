@@ -10,8 +10,11 @@
 #include <string.h>
 #include <stddef.h>
 #include <float.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <stdio.h>
+#ifndef _MSC_VER
+	#include <unistd.h>
+#endif
 //#define MY_DEBUG //verbose text reporting
 
 typedef struct  {
