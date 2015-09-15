@@ -950,30 +950,33 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
 				float sliceTimes[tagCSA.nitems + 1];
 #endif
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
-                float minTimeIndex, minTimeValue, timeValue1;
+                float minTimeValue, timeValue1;
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
-                minTimeIndex = 1;
+                int minTimeIndex = 1;
                 minTimeValue= sliceTimes[1];
+                //printf("%d %g\n", 1, sliceTimes[1]);
 				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-					if (sliceTimes[z] < minTimeValue) {
+					//printf("%d %g\n", z, sliceTimes[z]);
+                    if (sliceTimes[z] < minTimeValue) {
 						minTimeValue = sliceTimes[z];
 						minTimeIndex = (float) z;
 					}
 					if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
 				}
+                //printf("min %d of %d\n", minTimeIndex, itemsOK);
                 if (minTimeIndex == 2)
                     CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
                 else if (minTimeIndex == (itemsOK-1))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 4,3,2,1
+                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 2,4,1,3 or   5,2,4,1,3
                 else if ((minTimeIndex == 1) && (sliceTimes[2] < sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_INC;
+                    CSA->sliceOrder = NIFTI_SLICE_SEQ_INC; // e.g. 1,2,3,4
                 else if ((minTimeIndex == 1) && (sliceTimes[2] > sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC;
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-1] < sliceTimes[itemsOK]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC;
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-1] > sliceTimes[itemsOK-2]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC;
+                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC; //e.g. 1,3,2,4
+                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] > sliceTimes[itemsOK-1]))
+                    CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC; //e.g. 4,3,2,1  or 5,4,3,2,1
+                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] < sliceTimes[itemsOK-1]))
+                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC; //e.g.  4,2,3,1 or 3,5,2,4,1
                 else {
                     /*NSMutableArray *sliceTimesNS = [NSMutableArray arrayWithCapacity:tagCSA.nitems];
                      for (int z = 1; z <= itemsOK; z++)
