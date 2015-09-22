@@ -46,7 +46,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     
     struct TCSAdata {
         float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
-        int numDti, multiBandFactor, sliceOrder, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
+        int numDti, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
     };
     struct TDICOMdata {
         //struct TDTI * dti4D; //only for 4D diffusion volumes - otherwise use more compact CSA.dtiV
