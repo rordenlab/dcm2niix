@@ -662,6 +662,8 @@ struct TDICOMdata clear_dicom_data() {
     d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
     d.CSA.mosaicSlices = 0;
     d.CSA.sliceOrder = NIFTI_SLICE_UNKNOWN;
+    d.CSA.slice_start = 0;
+    d.CSA.slice_end = 0;
     d.CSA.protocolSliceNumber1 = 0;
     d.CSA.phaseEncodingDirectionPositive = -1; //unknown
     return d;
@@ -935,8 +937,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
                 CSA->sliceNormV[1] = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
                 CSA->sliceNormV[2] = lFloats[2];
                 CSA->sliceNormV[3] = lFloats[3];
-                
-                //printf("SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
                 if (isVerbose)
                     printf("SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
             } else if (strcmp(tagCSA.name, "SliceMeasurementDuration") == 0)
@@ -950,30 +950,45 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
 				float sliceTimes[tagCSA.nitems + 1];
 #endif
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
-                float minTimeIndex, minTimeValue, timeValue1;
+                float maxTimeValue, minTimeValue, timeValue1;
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
-                minTimeIndex = 1;
-                minTimeValue= sliceTimes[1];
+                int minTimeIndex = 1;
+                int maxTimeIndex = minTimeIndex;
+                minTimeValue = sliceTimes[1];
+                maxTimeValue = minTimeValue;
+                if (isVerbose)
+                    printf("sliceTimes %g\t", sliceTimes[1]);
 				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-					if (sliceTimes[z] < minTimeValue) {
+					if (isVerbose)
+                        printf("%g\t",  sliceTimes[z]);
+                    if (sliceTimes[z] < minTimeValue) {
 						minTimeValue = sliceTimes[z];
 						minTimeIndex = (float) z;
 					}
-					if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
+                    if (sliceTimes[z] > maxTimeValue) {
+                        maxTimeValue = sliceTimes[z];
+                        maxTimeIndex = (float) z;
+                    }
+                    if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
 				}
+                if (isVerbose)
+                    printf("\n");
+                //printf("min %d of %d\n", minTimeIndex, itemsOK);
+                CSA->slice_start = minTimeIndex -1;
+                CSA->slice_end = maxTimeIndex -1;
                 if (minTimeIndex == 2)
                     CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
                 else if (minTimeIndex == (itemsOK-1))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 4,3,2,1
+                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 2,4,1,3 or   5,2,4,1,3
                 else if ((minTimeIndex == 1) && (sliceTimes[2] < sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_INC;
+                    CSA->sliceOrder = NIFTI_SLICE_SEQ_INC; // e.g. 1,2,3,4
                 else if ((minTimeIndex == 1) && (sliceTimes[2] > sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC;
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-1] < sliceTimes[itemsOK]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC;
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-1] > sliceTimes[itemsOK-2]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC;
+                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC; //e.g. 1,3,2,4
+                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] > sliceTimes[itemsOK-1]))
+                    CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC; //e.g. 4,3,2,1  or 5,4,3,2,1
+                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] < sliceTimes[itemsOK-1]))
+                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC; //e.g.  4,2,3,1 or 3,5,2,4,1
                 else {
                     /*NSMutableArray *sliceTimesNS = [NSMutableArray arrayWithCapacity:tagCSA.nitems];
                      for (int z = 1; z <= itemsOK; z++)
@@ -1107,12 +1122,13 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
         h->dim[0] = 3;
     else
         h->dim[0] = 4;
-    
     for (int i = 0; i <= 3; i++) {
         h->srow_x[i] = 0.0f;
         h->srow_y[i] = 0.0f;
         h->srow_z[i] = 0.0f;
     }
+    h->slice_start = 0;
+    h->slice_end = 0;
     h->srow_x[0] = -1;
     h->srow_y[2] = 1;
     h->srow_z[1] = -1;
@@ -1124,7 +1140,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     h->toffset = 0;
     h->intent_code = NIFTI_INTENT_NONE;
     h->dim_info = 0; //Freq, Phase and Slice all unknown
-    h->xyzt_units = NIFTI_UNITS_UNKNOWN;
+    h->xyzt_units = NIFTI_UNITS_MM + NIFTI_UNITS_SEC;
     h->slice_duration = 0; //avoid +inf/-inf, NaN
     h->intent_p1 = 0;  //avoid +inf/-inf, NaN
     h->intent_p2 = 0;  //avoid +inf/-inf, NaN
@@ -2805,7 +2821,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     //printf("realWorldSlope %g\n",  d.intenScale);
     //if (true) {
     if (isVerbose) {
-        printf("%s Patient Position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
     }
     if (d.CSA.numDti >= kMaxDTI4D) {

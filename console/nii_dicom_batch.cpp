@@ -975,6 +975,9 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
     else
         if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
     //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
+    float mmMidZ = ( (hdr.dim[3]-1) >> 1) * hdr.pixdim[3]; //middle slice, assuming equal slice spacing
+    if (sliceMMarray != NULL)
+        mmMidZ = sliceMMarray[ (hdr.dim[3]-1) >> 1 ]; //middle slice if slice distances vary
     if (hdr.datatype == DT_INT16) {
         short * im16 = ( short*) im;
         unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
@@ -990,6 +993,7 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
         for (int s = 0; s < hdr.dim[3]; s++) { //for each slice
             float sliceMM = s * hdr.pixdim[3];
             if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+            sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
             float Offset = GNTtanPx*sliceMM;
             //printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
             float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
@@ -1020,6 +1024,7 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
         for (int s = 0; s < hdr.dim[3]; s++) { //for each slice
             float sliceMM = s * hdr.pixdim[3];
             if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+            sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
             float Offset = GNTtanPx*sliceMM;
             //printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
             float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
