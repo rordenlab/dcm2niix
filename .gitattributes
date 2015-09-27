@@ -4,4 +4,6 @@
 /xcode		export-ignore
 *.command	export-ignore
 .gitattributes	export-ignore
-unused		export-ignore
+unused*		export-ignore
+*_binary	export-ignore
+/debian		export-ignore
