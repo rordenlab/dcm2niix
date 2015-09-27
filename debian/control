@@ -1,17 +1,21 @@
 Source: dcm2niix
+Maintainer: NeuroDebian Team <team@neuro.debian.net>
+Uploaders: Michael Hanke <mih@debian.org>,
+           Yaroslav Halchenko <debian@onerussian.com>
 Section: science
 Priority: optional
-Maintainer: NeuroDebian Team <team@neuro.debian.net>
-Uploaders: Michael Hanke <mih@debian.org>, Yaroslav Halchenko <debian@onerussian.com>
-Build-Depends: debhelper (>= 9~), cmake, zlib1g-dev
+Build-Depends: debhelper (>= 9~),
+               cmake,
+               zlib1g-dev
 Standards-Version: 3.9.6
+Vcs-Browser: https://anonscm.debian.org/cgit/pkg-exppsy/dcm2niix.git
+Vcs-Git: git://anonscm.debian.org/pkg-exppsy/dcm2niix.git
 Homepage: http://www.mccauslandcenter.sc.edu/CRNL/tools/dcm2niix
-Vcs-Browser: http://git.debian.org/?p=pkg-exppsy/dcm2niix.git
-Vcs-Git: git://git.debian.org/git/pkg-exppsy/dcm2niix.git
 
 Package: dcm2niix
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
 Description: converts DICOM and PAR/REC files into the NIfTI format
  This is the successor of the well-known dcm2nii program. it aims to provide
  same functionality albeit with much faster operation.

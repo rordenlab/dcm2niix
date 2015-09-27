@@ -1,5 +1,5 @@
-dcm2niix (0.20141019.1+git4-g43daf21-1) UNRELEASED; urgency=medium
+dcm2niix (0.20150909.1+git1-g8914c07-1) neurodebian; urgency=medium
 
   * Initial release.
 
- -- Michael Hanke <michael.hanke@gmail.com>  Fri, 17 Oct 2014 09:46:01 +0200
+ -- Michael Hanke <mih@debian.org>  Sun, 27 Sep 2015 10:23:35 +0200
