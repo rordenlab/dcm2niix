@@ -38,8 +38,8 @@ static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDTI {
         float V[4];
+        float sliceTiming;
     };
-   // TDTI arrayName[ kMaxDTI4D ];
     struct TDTI4D {
         struct TDTI S[kMaxDTI4D];
     };

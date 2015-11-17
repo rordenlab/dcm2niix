@@ -899,7 +899,7 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
     return Floats[1];
 } //csaMultiFloat()
 
-int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, bool isVerbose) {
+int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, bool isVerbose, struct TDTI4D *dti4D) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printf("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
     if (lLength < 36) return EXIT_FAILURE;
@@ -951,6 +951,12 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
 #endif
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
                 float maxTimeValue, minTimeValue, timeValue1;
+                for (int z = 0; z < kMaxDTI4D; z++)
+        			dti4D->S[z].sliceTiming = -1.0;
+        
+                if (itemsOK <= kMaxDTI4D)
+                	for (int z = 1; z <= itemsOK; z++)
+                		dti4D->S[z-1].sliceTiming = sliceTimes[z];
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
                 int minTimeIndex = 1;
@@ -1233,8 +1239,10 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
     char *p = fgets (buff, LINESZ, fp);
     bool isIntenScaleVaries = false;
     bool isIndexSequential = true;
-    for (int i = 0; i < kMaxDTI4D; i++)
-        dti4D->S[i].V[0] = -1;
+    for (int i = 0; i < kMaxDTI4D; i++) {
+        dti4D->S[i].V[0] = -1.0;
+        dti4D->S[i].sliceTiming = -1.0;
+    }
     //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
     while (p) {
         if (strlen(buff) < 1)
@@ -2122,7 +2130,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     return img;
 } //nii_loadImgXL()
                     
-                    struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
@@ -2253,6 +2261,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 #define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
 #define  kUnnest 0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 #define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
+    dti4D->S[0].sliceTiming = -1.0;
     int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
     int locationsInAcquisitionGE = 0; int locationsInAcquisitionPhilips = 0;
@@ -2704,7 +2713,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 #endif
                 break;
             case 	kCSAImageHeaderInfo:
-                readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose);
+                readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, dti4D);
                 break;
                 //case kObjectGraphics:
                 //    printf("---->%d,",lLength);

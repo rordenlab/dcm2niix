@@ -334,6 +334,51 @@ bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
     return true;
 } //isSamePosition()
 
+
+//void nii_SaveBIDS(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, struct nifti_1_header *h) {
+//https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
+// Generate Brain Imaging Data Structure (BIDS) info
+// sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
+// we will use %g for floats since exponents are allowed 
+// we will not set the locale, so decimal separator is always a period, as required
+//  https://www.ietf.org/rfc/rfc4627.txt
+	if (!opts.isCreateBIDS) return;
+	char txtname[2048] = {""};
+    strcpy (txtname,pathoutname);
+    strcat (txtname,".bids");
+    //printf("Saving DTI %s\n",txtname);
+    FILE *fp = fopen(txtname, "w");
+    fprintf(fp, "{\n");
+	fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
+    fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
+    fprintf(fp, "\t\"PhaseEncodingDirectionRowColumn\": \"%c\",\n", d.phaseEncodingRC );
+    if (d.CSA.phaseEncodingDirectionPositive)
+    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"+\",\n");
+    else
+    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );    
+    if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
+		float dwellTime = 0;
+		if (d.phaseEncodingRC =='C')
+			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
+		else
+			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[1];
+		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
+
+    }
+	if (dti4D->S[0].sliceTiming >= 0.0) {
+   		fprintf(fp, "\t\"SliceTiming\": [\n");
+		for (int i = 0; i < kMaxDTI4D; i++) { 
+			if (dti4D->S[i].sliceTiming >= 0.0)
+				fprintf(fp, "\t\t%g,\n", dti4D->S[i].sliceTiming / 1000.0 );
+		}
+		fprintf(fp, "\t],\n");
+	}
+    fprintf(fp, "}\n");
+    fclose(fp);
+
+}
+
 int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
     //reports non-zero if last volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
@@ -1290,6 +1335,9 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir);
     }
+    //nii_SaveBIDS(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
+    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, sliceDir, dti4D, &hdr0);
+  
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
 
@@ -1970,6 +2018,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     opts->isGz = false;
     opts->isFlipY = true;
     opts->isRGBplanar = false;
+    opts->isCreateBIDS =   false;
 #ifdef myDebug
     opts->isVerbose =   true;
 #else

@@ -53,8 +53,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     const char *cstr = removePath(argv[0]);
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
-    printf("  -h : show help\n");
+    printf("  -b : BIDS sidecar (y/n, default n)\n");
     printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol, %%q=sequence %%s=series, %%t=time; default '%s')\n",opts.filename);
+    printf("  -h : show help\n");
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -v : verbose (y/n, default n)\n");
@@ -106,11 +107,20 @@ int main(int argc, const char * argv[])
     strcpy(opts.outdir,opts.indir);
     int i = 1;
     int lastCommandArg = -1;
+    
+    
+    
     while (i < (argc)) { //-1 as final parameter is DICOM directory
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
-            else if ((argv[i][1] == 's') && ((i+1) < argc)) {
+            else if ((argv[i][1] == 'b') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isCreateBIDS = false;
+                else
+                    opts.isCreateBIDS = true;
+            } else if ((argv[i][1] == 's') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isOnlySingleFile = false;
