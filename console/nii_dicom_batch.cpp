@@ -252,9 +252,9 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
         if (isSameFloat(vx[i].V[1],-0)) vx[i].V[1] = 0.0f;
         if (isSameFloat(vx[i].V[2],-0)) vx[i].V[2] = 0.0f;
         if (isSameFloat(vx[i].V[3],-0)) vx[i].V[3] = 0.0f;
-        
+
     }
-    
+
 } //geCorrectBvecs()
 
 void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
@@ -301,7 +301,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
         for (int v= 0; v < 4; v++)
             if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
     } //for each direction
-    
+
     #ifdef myUseCOut
     if (sliceDir == kSliceOrientMosaicNegativeDeterminant)
         std::cout<<"WARNING: please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal)."<<std::endl;
@@ -311,7 +311,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     	std::cout<<"WARNING: DTI gradient directions only tested for axial (transverse) acquisitions. Please validate bvec files."<<std::endl;
     #else
     if (sliceDir == kSliceOrientMosaicNegativeDeterminant)
-       printf("WARNING: please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal).\n"); 
+       printf("WARNING: please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal).\n");
     else if ( d->sliceOrient == kSliceOrientTra)
         printf("Saving %d DTI gradients. Please validate if you are conducting DTI analyses.\n", d->CSA.numDti);
     else
@@ -340,23 +340,26 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
 // sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
-// we will use %g for floats since exponents are allowed 
+// we will use %g for floats since exponents are allowed
 // we will not set the locale, so decimal separator is always a period, as required
 //  https://www.ietf.org/rfc/rfc4627.txt
 	if (!opts.isCreateBIDS) return;
 	char txtname[2048] = {""};
     strcpy (txtname,pathoutname);
-    strcat (txtname,".bids");
+    strcat (txtname,".json");
     //printf("Saving DTI %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
     fprintf(fp, "{\n");
 	fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-    fprintf(fp, "\t\"PhaseEncodingDirectionRowColumn\": \"%c\",\n", d.phaseEncodingRC );
+		if (d.phaseEncodingRC == 'C')
+		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "COL" );
+		else
+		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "ROW" );
     if (d.CSA.phaseEncodingDirectionPositive)
     	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"+\",\n");
     else
-    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );    
+    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0;
 		if (d.phaseEncodingRC =='C')
@@ -366,14 +369,29 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
+	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
-		for (int i = 0; i < kMaxDTI4D; i++) { 
-			if (dti4D->S[i].sliceTiming >= 0.0)
-				fprintf(fp, "\t\t%g,\n", dti4D->S[i].sliceTiming / 1000.0 );
+		for (int i = 0; i < kMaxDTI4D; i++) {
+			if (dti4D->S[i].sliceTiming >= 0.0){
+			  if (!first)
+				  fprintf(fp, ",\n");
+				else
+				  first = 0;
+				fprintf(fp, "\t\t%g", dti4D->S[i].sliceTiming / 1000.0 );
+			}
 		}
 		fprintf(fp, "\t],\n");
 	}
+
+	if (d.phaseEncodingRC == 'C')
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"y");
+	else
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"x");
+	if (!d.CSA.phaseEncodingDirectionPositive)
+		fprintf(fp, "-");
+	fprintf(fp, "\"\n");
+
     fprintf(fp, "}\n");
     fclose(fp);
 
@@ -384,7 +402,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
-    
+
     if (numDti < 1) return false;
     if ((numDti < 3) && (nConvert < 3)) return false;
     TDTI * vx = NULL;
@@ -402,7 +420,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
                 for (int v = 0; v < 4; v++) //for each vector+B-value
                     vx[numDti].V[v] = dcmList[dcmSort[i].indx].CSA.dtiV[v];  //dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
                 numDti++;
-                
+
             } //for slices with repeats
         }//for each file
         dcmList[indx0].CSA.numDti = numDti;
@@ -435,11 +453,11 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         }
     //printf("2015ALPHA %d -> %d\n",numDti, nConvert);
     #ifdef myUseCOut
-    if (firstB0 < 0) 
+    if (firstB0 < 0)
     	std::cout<<"Warning: this diffusion series does not have a B0 (reference) volume"<<std::endl;
-	if (firstB0 > 0) 
+	if (firstB0 > 0)
     	std::cout<<"Note: B0 not the first volume in the series (FSL eddy reference volume is "<<firstB0<<")"<<std::endl;
-	
+
 	#else
     if (firstB0 < 0) printf("Warning: this diffusion series does not have a B0 (reference) volume\n");
     if (firstB0 > 0) printf("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", firstB0);
@@ -468,7 +486,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
                  (isSameFloat(vx[i].V[2],0.0f)) &&
                  (isSameFloat(vx[i].V[3],0.0f)) ) )
                 printf("Warning: volume %d appears to be an ADC volume %g %g %g\n", i+1, vx[i].V[1], vx[i].V[2], vx[i].V[3]);
-            
+
         }*/
     }
     // philipsCorrectBvecs(&dcmList[indx0]); //<- replaced by unified siemensPhilips solution
@@ -489,7 +507,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
 #else
             printf("%d\tB=\t%g\tVec=\t%g\t%g\t%g\n",i, vx[i].V[0],
                    vx[i].V[1],vx[i].V[2],vx[i].V[3]);
-            
+
 #endif
         } //for each direction
     }
@@ -774,7 +792,7 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
     strcpy(niiFilename,"Example output filename: '");
     strcat(niiFilename,niiFilenameBase);
     if (opts.isGz)
-        strcat(niiFilename,".nii.gz'");        
+        strcat(niiFilename,".nii.gz'");
     else
         strcat(niiFilename,".nii'");
 } //nii_createDummyFilename()
@@ -903,7 +921,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
    		STARTUPINFO startupInfo= {0};
    		startupInfo.cb = sizeof(startupInfo);
     		//StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
-    		if(CreateProcess(NULL, command, NULL,NULL,FALSE,NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,NULL, NULL,&startupInfo,&ProcessInfo)) { 
+    		if(CreateProcess(NULL, command, NULL,NULL,FALSE,NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,NULL, NULL,&startupInfo,&ProcessInfo)) {
                 //printf("compression --- %s\n",command);
         		WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
         		CloseHandle(ProcessInfo.hThread);
@@ -1154,7 +1172,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
                 //for (int v=0; v < nVox2D; v++)
                 //    imX16[sliceXi+v] = im16[sHi+v];
                 memcpy(&imX16[sliceXi], &im16[sHi], nVox2D* sizeof(unsigned short)); //memcpy( dest, src, bytes)
-                
+
             } else {
                 float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
                 float fracLo = 1.0 - fracHi;
@@ -1232,20 +1250,20 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 nConvert = siemensCtKludge(nConvert, dcmSort,dcmList);
             }
             if ((nAcq == 1 ) && (dcmList[indx0].locationsInAcquisition > 0)) nAcq = nConvert/dcmList[indx0].locationsInAcquisition;
-            
+
             if (nAcq < 2 ) {
                 nAcq = 0;
                 for (int i = 0; i < nConvert; i++)
                     if (isSamePosition(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx])) nAcq++;
             }
-            
+
             /*int nImg = 1+abs( dcmList[dcmSort[nConvert-1].indx].imageNum-dcmList[dcmSort[0].indx].imageNum);
             if (((nConvert/nAcq) > 1) && ((nConvert%nAcq)==0) && (nImg == nConvert) && (dcmList[dcmSort[0].indx].locationsInAcquisition == 0) ) {
                 printf(" stacking %d acquisitions as a single volume\n", nAcq);
                 //some Siemens CT scans use multiple acquisitions for a single volume, perhaps also check that slice position does not repeat?
                 hdr0.dim[3] = nConvert;
             } else*/ if ( (nAcq > 1) && ((nConvert/nAcq) > 1) && ((nConvert%nAcq)==0) ) {
-                
+
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
@@ -1337,7 +1355,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     //nii_SaveBIDS(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, sliceDir, dti4D, &hdr0);
-  
+
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
 
@@ -1568,7 +1586,7 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
         }
     }
-    if (nDuplicates > 0) 
+    if (nDuplicates > 0)
             #ifdef myUseCOut
     	std::cout<<"Some images have identical time, series, acquisition and image values. Duplicates removed."<<std::endl;
 		#else
@@ -1674,7 +1692,7 @@ bool isExt (char *file_name, const char* ext) {
             //		printf("note flag = %d, note type = %d\n",nh.note_flag,nh.note_type);
             // These are not interesting notes
             if(nh.note_type==1) continue;
-            
+
             // Look for calibration information
             double d1, d2, d3;
             if ( 3 == sscanf( note, "AXIS_2 %lf %lf %lf", &d1, &d2, &d3 ) )
@@ -1775,7 +1793,7 @@ int nii_loadDir (struct TDCMopts* opts) {
         strcpy(opts->outdir,opts->indir);
     }
     /*if (isFile && ((isExt(indir, ".gz")) || (isExt(indir, ".tgz"))) ) {
-        #ifndef myDisableTarGz 
+        #ifndef myDisableTarGz
          #ifndef myDisableZLib
           untargz( indir, opts->outdir);
          #endif
@@ -1802,7 +1820,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     if ((isFile) && (opts->isOnlySingleFile))
         return singleDICOM(opts, indir);
     struct TSearchList nameList;
-	nameList.maxItems = 32000; // larger requires more memory, smaller more passes 
+	nameList.maxItems = 32000; // larger requires more memory, smaller more passes
 
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
@@ -1815,7 +1833,7 @@ int nii_loadDir (struct TDCMopts* opts) {
         nameList.maxItems = nameList.numItems+1;
         //printf("Second pass required, found %ld images\n", nameList.numItems);
     }
-    if (nameList.numItems < 1) { 
+    if (nameList.numItems < 1) {
         #ifdef myUseCOut
     	std::cout << "Error: unable to find any DICOM images in "<< opts->indir <<std::endl;
     	#else
@@ -1929,7 +1947,7 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     strcpy(opts->pigzname,"pigz.exe");
     if (!is_exe(opts->pigzname)) {
     #ifdef myUseCOut
-        #ifdef myDisableZLib 
+        #ifdef myDisableZLib
         std::cout << "Compression requires "<<opts->pigzname<<" in the same folder as the executable"<<std::endl;
 		#else //myUseZLib
  		std::cout << "Compression will be faster with "<<opts->pigzname<<" in the same folder as the executable "<<std::endl;
@@ -1943,7 +1961,7 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
 	#endif
         strcpy(opts->pigzname,"");
     } else
-    	strcpy(opts->pigzname,".\\pigz"); //drop 
+    	strcpy(opts->pigzname,".\\pigz"); //drop
     #else
     strcpy(opts->pigzname,"/usr/local/bin/pigz");
     char pigz[1024];
@@ -1964,13 +1982,13 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
             #endif
             if (!is_exe(opts->pigzname)) {
              #ifdef myUseCOut
-              #ifdef myDisableZLib 
+              #ifdef myDisableZLib
                 std::cout << "Compression requires "<<pigz<<std::endl;
                 #else //myUseZLib
                 std::cout << "Compression will be faster with "<<pigz<<std::endl;
             	#endif
-    		#else 
-            	#ifdef myDisableZLib 
+    		#else
+            	#ifdef myDisableZLib
                 printf("Compression requires %s\n",pigz);
             	#else //myUseZLib
                 printf("Compression will be faster with %s\n",pigz);
@@ -2044,7 +2062,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     char buffer[512];
     if(RegQueryValueExA(hKey,"filename", 0,NULL,(LPBYTE)buffer,&vSize ) == ERROR_SUCCESS )
  	strcpy(opts->filename,buffer);
- RegCloseKey(hKey); 
+ RegCloseKey(hKey);
 } //readIniFile()
 
 #else
@@ -2104,7 +2122,3 @@ void saveIniFile (struct TDCMopts opts) {
 } //saveIniFile()
 
 #endif
-
-
-
-
