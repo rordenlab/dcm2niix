@@ -352,10 +352,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fprintf(fp, "{\n");
 	fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-		if (d->phaseEncodingRC== 'C')
-		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%c\",\n", "COL" );
+		if (d.phaseEncodingRC == 'C')
+		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "COL" );
 		else
-		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%c\",\n", "ROW" );
+		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "ROW" );
     if (d.CSA.phaseEncodingDirectionPositive)
     	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"+\",\n");
     else
@@ -369,14 +369,29 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
+	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < kMaxDTI4D; i++) {
-			if (dti4D->S[i].sliceTiming >= 0.0)
-				fprintf(fp, "\t\t%g,\n", dti4D->S[i].sliceTiming / 1000.0 );
+			if (dti4D->S[i].sliceTiming >= 0.0){
+			  if (!first)
+				  fprintf(fp, ",\n");
+				else
+				  first = 0;
+				fprintf(fp, "\t\t%g", dti4D->S[i].sliceTiming / 1000.0 );
+			}
 		}
 		fprintf(fp, "\t],\n");
 	}
+
+	if (d.phaseEncodingRC == 'C')
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"y");
+	else
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"x");
+	if (!d.CSA.phaseEncodingDirectionPositive)
+		fprintf(fp, "-");
+	fprintf(fp, "\"\n");
+
     fprintf(fp, "}\n");
     fclose(fp);
 
