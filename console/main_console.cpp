@@ -53,7 +53,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     const char *cstr = removePath(argv[0]);
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
-    printf("  -b : BIDS sidecar (y/n, default n)\n");
+    printf("  -b : BIDS sidecar (y/n, default y)\n");
     printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol, %%q=sequence %%s=series, %%t=time; default '%s')\n",opts.filename);
     printf("  -h : show help\n");
     printf("  -o : output directory (omit to save to input folder)\n");

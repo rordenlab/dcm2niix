@@ -571,9 +571,9 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     if (h->slice_code == NIFTI_SLICE_UNKNOWN) h->slice_code = d.CSA.sliceOrder;
     if (h->slice_code == NIFTI_SLICE_UNKNOWN) h->slice_code = d2.CSA.sliceOrder; //sometimes the first slice order is screwed up https://github.com/eauerbach/CMRR-MB/issues/29
     sprintf(txt, "TE=%.2g;Time=%.3f", d.TE,d.acquisitionTime);// d.dateTime);
-    if (d.CSA.phaseEncodingDirectionPositive > 0) {
+    if (d.CSA.phaseEncodingDirectionPositive >= 0) {
         char dtxt[1024] = {""};
-        sprintf(dtxt, ";phase+=%d", d.CSA.phaseEncodingDirectionPositive);
+        sprintf(dtxt, ";phase=%d", d.CSA.phaseEncodingDirectionPositive);
         strcat(txt,dtxt);
     }
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0) && ((d.phaseEncodingRC =='C') || (d.phaseEncodingRC =='R'))) {

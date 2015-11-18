@@ -351,14 +351,19 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fprintf(fp, "{\n");
 	fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-		if (d.phaseEncodingRC == 'C')
-		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "COL" );
-		else
-		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "ROW" );
-    if (d.CSA.phaseEncodingDirectionPositive)
-    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"+\",\n");
-    else
-    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );
+//Next items redundant with "PhaseEncodingDirection"
+// Chris Rorden would have preferred DICOM's COL/ROW or NIfTI's I/J 
+// To distinguish between spatial (XYZ) and image coordinates (I/J/K; COL/ROW/SLICE)
+// However, Analyze era spatial processing tools use X/Y/Z
+// BIDS tries to be consistent with these tools
+// 	if (d.phaseEncodingRC == 'C')
+// 	  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "COL" );
+// 	else
+// 	  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "ROW" );
+//     if (d.CSA.phaseEncodingDirectionPositive)
+//     	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"+\",\n");
+//     else
+//     	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0;
 		if (d.phaseEncodingRC =='C')
@@ -386,7 +391,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"PhaseEncodingDirection\": \"y");
 	else
 		fprintf(fp, "\t\"PhaseEncodingDirection\": \"x");
-	if (!d.CSA.phaseEncodingDirectionPositive)
+	//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
+	//However, DICOM and NIfTI are reversed in the j (ROW) direction
+	//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
+	if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((opts.isFlipY)))
+		fprintf(fp, "-");
+	if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
 		fprintf(fp, "-");
 	fprintf(fp, "\"\n");
     fprintf(fp, "}\n");
@@ -2032,7 +2042,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     opts->isGz = false;
     opts->isFlipY = true;
     opts->isRGBplanar = false;
-    opts->isCreateBIDS =   false;
+    opts->isCreateBIDS =  true;
 #ifdef myDebug
     opts->isVerbose =   true;
 #else
