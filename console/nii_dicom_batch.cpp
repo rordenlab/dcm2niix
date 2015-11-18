@@ -335,28 +335,30 @@ bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
 } //isSamePosition()
 
 
-//void nii_SaveBIDS(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, struct nifti_1_header *h) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
 // sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
-// we will use %g for floats since exponents are allowed 
+// we will use %g for floats since exponents are allowed
 // we will not set the locale, so decimal separator is always a period, as required
 //  https://www.ietf.org/rfc/rfc4627.txt
 	if (!opts.isCreateBIDS) return;
 	char txtname[2048] = {""};
     strcpy (txtname,pathoutname);
-    strcat (txtname,".bids");
+    strcat (txtname,".json");
     //printf("Saving DTI %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
     fprintf(fp, "{\n");
 	fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-    fprintf(fp, "\t\"PhaseEncodingDirectionRowColumn\": \"%c\",\n", d.phaseEncodingRC );
+		if (d.phaseEncodingRC == 'C')
+		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "COL" );
+		else
+		  fprintf(fp, "\t\"InLinePhaseEncodingDirection\": \"%s\",\n", "ROW" );
     if (d.CSA.phaseEncodingDirectionPositive)
     	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"+\",\n");
     else
-    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );    
+    	fprintf(fp, "\t\"PhaseEncodingPositiveNegative\": \"-\",\n" );
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0;
 		if (d.phaseEncodingRC =='C')
@@ -366,17 +368,29 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
+	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
-		for (int i = 0; i < kMaxDTI4D; i++) { 
-			if (dti4D->S[i].sliceTiming >= 0.0)
-				fprintf(fp, "\t\t%g,\n", dti4D->S[i].sliceTiming / 1000.0 );
+		for (int i = 0; i < kMaxDTI4D; i++) {
+			if (dti4D->S[i].sliceTiming >= 0.0){
+			  if (!first)
+				  fprintf(fp, ",\n");
+				else
+				  first = 0;
+				fprintf(fp, "\t\t%g", dti4D->S[i].sliceTiming / 1000.0 );
+			}
 		}
 		fprintf(fp, "\t],\n");
 	}
+	if (d.phaseEncodingRC == 'C')
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"y");
+	else
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"x");
+	if (!d.CSA.phaseEncodingDirectionPositive)
+		fprintf(fp, "-");
+	fprintf(fp, "\"\n");
     fprintf(fp, "}\n");
     fclose(fp);
-
 }
 
 int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
