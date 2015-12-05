@@ -156,7 +156,11 @@ nifti_image* nifti_convert_nhdr2nim(struct nifti_1_header nhdr, const char * fna
     if( doswap )
         swap_nifti_header( &nhdr , is_nifti ) ;
 //    if ( g_opts.debug > 2 ) disp_nifti_1_header("-d nhdr2nim : ", &nhdr);
+#ifdef NIFTI_FOUND
+    if( nhdr.datatype == DT_BINARY || nhdr.datatype == DT_UNKNOWN  )  {
+#else
     if( nhdr.datatype == DT_BINARY || nhdr.datatype == DT_UNKNOWN_DT  )  {
+#endif
         NSLog(@"unknown or unsupported datatype (%d). Will attempt to view as unsigned 8-bit (assuming ImageJ export)", nhdr.datatype);
         nhdr.datatype =DT_UNSIGNED_CHAR;
         

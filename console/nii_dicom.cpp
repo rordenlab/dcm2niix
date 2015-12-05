@@ -20,6 +20,7 @@
 #include "jpg_0XC3.h"
 #include "ujpeg.h"
 #include "nifti1.h"
+#include "nifti1_io_core.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
 #include <sys/stat.h> // discriminate files from folders
@@ -31,7 +32,6 @@
 #include <stddef.h>
 #include <float.h>
 #include <stdint.h>
-#include "nifti1_io_core.h"
 #ifdef myUseCOut
 #include <iostream>
 #endif
@@ -40,7 +40,7 @@
 #endif
 
 #ifndef myDisableOpenJPEG
-    #include <openjpeg-2.1/openjpeg.h>//"openjpeg.h"
+    #include <openjpeg.h>//"openjpeg.h"
 
 #ifdef myEnableJasper
 ERROR: YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY
