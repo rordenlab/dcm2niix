@@ -1,10 +1,15 @@
 project(dcm2niix)
 
 cmake_minimum_required(VERSION 2.6)
-#
-# Zlib
-#
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+
 find_package(ZLIB)
+find_package(NIFTI)
+find_package(PkgConfig)
+if(PKG_CONFIG_FOUND)
+  pkg_check_modules(OpenJPEG2 libopenjp2)
+endif()
 
 # Predefined permission set to enforce proper permissions
 # during install even if files in the sources have different
