@@ -1,6 +1,6 @@
 The following files are from different authors and have their own licenses
 
-nifti1_io.h/nifti1_io.c is public domain
+nifti.h, nifti1_io.h/nifti1_io.c is public domain
   http://niftilib.sourceforge.net
   http://sourceforge.net/projects/niftilib/files/latest/download
 ujpeg.h/ujpeg.c see web site for licenses

@@ -8,13 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		4F1D666719F422D6004BEC23 /* nifti1_io_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666319F422D6004BEC23 /* nifti1_io_core.cpp */; };
-		4F1D666819F422D6004BEC23 /* nifti1_io_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666319F422D6004BEC23 /* nifti1_io_core.cpp */; };
 		4F1D666919F422D6004BEC23 /* nii_dicom_batch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666419F422D6004BEC23 /* nii_dicom_batch.cpp */; };
-		4F1D666A19F422D6004BEC23 /* nii_dicom_batch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666419F422D6004BEC23 /* nii_dicom_batch.cpp */; };
 		4F1D666B19F422D6004BEC23 /* nii_dicom.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666519F422D6004BEC23 /* nii_dicom.cpp */; };
-		4F1D666C19F422D6004BEC23 /* nii_dicom.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666519F422D6004BEC23 /* nii_dicom.cpp */; };
 		4F1D666D19F422D6004BEC23 /* nii_ortho.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666619F422D6004BEC23 /* nii_ortho.cpp */; };
-		4F1D666E19F422D6004BEC23 /* nii_ortho.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F1D666619F422D6004BEC23 /* nii_ortho.cpp */; };
 		4F20AC5E191D67F600EA3B33 /* libz.1.2.5.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F20AC5D191D67F600EA3B33 /* libz.1.2.5.dylib */; };
 		4F7688E21B173D7D00E959F3 /* miniz.c in Sources */ = {isa = PBXBuildFile; fileRef = 4F7688E11B173D7D00E959F3 /* miniz.c */; };
 		4F7688E51B173EBB00E959F3 /* jpg_0XC3.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F7688E31B173EBB00E959F3 /* jpg_0XC3.cpp */; };
@@ -24,22 +20,10 @@
 		4F9EB65318F333DF00F6A696 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EB65218F333DF00F6A696 /* main.m */; };
 		4F9EB65718F333DF00F6A696 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 4F9EB65518F333DF00F6A696 /* Credits.rtf */; };
 		4F9EB65D18F333DF00F6A696 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 4F9EB65B18F333DF00F6A696 /* MainMenu.xib */; };
-		4F9EB66518F333DF00F6A696 /* SenTestingKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F9EB66418F333DF00F6A696 /* SenTestingKit.framework */; };
-		4F9EB66618F333DF00F6A696 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F9EB64618F333DF00F6A696 /* Cocoa.framework */; };
 		4FE4DAD318FF778100EDF667 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EB65918F333DF00F6A696 /* AppDelegate.m */; };
 		4FE5DAC618F338FA003B4508 /* dcm2niigui.icns in Resources */ = {isa = PBXBuildFile; fileRef = 4FE5DAC518F338FA003B4508 /* dcm2niigui.icns */; };
 		4FE5DACC18F33AEE003B4508 /* myWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = 4FE5DACB18F33AEE003B4508 /* myWindow.m */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		4F9EB66718F333DF00F6A696 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4F9EB63B18F333DF00F6A696 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4F9EB64218F333DF00F6A696;
-			remoteInfo = dcm2;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		4F1D665D19F422D6004BEC23 /* nifti1_io_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = nifti1_io_core.h; sourceTree = "<group>"; };
@@ -71,7 +55,6 @@
 		4F9EB65818F333DF00F6A696 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		4F9EB65918F333DF00F6A696 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
 		4F9EB65C18F333DF00F6A696 /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = en.lproj/MainMenu.xib; sourceTree = "<group>"; };
-		4F9EB66318F333DF00F6A696 /* dcm2Tests.octest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = dcm2Tests.octest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F9EB66418F333DF00F6A696 /* SenTestingKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SenTestingKit.framework; path = Library/Frameworks/SenTestingKit.framework; sourceTree = DEVELOPER_DIR; };
 		4FE5DAC518F338FA003B4508 /* dcm2niigui.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = dcm2niigui.icns; sourceTree = "<group>"; };
 		4FE5DACA18F33AEE003B4508 /* myWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = myWindow.h; sourceTree = "<group>"; };
@@ -85,15 +68,6 @@
 			files = (
 				4F20AC5E191D67F600EA3B33 /* libz.1.2.5.dylib in Frameworks */,
 				4F9EB64718F333DF00F6A696 /* Cocoa.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4F9EB65F18F333DF00F6A696 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				4F9EB66518F333DF00F6A696 /* SenTestingKit.framework in Frameworks */,
-				4F9EB66618F333DF00F6A696 /* Cocoa.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -115,7 +89,6 @@
 			isa = PBXGroup;
 			children = (
 				4F9EB64318F333DF00F6A696 /* dcm2.app */,
-				4F9EB66318F333DF00F6A696 /* dcm2Tests.octest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -208,32 +181,13 @@
 			productReference = 4F9EB64318F333DF00F6A696 /* dcm2.app */;
 			productType = "com.apple.product-type.application";
 		};
-		4F9EB66218F333DF00F6A696 /* dcm2Tests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 4F9EB67718F333DF00F6A696 /* Build configuration list for PBXNativeTarget "dcm2Tests" */;
-			buildPhases = (
-				4F9EB65E18F333DF00F6A696 /* Sources */,
-				4F9EB65F18F333DF00F6A696 /* Frameworks */,
-				4F9EB66018F333DF00F6A696 /* Resources */,
-				4F9EB66118F333DF00F6A696 /* ShellScript */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				4F9EB66818F333DF00F6A696 /* PBXTargetDependency */,
-			);
-			name = dcm2Tests;
-			productName = dcm2Tests;
-			productReference = 4F9EB66318F333DF00F6A696 /* dcm2Tests.octest */;
-			productType = "com.apple.product-type.bundle.ocunit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		4F9EB63B18F333DF00F6A696 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastTestingUpgradeCheck = 0610;
+				LastTestingUpgradeCheck = 0640;
 				LastUpgradeCheck = 0610;
 				ORGANIZATIONNAME = "Chris Rorden";
 			};
@@ -250,7 +204,6 @@
 			projectRoot = "";
 			targets = (
 				4F9EB64218F333DF00F6A696 /* dcm2 */,
-				4F9EB66218F333DF00F6A696 /* dcm2Tests */,
 			);
 		};
 /* End PBXProject section */
@@ -267,30 +220,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4F9EB66018F333DF00F6A696 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		4F9EB66118F333DF00F6A696 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Run the unit tests in this test bundle.\n\"${SYSTEM_DEVELOPER_DIR}/Tools/RunUnitTests\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		4F9EB63F18F333DF00F6A696 /* Sources */ = {
@@ -310,26 +240,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4F9EB65E18F333DF00F6A696 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				4F1D666819F422D6004BEC23 /* nifti1_io_core.cpp in Sources */,
-				4F1D666A19F422D6004BEC23 /* nii_dicom_batch.cpp in Sources */,
-				4F1D666C19F422D6004BEC23 /* nii_dicom.cpp in Sources */,
-				4F1D666E19F422D6004BEC23 /* nii_ortho.cpp in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		4F9EB66818F333DF00F6A696 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 4F9EB64218F333DF00F6A696 /* dcm2 */;
-			targetProxy = 4F9EB66718F333DF00F6A696 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		4F9EB64F18F333DF00F6A696 /* InfoPlist.strings */ = {
@@ -452,36 +363,6 @@
 			};
 			name = Release;
 		};
-		4F9EB67818F333DF00F6A696 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/dcm2.app/Contents/MacOS/dcm2";
-				COMBINE_HIDPI_IMAGES = YES;
-				FRAMEWORK_SEARCH_PATHS = "\"$(DEVELOPER_LIBRARY_DIR)/Frameworks\"";
-				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = "dcm2/dcm2-Prefix.pch";
-				INFOPLIST_FILE = "dcm2Tests/dcm2Tests-Info.plist";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUNDLE_LOADER)";
-				WRAPPER_EXTENSION = octest;
-			};
-			name = Debug;
-		};
-		4F9EB67918F333DF00F6A696 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/dcm2.app/Contents/MacOS/dcm2";
-				COMBINE_HIDPI_IMAGES = YES;
-				FRAMEWORK_SEARCH_PATHS = "\"$(DEVELOPER_LIBRARY_DIR)/Frameworks\"";
-				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = "dcm2/dcm2-Prefix.pch";
-				INFOPLIST_FILE = "dcm2Tests/dcm2Tests-Info.plist";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUNDLE_LOADER)";
-				WRAPPER_EXTENSION = octest;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -499,15 +380,6 @@
 			buildConfigurations = (
 				4F9EB67518F333DF00F6A696 /* Debug */,
 				4F9EB67618F333DF00F6A696 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		4F9EB67718F333DF00F6A696 /* Build configuration list for PBXNativeTarget "dcm2Tests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				4F9EB67818F333DF00F6A696 /* Debug */,
-				4F9EB67918F333DF00F6A696 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
