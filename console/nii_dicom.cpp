@@ -8,17 +8,17 @@
 #  define chdir _chrdir
 #include "io.h"
 #include <math.h>
-#define snprintf _snprintf 
-#define vsnprintf _vsnprintf 
-#define strcasecmp _stricmp 
-#define strncasecmp _strnicmp 
+#define snprintf _snprintf
+#define vsnprintf _vsnprintf
+#define strcasecmp _stricmp
+#define strncasecmp _strnicmp
 #else
 	#include <unistd.h>
 #endif
 
 //#include <time.h> //clock()
-#include "jpg_0XC3.h"
-#include "ujpeg.h"
+
+
 #include "nifti1.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
@@ -29,9 +29,11 @@
 #include <math.h>
 #include <string.h>
 #include <stddef.h>
+#include "jpg_0XC3.h"
 #include <float.h>
 #include <stdint.h>
 #include "nifti1_io_core.h"
+#include "ujpeg.h"
 #ifdef myUseCOut
 #include <iostream>
 #endif
@@ -128,7 +130,7 @@ static void my_stream_free (void * p_user_data) { //do nothing
 
 static OPJ_UINT32 opj_read_from_buffer(void * p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo* p_file) {
     OPJ_UINT32 l_nb_read;
-    
+
     if(p_file->cur + p_nb_bytes < p_file->buf + p_file->len )
     {
         l_nb_read = p_nb_bytes;
@@ -139,7 +141,7 @@ static OPJ_UINT32 opj_read_from_buffer(void * p_buffer, OPJ_UINT32 p_nb_bytes, B
     }
     memcpy(p_buffer, p_file->cur, l_nb_read);
     p_file->cur += l_nb_read;
-    
+
     return l_nb_read ? l_nb_read : ((OPJ_UINT32)-1);
 } //opj_read_from_buffer()
 
@@ -343,7 +345,7 @@ float deFuzz(float v) {
         return 0;
     else
         return v;
-    
+
 }
 
 void reportMat33(char *str, mat33 A) {
@@ -471,7 +473,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     bool isOK = false;
     for (int i = 1; i <= 6; i++)
         if (d.orient[i] != 0.0) isOK = true;
-    
+
     //for (int i = 1; i <= 6; i++)
     //    printf ("%g\n",d.orient[i]);
     if (!isOK) {
@@ -676,7 +678,7 @@ void dcmStrDigitsOnly(char* lStr) {
     for (int i = 0; i < (int) len; i++)
         if (!isdigit(lStr[i]) )
             lStr[i] = ' ';
-    
+
 }
 
 void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
@@ -804,7 +806,7 @@ int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as
 #else
 	char cString[lByteLength + 1];
 #endif
-	
+
     cString[lByteLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
     //printf(" --> *%s* %s%s\n",cString, &lBuffer[0],&lBuffer[1]);
@@ -836,7 +838,7 @@ int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float 
         ret = kMANUFACTURER_TOSHIBA;
 #ifdef _MSC_VER
 	free(cString);
-#endif    
+#endif
 	return ret;
 } //dcmStrManufacturer
 
@@ -866,7 +868,7 @@ int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float 
     typedef struct __attribute__((packed)) {
         int32_t xx1, xx2_Len, xx3_77, xx4;
     } TCSAitem; //Siemens csa item structure
-#endif 
+#endif
 
 float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *ItemsOK) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
@@ -953,7 +955,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
                 float maxTimeValue, minTimeValue, timeValue1;
                 for (int z = 0; z < kMaxDTI4D; z++)
         			dti4D->S[z].sliceTiming = -1.0;
-        
+
                 if (itemsOK <= kMaxDTI4D)
                 	for (int z = 1; z <= itemsOK; z++)
                 		dti4D->S[z-1].sliceTiming = sliceTimes[z];
@@ -1096,7 +1098,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
 #else
         printf("Unsupported DICOM bit-depth %d with %d samples per pixel\n",d.bitsAllocated,d.samplesPerPixel);
 #endif
-        
+
         return EXIT_FAILURE;
     }
     if ((h->datatype == DT_UINT16) && (d.bitsStored > 0) &&(d.bitsStored < 16))
@@ -1275,7 +1277,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
         if (buff[0] == '.') { //tag
             char Comment[8][50];
             sscanf(buff, ". %s %s %s %s %s %s %s %s\n", Comment[0], Comment[1],Comment[2], Comment[3], Comment[4], Comment[5], Comment[6], Comment[7]);
-            
+
             if ((strcmp(Comment[0], "Acquisition") == 0) && (strcmp(Comment[1], "nr") == 0)) {
                 d.acquNum = atoi( Comment[3]);
                 d.seriesNum = d.acquNum;
@@ -1289,7 +1291,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
                 strcat(d.patientName, Comment[6]);
                 strcat(d.patientName, Comment[7]);
                 //printf("%s\n",d.patientName);
-                
+
             }
             if ((strcmp(Comment[0], "Protocol") == 0) && (strcmp(Comment[1], "name") == 0)) {
                 strcpy(d.protocolName, Comment[3]);
@@ -1373,7 +1375,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
                                                               (!isSameFloat(d.patientPosition[2],cols[kPositionAP])) ||
                                                               (!isSameFloat(d.patientPosition[3],cols[kPositionFH])) ) )//this is the first slice with different position
                 d.patientPositionSequentialRepeats = slice-1;
-            
+
             if ((d.intenScale != cols[kRS]) || (d.intenIntercept != cols[kRI]))
                 isIntenScaleVaries = true;
         }
@@ -1401,13 +1403,13 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
                     dti4D->S[dir-1].V[3] = cols[kv3];
 
                 } //save DTI direction
-                
+
             }
         } //if DTI directions
         //printf("%f %f %lu\n",cols[9],cols[kGradientNumber], strlen(buff))
         p = fgets (buff, LINESZ, fp);//get next line
     }
-                    
+
     free (cols);
     fclose (fp);
     d.manufacturer = kMANUFACTURER_PHILIPS;
@@ -1422,7 +1424,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
 #ifdef myUseCOut
     if (isIntenScaleVaries)
         std::cout<<"Warning: intensity slope/intercept varies between slices! [solution: user dcm2nii instead]" <<std::endl;
-    
+
     if (!isIndexSequential)
         std::cout<<"Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]" <<std::endl;
     printf("Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
@@ -1430,14 +1432,14 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
 #else
     if (ADCwarning)
         printf("Warning: PAR/REC dataset includes an ADC map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
-    
+
     if (isIntenScaleVaries)
        printf("Warning: intensity slope/intercept varies between slices! [solution: user dcm2nii instead]\n");
         if (!isIndexSequential)
             printf("Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
             printf("Done reading PAR header version %.1f, with %d DTI directions\n", (float)parVers/10, d.CSA.numDti);
 #endif
-            
+
             //see Xiangrui Li 's dicm2nii (also BSD license)
             // http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
             // Rotation order and signs are figured out by try and err, not 100% sure
@@ -1513,7 +1515,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
     };
-     
+
     return d;
 } //nii_readParRec()
 
@@ -1683,7 +1685,7 @@ unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h){
     v = nifti_vect44mat44_mul(v, Q44); //after flip this voxel will be the origin
     mat33 mFlipY;
     LOAD_MAT33(mFlipY,1.0f, 0.0f, 0.0f, 0.0f,-1.0f,0.0f, 0.0f,0.0f,1.0f);
-    
+
     s= nifti_mat33_mul( s , mFlipY );
     LOAD_MAT44(Q44, s.m[0][0],s.m[0][1],s.m[0][2],v.v[0],
                s.m[1][0],s.m[1][1],s.m[1][2],v.v[1],
@@ -1712,7 +1714,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
 	fclose(file);
     return bImg;
 } //nii_loadImg()
-                    
+
 unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
                         //DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
     if (bImg == NULL) return NULL;
@@ -1789,7 +1791,7 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
 #endif
     return bImg;
 } //nii_rgb2Planar()
-                    
+
 float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
     if ((lRS*lSS) == 0) //avoid divide by zero
         return 0.0;
@@ -1855,7 +1857,7 @@ unsigned char * nii_XYTZ_XYZT(unsigned char* bImg, struct nifti_1_header *hdr, i
     //memcpy(&tempImg[0], &bImg[0], imgSz);
     uint64_t origPos = 0;
     uint64_t Pos = 0; //
-    
+
     for (int t = 0; t < typeRepeats; t++) { //for each volume
         for (int s = 0; s < seqRepeats; s++) {
             origPos = (t*typeBytes) +s*sliceBytes;
@@ -2016,7 +2018,7 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
     return img;
 } //nii_loadImgCoreJasper()
 #endif
-                 
+
 unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
     //printf("offset %d\n", dcm.imageStart);
     int dimX, dimY, bits, frames;
@@ -2026,7 +2028,7 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     //printf("JPEG %fms\n", ((double)(clock()-start))/1000);
     return ret;
 }
- 
+
 #ifndef F_OK
 #define F_OK 0 /* existence check */
 #endif
@@ -2063,19 +2065,19 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
     njDone();
     return bImg;
 }
-                    
+
+
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
-    if (dcm.compressionScheme == kCompress50) {
+    if (dcm.compressionScheme == kCompress50)  {
         img = nii_loadImgJPEG50(imgname, *hdr, dcm);
-        //img = nii_rgb2planar(img, hdr, false); //convert RGBRGB.. to RRR..RGGGG..GBBB..B
     } else if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
     } else
     #ifndef myDisableOpenJPEG
-    if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
+    if ( ((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone) )
         img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
     else
     #else
@@ -2100,14 +2102,6 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_byteswap(img, hdr);
 #endif
     }
-    //if ((hdr->datatype ==DT_RGB24) && (dcm.compressionScheme != kCompressNone))
-    //    dcm.isPlanarRGB = true;
-    //if (hdr->datatype ==DT_RGB24) img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB);
-    //dcm.isPlanarRGB = false;
-    //xxxxx
-    //dcm.isLittleEndian = !dcm.isLittleEndian; //xxxxx
-    //printf("x--> %s\n", imgname);
-    //NSLog(@"--->%s",imgname);
     if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) //img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB); //
         img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     dcm.isPlanarRGB = true;
@@ -2129,14 +2123,14 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     headerDcm2NiiSForm(dcm,dcm, hdr);
     return img;
 } //nii_loadImgXL()
-                    
+
 struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
     strcpy(d.scanningSequence, "");
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
-	
+
     struct stat s;
     if( stat(fname,&s) == 0 ) {
         if( !(s.st_mode & S_IFREG) ){
@@ -2183,7 +2177,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
-    
+
 #define  kStudyDate 0x0008+(0x0020 << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
@@ -2304,14 +2298,14 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
 
-        
+
     if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) && (!isEncapsulatedData)) {
         //if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) ) {
             vr[0] = 'N';
             vr[1] = 'A';
             if (groupElement == kUnnest2) sqDepth--;
             //if (groupElement == kUnnest2) printf("SQend %d\n", sqDepth);
-            
+
             //if (groupElement == kUnnest) geiisBug = false; //don't exit if there is a proprietary thumbnail
             lLength = 4;
         } else if (d.isExplicitVR) {
@@ -2356,7 +2350,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
             vr[0] = 'S';
             vr[1] = 'Q';
         }
-        
+
         if   ((vr[0] == 'S') && (vr[1] == 'Q')) {
             sqDepth++;
             //printf("SQstart %d\n", sqDepth);
@@ -2471,7 +2465,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 /*case kDiffusionBFactorSiemens :
                  if (d.manufacturer == kMANUFACTURER_SIEMENS)
                  printf(">>>>%f\n,",dcmStrFloat(lLength, &buffer[lPos]));
-                 
+
                  break;*/
             case kDiffusionDirectionGEX :
                 if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[1] =  dcmStrFloat(lLength, &buffer[lPos]);
@@ -2542,7 +2536,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 break;
             case 	kXYSpacing:
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
-                
+
                 break;
             case 	kImageComments:
                 dcmStr (lLength, &buffer[lPos], d.imageComments);
@@ -2581,7 +2575,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 if ((lLength == 4) && (d.manufacturer == kMANUFACTURER_PHILIPS))
                     intenScalePhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-                
+
             case 	kIntercept :
                 d.intenIntercept = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -2739,7 +2733,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #endif
                     isIconImageSequence = true;
                     //geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not re-use pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
-                    
+
                 }
                 break;
             case 	kOrientation :
@@ -2758,7 +2752,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                     lLength = 0;
                     isEncapsulatedData = true;
                 }
-                
+
                 isIconImageSequence = false;
                 break;
             case 	kImageStartFloat:
@@ -2774,7 +2768,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                     d.imageStart = (int)lPos;
                 isIconImageSequence = false;
                 break;
-        
+
         } //switch/case for groupElement
         } //if nest
         #ifdef MY_DEBUG
@@ -2804,7 +2798,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
         printf("Please check voxel size\n");
         d.xyzMM[1] = d.xyzMM[2];
     }
-      
+
     if ((d.xyzMM[3] < FLT_EPSILON)) {
         printf("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
@@ -2812,7 +2806,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
     //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3]);
     //printf("Patient Position\t%g\t%g\t%g\tThick\t%g\tStart\t%d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3], d.imageStart);
     // printf("ser %ld\n", d.seriesNum);
-    
+
 
     //int kEchoMult = 100; //For Siemens/GE Series 1,2,3... save 2nd echo as 201, 3rd as 301, etc
     //if (d.seriesNum > 100)
