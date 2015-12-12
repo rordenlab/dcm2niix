@@ -588,6 +588,11 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         sprintf(dtxt, ";dwell=%.3f", dwellTime);
         strcat(txt,dtxt);
     }
+    //from dicm2nii 20151117 InPlanePhaseEncodingDirection
+    if (d.phaseEncodingRC =='R')
+        h->dim_info = (3 << 4) + (1 << 2) + 2;
+    if (d.phaseEncodingRC =='C')
+        h->dim_info = (3 << 4) + (2 << 2) + 1;
     snprintf(h->descrip,80, "%s",txt);
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%s",d.imageComments);
