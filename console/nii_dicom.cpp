@@ -1190,6 +1190,12 @@ void changeExt (char *file_name, const char* ext) {
 } //changeExt()
 
 
+float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
+    if ((lRS*lSS) == 0) //avoid divide by zero
+        return 0.0;
+    else
+        return (lPV * lRS + lRI) / (lRS * lSS);
+}
 
 struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
@@ -1231,6 +1237,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
 #define	kv3	46
 #define	kASL	48
     char buff[LINESZ];
+    float intenScalePhilips = 0.0f;
     bool ADCwarning = false;
     int parVers = 0;
     int nCols = 26;
@@ -1362,6 +1369,7 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
 			d.bitsStored = (int) cols[kBitsPerVoxel];
             d.intenIntercept = cols[kRI];
             d.intenScale = cols[kRS];
+            intenScalePhilips = cols[kSS];
         } else {
             if ((d.xyzDim[1] != cols[kXdim]) || (d.xyzDim[2] != cols[kYdim]) || (d.bitsAllocated != cols[kBitsPerVoxel]) ) {
 #ifdef myUseCOut
@@ -1515,6 +1523,16 @@ struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
     };
+    if (intenScalePhilips != 0.0) {
+        printf("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
+        //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
+        float l0 = PhilipsPreciseVal (0, d.intenScale, d.intenIntercept, intenScalePhilips);
+        float l1 = PhilipsPreciseVal (1, d.intenScale, d.intenIntercept, intenScalePhilips);
+        if (l0 != l1) {
+            d.intenIntercept = l0;
+            d.intenScale = l1-l0;
+        }
+    }
 
     return d;
 } //nii_readParRec()
@@ -1791,13 +1809,6 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
 #endif
     return bImg;
 } //nii_rgb2Planar()
-
-float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
-    if ((lRS*lSS) == 0) //avoid divide by zero
-        return 0.0;
-    else
-        return (lPV * lRS + lRI) / (lRS * lSS);
-}
 
 unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr){
     //each DICOM image can have its own intesity scaling, whereas NIfTI requires the same scaling for all images in a file
