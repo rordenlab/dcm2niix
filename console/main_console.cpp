@@ -4,8 +4,8 @@
 
 //g++ -O3 main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix -lz
 
-//if you do not have zlib,you can compile without it 
-// g++ -O3 -DmyDisableZLib main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix 
+//if you do not have zlib,you can compile without it
+// g++ -O3 -DmyDisableZLib main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix
 //or you can build your own copy:
 // to compile you will first want to build the Z library, then compile the project
 // cd zlib-1.2.8
@@ -53,7 +53,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     const char *cstr = removePath(argv[0]);
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
-    printf("  -b : BIDS sidecar (y/n, default y)\n");
+    printf("  -b : BIDS sidecar (y/n, default n)\n");
     printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol, %%q=sequence %%s=series, %%t=time; default '%s')\n",opts.filename);
     printf("  -h : show help\n");
     printf("  -o : output directory (omit to save to input folder)\n");
@@ -65,11 +65,11 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		if (strlen(opts.pigzname) > 0)
 			printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
 		else
-			printf("  -z : gz compress images (y/n, default %c) [REQUIRES pigz]\n", gzCh);    
+			printf("  -z : gz compress images (y/n, default %c) [REQUIRES pigz]\n", gzCh);
     #else
 		printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal, n=no]\n", gzCh);
     #endif
-    
+
 #if defined(_WIN64) || defined(_WIN32)
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
@@ -107,9 +107,9 @@ int main(int argc, const char * argv[])
     strcpy(opts.outdir,opts.indir);
     int i = 1;
     int lastCommandArg = -1;
-    
-    
-    
+
+
+
     while (i < (argc)) { //-1 as final parameter is DICOM directory
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
@@ -126,7 +126,7 @@ int main(int argc, const char * argv[])
                     opts.isOnlySingleFile = false;
                 else
                     opts.isOnlySingleFile = true;
-                    
+
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
@@ -150,7 +150,7 @@ int main(int argc, const char * argv[])
                 strcpy(opts.outdir,argv[i]);
             }
             lastCommandArg = i;
-            
+
         } //if parameter is a command
         i ++; //read next parameter
     } //while parameters to read
