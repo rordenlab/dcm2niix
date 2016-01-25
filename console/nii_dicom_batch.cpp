@@ -2029,7 +2029,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     opts->isGz = false;
     opts->isFlipY = true;
     opts->isRGBplanar = false;
-    opts->isCreateBIDS =  true;
+    opts->isCreateBIDS =  false;
 #ifdef myDebug
     opts->isVerbose =   true;
 #else

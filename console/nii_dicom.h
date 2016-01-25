@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "12Dec2015j" //JASPER for JPEG2000
+    #define kDCMvers "1Jan2016j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "12Dec2015" //no decompressor
+    #define kDCMvers "1Jan2016" //no decompressor
 	#else
-    #define kDCMvers "12Dec2015o" //OPENJPEG for JPEG2000
+    #define kDCMvers "1Jan2016o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
@@ -43,7 +43,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDTI4D {
         struct TDTI S[kMaxDTI4D];
     };
-    
+
     struct TCSAdata {
         float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int numDti, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
@@ -61,7 +61,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
         char  patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],scanningSequence[kDICOMStr], studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;
     };
-    
+
     size_t nii_ImgBytes(struct nifti_1_header hdr);
     struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D);
     //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag); //if compressFlag = 0, compressed DICOM will be reported as invalid
@@ -72,7 +72,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     void changeExt (char *file_name, const char* ext);
     struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D);
     unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);
-    
+
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
     //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
     unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);
