@@ -2225,6 +2225,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kAcquNum 0x0020+(0x0012 << 16 )
 #define  kImageNum 0x0020+(0x0013 << 16 )
 #define  kOrientation 0x0020+(0x0037 << 16 )
+#define  kNumberOfTemporalPositions 0x0020+(0x0105 << 16 ) //Number of Temporal Positions
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
@@ -2756,7 +2757,9 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 break;
 
-
+			case kNumberOfTemporalPositions :
+				//do something profound
+				break;
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
