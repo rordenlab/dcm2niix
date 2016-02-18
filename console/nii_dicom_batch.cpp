@@ -334,6 +334,18 @@ bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
     return true;
 } //isSamePosition()
 
+void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h) {
+	if (!opts.isCreateText) return;
+	char txtname[2048] = {""};
+	strcpy (txtname,pathoutname);
+    strcat (txtname,".txt");
+    //printf("Saving text %s\n",txtname);
+    FILE *fp = fopen(txtname, "w");
+    fprintf(fp, "%s\tField Strength:\t%g\tProtocolName:\t%s\tScanningSequence00180020:\t%s\tTE:\t%g\tTR:\t%g\tSeriesNum:\t%ld\tAcquNum:\t%d\tImageNum:\t%d\tImageComments:\t%s\tDateTime:\t%F\tName:\t%s\tConvVers:\t%s\tDoB:\t%s\tGender:\t%s\tAge:\t%s\tDimXYZT:\t%d\t%d\t%d\t%d",
+      pathoutname, d.fieldStrength, d.protocolName, d.scanningSequence, d.TE, d.TR, d.seriesNum, d.acquNum, d.imageNum, d.imageComments,
+      d.dateTime, d.patientName, kDCMvers, d.birthDate, d.gender, d.age, h->dim[1], h->dim[2], h->dim[3], h->dim[4]);
+    fclose(fp);
+}
 
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, struct nifti_1_header *h) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
@@ -1348,7 +1360,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     //nii_SaveBIDS(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, sliceDir, dti4D, &hdr0);
-
+	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0);
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
 
@@ -2030,6 +2042,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     opts->isFlipY = true;
     opts->isRGBplanar = false;
     opts->isCreateBIDS =  false;
+    opts->isCreateText = false;
 #ifdef myDebug
     opts->isVerbose =   true;
 #else
@@ -2082,6 +2095,8 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     opts->isGz = false;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;
+    opts->isCreateBIDS =  false;
+    opts->isCreateText = false;
 #ifdef myDebug
         opts->isVerbose =   true;
 #else

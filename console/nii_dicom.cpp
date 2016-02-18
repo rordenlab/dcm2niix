@@ -631,7 +631,10 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.patientName, "John_Doe");
     strcpy(d.patientID, "ID123");
     strcpy(d.imageComments, "imgComments");
-    strcpy(d.studyDate, "1/1/1977");
+    strcpy(d.age, "?");
+    strcpy(d.gender, "?");
+    strcpy(d.birthDate, "16421225"); //YYYYMMDD Newton
+    strcpy(d.studyDate, "19770703"); //YYYYMMDD Indomitable
     strcpy(d.studyTime, "11:11:11");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
@@ -640,11 +643,12 @@ struct TDICOMdata clear_dicom_data() {
     d.manufacturer = kMANUFACTURER_UNKNOWN;
     d.isPlanarRGB = false;
     d.lastScanLoc = NAN;
-    d.TR = 0;
-    d.TE = 0;
+    d.TR = 0.0;
+    d.TE = 0.0;
+    d.fieldStrength = 0.0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
-        d.coilNum = 1;
+    d.coilNum = 1;
     d.imageBytes = 0;
     d.intenScale = 1;
     d.intenIntercept = 0;
@@ -2203,6 +2207,9 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kPatientBirthDate 0x0010+(0x0030 << 16 )
+#define  kPatientSex 0x0010+(0x0040 << 16 )
+#define  kPatientAge 0x0010+(0x1010 << 16 )
 #define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
 #define  kSequenceName 0x0018+(0x0024 << 16)
@@ -2210,6 +2217,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
+#define  kFieldStrength 0x0018+(0x0087 << 16 )
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
@@ -2458,6 +2466,15 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
             case 	kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
+            case kPatientBirthDate :
+                dcmStr (lLength, &buffer[lPos], d.birthDate);
+                break;
+            case kPatientSex :
+                dcmStr (lLength, &buffer[lPos], d.gender);
+                break;
+            case kPatientAge :
+                dcmStr (lLength, &buffer[lPos], d.age);
+                break;
             case 	kProtocolNameGE: {
                 if (strlen(d.protocolName) < 1) //if (d.manufacturer == kMANUFACTURER_GE)
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
@@ -2578,6 +2595,9 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 break;
             case kEchoNum :
                 d.echoNum =  dcmStrInt(lLength, &buffer[lPos]);
+                break;
+            case 	kFieldStrength :
+                d.fieldStrength = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case 	kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);

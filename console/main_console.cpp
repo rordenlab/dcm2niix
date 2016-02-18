@@ -58,6 +58,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -h : show help\n");
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
+    printf("  -t : text notes includes private patient details (y/n, default n)\n");
     printf("  -v : verbose (y/n, default n)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
@@ -107,9 +108,6 @@ int main(int argc, const char * argv[])
     strcpy(opts.outdir,opts.indir);
     int i = 1;
     int lastCommandArg = -1;
-
-
-
     while (i < (argc)) { //-1 as final parameter is DICOM directory
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
@@ -126,7 +124,12 @@ int main(int argc, const char * argv[])
                     opts.isOnlySingleFile = false;
                 else
                     opts.isOnlySingleFile = true;
-
+            } else if ((argv[i][1] == 't') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isCreateText = false;
+                else
+                    opts.isCreateText = true;
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
