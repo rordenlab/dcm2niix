@@ -1,0 +1,16 @@
+Options:
+  isGz:             false
+  isFlipY:          false
+  isVerbose:        false
+  isCreateBIDS:     false
+  isOnlySingleFile: false
+
+Files:
+    -
+      in_dir:           /netshares/mvlprojects6/Registration_Data/RIT_Data2_ben/DICOM/RIT003/pre/Dynamic
+      out_dir:          /home/ENG/engs1170/Code/dcm2niix/testing
+      filename:         dcemri
+    -
+      in_dir:           /netshares/mvlprojects6/Registration_Data/RIT_Data2_ben/DICOM/RIT003/pre/03ALONE
+      out_dir:          /home/ENG/engs1170/Code/dcm2niix/testing
+      filename:         fa3

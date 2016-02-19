@@ -1,0 +1,16 @@
+Options:
+  isGz:             false
+  isFlipY:          false
+  isVerbose:        false
+  isCreateBIDS:     false
+  isOnlySingleFile: false
+
+Files:
+    -
+      in_dir:           /Test1a
+      out_dir:          /Test1b
+      filename:         /Test1c
+    -
+      in_dir:           /Test2a
+      out_dir:          /Test2b
+      filename:         Test2c
