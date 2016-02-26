@@ -52,12 +52,12 @@ Options:
   isOnlySingleFile: false
 Files:
     -
-      in_dir:           /path/to/first/file
-      out_dir:          /path/to/output/directory
+      in_dir:           /path/to/first/folder
+      out_dir:          /path/to/output/folder
       filename:         dcemri
     -
-      in_dir:           /path/to/second/file
-      out_dir:          /path/to/output/directory
+      in_dir:           /path/to/second/folder
+      out_dir:          /path/to/output/folder
       filename:         fa3
 ```
 
