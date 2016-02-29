@@ -1031,6 +1031,21 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
     return EXIT_SUCCESS;
 } // readCSAImageHeader()
 
+/* //for validation
+void dcmPrintStr(int lByteLength, char lBuffer[]) {
+    if  (lByteLength < 1) return;
+#ifdef _MSC_VER
+    char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
+#else
+    char cString[lByteLength + 1];
+#endif
+    memcpy(cString, (char*)&lBuffer[0], lByteLength);
+    cString[lByteLength] = 0; //null terminate
+    printf("*%s*\n", cString);
+    
+}
+ */
+
 void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
     if ((lnFloats < 1) || (lByteLength < 1)) return;
@@ -2774,6 +2789,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 }
                 break;
             case 	kOrientation :
+                //dcmPrintStr(lLength, (char*)&buffer[lPos]);
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 break;
 
@@ -2864,8 +2880,10 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
     //if (true) {
     if (isVerbose) {
         printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printf(" orient[0020,0037]\t%g\t%g\t%g\t%g\t%g\t%g\n", d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6]); //666
         printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
     }
+    
     if (d.CSA.numDti >= kMaxDTI4D) {
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;

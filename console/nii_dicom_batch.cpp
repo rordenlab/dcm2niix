@@ -334,16 +334,18 @@ bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
     return true;
 } //isSamePosition()
 
-void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h) {
+void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, char * dcmname) {
 	if (!opts.isCreateText) return;
 	char txtname[2048] = {""};
 	strcpy (txtname,pathoutname);
     strcat (txtname,".txt");
     //printf("Saving text %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
-    fprintf(fp, "%s\tField Strength:\t%g\tProtocolName:\t%s\tScanningSequence00180020:\t%s\tTE:\t%g\tTR:\t%g\tSeriesNum:\t%ld\tAcquNum:\t%d\tImageNum:\t%d\tImageComments:\t%s\tDateTime:\t%F\tName:\t%s\tConvVers:\t%s\tDoB:\t%s\tGender:\t%s\tAge:\t%s\tDimXYZT:\t%d\t%d\t%d\t%d",
+    fprintf(fp, "%s\tField Strength:\t%g\tProtocolName:\t%s\tScanningSequence00180020:\t%s\tTE:\t%g\tTR:\t%g\tSeriesNum:\t%ld\tAcquNum:\t%d\tImageNum:\t%d\tImageComments:\t%s\tDateTime:\t%F\tName:\t%s\tConvVers:\t%s\tDoB:\t%s\tGender:\t%s\tAge:\t%s\tDimXYZT:\t%d\t%d\t%d\t%d\tCoil:\t%d\tEchoNum:\t%d\tOrient(6)\t%g\t%g\t%g\t%g\t%g\t%g\tbitsAllocated\t%d\tInputName\t%s\n",
       pathoutname, d.fieldStrength, d.protocolName, d.scanningSequence, d.TE, d.TR, d.seriesNum, d.acquNum, d.imageNum, d.imageComments,
-      d.dateTime, d.patientName, kDCMvers, d.birthDate, d.gender, d.age, h->dim[1], h->dim[2], h->dim[3], h->dim[4]);
+      d.dateTime, d.patientName, kDCMvers, d.birthDate, d.gender, d.age, h->dim[1], h->dim[2], h->dim[3], h->dim[4],
+            d.coilNum,d.echoNum, d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
+            d.bitsAllocated, dcmname);
     fclose(fp);
 }
 
@@ -1360,7 +1362,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     //nii_SaveBIDS(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, sliceDir, dti4D, &hdr0);
-	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0);
+	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
 
@@ -1435,14 +1437,19 @@ int compareTDCMsort(void const *item1, void const *item2) {
     return 0; //tie
 } //compareTDCMsort()
 
+int isSameFloatGE (float a, float b) {
+//Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
+    return (fabs (a - b) <= 0.0001);
+}
+
 bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2) {
     //returns true if d1 and d2 should be stacked together as a signle output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
     if (d1.TE != d2.TE) return false;
     //printf("%g %g %g %g %g %g\n", d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6]);
-    if (!isSameFloat(d1.orient[1], d2.orient[1]) || !isSameFloat(d1.orient[2], d2.orient[2]) ||  !isSameFloat(d1.orient[3], d2.orient[3]) ||
-        !isSameFloat(d1.orient[4], d2.orient[4]) || !isSameFloat(d1.orient[5], d2.orient[5]) ||  !isSameFloat(d1.orient[6], d2.orient[6]) ) return false;
+    if (!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) ||  !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
+        !isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) ||  !isSameFloatGE(d1.orient[6], d2.orient[6]) ) return false;
     if ((d1.coilNum != d2.coilNum)  ||  (d1.echoNum != d2.echoNum)  || (d1.dateTime != d2.dateTime) || (d1.seriesNum != d2.seriesNum) || (d1.bitsAllocated != d2.bitsAllocated)|| (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) )
         return false;
     if (strcmp(d1.protocolName, d2.protocolName) != 0)
