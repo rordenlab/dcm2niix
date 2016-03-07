@@ -34,7 +34,7 @@ dcm2niix is a designed to convert neuroimaging data from the NIfTI format to the
 See help: `dcm2niix -h`
 e.g. `dcm2niix /path/to/dicom/folder`
 
-**Optional batch processing version**
+**Optional batch processing version:**
 
 Perform a batch conversion of multiple dicoms using the configurations specified in a yaml file. 
 ```bash
@@ -74,7 +74,7 @@ cmake ..
 ```
 `dcm2niix` will be created in the `bin` folder
 
-** optional batch processing version **
+** optional batch processing version: **
 
 The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` as well change the cmake command to `cmake -DBATCH_VERSION=ON ..`
 
