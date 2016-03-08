@@ -1,8 +1,8 @@
-##### About
+## About
 
-dcm2nii is a designed to convert neuroimaging data from the NIfTI format to the DICOM format. For details and compiled versions visit the [NITRC wiki](http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)
+dcm2niix is a designed to convert neuroimaging data from the NIfTI format to the DICOM format. For details and compiled versions visit the [NITRC wiki](http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)
 
-##### Versions
+## Versions
 
 12-Dec-2015
  - Support PAR/REC FP values when possible(see PMC3998685)
@@ -29,25 +29,89 @@ dcm2nii is a designed to convert neuroimaging data from the NIfTI format to the 
 11-Oct-2014
  - Initial public release
 
-Building command line version:
+## Running
 
- This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following:
+See help: `dcm2niix -h`
+e.g. `dcm2niix /path/to/dicom/folder`
+
+**Optional batch processing version:**
+
+Perform a batch conversion of multiple dicoms using the configurations specified in a yaml file. 
+```bash
+dcm2niibatch run_configuration.yaml
+```
+
+The configuration file should be in yaml format as shown in example `run_configuration.yaml`
+
+```yaml
+Options:
+  isGz:             false
+  isFlipY:          false
+  isVerbose:        false
+  isCreateBIDS:     false
+  isOnlySingleFile: false
+Files:
+    -
+      in_dir:           /path/to/first/folder
+      out_dir:          /path/to/output/folder
+      filename:         dcemri
+    -
+      in_dir:           /path/to/second/folder
+      out_dir:          /path/to/output/folder
+      filename:         fa3
+```
+
+You can add as many files as you want to convert as long as this structure stays consistent. Note that a dash must separate each file. 
+
+## Build
+ 
+### Build command line version with cmake (Linux, Windows, OSx)
+
+```bash
+mkdir build
+cd build
+cmake ..
+```
+`dcm2niix` will be created in the `bin` folder
+
+**optional batch processing version:**
+
+The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` as well change the cmake command to `cmake -DBATCH_VERSION=ON ..`
+
+This requires the following libraries:
+- pkg-config
+- yaml-cpp
+- a compiler that supports c++11
+
+e.g. the dependencies can be installed on Ubuntu 14.04 by running
+```
+sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake
+```
+
+### Building the command line version without cmake
+
+ This requires a C compiler. With a terminal, change directory to the 'console' folder and run the following:
 
 ##### DEFAULT BUILD
 
-- g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix
+```
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix
+```
 
 ##### ZLIB BUILD
  If we have zlib, we can use it (-lz) and disable [miniz](https://code.google.com/p/miniz/) (-myDisableMiniZ)
 
- - g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -DmyDisableMiniZ
+```
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix -lz -DmyDisableMiniZ
+```
 
 ##### MINGW BUILD
 
-If you use the (osbsolete) compiler MinGW on Windows you will want to include the rare libgcc libraries with your executable so others can use it. Here I also demonstrate the optional "-DmyDisableZLib" to remove zip support.
+If you use the (obsolete) compiler MinGW on Windows you will want to include the rare libgcc libraries with your executable so others can use it. Here I also demonstrate the optional "-DmyDisableZLib" to remove zip support.
 
- - g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -static-libgcc
-
+```
+g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -static-libgcc
+```
 
 ##### JPEG2000 BUILD
 
@@ -58,17 +122,25 @@ If you use the (osbsolete) compiler MinGW on Windows you will want to include th
  sudo make install
 You should then be able to run then run:
 
- - g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  jpg_0XC3.cpp ujpeg.cpp -o dcm2niix -lopenjp2
+```
+g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  jpg_0XC3.cpp ujpeg.cpp -o dcm2niix -lopenjp2
+```
 
 But in my experience this works best if you explicitly tell the software how to find the libraries, so your compile will probably look like one of these two options:
 
- - g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -I/usr/local/include /usr/local/lib/libopenjp2.a
+```
+g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -I/usr/local/include /usr/local/lib/libopenjp2.a
+```
 
- - g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -I/usr/local/lib /usr/local/lib/libopenjp2.a
+```
+g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -o dcm2niix  -I/usr/local/lib /usr/local/lib/libopenjp2.a
+```
 
  If you want to build this with JPEG2000 decompression support using Jasper: You will need to have the Jasper (http://www.ece.uvic.ca/~frodo/jasper/) and libjpeg (http://www.ijg.org) libraries installed which for Linux users may be as easy as running 'sudo apt-get install libjasper-dev' (otherwise, see http://www.ece.uvic.ca/~frodo/jasper/#doc). You can then run:
 
- - g++ -O3 -DmyDisableOpenJPEG -DmyEnableJasper -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp  -s -o dcm2niix -ljasper -ljpeg
+```
+g++ -O3 -DmyDisableOpenJPEG -DmyEnableJasper -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp  -s -o dcm2niix -ljasper -ljpeg
+```
 
 ##### VISUAL STUDIO BUILD
 
@@ -79,15 +151,23 @@ You should be able to click on the Visual Studio icons to open and build this co
 Building command line version universal binary from OSX 64 bit system:
  This requires a C compiler. With a terminal, change directory to the 'conosle' folder and run the following:
 
- - g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -arch i386 -o dcm2niix32
+```
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -arch i386 -o dcm2niix32
+```
 
- - g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix64
+```
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp -dead_strip -o dcm2niix64
+```
 
- - lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
+```
+lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
+```
 
  To validate that the resulting executable supports both architectures type
 
- - file ./dcm2niix
+```
+file ./dcm2niix
+```
 
 ##### OSX GRAPHICAL INTERFACE BUILD
 

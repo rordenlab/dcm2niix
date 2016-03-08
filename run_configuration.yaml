@@ -1,0 +1,16 @@
+Options:
+  isGz:             false
+  isFlipY:          false
+  isVerbose:        false
+  isCreateBIDS:     false
+  isOnlySingleFile: false
+
+Files:
+    -
+      in_dir:           /path/to/first/folder
+      out_dir:          /path/to/output/folder
+      filename:         dcemri
+    -
+      in_dir:           /path/to/second/folder
+      out_dir:          /path/to/output/folder
+      filename:         fa3
