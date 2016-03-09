@@ -1,7 +1,7 @@
 //  main.m dcm2niix
-// by Chris Rorden on 3/22/14, released under Gnu General Public License, Version 2.
+// by Chris Rorden on 3/22/14, see license.txt
 //  Copyright (c) 2014 Chris Rorden. All rights reserved.
-
+//  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
 #include <stdlib.h>
 #include <stdbool.h>

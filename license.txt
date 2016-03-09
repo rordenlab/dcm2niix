@@ -9,7 +9,8 @@ miniz.c is public domain (http://unlicense.org)
  https://code.google.com/p/miniz/
 
 ---
-Copyright (c) 2014-2015 Chris Rorden. All rights reserved.
+The Software has been developed for research purposes only and is not a clinical tool
+Copyright (c) 2014-2016 Chris Rorden. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions

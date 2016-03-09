@@ -1,5 +1,5 @@
 //  main.m dcm2niix
-// by Chris Rorden on 3/22/14, released under Gnu General Public License, Version 2.
+// by Chris Rorden on 3/22/14, see license.txt
 //  Copyright (c) 2014 Chris Rorden. All rights reserved.
 
 //g++ -O3 main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix -lz
