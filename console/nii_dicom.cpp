@@ -631,10 +631,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.patientName, "John_Doe");
     strcpy(d.patientID, "ID123");
     strcpy(d.imageComments, "imgComments");
-    strcpy(d.age, "?");
-    strcpy(d.gender, "?");
-    strcpy(d.birthDate, "16421225"); //YYYYMMDD Newton
-    strcpy(d.studyDate, "19770703"); //YYYYMMDD Indomitable
+    strcpy(d.studyDate, "1/1/1977");
     strcpy(d.studyTime, "11:11:11");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
@@ -643,12 +640,11 @@ struct TDICOMdata clear_dicom_data() {
     d.manufacturer = kMANUFACTURER_UNKNOWN;
     d.isPlanarRGB = false;
     d.lastScanLoc = NAN;
-    d.TR = 0.0;
-    d.TE = 0.0;
-    d.fieldStrength = 0.0;
+    d.TR = 0;
+    d.TE = 0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
-    d.coilNum = 1;
+        d.coilNum = 1;
     d.imageBytes = 0;
     d.intenScale = 1;
     d.intenIntercept = 0;
@@ -1031,21 +1027,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, b
     return EXIT_SUCCESS;
 } // readCSAImageHeader()
 
-/* //for validation
-void dcmPrintStr(int lByteLength, char lBuffer[]) {
-    if  (lByteLength < 1) return;
-#ifdef _MSC_VER
-    char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
-#else
-    char cString[lByteLength + 1];
-#endif
-    memcpy(cString, (char*)&lBuffer[0], lByteLength);
-    cString[lByteLength] = 0; //null terminate
-    printf("*%s*\n", cString);
-    
-}
- */
-
 void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
     if ((lnFloats < 1) || (lByteLength < 1)) return;
@@ -1068,6 +1049,7 @@ void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloat
             if (f < lnFloats) {
                 f ++;
                 lFloats[f] = (float) atof(temp);
+                isOK = false;
                 //printf("%d == %f\n", f, atof(temp));
             } //if f <= nFloats
             lStart = i+1;
@@ -2222,9 +2204,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
-#define  kPatientBirthDate 0x0010+(0x0030 << 16 )
-#define  kPatientSex 0x0010+(0x0040 << 16 )
-#define  kPatientAge 0x0010+(0x1010 << 16 )
 #define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
 #define  kSequenceName 0x0018+(0x0024 << 16)
@@ -2232,7 +2211,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
-#define  kFieldStrength 0x0018+(0x0087 << 16 )
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
@@ -2247,8 +2225,8 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
 #define  kImageNum 0x0020+(0x0013 << 16 )
+#define  kOrientationACR 0x0020+(0x0035 << 16 )
 #define  kOrientation 0x0020+(0x0037 << 16 )
-#define  kNumberOfTemporalPositions 0x0020+(0x0105 << 16 ) //Number of Temporal Positions
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
@@ -2311,6 +2289,7 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
     char vr[2];
     float intenScalePhilips = 0.0;
     bool isEncapsulatedData = false;
+    bool isOrient = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
     bool isSwitchToBigEndian = false;
@@ -2481,15 +2460,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
             case 	kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
-            case kPatientBirthDate :
-                dcmStr (lLength, &buffer[lPos], d.birthDate);
-                break;
-            case kPatientSex :
-                dcmStr (lLength, &buffer[lPos], d.gender);
-                break;
-            case kPatientAge :
-                dcmStr (lLength, &buffer[lPos], d.age);
-                break;
             case 	kProtocolNameGE: {
                 if (strlen(d.protocolName) < 1) //if (d.manufacturer == kMANUFACTURER_GE)
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
@@ -2610,9 +2580,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
                 break;
             case kEchoNum :
                 d.echoNum =  dcmStrInt(lLength, &buffer[lPos]);
-                break;
-            case 	kFieldStrength :
-                d.fieldStrength = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case 	kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
@@ -2788,14 +2755,15 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 
                 }
                 break;
+            case 	kOrientationACR : //use in emergency if kOrientation is not present!
+                if (!isOrient) dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
+                break;
             case 	kOrientation :
-                //dcmPrintStr(lLength, (char*)&buffer[lPos]);
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
+                isOrient = true;
                 break;
 
-			case kNumberOfTemporalPositions :
-				d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]); //CRX
-				break;
+
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
@@ -2837,18 +2805,18 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
     //printf("slices in Acq %d %d\n",d.locationsInAcquisition,locationsInAcquisitionPhilips);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionPhilips;
-    if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0) && (d.numberOfDynamicScans == 0)) //CRX
-        d.locationsInAcquisition = locationsInAcquisitionGE;
-    if (zSpacing > 0) d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
-    //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionCount,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
-    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionCount > d.xyzDim[3]))
-    	printf("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionCount, d.xyzDim[3]); //Philips reported different positions for each slice!
-    if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
-        d.isValid = true;
-	if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
-		printf("Please check voxel size\n");
-		d.xyzMM[2] = d.xyzMM[1];
-	}
+        if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
+            d.locationsInAcquisition = locationsInAcquisitionGE;
+            if (zSpacing > 0) d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
+                //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionCount,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
+                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionCount > d.xyzDim[3]))
+                    printf("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionCount, d.xyzDim[3]); //Philips reported different positions for each slice!
+                    if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
+                        d.isValid = true;
+                        if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
+                            printf("Please check voxel size\n");
+                            d.xyzMM[2] = d.xyzMM[1];
+                        }
     if ((d.xyzMM[2] > FLT_EPSILON) && (d.xyzMM[1] < FLT_EPSILON)) {
         printf("Please check voxel size\n");
         d.xyzMM[1] = d.xyzMM[2];
@@ -2878,12 +2846,11 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
     //printf("%d ----\n",d.imageStart);
     //printf("realWorldSlope %g\n",  d.intenScale);
     //if (true) {
+    if (!isOrient) printf("Serious error: spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
     if (isVerbose) {
         printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
-        printf(" orient[0020,0037]\t%g\t%g\t%g\t%g\t%g\t%g\n", d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6]); //666
         printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
     }
-    
     if (d.CSA.numDti >= kMaxDTI4D) {
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
