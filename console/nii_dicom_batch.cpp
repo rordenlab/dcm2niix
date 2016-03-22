@@ -180,8 +180,12 @@ bool isDICOMfile(const char * fname) {
 	unsigned char buffer[256];
 	fread(buffer, 256, 1, fp);
 	fclose(fp);
-    if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M'))
-        return false;
+    if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')){
+        if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
+        	return false;
+    	}
+    	printf("Warning: not a valid part 10 DICOM (missing 'DICM'): %s\n", fname);
+    }
     return true;
 } //isDICOMfile()
 

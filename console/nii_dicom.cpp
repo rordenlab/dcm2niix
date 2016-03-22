@@ -906,7 +906,7 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
     return Floats[1];
 } //csaMultiFloat()
 
-int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, bool isVerbose, struct TDTI4D *dti4D) {
+int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printf("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
     if (lLength < 36) return EXIT_FAILURE;
@@ -1203,7 +1203,7 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
         return (lPV * lRS + lRI) / (lRS * lSS);
 }
 
-struct TDICOMdata  nii_readParRec (char * parname, bool isVerbose, struct TDTI4D *dti4D) {
+struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
     strcpy(d.scanningSequence, "");
@@ -2141,7 +2141,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     return img;
 } //nii_loadImgXL()
 
-struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
@@ -2185,9 +2185,15 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 	//Read file contents into buffer
 	fread(buffer, fileLen, 1, file);
 	fclose(file);
+	bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
     if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')) {
-        free (buffer);
-        return d;
+        if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
+    		free (buffer);
+        	return d;
+    	}
+    	isPart10prefix = false; //no 132 byte header, not a valid part 10 file http://fileformats.archiveteam.org/wiki/DICOM
+    	d.isExplicitVR = false;
+    	//printf("Warning: not a valid part 10 DICOM (missing 'DICM' signature): %s\n", fname);
     }
     //DEFINE DICOM TAGS
 #define  kUnused 0x0001+(0x0001 << 16 )
@@ -2277,15 +2283,19 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
     int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
     int locationsInAcquisitionGE = 0; int locationsInAcquisitionPhilips = 0;
-    long lPos = 128+4; //4-byte signature starts at 128
     uint32_t lLength;
-    uint32_t groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
-    if (groupElement != kStart)
-    #ifdef myUseCOut
+    uint32_t groupElement;
+    long lPos = 0;
+    if (isPart10prefix) { //for part 10 files, skip preamble and prefix
+    	lPos = 128+4; //4-byte signature starts at 128
+    	groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
+    	if (groupElement != kStart)
+    	#ifdef myUseCOut
             std::cout<<"DICOM appears corrupt: first group:element should be 0x0002:0x0000" <<std::endl;
-    #else
-        printf("DICOM appears corrupt: first group:element should be 0x0002:0x0000\n");
-    #endif
+    	#else
+        	printf("DICOM appears corrupt: first group:element should be 0x0002:0x0000\n");
+    	#endif
+    }
     char vr[2];
     float intenScalePhilips = 0.0;
     bool isEncapsulatedData = false;
@@ -2316,8 +2326,6 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
         } //transfer syntax requests switching VR after group 0001
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
-
-
     if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) && (!isEncapsulatedData)) {
         //if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) ) {
             vr[0] = 'N';
@@ -2383,10 +2391,11 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
             if (d.imageBytes > 12) {
                 d.imageStart = (int)lPos;
             }
-            //printf("Mango? %ld %d %d %d %d\n", lPos, d.imageStart, d.imageBytes, lLength, d.isLittleEndian);
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
         if (true) { //(nest <= 0) { //some Philips images have different 0020,0013
+        //verbose reporting :
+        // printf("Pos %ld GroupElement %#08x,%#08x Length %d isLittle %d\n", lPos, (groupElement & 0xFFFF), (groupElement >> 16), lLength, d.isLittleEndian);
         switch ( groupElement ) {
             case 	kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
@@ -2794,10 +2803,11 @@ struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag, str
 
         } //switch/case for groupElement
         } //if nest
-        #ifdef MY_DEBUG
-        if (isVerbose)
-            printf(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
-        #endif
+        //#ifdef MY_DEBUG
+        if (isVerbose > 1)
+            printf(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest);
+            //printf(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
+        //#endif
         lPos = lPos + (lLength);
     }
     free (buffer);

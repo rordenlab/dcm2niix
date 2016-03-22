@@ -55,7 +55,7 @@ int main(int argc, const char * argv[])
     opts.isCreateBIDS = config["Options"]["isCreateBIDS"].as<bool>();
     opts.isOnlySingleFile = config["Options"]["isOnlySingleFile"].as<bool>();
     opts.isCreateText = false;
-    opts.isVerbose = false;
+    opts.isVerbose = 0;
     opts.isGz = config["Options"]["isGz"].as<bool>(); //force use of internal compression instead of pigz
     if (opts.isGz) {
         // TODO this is not the same as previous

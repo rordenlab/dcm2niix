@@ -132,10 +132,12 @@ int main(int argc, const char * argv[])
                     opts.isCreateText = true;
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isVerbose = false;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0')) //0: verbose OFF
+                    opts.isVerbose = 0;
+                else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
+                    opts.isVerbose = 2;
                 else
-                    opts.isVerbose = true;
+                    opts.isVerbose = 1; //1: verbose ON
             } else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {

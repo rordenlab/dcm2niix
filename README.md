@@ -4,6 +4,9 @@ dcm2niix is a designed to convert neuroimaging data from the NIfTI format to the
 
 ## Versions
 
+22-Mar-2016
+ - Experimental support for [http://dicom.nema.org/dicom/2013/output/chtml/part10/chapter_7.html DICOM dataset's without DICOM file meta information].
+
 12-Dec-2015
  - Support PAR/REC FP values when possible(see PMC3998685)
 
@@ -36,7 +39,7 @@ e.g. `dcm2niix /path/to/dicom/folder`
 
 **Optional batch processing version:**
 
-Perform a batch conversion of multiple dicoms using the configurations specified in a yaml file. 
+Perform a batch conversion of multiple dicoms using the configurations specified in a yaml file.
 ```bash
 dcm2niibatch run_configuration.yaml
 ```
@@ -61,10 +64,10 @@ Files:
       filename:         fa3
 ```
 
-You can add as many files as you want to convert as long as this structure stays consistent. Note that a dash must separate each file. 
+You can add as many files as you want to convert as long as this structure stays consistent. Note that a dash must separate each file.
 
 ## Build
- 
+
 ### Build command line version with cmake (Linux, Windows, OSx)
 
 ```bash
