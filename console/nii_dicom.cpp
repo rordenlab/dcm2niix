@@ -644,7 +644,7 @@ struct TDICOMdata clear_dicom_data() {
     d.TE = 0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
-        d.coilNum = 1;
+    d.coilNum = 1;
     d.imageBytes = 0;
     d.intenScale = 1;
     d.intenIntercept = 0;
@@ -668,6 +668,9 @@ struct TDICOMdata clear_dicom_data() {
     d.phaseEncodingRC = '?';
     d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
     d.CSA.mosaicSlices = 0;
+    d.CSA.sliceNormV[1] = 1.0;
+    d.CSA.sliceNormV[2] = 0.0;
+    d.CSA.sliceNormV[3] = 0.0;
     d.CSA.sliceOrder = NIFTI_SLICE_UNKNOWN;
     d.CSA.slice_start = 0;
     d.CSA.slice_end = 0;
@@ -2200,7 +2203,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
-
+#define  kImageTypeTag 0x0008+(0x0008 << 16 )
 #define  kStudyDate 0x0008+(0x0020 << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
@@ -2218,6 +2221,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kTE  0x0018+(0x0081 << 16 )
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
+#define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
@@ -2307,6 +2311,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     bool is2005140FSQ = false; //for buggy Philips
     bool is2005140FSQwarned = false; //for buggy Philips
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
+    bool isMosaic = false;
+    int phaseEncodingSteps = 0;
     int patientPositionCount = 0;
     int sqDepth = 0;
     //long coilNum = 0; //Siemens can save one image per coil (H12,H13,etc) or one combined image for array (HEA;HEP)
@@ -2446,7 +2452,16 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 }
                 break;} //{} provide scope for variable 'transferSyntax
-            case 	kStudyDate:
+            case kImageTypeTag:
+            	char typestr[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], typestr);
+                int slen;
+                slen = strlen(typestr);
+				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
+                if((slen > 5) && !strcmp(typestr + slen - 6, "MOSAIC") )
+                	isMosaic = true;
+            	break;
+            case kStudyDate:
                 dcmStr (lLength, &buffer[lPos], d.studyDate);
                 break;
             case 	kManufacturer:
@@ -2593,6 +2608,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case 	kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
+            case kPhaseEncodingSteps :
+                phaseEncodingSteps =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case kGantryTilt :
                 d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
@@ -2854,9 +2872,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         printf("Error: unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
         d.isValid = false;
     }
-    //printf("%d ----\n",d.imageStart);
-    //printf("realWorldSlope %g\n",  d.intenScale);
-    //if (true) {
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (isMosaic) && (d.CSA.mosaicSlices < 1) && (phaseEncodingSteps > 0) && ((d.xyzDim[1] % phaseEncodingSteps) == 0) && ((d.xyzDim[2] % phaseEncodingSteps) == 0) ) {
+    	d.CSA.mosaicSlices = (d.xyzDim[1] / phaseEncodingSteps) * (d.xyzDim[2] / phaseEncodingSteps);
+    	printf("Warning: mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
+    }
     if (!isOrient) printf("Serious error: spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
     if (isVerbose) {
         printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
