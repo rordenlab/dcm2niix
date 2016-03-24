@@ -2344,6 +2344,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
                 lPos += 4;
             } else if ( ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'N'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'T'))
                        || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'B'))
                        || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'W'))
                        ) { //VR= UN, OB, OW, SQ  || ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'Q'))
