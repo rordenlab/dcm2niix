@@ -167,28 +167,6 @@ int is_dir(const char *pathname, int follow_link) {
 } //is_dir()
 */
 
-bool isDICOMfile(const char * fname) {
-    FILE *fp = fopen(fname, "rb");
-	if (!fp)  return false;
-	fseek(fp, 0, SEEK_END);
-	long long fileLen=ftell(fp);
-    if (fileLen < 256) {
-        fclose(fp);
-        return false;
-    }
-	fseek(fp, 0, SEEK_SET);
-	unsigned char buffer[256];
-	fread(buffer, 256, 1, fp);
-	fclose(fp);
-    if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')){
-        if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
-        	return false;
-    	}
-    	printf("Warning: not a valid part 10 DICOM (missing 'DICM'): %s\n", fname);
-    }
-    return true;
-} //isDICOMfile()
-
 void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //0018,1312 phase encoding is either in row or column direction
     //0043,1039 (or 0043,a039). b value (as the first number in the string).
@@ -474,10 +452,6 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     if (firstB0 > 0) printf("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", firstB0);
 	#endif
     int numFinalADC = 0;
-    /*if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)
-     && (!isSameFloat(dcmList[indx0].CSA.dtiV[numDti-1][0],0.0f))
-     )
-     printf("xxx-->%f\n", dcmList[indx0].CSA.dtiV[numDti-1][3]);*/
     if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS) {
         int i = numDti - 1;
         while ((i > 0) && (!isSameFloat(vx[i].V[0],0.0f)) && //not a B-0 image
@@ -1026,7 +1000,141 @@ int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
 }
 
-int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
+int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
+    //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
+    if (gantryTiltDeg == 0.0) return EXIT_FAILURE;
+    struct nifti_1_header hdrIn = *hdr;
+    int nVox2DIn = hdrIn.dim[1]*hdrIn.dim[2];
+    if ((nVox2DIn < 1) || (hdrIn.dim[0] != 3) || (hdrIn.dim[3] < 3)) return EXIT_FAILURE;
+    if (hdrIn.datatype != DT_INT16) {
+        printf("Only able to correct gantry tilt for 16-bit integer data with at least 3 slices.");
+        return EXIT_FAILURE;
+    }
+    printf("Gantry Tilt Correction is new: please validate conversions\n");
+    float GNTtanPx = tan(gantryTiltDeg / (180/M_PI))/hdrIn.pixdim[2]; //tangent(degrees->radian)
+    //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
+    // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
+    // also validated with actual data...
+    if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
+        GNTtanPx = - GNTtanPx;
+    else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
+        GNTtanPx = - GNTtanPx; //do nothing
+    else if (manufacturer == kMANUFACTURER_GE)
+        ; //do nothing
+    else
+        if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
+    //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
+    //compute how many pixels slice must be extended due to skew
+    int s = hdrIn.dim[3] - 1; //top slice
+    float maxSliceMM = fabs(s * hdrIn.pixdim[3]);
+    //if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+    int pxOffset = ceil(fabs(GNTtanPx*maxSliceMM));
+    printf("Tilt extends slice by %d pixels", pxOffset);
+
+
+    //float mmMidZ = ( (hdrIn.dim[3]-1) >> 1) * hdrIn.pixdim[3]; //middle slice, assuming equal slice spacing
+    //if (sliceMMarray != NULL)
+    //    mmMidZ = sliceMMarray[ (hdrIn.dim[3]-1) >> 1 ]; //middle slice if slice distances vary
+	unsigned char *imIn = (unsigned char *)malloc(nVox2DIn * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
+	short * imIn16 = ( short*) imIn;
+	memcpy(&imIn[0], &im[0], nVox2DIn * hdrIn.dim[3] * 2); //memcpy( dest, src, bytes)
+
+	int minVoxVal = imIn16[0];
+	for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
+		if (imIn16[v] < minVoxVal)
+			minVoxVal = imIn16[v];
+
+	free(&im);
+	hdr->dim[2] = hdr->dim[2] + pxOffset;
+	int nVox2D = hdr->dim[1]*hdr->dim[2];
+	im = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
+	short * im16 = ( short*) im;
+
+	//if (hdrIn.scl_inter >= 0.0)
+	//	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
+	//		im16[v] = -1024;
+	//else
+	//	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
+	//		im16[v] = 0;
+	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
+		im16[v] = minVoxVal;
+
+	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
+		float sliceMM = s * hdrIn.pixdim[3];
+		if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+		//sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
+		if (GNTtanPx < 0)
+			sliceMM -= maxSliceMM;
+		float Offset = GNTtanPx*sliceMM;
+		//printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
+		float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
+		//float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
+		float fracLo = 1.0f - fracHi;
+		for (int r = 0; r < hdr->dim[2]; r++) { //for each row of output
+			float rI = (float)r - Offset; //input row
+			if ((rI >= 0.0) && (rI < hdrIn.dim[2])) {
+				int rLo = floor(rI);
+				int rHi = rLo + 1;
+				if (rHi >= hdrIn.dim[2]) rHi = rLo;
+				rLo = (rLo * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row below
+				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row above
+				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
+				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
+					im16[rOut+c] = round( ( ((float)imIn16[rLo+c])*fracLo) + ((float)imIn16[rHi+c])*fracHi);
+				} //for c (each column)
+			} //rI (input row) in range
+		} //for r (each row)
+	} //for s (each slice)*/
+	free(imIn);
+
+	/*short * im16 = ( short*) im;
+	unsigned char *imX = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
+	short * imX16 = ( short*) imX;
+	memcpy(&imX[0], &im[0], nVox2D * hdrIn.dim[3] * 2); //memcpy( dest, src, bytes)
+
+
+	if (hdrIn.scl_inter >= 0.0)
+		for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
+			im16[v] = -1024;
+	else
+		for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
+			im16[v] = 0;
+	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
+		float sliceMM = s * hdrIn.pixdim[3];
+		if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+		sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
+		float Offset = GNTtanPx*sliceMM;
+		//printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
+		float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
+		//float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
+		float fracLo = 1.0f - fracHi;
+		for (int r = 0; r < hdrIn.dim[2]; r++) { //for each row of output
+			float rI = (float)r - Offset; //input row
+			if ((rI >= 0.0) && (rI < hdrIn.dim[2])) {
+				int rLo = floor(rI);
+				int rHi = rLo + 1;
+				if (rHi >= hdrIn.dim[2]) rHi = rLo;
+				rLo = (rLo * hdrIn.dim[1]) + (s * nVox2D); //offset to start of row below
+				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2D); //offset to start of row above
+				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
+				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
+					im16[rOut+c] = round( ( ((float)imX16[rLo+c])*fracLo) + ((float)imX16[rHi+c])*fracHi);
+				} //for c (each column)
+			} //rI (input row) in range
+		} //for r (each row)
+	} //for s (each slice)
+	free(imX);*/
+
+    if (sliceMMarray != NULL) return EXIT_SUCCESS; //we will save after correcting for variable slice thicknesses
+    char niiFilenameTilt[2048] = {""};
+    strcat(niiFilenameTilt,niiFilename);
+    strcat(niiFilenameTilt,"_Tilt");
+
+    nii_saveNII3D(niiFilenameTilt, *hdr, im, opts);
+    return EXIT_SUCCESS;
+}// nii_saveNII3Dtilt()
+
+/*int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
     if (gantryTiltDeg == 0.0) return EXIT_FAILURE;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
@@ -1079,7 +1187,6 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
                     int rLo = floor(rI);
                     int rHi = rLo + 1;
                     if (rHi >= hdr.dim[2]) rHi = rLo;
-                    //if (s == 21) printf("%g = %g %d %d (%g %g)\n",Offset, rI, rLo, rHi, fracLo, fracHi);
                     rLo = (rLo * hdr.dim[1]) + (s * nVox2D); //offset to start of row below
                     rHi = (rHi * hdr.dim[1]) + (s * nVox2D); //offset to start of row above
                     int rOut = (r * hdr.dim[1]) + (s * nVox2D); //offset to output row
@@ -1110,7 +1217,6 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
                     int rLo = floor(rI);
                     int rHi = rLo + 1;
                     if (rHi >= hdr.dim[2]) rHi = rLo;
-                    //if (s == 21) printf("%g = %g %d %d (%g %g)\n",Offset, rI, rLo, rHi, fracLo, fracHi);
                     rLo = (rLo * hdr.dim[1]) + (s * nVox2D); //offset to start of row below
                     rHi = (rHi * hdr.dim[1]) + (s * nVox2D); //offset to start of row above
                     int rOut = (r * hdr.dim[1]) + (s * nVox2D); //offset to output row
@@ -1128,7 +1234,7 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned ch
     strcat(niiFilenameTilt,"_Tilt");
     nii_saveNII3D(niiFilenameTilt, hdr, im, opts);
     return EXIT_SUCCESS;
-}// nii_saveNII3Dtilt()
+}// nii_saveNII3Dtilt() */
 
 int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
     //convert image with unequal slice distances to equal slice distances
@@ -1359,7 +1465,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     int sliceDir = 0;
     if (hdr0.dim[3] > 1)
-        sliceDir =headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
+        sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
     if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir);
@@ -1416,10 +1522,11 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         if (dcmList[indx0].isResampled)
             printf("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
         else if (opts.isTiltCorrect)
-            nii_saveNII3Dtilt(pathoutname, hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
+            nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
         else
             printf("Tilt correction skipped\n");
-    } if (sliceMMarray != NULL) {
+    }
+    if (sliceMMarray != NULL) {
         if (dcmList[indx0].isResampled)
             printf("Slice thickness correction skipped: 0008,2111 reports RESAMPLED\n");
         else
@@ -1496,13 +1603,13 @@ void  convertForeign2Nii(char * fname, struct TDCMopts* opts) {//, struct TDCMop
     printf("Converted foreign image '%s'\n",fname);
     nii_saveNII(pth, niiHdr, img, *opts);
     free(img);
-} //nii_createDummyFilename()
+} //convertForeign2Nii()
 #endif */
 
 int singleDICOM(struct TDCMopts* opts, char *fname) {
     char filename[768] ="";
     strcat(filename, fname);
-    if (!isDICOMfile(filename)) {
+    if (isDICOMfile(filename) == 0) {
         printf("Error: not a DICOM image : %s\n", filename);
         return 0;
     }
@@ -1539,7 +1646,7 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
             searchDirForDICOM(filename, nameList, maxDepth, depth+1);
         else if (!file.is_reg) //ignore hidden files...
             ;
-        else if (isDICOMfile(filename)) {
+        else if (isDICOMfile(filename) > 0) {
             if (nameList->numItems < nameList->maxItems) {
                 nameList->str[nameList->numItems]  = (char *)malloc(strlen(filename)+1);
                 strcpy(nameList->str[nameList->numItems],filename);

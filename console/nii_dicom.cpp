@@ -430,7 +430,7 @@ mat44 noNaN(mat44 Q44) //simplify any headers that have NaN values
             if (isnan(ret.m[i][j]))
                 isNaN44 = true;
     if (isNaN44) {
-        printf("Warning: bogus spatial matrix (perhaps non-spatial image): inspect spatial orientation");
+        printf("Warning: bogus spatial matrix (perhaps non-spatial image): inspect spatial orientation\n");
         for (int i = 0; i < 4; i++)
             for (int j = 0; j < 4; j++)
                 if (i == j)
@@ -1091,6 +1091,8 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
         h->datatype = DT_RGB24;
     } else if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 1))
         h->datatype = DT_UINT8;
+    else if ((d.bitsAllocated == 12) && (d.samplesPerPixel == 1))
+        h->datatype = DT_INT16;
     else if ((d.bitsAllocated == 16) && (d.samplesPerPixel == 1) && (d.isSigned))
         h->datatype = DT_INT16;
     else if ((d.bitsAllocated == 16) && (d.samplesPerPixel == 1) && (!d.isSigned))
@@ -1126,7 +1128,10 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     h->magic[2]='1';
     h->magic[3]='\0';
     h->vox_offset = (float) d.imageStart;
-    h->bitpix = d.bitsAllocated * d.samplesPerPixel;
+    if (d.bitsAllocated == 12)
+    	h->bitpix = 16 * d.samplesPerPixel;
+    else
+    	h->bitpix = d.bitsAllocated * d.samplesPerPixel;
     h->pixdim[1] = d.xyzMM[1];
     h->pixdim[2] = d.xyzMM[2];
     h->pixdim[3] = d.xyzMM[3];
@@ -1547,7 +1552,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 } //nii_readParRec()
 
 size_t nii_ImgBytes(struct nifti_1_header hdr) {
-    //unsigned long imgsz = nii_ImgBytes(hdr);
     size_t imgsz = hdr.bitpix/8;
     for (int i = 1; i < 8; i++)
         if (hdr.dim[i]  > 1)
@@ -1722,8 +1726,59 @@ unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h){
     return nii_flipImgY(bImg,h);
 }// nii_flipY()
 
-unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
+/*void conv12bit16bit(unsigned char * img, struct nifti_1_header hdr) {
+//convert 12-bit allocated data to 16-bit
+// works for MR-MONO2-12-angio-an1 from http://www.barre.nom.fr/medical/samples/
+// looks wrong: this sample toggles between big and little endian stores
+	printf("Warning: support for images that allocate 12 bits is experimental\n");
+	int nVox = nii_ImgBytes(hdr) / (hdr.bitpix/8);
+    for (int i=(nVox-1); i >= 0; i--) {
+    	int i16 = i * 2;
+    	int i12 = floor(i * 1.5);
+    	uint16_t val;
+    	if ((i % 2) != 1) {
+    		val = (img[i12+0] << 4) + (img[i12+1] >> 4);
+    	} else {
+    		val = ((img[i12+0] & 0x0F) << 8) + img[i12+1];
+		}
+
+		//if ((i % 2) != 1) {
+    	//	val = img[i12+0]  + ((img[i12+1] & 0xF0) << 4);
+    	//} else {
+    	//	val = (img[i12+0] & 0x0F) + (img[i12+1] << 4);
+		//}
+		val = val & 0xFFF;
+        img[i16+0] = val & 0xFF;
+        img[i16+1] = (val >> 8) & 0xFF;
+    }
+} //conv12bit16bit()*/
+
+void conv12bit16bit(unsigned char * img, struct nifti_1_header hdr) {
+//convert 12-bit allocated data to 16-bit
+// works for MR-MONO2-12-angio-an1 from http://www.barre.nom.fr/medical/samples/
+// looks wrong: this sample toggles between big and little endian stores
+	printf("Warning: support for images that allocate 12 bits is experimental\n");
+	int nVox = nii_ImgBytes(hdr) / (hdr.bitpix/8);
+    for (int i=(nVox-1); i >= 0; i--) {
+    	int i16 = i * 2;
+    	int i12 = floor(i * 1.5);
+    	uint16_t val;
+    	if ((i % 2) != 1) {
+    		val = img[i12+1] + (img[i12+0] << 8);
+    		val = val >> 4;
+    	} else {
+    		val = img[i12+0] + (img[i12+1] << 8);
+		}
+        img[i16+0] = val & 0xFF;
+        img[i16+1] = (val >> 8) & 0xFF;
+    }
+} //conv12bit16bit()
+
+unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bitsAllocated) {
     size_t imgsz = nii_ImgBytes(hdr);
+    size_t imgszRead = imgsz;
+    if (bitsAllocated == 12)
+         imgszRead = round(imgsz * 0.75);
     FILE *file = fopen(imgname , "rb");
 	if (!file) {
          printf("Error: unable to open %s\n", imgname);
@@ -1731,14 +1786,16 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr) {
     }
 	fseek(file, 0, SEEK_END);
 	long long fileLen=ftell(file);
-    if (fileLen < (imgsz+hdr.vox_offset)) {
+    if (fileLen < (imgszRead+hdr.vox_offset)) {
         printf("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
 	fseek(file, (long) hdr.vox_offset, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
-	fread(bImg, imgsz, 1, file);
+    fread(bImg, imgszRead, 1, file);
 	fclose(file);
+	if (bitsAllocated == 12)
+	 conv12bit16bit(bImg, hdr);
     return bImg;
 } //nii_loadImg()
 
@@ -1890,7 +1947,7 @@ unsigned char * nii_XYTZ_XYZT(unsigned char* bImg, struct nifti_1_header *hdr, i
     }
     free(bImg);
     return outImg;
-} //nii_ImgBytes()
+} //nii_XYTZ_XYZT()
 
 unsigned char * nii_byteswap(unsigned char *img, struct nifti_1_header *hdr){
     if (hdr->bitpix < 9) return img;
@@ -2111,7 +2168,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         printf("Software not set up to decompress DICOM\n");
         return NULL;
     } else
-        img = nii_loadImgCore(imgname, *hdr);
+        img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
     if (img == NULL) return img;
     if (dcm.compressionScheme == kCompressNone) {
 #ifdef __BIG_ENDIAN__
@@ -2144,6 +2201,26 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     return img;
 } //nii_loadImgXL()
 
+int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10 compliant)
+    FILE *fp = fopen(fname, "rb");
+	if (!fp)  return 0;
+	fseek(fp, 0, SEEK_END);
+	long long fileLen=ftell(fp);
+    if (fileLen < 256) {
+        fclose(fp);
+        return 0;
+    }
+	fseek(fp, 0, SEEK_SET);
+	unsigned char buffer[256];
+	fread(buffer, 256, 1, fp);
+	fclose(fp);
+    if ((buffer[128] == 'D') && (buffer[129] == 'I')  && (buffer[130] == 'C') && (buffer[131] == 'M'))
+    	return 1; //valid DICOM
+    if ((buffer[0] == 8) && (buffer[1] == 0)  && (buffer[3] == 0))
+    	return 2; //not valid Part 10 file, perhaps DICOM object
+    return 0;
+} //isDICOMfile()
+
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
@@ -2158,6 +2235,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             return d;
         }
     }
+    bool isPart10prefix = true;
+    int isOK = isDICOMfile(fname);
+    if (isOK == 0) return d;
+    if (isOK == 2) {
+    	d.isExplicitVR = false;
+    	isPart10prefix = false;
+    }
+
     FILE *file = fopen(fname, "rb");
 	if (!file) {
 #ifdef myUseCOut
@@ -2188,16 +2273,16 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	//Read file contents into buffer
 	fread(buffer, fileLen, 1, file);
 	fclose(file);
-	bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
-    if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')) {
-        if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
-    		free (buffer);
-        	return d;
-    	}
-    	isPart10prefix = false; //no 132 byte header, not a valid part 10 file http://fileformats.archiveteam.org/wiki/DICOM
-    	d.isExplicitVR = false;
-    	//printf("Warning: not a valid part 10 DICOM (missing 'DICM' signature): %s\n", fname);
-    }
+	//bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
+    //if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')) {
+    //    if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
+    //		free (buffer);
+    //    	return d;
+    //	}
+    //	isPart10prefix = false; //no 132 byte header, not a valid part 10 file http://fileformats.archiveteam.org/wiki/DICOM
+    //	d.isExplicitVR = false;
+    //	//printf("Warning: not a valid part 10 DICOM (missing 'DICM' signature): %s\n", fname);
+    //}
     //DEFINE DICOM TAGS
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
