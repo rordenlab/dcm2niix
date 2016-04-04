@@ -1000,15 +1000,15 @@ int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
 }
 
-int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
+unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
-    if (gantryTiltDeg == 0.0) return EXIT_FAILURE;
+    if (gantryTiltDeg == 0.0) return im;
     struct nifti_1_header hdrIn = *hdr;
     int nVox2DIn = hdrIn.dim[1]*hdrIn.dim[2];
-    if ((nVox2DIn < 1) || (hdrIn.dim[0] != 3) || (hdrIn.dim[3] < 3)) return EXIT_FAILURE;
+    if ((nVox2DIn < 1) || (hdrIn.dim[0] != 3) || (hdrIn.dim[3] < 3)) return im;
     if (hdrIn.datatype != DT_INT16) {
         printf("Only able to correct gantry tilt for 16-bit integer data with at least 3 slices.");
-        return EXIT_FAILURE;
+        return im;
     }
     printf("Gantry Tilt Correction is new: please validate conversions\n");
     float GNTtanPx = tan(gantryTiltDeg / (180/M_PI))/hdrIn.pixdim[2]; //tangent(degrees->radian)
@@ -1018,47 +1018,32 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned 
     if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
         GNTtanPx = - GNTtanPx;
     else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
-        GNTtanPx = - GNTtanPx; //do nothing
+        GNTtanPx = - GNTtanPx;
     else if (manufacturer == kMANUFACTURER_GE)
         ; //do nothing
     else
         if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
-    //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
-    //compute how many pixels slice must be extended due to skew
+    // printf("gantry tilt pixels per mm %g\n",GNTtanPx);
+    short * imIn16 = ( short*) im;
+	//create new output image: larger due to skew
+	// compute how many pixels slice must be extended due to skew
     int s = hdrIn.dim[3] - 1; //top slice
     float maxSliceMM = fabs(s * hdrIn.pixdim[3]);
-    //if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+    if (sliceMMarray != NULL) maxSliceMM = fabs(sliceMMarray[s]);
     int pxOffset = ceil(fabs(GNTtanPx*maxSliceMM));
-    printf("Tilt extends slice by %d pixels", pxOffset);
-
-
-    //float mmMidZ = ( (hdrIn.dim[3]-1) >> 1) * hdrIn.pixdim[3]; //middle slice, assuming equal slice spacing
-    //if (sliceMMarray != NULL)
-    //    mmMidZ = sliceMMarray[ (hdrIn.dim[3]-1) >> 1 ]; //middle slice if slice distances vary
-	unsigned char *imIn = (unsigned char *)malloc(nVox2DIn * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
-	short * imIn16 = ( short*) imIn;
-	memcpy(&imIn[0], &im[0], nVox2DIn * hdrIn.dim[3] * 2); //memcpy( dest, src, bytes)
-
+    // printf("Tilt extends slice by %d pixels", pxOffset);
+	hdr->dim[2] = hdr->dim[2] + pxOffset;
+	int nVox2D = hdr->dim[1]*hdr->dim[2];
+	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
+	short * imOut16 = ( short*) imOut;
+	//set surrounding voxels to darkest observed value
 	int minVoxVal = imIn16[0];
 	for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
 		if (imIn16[v] < minVoxVal)
 			minVoxVal = imIn16[v];
-
-	free(&im);
-	hdr->dim[2] = hdr->dim[2] + pxOffset;
-	int nVox2D = hdr->dim[1]*hdr->dim[2];
-	im = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
-	short * im16 = ( short*) im;
-
-	//if (hdrIn.scl_inter >= 0.0)
-	//	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-	//		im16[v] = -1024;
-	//else
-	//	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-	//		im16[v] = 0;
 	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-		im16[v] = minVoxVal;
-
+		imOut16[v] = minVoxVal;
+	//copy skewed voxels
 	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
 		float sliceMM = s * hdrIn.pixdim[3];
 		if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
@@ -1066,9 +1051,7 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned 
 		if (GNTtanPx < 0)
 			sliceMM -= maxSliceMM;
 		float Offset = GNTtanPx*sliceMM;
-		//printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
 		float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
-		//float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
 		float fracLo = 1.0f - fracHi;
 		for (int r = 0; r < hdr->dim[2]; r++) { //for each row of output
 			float rI = (float)r - Offset; //input row
@@ -1080,161 +1063,19 @@ int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned 
 				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row above
 				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
 				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
-					im16[rOut+c] = round( ( ((float)imIn16[rLo+c])*fracLo) + ((float)imIn16[rHi+c])*fracHi);
+					imOut16[rOut+c] = round( ( ((float)imIn16[rLo+c])*fracLo) + ((float)imIn16[rHi+c])*fracHi);
 				} //for c (each column)
 			} //rI (input row) in range
 		} //for r (each row)
 	} //for s (each slice)*/
-	free(imIn);
-
-	/*short * im16 = ( short*) im;
-	unsigned char *imX = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
-	short * imX16 = ( short*) imX;
-	memcpy(&imX[0], &im[0], nVox2D * hdrIn.dim[3] * 2); //memcpy( dest, src, bytes)
-
-
-	if (hdrIn.scl_inter >= 0.0)
-		for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-			im16[v] = -1024;
-	else
-		for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-			im16[v] = 0;
-	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
-		float sliceMM = s * hdrIn.pixdim[3];
-		if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
-		sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
-		float Offset = GNTtanPx*sliceMM;
-		//printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
-		float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
-		//float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
-		float fracLo = 1.0f - fracHi;
-		for (int r = 0; r < hdrIn.dim[2]; r++) { //for each row of output
-			float rI = (float)r - Offset; //input row
-			if ((rI >= 0.0) && (rI < hdrIn.dim[2])) {
-				int rLo = floor(rI);
-				int rHi = rLo + 1;
-				if (rHi >= hdrIn.dim[2]) rHi = rLo;
-				rLo = (rLo * hdrIn.dim[1]) + (s * nVox2D); //offset to start of row below
-				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2D); //offset to start of row above
-				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
-				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
-					im16[rOut+c] = round( ( ((float)imX16[rLo+c])*fracLo) + ((float)imX16[rHi+c])*fracHi);
-				} //for c (each column)
-			} //rI (input row) in range
-		} //for r (each row)
-	} //for s (each slice)
-	free(imX);*/
-
-    if (sliceMMarray != NULL) return EXIT_SUCCESS; //we will save after correcting for variable slice thicknesses
+	free(im);
+    if (sliceMMarray != NULL) return imOut; //we will save after correcting for variable slice thicknesses
     char niiFilenameTilt[2048] = {""};
     strcat(niiFilenameTilt,niiFilename);
     strcat(niiFilenameTilt,"_Tilt");
-
-    nii_saveNII3D(niiFilenameTilt, *hdr, im, opts);
-    return EXIT_SUCCESS;
+    nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts);
+    return imOut;
 }// nii_saveNII3Dtilt()
-
-/*int nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
-    //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
-    if (gantryTiltDeg == 0.0) return EXIT_FAILURE;
-    int nVox2D = hdr.dim[1]*hdr.dim[2];
-    if ((nVox2D < 1) || (hdr.dim[0] != 3) || (hdr.dim[3] < 3)) return EXIT_FAILURE;
-    if ((hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
-        printf("Only able to correct gantry tilt for 8-bit, 16-bit, or 24-bit volumes with at least 3 slices.");
-        return EXIT_FAILURE;
-    }
-    printf("Gantry Tilt Correction is new: please validate conversions\n");
-    float GNTtanPx = tan(gantryTiltDeg / (180/M_PI))/hdr.pixdim[2]; //tangent(degrees->radian)
-    //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
-    // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
-    // also validated with actual data...
-    if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
-        GNTtanPx = - GNTtanPx;
-    else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
-        GNTtanPx = - GNTtanPx; //do nothing
-    else if (manufacturer == kMANUFACTURER_GE)
-        ; //do nothing
-    else
-        if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
-    //printf("gantry tilt pixels per mm %g\n",GNTtanPx);
-    float mmMidZ = ( (hdr.dim[3]-1) >> 1) * hdr.pixdim[3]; //middle slice, assuming equal slice spacing
-    if (sliceMMarray != NULL)
-        mmMidZ = sliceMMarray[ (hdr.dim[3]-1) >> 1 ]; //middle slice if slice distances vary
-    if (hdr.datatype == DT_INT16) {
-        short * im16 = ( short*) im;
-        unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
-        short * imX16 = ( short*) imX;
-        memcpy(&imX[0], &im[0], nVox2D * hdr.dim[3] * 2); //memcpy( dest, src, bytes)
-        //memset(&im[0], 0, nVox2D * hdr.dim[3] * 2);
-        if (hdr.scl_inter >= 0.0)
-            for (int v = 0; v < (nVox2D * hdr.dim[3]); v++)
-                im16[v] = -1024;
-        else
-            for (int v = 0; v < (nVox2D * hdr.dim[3]); v++)
-                im16[v] = 0;
-        for (int s = 0; s < hdr.dim[3]; s++) { //for each slice
-            float sliceMM = s * hdr.pixdim[3];
-            if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
-            sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
-            float Offset = GNTtanPx*sliceMM;
-            //printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
-            float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
-            //float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
-            float fracLo = 1.0f - fracHi;
-            for (int r = 0; r < hdr.dim[2]; r++) { //for each row of output
-                float rI = (float)r - Offset; //input row
-                if ((rI >= 0.0) && (rI < hdr.dim[2])) {
-                    int rLo = floor(rI);
-                    int rHi = rLo + 1;
-                    if (rHi >= hdr.dim[2]) rHi = rLo;
-                    rLo = (rLo * hdr.dim[1]) + (s * nVox2D); //offset to start of row below
-                    rHi = (rHi * hdr.dim[1]) + (s * nVox2D); //offset to start of row above
-                    int rOut = (r * hdr.dim[1]) + (s * nVox2D); //offset to output row
-                    for (int c = 0; c < hdr.dim[1]; c++) { //for each row
-                        im16[rOut+c] = round( ( ((float)imX16[rLo+c])*fracLo) + ((float)imX16[rHi+c])*fracHi);
-                    } //for c (each column)
-                } //rI (input row) in range
-            } //for r (each row)
-        } //for s (each slice)
-        free(imX);
-    } else {
-        if (hdr.datatype == DT_RGB24) nVox2D = nVox2D * 3;
-        unsigned char *imX = (unsigned char *)malloc(nVox2D * hdr.dim[3]);// *
-        memcpy(&imX[0], &im[0], nVox2D * hdr.dim[3]); //memcpy( dest, src, bytes)
-        memset(&im[0], 0, nVox2D * hdr.dim[3]);
-        for (int s = 0; s < hdr.dim[3]; s++) { //for each slice
-            float sliceMM = s * hdr.pixdim[3];
-            if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
-            sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
-            float Offset = GNTtanPx*sliceMM;
-            //printf("slice %d at %gmm is skewed %g pixels\n",s, sliceMMarray[s], Offset);
-            float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
-            //float fracHi = Offset - floor(Offset); //WRONG: ceil not floor since rI=r-Offset not rI=r+Offset
-            float fracLo = 1.0f - fracHi;
-            for (int r = 0; r < hdr.dim[2]; r++) { //for each row of output
-                float rI = (float)r - Offset; //input row
-                if ((rI >= 0.0) && (rI < hdr.dim[2])) {
-                    int rLo = floor(rI);
-                    int rHi = rLo + 1;
-                    if (rHi >= hdr.dim[2]) rHi = rLo;
-                    rLo = (rLo * hdr.dim[1]) + (s * nVox2D); //offset to start of row below
-                    rHi = (rHi * hdr.dim[1]) + (s * nVox2D); //offset to start of row above
-                    int rOut = (r * hdr.dim[1]) + (s * nVox2D); //offset to output row
-                    for (int c = 0; c < hdr.dim[1]; c++) { //for each row
-                        im[rOut+c] = round( ( ((float)imX[rLo+c])*fracLo) + ((float)imX[rHi+c])*fracHi);
-                    } //for c (each column)
-                } //rI (input row) in range
-            } //for r (each row)
-        } //for s (each slice)
-        free(imX);
-    }
-    if (sliceMMarray != NULL) return EXIT_SUCCESS; //we will save after correcting for variable slice thicknesses
-    char niiFilenameTilt[2048] = {""};
-    strcat(niiFilenameTilt,niiFilename);
-    strcat(niiFilenameTilt,"_Tilt");
-    nii_saveNII3D(niiFilenameTilt, hdr, im, opts);
-    return EXIT_SUCCESS;
-}// nii_saveNII3Dtilt() */
 
 int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
     //convert image with unequal slice distances to equal slice distances
@@ -1522,7 +1363,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         if (dcmList[indx0].isResampled)
             printf("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
         else if (opts.isTiltCorrect)
-            nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
+            imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
         else
             printf("Tilt correction skipped\n");
     }
