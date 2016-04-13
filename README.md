@@ -4,6 +4,9 @@ dcm2niix is a designed to convert neuroimaging data from the DICOM format to the
 
 ## Versions
 
+12-Apr-2016
+ - Provide override (command line option "-m y") to stack images of the same series even if they differ in study date/time, echo/coil number, or slice orientation. This mechanism allows users to concatenate images that break strict DICOM compliance.
+
 22-Mar-2016
  - Experimental support for [http://dicom.nema.org/dicom/2013/output/chtml/part10/chapter_7.html DICOM dataset's without DICOM file meta information].
 
