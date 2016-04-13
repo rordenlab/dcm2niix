@@ -56,6 +56,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -b : BIDS sidecar (y/n, default n)\n");
     printf("  -f : filename (%%c=comments %%f=folder name %%i ID of patient %%m=manufacturer %%n=name of patient %%p=protocol, %%q=sequence %%s=series, %%t=time; default '%s')\n",opts.filename);
     printf("  -h : show help\n");
+    printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
@@ -93,7 +94,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
-    readIniFile(&opts, argv);
+    readIniFile(&opts, argv); //set default preferences
 #ifdef mydebugtest
     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
      //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
@@ -118,6 +119,12 @@ int main(int argc, const char * argv[])
                     opts.isCreateBIDS = false;
                 else
                     opts.isCreateBIDS = true;
+            } else if ((argv[i][1] == 'm') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isForceStackSameSeries = false;
+                else
+                    opts.isForceStackSameSeries = true;
             } else if ((argv[i][1] == 's') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))

@@ -1758,7 +1758,7 @@ void conv12bit16bit(unsigned char * img, struct nifti_1_header hdr) {
 // works for MR-MONO2-12-angio-an1 from http://www.barre.nom.fr/medical/samples/
 // looks wrong: this sample toggles between big and little endian stores
 	printf("Warning: support for images that allocate 12 bits is experimental\n");
-	int nVox = nii_ImgBytes(hdr) / (hdr.bitpix/8);
+	int nVox = (int) nii_ImgBytes(hdr) / (hdr.bitpix/8);
     for (int i=(nVox-1); i >= 0; i--) {
     	int i16 = i * 2;
     	int i12 = floor(i * 1.5);
@@ -2541,7 +2541,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	char typestr[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], typestr);
                 int slen;
-                slen = strlen(typestr);
+                slen = (int) strlen(typestr);
 				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
                 if((slen > 5) && !strcmp(typestr + slen - 6, "MOSAIC") )
                 	isMosaic = true;
