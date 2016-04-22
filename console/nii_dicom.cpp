@@ -676,6 +676,8 @@ struct TDICOMdata clear_dicom_data() {
     d.CSA.slice_end = 0;
     d.CSA.protocolSliceNumber1 = 0;
     d.CSA.phaseEncodingDirectionPositive = -1; //unknown
+    d.CSA.isPhaseMap = false;
+    d.CSA.multiBandFactor = 1;
     return d;
 } //clear_dicom_data()
 
@@ -909,6 +911,33 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
     return Floats[1];
 } //csaMultiFloat()
 
+bool csaIsPhaseMap (unsigned char buff[], int nItems) {
+    //returns true if the tag "ImageHistory" has an item named "CC:ComplexAdd"
+    TCSAitem itemCSA;
+    if (nItems < 1)  return false;
+    int lPos = 0;
+    for (int lI = 1; lI <= nItems; lI++) {
+        memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+        lPos +=sizeof(itemCSA);
+        if (itemCSA.xx2_Len > 0) {
+#ifdef _MSC_VER
+            char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
+#else
+            char cString[itemCSA.xx2_Len];
+#endif
+            memcpy(cString, &buff[lPos], sizeof(cString)); //TPX memcpy(&cString, &buff[lPos], sizeof(cString));
+            lPos += ((itemCSA.xx2_Len +3)/4)*4;
+            //printf(" %d item length %d = %s\n",lI, itemCSA.xx2_Len, cString);
+            if (strcmp(cString, "CC:ComplexAdd") == 0)
+                return true;
+#ifdef _MSC_VER
+            free(cString);
+#endif
+        }
+    } //for each item
+    return false;
+} //csaIsPhaseMap()
+
 int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printf("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
@@ -925,9 +954,12 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
         lPos +=sizeof(tagCSA);
-        //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
+        if (isVerbose > 1) //extreme verbosity: show every CSA tag
+        	printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         if (tagCSA.nitems > 0) {
-            if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
+            if (strcmp(tagCSA.name, "ImageHistory") == 0)
+                CSA->isPhaseMap =  csaIsPhaseMap(&buff[lPos], tagCSA.nitems);
+            else if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
                 CSA->mosaicSlices = (int) round(csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             else if (strcmp(tagCSA.name, "B_value") == 0) {
                 CSA->dtiV[0] = csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK);
@@ -2840,6 +2872,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case 	kCSAImageHeaderInfo:
                 readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, dti4D);
+                d.isHasPhase = d.CSA.isPhaseMap;
                 break;
                 //case kObjectGraphics:
                 //    printf("---->%d,",lLength);

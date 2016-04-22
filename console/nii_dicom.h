@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "12Apr2016j" //JASPER for JPEG2000
+    #define kDCMvers "22Apr2016j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "12Apr2016" //no decompressor
+    #define kDCMvers "22Apr2016" //no decompressor
 	#else
-    #define kDCMvers "12Apr2016o" //OPENJPEG for JPEG2000
+    #define kDCMvers "22Apr2016o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
@@ -45,6 +45,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     };
 
     struct TCSAdata {
+    	bool isPhaseMap;
         float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int numDti, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
     };

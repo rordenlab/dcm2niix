@@ -87,6 +87,7 @@ void dropFilenameFromPath(char *path) { //
         strcpy(path,"");
     } else
         path[dirPath - path] = 0; // please make sure there is enough space in TargetDirectory
+    if (strlen(path) == 0) strcat (path,"."); //relative path - use cwd
 }
 
 
@@ -715,14 +716,16 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         } //found a % character
         pos++;
     } //for each character in input
-    if (dcm.echoNum > 1) {
+    if (dcm.coilNum > 1) {
         sprintf(newstr, "_c%d", dcm.coilNum);
         strcat (outname,newstr);
     }
     if (dcm.echoNum > 1) {
-        sprintf(newstr, "_%d", dcm.echoNum);
+        sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
     }
+    if (dcm.isHasPhase)
+    	strcat (outname,"_ph"); //manufacturer name not available
     if (pos > start) { //append any trailing characters
         strncpy(&newstr[0], &inname[0] + start, pos - start);
         newstr[pos - start] = '\0';
@@ -1413,8 +1416,12 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
      printf("slices not stacked: Study Data/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
      return false;
     }
-    if ((d1.TE != d2.TE)  || (d1.coilNum != d2.coilNum)  ||  (d1.echoNum != d2.echoNum)) {
-        printf("filse not stacked: echo or coil varies\n");
+    if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
+        printf("slices not stacked: echo varies (TE %g, %g; echo %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        return false;
+    }
+    if (d1.coilNum != d2.coilNum) {
+        printf("slices not stacked: coil varies\n");
         return false;
     }
     if (strcmp(d1.protocolName, d2.protocolName) != 0) {
@@ -1790,7 +1797,6 @@ int nii_loadDir (struct TDCMopts* opts) {
         return convert_foreign(*opts);
     }*/
     getFileName(opts->indirParent, opts->indir);
-    //printf("XXXXXXX %s\n XXX\n", opts->indirParent); return EXIT_FAILURE;
     if (isFile && ((isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         char pname[512], rname[512];
         strcpy(pname,indir);

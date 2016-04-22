@@ -4,6 +4,10 @@ dcm2niix is a designed to convert neuroimaging data from the DICOM format to the
 
 ## Versions
 
+22-Apr-2016
+ - Detect Siemens Phase maps (phase image names end with "_ph").
+ - Use current working directory if file name not specified.
+
 12-Apr-2016
  - Provide override (command line option "-m y") to stack images of the same series even if they differ in study date/time, echo/coil number, or slice orientation. This mechanism allows users to concatenate images that break strict DICOM compliance.
 
@@ -11,29 +15,29 @@ dcm2niix is a designed to convert neuroimaging data from the DICOM format to the
  - Experimental support for [http://dicom.nema.org/dicom/2013/output/chtml/part10/chapter_7.html DICOM dataset's without DICOM file meta information].
 
 12-Dec-2015
- - Support PAR/REC FP values when possible(see PMC3998685)
+ - Support PAR/REC FP values when possible(see PMC3998685).
 
 11-Nov-2015
- - Minor refinements
+ - Minor refinements.
 
 12-June-2015
- - Uses less memory (helpful for large datasets)
+ - Uses less memory (helpful for large datasets).
 
 2-Feb-2015
- - Support for Visual Studio
- - Remove dependency on zlib (now uses miniz)
+ - Support for Visual Studio.
+ - Remove dependency on zlib (now uses miniz).
 
 1-Jan-2015
- - Images separated based on TE (fieldmaps)
- - Support for JPEG2000 using OpenJPEG or Jasper libraries
- - Support for JPEG using NanoJPEG library
- - Support for lossless JPEG using custom library
+ - Images separated based on TE (fieldmaps).
+ - Support for JPEG2000 using OpenJPEG or Jasper libraries.
+ - Support for JPEG using NanoJPEG library.
+ - Support for lossless JPEG using custom library.
 
 24-Nov-2014
- - Support for CT scans with gantry tilt and varying distance between slices
+ - Support for CT scans with gantry tilt and varying distance between slices.
 
 11-Oct-2014
- - Initial public release
+ - Initial public release.
 
 ## Running
 
