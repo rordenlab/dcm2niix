@@ -87,7 +87,12 @@ void dropFilenameFromPath(char *path) { //
         strcpy(path,"");
     } else
         path[dirPath - path] = 0; // please make sure there is enough space in TargetDirectory
-    if (strlen(path) == 0) strcat (path,"."); //relative path - use cwd
+    if (strlen(path) == 0) { //file name did not specify path, assume relative path and return current working directory
+    	//strcat (path,"."); //relative path - use cwd <- not sure if this works on Windows!
+    	char cwd[1024];
+   		getcwd(cwd, sizeof(cwd));
+   		strcat (path,cwd);
+    }
 }
 
 
