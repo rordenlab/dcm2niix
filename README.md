@@ -4,6 +4,9 @@ dcm2niix is a designed to convert neuroimaging data from the DICOM format to the
 
 ## Versions
 
+30-Apr-2016
+ - Convert multiple files/folders with single command line invocation (e.g. ./dcm2niix -b y ~/tst ~/tst2).
+
 22-Apr-2016
  - Detect Siemens Phase maps (phase image names end with "_ph").
  - Use current working directory if file name not specified.
