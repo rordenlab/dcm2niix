@@ -105,10 +105,8 @@ int main(int argc, const char * argv[])
         showHelp(argv, opts);
         return 0;
     }
-    strcpy(opts.indir,argv[argc-1]);
-    strcpy(opts.outdir,opts.indir);
     int i = 1;
-    int lastCommandArg = -1;
+    int lastCommandArg = 0;
     while (i < (argc)) { //-1 as final parameter is DICOM directory
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
@@ -162,7 +160,6 @@ int main(int argc, const char * argv[])
                 strcpy(opts.outdir,argv[i]);
             }
             lastCommandArg = i;
-
         } //if parameter is a command
         i ++; //read next parameter
     } //while parameters to read
@@ -177,7 +174,11 @@ int main(int argc, const char * argv[])
     }
 #endif
     clock_t start = clock();
-    nii_loadDir(&opts);
+    for (i = (lastCommandArg+1); i < argc; i++) {
+    	strcpy(opts.indir,argv[i]); // [argc-1]
+    	strcpy(opts.outdir,opts.indir);
+    	nii_loadDir(&opts);
+    }
     printf ("Conversion required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
     saveIniFile(opts);
     return EXIT_SUCCESS;
