@@ -2,7 +2,14 @@
 
 dcm2niix is a designed to convert neuroimaging data from the DICOM format to the NIfTI format. For details and compiled versions visit the [NITRC wiki](http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)
 
+## License
+
+This software is open source. The bulk of the code is covered by the BSD license. Some units are either public domain or have similar licenses. See the license.txt file for more details.
+
 ## Versions
+
+5-May-2016
+ - Crop 3D T1 acquisitions (e.g. ./dcm2niix -x y ~/DICOM).
 
 30-Apr-2016
  - Convert multiple files/folders with single command line invocation (e.g. ./dcm2niix -b y ~/tst ~/tst2).

@@ -1180,6 +1180,112 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     return EXIT_SUCCESS;
 }
 
+void smooth1D(int num, double * im) {
+if (num < 3) return;
+double * src = (double *) malloc(sizeof(double)*num);
+memcpy(&src[0], &im[0], num * sizeof(double)); //memcpy( dest, src, bytes)
+double frac = 0.25;
+for (int i = 1; i < (num-1); i++)
+	im[i] = (src[i-1]*frac) + (src[i]*frac*2) + (src[i+1]*frac);
+}
+
+void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+    //remove excess neck slices - assumes output of nii_setOrtho()
+    int nVox2D = hdr.dim[1]*hdr.dim[2];
+    if ((nVox2D < 1) || (fabs(hdr.pixdim[0]) < 0.001) || (hdr.dim[0] != 3) || (hdr.dim[2] < 128)) return;
+    if ((hdr.datatype != DT_INT16) && (hdr.datatype != DT_UINT16)) {
+        printf("Only able to crop 16-bit volumes.");
+        return;
+    }
+	short * im16 = ( short*) im;
+	unsigned short * imu16 = (unsigned short*) im;
+    int ventralCrop = 0;
+    //find max value for each slice
+    int slices = hdr.dim[3];
+    double * sliceSums = (double *) malloc(sizeof(double)*slices);
+    double maxSliceVal = 0.0;
+    for (int i = (slices-1); i  >= 0; i--) {
+    	sliceSums[i] = 0;
+    	int sliceStart = i * nVox2D;
+    	if (hdr.datatype == DT_UINT16)
+			for (int j = 0; j < nVox2D; j++)
+				sliceSums[i] += imu16[j+sliceStart];
+    	else
+			for (int j = 0; j < nVox2D; j++)
+				sliceSums[i] += im16[j+sliceStart];
+		if (sliceSums[i] > maxSliceVal)
+    		maxSliceVal = sliceSums[i];
+    }
+    if (maxSliceVal <= 0) {
+    	free(sliceSums);
+    	return;
+    }
+    smooth1D(slices, sliceSums);
+    for (int i = 0; i  < slices; i++)
+    	sliceSums[i] = sliceSums[i] / maxSliceVal; //so brightest slice has value 1
+	//dorsal crop: eliminate slices with more than 5% brightness
+	int dorsalCrop;
+	for (dorsalCrop = (slices-1); dorsalCrop >= 0; dorsalCrop--)
+		if (sliceSums[dorsalCrop] > 0.1) break; //more than 10% of max brightness
+	//printf("%d\n", dorsalCrop);
+	if (dorsalCrop == 0) {
+		free(sliceSums);
+		return;
+	}
+	//find brightest band within 90mm of top of head
+	int ventralMaxSlice = dorsalCrop - round(90 /fabs(hdr.pixdim[3])); //must have at least 60mm
+    if (ventralMaxSlice < 0) ventralMaxSlice = 0;
+    int maxSlice = dorsalCrop;
+    for (int i = ventralMaxSlice; i  < dorsalCrop; i++)
+    	if (sliceSums[i] > sliceSums[maxSlice])
+    		maxSlice = i;
+	//now find
+    ventralMaxSlice = maxSlice - round(60 /fabs(hdr.pixdim[3])); //must have at least 60mm
+    if (ventralMaxSlice < 0) {
+    	free(sliceSums);
+    	return;
+    }
+	for (int i = (ventralMaxSlice-1); i >= 0; i--)
+		if (sliceSums[i] > sliceSums[ventralMaxSlice])
+			ventralMaxSlice = i;
+	//finally: find minima between these two points...
+    int minSlice = ventralMaxSlice;
+    for (int i = ventralMaxSlice; i  < maxSlice; i++)
+    	if (sliceSums[i] < sliceSums[minSlice])
+    		minSlice = i;
+	int gap = round((maxSlice-minSlice)*0.9);//add 40% for cerebellum
+	if ((minSlice-gap) > 1)
+        ventralCrop = minSlice-gap;
+	free(sliceSums);
+	//printf("%d %d %d %d   %d  %d  \n", ventralMaxSlice, minSlice, maxSlice, gap, dorsalCrop, ventralCrop);
+	if (ventralCrop > dorsalCrop) return;
+	printf("Cropping from slices %d to %d (of %d)\n", ventralCrop, dorsalCrop, slices);
+    struct nifti_1_header hdrX = hdr;
+    slices = dorsalCrop - ventralCrop + 1;
+    hdrX.dim[3] = slices;
+    //translate origin to account for missing slices
+    hdrX.srow_x[3] += hdr.srow_x[2]*ventralCrop;
+    hdrX.srow_y[3] += hdr.srow_y[2]*ventralCrop;
+    hdrX.srow_z[3] += hdr.srow_z[2]*ventralCrop;
+	//convert data
+    unsigned char *imX;
+	imX = (unsigned char *)malloc( (nVox2D * slices)  *  2);//sizeof( short) );
+	short * imX16 = ( short*) imX;
+	for (int s=0; s < slices; s++) {
+		int sIn = s+ventralCrop;
+		int sOut = s;
+		sOut = sOut * nVox2D;
+		sIn = sIn * nVox2D;
+		memcpy(&imX16[sOut], &im16[sIn], nVox2D* sizeof(unsigned short)); //memcpy( dest, src, bytes)
+    }
+    char niiFilenameCrop[2048] = {""};
+    strcat(niiFilenameCrop,niiFilename);
+    strcat(niiFilenameCrop,"_Crop");
+    nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts);
+    free(imX);
+    return;
+} //nii_saveCrop()
+
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
@@ -1382,6 +1488,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
         free(sliceMMarray);
     }
+    if ((opts.isCrop) && (dcmList[indx0].is3DAcq) && (dcmList[indx0].TE < 25)  && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//T1 scan
+    	nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
     free(imgM);
     return EXIT_SUCCESS;
 } //saveDcm2Nii()
@@ -1551,9 +1659,9 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
     if (nConvert < 2) return nConvert;
     int nDuplicates = 0;
     for (int i = 1; i < nConvert; i++) {
-        if (dcmSort[i].img == dcmSort[i-1].img)
+        if (dcmSort[i].img == dcmSort[i-1].img) {
             nDuplicates ++;
-        else {
+        } else {
             dcmSort[i-nDuplicates].img = dcmSort[i].img;
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
         }
@@ -1574,9 +1682,9 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
     for (int i = 1; i < nConvert; i++) {
         if (dcmSort[i].img == dcmSort[i-1].img) {
                 #ifdef myUseCOut
-    	std::cout<<"\t"<<nameList->str[dcmSort[i-1].indx]<<"\t"<<nameList->str[dcmSort[i].indx] <<std::endl;
+    	std::cout<<"\t"<<nameList->str[dcmSort[i-1].indx]<<"\t=\t"<<nameList->str[dcmSort[i].indx] <<std::endl;
 		#else
-            printf("\t%s\t%s\n",nameList->str[dcmSort[i-1].indx],nameList->str[dcmSort[i].indx]);
+            printf("\t%s\t=\t%s\n",nameList->str[dcmSort[i-1].indx],nameList->str[dcmSort[i].indx]);
             #endif
             nDuplicates ++;
         }else {
@@ -2029,6 +2137,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     strcpy(opts->outdir,"");
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isForceStackSameSeries = false;
+    opts->isCrop = false;
     opts->isGz = false;
     opts->isFlipY = true;
     opts->isRGBplanar = false;
@@ -2084,6 +2193,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     strcpy(opts->outdir,"");
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isForceStackSameSeries = false;
+    opts->isCrop = false;
     opts->isGz = false;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;

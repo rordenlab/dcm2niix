@@ -61,6 +61,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
     printf("  -v : verbose (y/n, default n)\n");
+    printf("  -x : crop (y/n, default n)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
     #ifdef myDisableZLib
@@ -143,6 +144,12 @@ int main(int argc, const char * argv[])
                     opts.isVerbose = 2;
                 else
                     opts.isVerbose = 1; //1: verbose ON
+            } else if ((argv[i][1] == 'x') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isCrop = false;
+                else
+                    opts.isCrop = true;
             } else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {

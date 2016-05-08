@@ -1570,7 +1570,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         d.CSA.numDti = 0;
     };
     if (intenScalePhilips != 0.0) {
-        printf("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
+        //printf("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
         //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
         float l0 = PhilipsPreciseVal (0, d.intenScale, d.intenIntercept, intenScalePhilips);
         float l1 = PhilipsPreciseVal (1, d.intenScale, d.intenIntercept, intenScalePhilips);
