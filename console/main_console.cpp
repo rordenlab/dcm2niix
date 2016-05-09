@@ -21,6 +21,11 @@
 //On windows with mingw you may get "fatal error: zlib.h: No such file
 // to remedy, run "mingw-get install libz-dev" from mingw
 
+//Alternatively, windows users with VisualStudio can compile this project
+// vcvarsall amd64
+// cl /EHsc main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -DmyDisableOpenJPEG -DmyDisableJasper /odcm2niix
+
+
 //#define mydebugtest //automatically process directory specified in main, ignore input arguments
 
 
@@ -101,7 +106,7 @@ int main(int argc, const char * argv[])
      //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
 	 strcpy(opts.indir, "e:\\t1s");
 #else
-    printf("Chris Rorden's dcm2niiX version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
+    printf("Chris Rorden's dcm2niiX version %s (%llu-bit)\n",kDCMvers, (unsigned long long) sizeof(size_t)*8);
     if (argc < 2) {
         showHelp(argv, opts);
         return 0;

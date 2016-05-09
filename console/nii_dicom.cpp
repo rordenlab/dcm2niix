@@ -3,15 +3,15 @@
 	#include <windows.h> //write to registry
 #endif
 #ifdef _MSC_VER
-#  include <direct.h>
-#  define getcwd _getcwd
-#  define chdir _chrdir
-#include "io.h"
-#include <math.h>
-#define snprintf _snprintf
-#define vsnprintf _vsnprintf
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
+	#include <direct.h>
+	#define getcwd _getcwd
+	#define chdir _chrdir
+	#include "io.h"
+	#include <math.h>
+	//#define snprintf _snprintf
+	//#define vsnprintf _vsnprintf
+	#define strcasecmp _stricmp
+	#define strncasecmp _strnicmp
 #else
 	#include <unistd.h>
 #endif

@@ -50,6 +50,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef myEnableOtsu
+#include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
+#endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
@@ -1181,24 +1184,33 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
 }
 
 void smooth1D(int num, double * im) {
-if (num < 3) return;
-double * src = (double *) malloc(sizeof(double)*num);
-memcpy(&src[0], &im[0], num * sizeof(double)); //memcpy( dest, src, bytes)
-double frac = 0.25;
-for (int i = 1; i < (num-1); i++)
-	im[i] = (src[i-1]*frac) + (src[i]*frac*2) + (src[i+1]*frac);
+	if (num < 3) return;
+	double * src = (double *) malloc(sizeof(double)*num);
+	memcpy(&src[0], &im[0], num * sizeof(double)); //memcpy( dest, src, bytes)
+	double frac = 0.25;
+	for (int i = 1; i < (num-1); i++)
+		im[i] = (src[i-1]*frac) + (src[i]*frac*2) + (src[i+1]*frac);
+	free(src);
 }
 
 void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //remove excess neck slices - assumes output of nii_setOrtho()
     int nVox2D = hdr.dim[1]*hdr.dim[2];
-    if ((nVox2D < 1) || (fabs(hdr.pixdim[0]) < 0.001) || (hdr.dim[0] != 3) || (hdr.dim[2] < 128)) return;
+    if ((nVox2D < 1) || (fabs(hdr.pixdim[3]) < 0.001) || (hdr.dim[0] != 3) || (hdr.dim[3] < 128)) return;
     if ((hdr.datatype != DT_INT16) && (hdr.datatype != DT_UINT16)) {
         printf("Only able to crop 16-bit volumes.");
         return;
     }
 	short * im16 = ( short*) im;
 	unsigned short * imu16 = (unsigned short*) im;
+	float kThresh = 0.09; //more than 9% of max brightness
+	#ifdef myEnableOtsu
+	kThresh = 0.0001;
+	if (hdr.datatype == DT_UINT16)
+		maskBackgroundU16 (imu16, hdr.dim[1],hdr.dim[2],hdr.dim[3], 5,2, true);
+	else
+		maskBackground16 (im16, hdr.dim[1],hdr.dim[2],hdr.dim[3], 5,2, true);
+	#endif
     int ventralCrop = 0;
     //find max value for each slice
     int slices = hdr.dim[3];
@@ -1225,27 +1237,29 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     	sliceSums[i] = sliceSums[i] / maxSliceVal; //so brightest slice has value 1
 	//dorsal crop: eliminate slices with more than 5% brightness
 	int dorsalCrop;
-	for (dorsalCrop = (slices-1); dorsalCrop >= 0; dorsalCrop--)
-		if (sliceSums[dorsalCrop] > 0.1) break; //more than 10% of max brightness
-	//printf("%d\n", dorsalCrop);
-	if (dorsalCrop == 0) {
+	for (dorsalCrop = (slices-1); dorsalCrop >= 1; dorsalCrop--)
+		if (sliceSums[dorsalCrop-1] > kThresh) break;
+	if (dorsalCrop <= 1) {
 		free(sliceSums);
 		return;
 	}
+	/*
 	//find brightest band within 90mm of top of head
-	int ventralMaxSlice = dorsalCrop - round(90 /fabs(hdr.pixdim[3])); //must have at least 60mm
+	int ventralMaxSlice = dorsalCrop - round(90 /fabs(hdr.pixdim[3])); //brightest stripe within 90mm of apex
     if (ventralMaxSlice < 0) ventralMaxSlice = 0;
     int maxSlice = dorsalCrop;
     for (int i = ventralMaxSlice; i  < dorsalCrop; i++)
     	if (sliceSums[i] > sliceSums[maxSlice])
     		maxSlice = i;
 	//now find
-    ventralMaxSlice = maxSlice - round(60 /fabs(hdr.pixdim[3])); //must have at least 60mm
+    ventralMaxSlice = maxSlice - round(45 /fabs(hdr.pixdim[3])); //gap at least 60mm
     if (ventralMaxSlice < 0) {
     	free(sliceSums);
     	return;
     }
-	for (int i = (ventralMaxSlice-1); i >= 0; i--)
+    int ventralMinSlice = maxSlice - round(90/fabs(hdr.pixdim[3])); //gap no more than 120mm
+    if (ventralMinSlice < 0) ventralMinSlice = 0;
+	for (int i = (ventralMaxSlice-1); i >= ventralMinSlice; i--)
 		if (sliceSums[i] > sliceSums[ventralMaxSlice])
 			ventralMaxSlice = i;
 	//finally: find minima between these two points...
@@ -1253,13 +1267,26 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     for (int i = ventralMaxSlice; i  < maxSlice; i++)
     	if (sliceSums[i] < sliceSums[minSlice])
     		minSlice = i;
-	int gap = round((maxSlice-minSlice)*0.9);//add 40% for cerebellum
+    //printf("%d %d %d\n", ventralMaxSlice, minSlice, maxSlice);
+	int gap = round((maxSlice-minSlice)*0.8);//add 40% for cerebellum
 	if ((minSlice-gap) > 1)
         ventralCrop = minSlice-gap;
 	free(sliceSums);
-	//printf("%d %d %d %d   %d  %d  \n", ventralMaxSlice, minSlice, maxSlice, gap, dorsalCrop, ventralCrop);
 	if (ventralCrop > dorsalCrop) return;
-	printf("Cropping from slices %d to %d (of %d)\n", ventralCrop, dorsalCrop, slices);
+	//FindDVCrop2
+	const double kMaxDVmm = 180.0;
+    double sliceMM = hdr.pixdim[3] * (dorsalCrop-ventralCrop);
+    if (sliceMM > kMaxDVmm) { //decide how many more ventral slices to remove
+        sliceMM = sliceMM - kMaxDVmm;
+        sliceMM = sliceMM / hdr.pixdim[3];
+        ventralCrop = ventralCrop + round(sliceMM);
+    }*/
+    const double kMaxDVmm = 169.0;
+    ventralCrop = dorsalCrop - round( kMaxDVmm / hdr.pixdim[3]);
+    if (ventralCrop < 0) ventralCrop = 0;
+	//apply crop
+
+	printf(" Cropping from slice %d to %d (of %d)\n", ventralCrop, dorsalCrop, slices);
     struct nifti_1_header hdrX = hdr;
     slices = dorsalCrop - ventralCrop + 1;
     hdrX.dim[3] = slices;
@@ -1488,7 +1515,9 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
         free(sliceMMarray);
     }
-    if ((opts.isCrop) && (dcmList[indx0].is3DAcq) && (dcmList[indx0].TE < 25)  && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//T1 scan
+    if (!dcmList[indx0].is3DAcq) printf("Oh dear!!!!\n");
+
+    if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
     	nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
     free(imgM);
     return EXIT_SUCCESS;
@@ -1880,7 +1909,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     #ifdef myUseCOut
      std::cout << "Version  " <<kDCMvers <<std::endl;
     #else
-    printf("Version %s (%lu-bit)\n",kDCMvers, sizeof(size_t)*8);
+    printf("Version %s (%llu-bit)\n",kDCMvers, (unsigned long long) sizeof(size_t)*8);
     #endif
     char indir[512];
     strcpy(indir,opts->indir);
