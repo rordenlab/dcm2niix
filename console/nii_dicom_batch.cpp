@@ -1515,8 +1515,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
         free(sliceMMarray);
     }
-    if (!dcmList[indx0].is3DAcq) printf("Oh dear!!!!\n");
-
     if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
     	nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
     free(imgM);
