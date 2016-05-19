@@ -8,6 +8,9 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
+19-May-2016
+ - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
+
 5-May-2016
  - Crop 3D T1 acquisitions (e.g. ./dcm2niix -x y ~/DICOM).
 

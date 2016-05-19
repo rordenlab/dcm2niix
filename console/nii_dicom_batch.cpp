@@ -1092,16 +1092,22 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     //convert image with unequal slice distances to equal slice distances
     //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
     int nVox2D = hdr.dim[1]*hdr.dim[2];
-    if ((nVox2D < 1) || (hdr.dim[0] != 3) || (hdr.dim[3] < 3)) return EXIT_FAILURE;
+    if ((nVox2D < 1) || (hdr.dim[0] != 3) ) return EXIT_FAILURE;
     if ((hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
         printf("Only able to make equidistant slices from 3D 8,16,24-bit volumes with at least 3 slices.");
         return EXIT_FAILURE;
     }
     float mn = sliceMMarray[1] - sliceMMarray[0];
-    for (int i = 1; i < hdr.dim[3]; i++)
-        if ((sliceMMarray[i] - sliceMMarray[i-1]) < mn)
+    for (int i = 1; i < hdr.dim[3]; i++) {
+    	float dx = sliceMMarray[i] - sliceMMarray[i-1];
+        //if ((dx < mn) // <- only allow consistent slice direction
+        if ((dx < mn) && (dx > 0.0)) // <- allow slice direction to reverse
             mn = sliceMMarray[i] - sliceMMarray[i-1];
-    if (mn <= 0.0f) return EXIT_FAILURE;
+    }
+    if (mn <= 0.0f) {
+    	printf("Unable to equalize slice distances: slice number not consistent with slice position.\n");
+    	return EXIT_FAILURE;
+    }
     int slices = hdr.dim[3];
     slices = (int)ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
     if (slices > (hdr.dim[3] * 2)) {
