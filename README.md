@@ -8,7 +8,8 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-19-May-2016
+20-May-2016
+ - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
 
 5-May-2016

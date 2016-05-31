@@ -111,6 +111,7 @@ int main(int argc, const char * argv[])
         showHelp(argv, opts);
         return 0;
     }
+    bool isCustomOutDir = false;
     int i = 1;
     int lastCommandArg = 0;
     while (i < (argc)) { //-1 as final parameter is DICOM directory
@@ -169,6 +170,7 @@ int main(int argc, const char * argv[])
                 strcpy(opts.filename,argv[i]);
             } else if ((argv[i][1] == 'o') && ((i+1) < argc)) {
                 i++;
+                isCustomOutDir = true;
                 strcpy(opts.outdir,argv[i]);
             }
             lastCommandArg = i;
@@ -188,7 +190,7 @@ int main(int argc, const char * argv[])
     clock_t start = clock();
     for (i = (lastCommandArg+1); i < argc; i++) {
     	strcpy(opts.indir,argv[i]); // [argc-1]
-    	strcpy(opts.outdir,opts.indir);
+    	if (!isCustomOutDir) strcpy(opts.outdir,opts.indir);
     	nii_loadDir(&opts);
     }
     printf ("Conversion required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
