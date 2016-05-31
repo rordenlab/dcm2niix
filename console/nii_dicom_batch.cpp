@@ -350,7 +350,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (!opts.isCreateBIDS) return;
 	char txtname[2048] = {""};
     strcpy (txtname,pathoutname);
-    strcat (txtname,".bids");
+    strcat (txtname,".json");
     //printf("Saving DTI %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
     fprintf(fp, "{\n");
