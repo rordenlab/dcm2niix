@@ -516,11 +516,11 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         return numFinalADC;
     }
     for (int i = 0; i < (numDti-1); i++) {
-				if (opts.isCreateBIDS) {
-        		fprintf(fp, "%g ", vx[i].V[0]);
-				} else {
-						fprintf(fp, "%g\t", vx[i].V[0]);
-				}
+        if (opts.isCreateBIDS) {
+            fprintf(fp, "%g ", vx[i].V[0]);
+        } else {
+            fprintf(fp, "%g\t", vx[i].V[0]);
+        }
 		}
     fprintf(fp, "%g\n", vx[numDti-1].V[0]);
     fclose(fp);
@@ -534,11 +534,11 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     }
     for (int v = 1; v < 4; v++) {
         for (int i = 0; i < (numDti-1); i++) {
-						if (opts.isCreateBIDS) {
-            	fprintf(fp, "%g ", vx[i].V[v]);
-						} else {
-							fprintf(fp, "%g\t", vx[i].V[v]);
-						}
+            if (opts.isCreateBIDS) {
+                fprintf(fp, "%g ", vx[i].V[v]);
+            } else {
+                fprintf(fp, "%g\t", vx[i].V[v]);
+            }
 				}
         fprintf(fp, "%g\n", vx[numDti-1].V[v]);
     }
