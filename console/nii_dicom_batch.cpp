@@ -539,7 +539,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
             } else {
                 fprintf(fp, "%g\t", vx[i].V[v]);
             }
-				}
+        }
         fprintf(fp, "%g\n", vx[numDti-1].V[v]);
     }
     fclose(fp);
