@@ -1920,11 +1920,6 @@ int nii_loadDir (struct TDCMopts* opts) {
         #endif
         return EXIT_FAILURE;
     }
-    #ifdef myUseCOut
-     std::cout << "Version  " <<kDCMvers <<std::endl;
-    #else
-    printf("Version %s (%llu-bit)\n",kDCMvers, (unsigned long long) sizeof(size_t)*8);
-    #endif
     char indir[512];
     strcpy(indir,opts->indir);
     bool isFile = is_fileNotDir(opts->indir);
