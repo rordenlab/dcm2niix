@@ -2253,6 +2253,8 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
         //printf(">%s<->'%s'\n",Setting,Value);
         if ( strcmp(Setting,"isGZ") == 0 )
             opts->isGz = atoi(Value);
+        else if ( strcmp(Setting,"isBIDS") == 0 )
+            opts->isCreateBIDS = atoi(Value);
         else if ( strcmp(Setting,"filename") == 0 )
             strcpy(opts->filename,Value);
     }
@@ -2265,6 +2267,7 @@ void saveIniFile (struct TDCMopts opts) {
     //printf("%s\n",localfilename);
     if (fp == NULL) return;
     fprintf(fp, "isGZ=%d\n", opts.isGz);
+    fprintf(fp, "isBIDS=%d\n", opts.isCreateBIDS);
     fprintf(fp, "filename=%s\n", opts.filename);
     fclose(fp);
 } //saveIniFile()
