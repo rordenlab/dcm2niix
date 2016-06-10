@@ -1,3 +1,4 @@
+#!/bin/sh
 #remove duplicates
 cd /Users/rorden/Documents/cocoa/dcm2niix
 rm  ./qtGui/ni*.cpp
