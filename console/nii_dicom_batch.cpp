@@ -356,13 +356,13 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fprintf(fp, "{\n");
 		switch (d.manufacturer) {
 				case kMANUFACTURER_SIEMENS:
-						fprintf(fp, "\t\"Manufacturer\": \"Simens\",\n" );
+						fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
 						break;
 				case kMANUFACTURER_GE:
 						fprintf(fp, "\t\"Manufacturer\": \"GE\",\n" );
 						break;
 				case kMANUFACTURER_PHILIPS:
-						fprintf(fp, "\t\"Manufacturer\": \"Phillips\",\n" );
+						fprintf(fp, "\t\"Manufacturer\": \"Philips\",\n" );
 						break;
 				case kMANUFACTURER_TOSHIBA:
 						fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
