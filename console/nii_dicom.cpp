@@ -2337,6 +2337,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
+#define  kMagneticFieldStrength  0x0018+(0x0087 << 16 ) //DS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
@@ -2722,6 +2723,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case kEchoNum :
                 d.echoNum =  dcmStrInt(lLength, &buffer[lPos]);
+                break;
+            case kMagneticFieldStrength :
+                d.fieldStrength =  dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case 	kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);

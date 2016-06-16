@@ -354,7 +354,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     //printf("Saving DTI %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
     fprintf(fp, "{\n");
-		switch (d.manufacturer) {
+	switch (d.manufacturer) {
 				case kMANUFACTURER_SIEMENS:
 						fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
 						break;
@@ -367,10 +367,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 				case kMANUFACTURER_TOSHIBA:
 						fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 						break;
-		};
-		fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
-	  fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
-    fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
+	};
+	//if conditionals: the following values are required for DICOM MRI, but not available for CT
+	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
+	if (d.TE > 0.0) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
+    if (d.TR > 0.0) fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0;
 		if (d.phaseEncodingRC =='C')
