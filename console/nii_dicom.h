@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "6June2016j" //JASPER for JPEG2000
+    #define kDCMvers "20June2016j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "6June2016" //no decompressor
+    #define kDCMvers "20June2016" //no decompressor
 	#else
-    #define kDCMvers "6June2016o" //OPENJPEG for JPEG2000
+    #define kDCMvers "20June2016o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
@@ -54,12 +54,12 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
         long seriesNum;
         int xyzDim[5];//, xyzOri[4];
         int coilNum, echoNum,sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme; //
-        float fieldStrength, TE, TR,intenScale,intenIntercept, gantryTilt, lastScanLoc, angulation[4];
+        float flipAngle, fieldStrength, TE, TR,intenScale,intenIntercept, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
         double dateTime, acquisitionTime;
         bool isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC;
-        char  patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],scanningSequence[kDICOMStr], birthDate[kDICOMStr], gender[kDICOMStr], age[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
+        char  manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],protocolName[kDICOMStr],scanningSequence[kDICOMStr], birthDate[kDICOMStr], gender[kDICOMStr], age[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;
     };
 

@@ -633,6 +633,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.imageComments, "imgComments");
     strcpy(d.studyDate, "1/1/1977");
     strcpy(d.studyTime, "11:11:11");
+    strcpy(d.manufacturersModelName, "N/A");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
     strcpy(d.protocolName, "MPRAGE");
@@ -642,6 +643,8 @@ struct TDICOMdata clear_dicom_data() {
     d.lastScanLoc = NAN;
     d.TR = 0;
     d.TE = 0;
+    d.flipAngle = 0.0;
+    d.fieldStrength = 0.0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.coilNum = 1;
@@ -2326,6 +2329,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
 #define  kManufacturer 0x0008+(0x0070 << 16 )
 #define  kProtocolNameGE 0x0008+(0x103E << 16 )
+#define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
@@ -2342,6 +2346,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
+#define  kFlipAngle  0x0018+(0x1314  << 16 )
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
     //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value                         ;1;IS;1
@@ -2600,13 +2605,16 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kPatientName :
                 dcmStr (lLength, &buffer[lPos], d.patientName);
                 break;
-            case 	kPatientID :
+            case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
-            case 	kProtocolNameGE: {
+            case kProtocolNameGE: {
                 if (strlen(d.protocolName) < 1) //if (d.manufacturer == kMANUFACTURER_GE)
                     dcmStr (lLength, &buffer[lPos], d.protocolName);
                 break; }
+            case kManufacturersModelName :
+            	dcmStr (lLength, &buffer[lPos], d.manufacturersModelName);
+            	break;
             case kDerivationDescription : {
                 //strcmp(transferSyntax, "1.2.840.10008.1.2")
                 char derivationDescription[kDICOMStr];
@@ -2614,14 +2622,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 if (strcasecmp(derivationDescription, "MEDCOM_RESAMPLED") == 0) d.isResampled = true;
                 break;
             }
-            case 	kProtocolName : {
+            case kProtocolName : {
                 if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
                     dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
             case 	kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
-            case 	kLastScanLoc :
+            case kLastScanLoc :
                 d.lastScanLoc = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
                 /*case kDiffusionBFactorSiemens :
@@ -2733,6 +2741,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kPhaseEncodingSteps :
                 phaseEncodingSteps =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
+            case kFlipAngle :
+            	d.flipAngle = dcmStrFloat(lLength, &buffer[lPos]);
+            	break;
             case kGantryTilt :
                 d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
                 break;

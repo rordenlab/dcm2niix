@@ -8,9 +8,10 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-6-June-2016
- - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version
+20-June-2016
+ - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
+ - Add new BIDS fields (field strength, manufacturer, etc).
 
 5-May-2016
  - Crop 3D T1 acquisitions (e.g. ./dcm2niix -x y ~/DICOM).
