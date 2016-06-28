@@ -399,10 +399,11 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     if (!isnan(pos)) // we have real SliceLocation for last slice or volume center
         flip = (pos > R->m[iSL-1][3]) != (pos1 > R->m[iSL-1][3]); // same direction?, note C indices from 0
     else {// we do some guess work and warn user
+    	if (!d.isNonImage) //do not warn user if image is derived
 #ifdef myUseCOut
-     	std::cout<<"WARNING: Unable to determine slice direction: please check whether slices are flipped" <<std::endl;
+     	std::cout<<"Warning: Unable to determine slice direction: please check whether slices are flipped" <<std::endl;
 #else
-        printf("WARNING: Unable to determine slice direction: please check whether slices are flipped\n");
+        printf("Warning: Unable to determine slice direction: please check whether slices are flipped\n");
 #endif
     }
     if (flip) {
@@ -480,10 +481,10 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
         //we will have to guess, assume axial acquisition saved in standard Siemens style?
         d.orient[1] = 1.0f; d.orient[2] = 0.0f;  d.orient[3] = 0.0f;
         d.orient[1] = 0.0f; d.orient[2] = 1.0f;  d.orient[3] = 0.0f;
-        if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))
-           printf("Unable to determine spatial orientation: old Siemens RGB header does not report slice orient (DICOM 0020,0037)!\n");
+        if ((d.isNonImage) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS)))
+           printf("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
         else
-            printf("Unable to determine spatial orientation: header does not report slice orient (DICOM 0020,0037)!\n");
+            printf("Unable to determine spatial orientation: 0020,0037 missing!\n");
         //return sliceDir;
     }
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
@@ -657,6 +658,7 @@ struct TDICOMdata clear_dicom_data() {
     d.imageNum = 1;
     d.imageStart = 0;
     d.is3DAcq = false; //e.g. MP-RAGE, SPACE, TFE
+    d.isNonImage = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
     d.samplesPerPixel = 1;
@@ -2583,6 +2585,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
                 if((slen > 5) && !strcmp(typestr + slen - 6, "MOSAIC") )
                 	isMosaic = true;
+                //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
+                // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
+                if((slen > 6) && (strstr(typestr, "DERIVED") != NULL) )
+                	d.isNonImage = true;
+                //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )
+                //	d.isNonImage = true;
             	break;
             case kStudyDate:
                 dcmStr (lLength, &buffer[lPos], d.studyDate);
@@ -3009,7 +3017,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     	d.CSA.mosaicSlices = (d.xyzDim[1] / phaseEncodingSteps) * (d.xyzDim[2] / phaseEncodingSteps);
     	printf("Warning: mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
     }
-    if (!isOrient) printf("Serious error: spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
+	//     if (!isOrient) {
+	//     	if (d.isNonImage)
+	//     		printf("Warning: spatial orientation ambiguous  (tag 0020,0037 not found) [probably not important: derived image]: %s\n", fname);
+	//     	else if (((d.manufacturer == kMANUFACTURER_SIEMENS)) && (d.samplesPerPixel != 1))
+	//     		printf("Warning: spatial orientation ambiguous (tag 0020,0037 not found) [perhaps derived FA that is not required]: %s\n", fname);
+	//     	else
+	//     		printf("Serious error: spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
+	//     }
     if (isVerbose) {
         printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);

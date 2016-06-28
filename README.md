@@ -8,7 +8,8 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-20-June-2016
+28-June-2016
+ - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
  - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
  - Add new BIDS fields (field strength, manufacturer, etc).

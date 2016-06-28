@@ -1576,37 +1576,64 @@ int isSameFloatDouble (double a, double b) {
     return (fabs (a - b) <= 0.0001);
 }
 
-bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSameSeries) {
+struct TWarnings { //generate a warning only once per set
+        bool bitDepthVaries, dateTimeVaries, echoVaries, coilVaries, nameVaries, orientVaries;
+};
+
+TWarnings setWarnings() {
+	TWarnings r;
+	r.bitDepthVaries = false;
+	r.dateTimeVaries = false;
+	r.echoVaries = false;
+	r.coilVaries = false;
+	r.nameVaries = false;
+	r.orientVaries = false;
+	return r;
+}
+
+bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSameSeries,struct TWarnings* warnings) {
     //returns true if d1 and d2 should be stacked together as a signle output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
     if  (d1.seriesNum != d2.seriesNum) return false;
-    if ( (d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
-        printf("slices not stacked: dimensions or bit-depth varies\n");
+    if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
+        if (!warnings->bitDepthVaries)
+        	printf("slices not stacked: dimensions or bit-depth varies\n");
+        warnings->bitDepthVaries = true;
         return false;
     }
     if (isForceStackSameSeries) return true; //we will stack these images, even if they differ in the following attributes
-    if (!isSameFloatDouble(d1.dateTime, d2.dateTime) ){ //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
-     printf("slices not stacked: Study Data/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
-     return false;
+    if (!isSameFloatDouble(d1.dateTime, d2.dateTime)) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
+    	if (!warnings->dateTimeVaries)
+    		printf("slices not stacked: Study Data/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+    	warnings->dateTimeVaries = true;
+    	return false;
     }
     if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
-        printf("slices not stacked: echo varies (TE %g, %g; echo %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        if (!warnings->echoVaries)
+        	printf("slices not stacked: echo varies (TE %g, %g; echo %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        warnings->echoVaries = true;
         return false;
     }
     if (d1.coilNum != d2.coilNum) {
-        printf("slices not stacked: coil varies\n");
+        if (!warnings->coilVaries)
+        	printf("slices not stacked: coil varies\n");
+        warnings->coilVaries = true;
         return false;
     }
-    if (strcmp(d1.protocolName, d2.protocolName) != 0) {
-        printf("slices not stacked: protocol name varies\n");
+    if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
+        if ((!warnings->nameVaries))
+        	printf("slices not stacked: protocol name varies\n");
+        warnings->nameVaries = true;
         return false;
     }
-    if (!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) ||  !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
-        !isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) ||  !isSameFloatGE(d1.orient[6], d2.orient[6]) ) {
-        printf("slices not stacked: orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
+    if ((!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) ||  !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
+    		!isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) ||  !isSameFloatGE(d1.orient[6], d2.orient[6]) ) ) {
+        if (!warnings->orientVaries)
+        	printf("slices not stacked: orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
                d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6],
                d2.orient[1], d2.orient[2], d2.orient[3],d2.orient[4], d2.orient[5], d2.orient[6]);
+        warnings->orientVaries = true;
         return false;
     }
     return true;
@@ -2030,8 +2057,9 @@ int nii_loadDir (struct TDCMopts* opts) {
     for (int i = 0; i < nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
+			struct TWarnings warnings = setWarnings();
 			for (int j = i; j < nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries))
+				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 
@@ -2041,8 +2069,9 @@ int nii_loadDir (struct TDCMopts* opts) {
 			struct TDCMsort dcmSort[nConvert];
 #endif
 			nConvert = 0;
+			//warnings = setWarnings();
 			for (int j = i; j < nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries)) {
+				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings)) {
 					dcmSort[nConvert].indx = j;
 					dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32) + dcmList[j].imageNum;
 					dcmList[j].converted2NII = 1;
