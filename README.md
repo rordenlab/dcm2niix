@@ -109,10 +109,17 @@ This requires the following libraries:
 - yaml-cpp
 - a compiler that supports c++11
 
-e.g. the dependencies can be installed on Ubuntu 14.04 by running
+e.g. the dependencies can be installed as follows:
+
+Ubuntu 14.04
 ```
 sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake
 ```
+OSx
+```
+brew install pkg-config yaml-cpp cmake
+```
+
 
 ### Building the command line version without cmake
 
