@@ -37,6 +37,19 @@ if (BATCH_VERSION)
 
     message("Creating batch version")
 
+    # Resolve system dependency on yaml-cpp, which apparently does not
+    # provide a CMake find_package() module.
+    find_package(PkgConfig)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(YAML_CPP yaml-cpp)
+        find_path(YAML_CPP_INCLUDE_DIR
+                NAMES yaml_cpp.h
+                PATHS ${YAML_CPP_INCLUDE_DIRS})
+        find_library(YAML_CPP_LIBRARY
+                NAMES YAML_CPP
+                PATHS ${YAML_CPP_LIBRARY_DIRS})
+    endif()
+
     add_executable(dcm2niibatch
             main_console_batch.cpp
             nii_dicom.cpp
