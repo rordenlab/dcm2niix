@@ -64,10 +64,10 @@ e.g. `dcm2niix /path/to/dicom/folder`
 
 Perform a batch conversion of multiple dicoms using the configurations specified in a yaml file.
 ```bash
-dcm2niibatch run_configuration.yaml
+dcm2niibatch batch_config.yml
 ```
 
-The configuration file should be in yaml format as shown in example `run_configuration.yaml`
+The configuration file should be in yaml format as shown in example `batch_config.yaml`
 
 ```yaml
 Options:
@@ -109,10 +109,17 @@ This requires the following libraries:
 - yaml-cpp
 - a compiler that supports c++11
 
-e.g. the dependencies can be installed on Ubuntu 14.04 by running
+e.g. the dependencies can be installed as follows:
+
+Ubuntu 14.04
 ```
 sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake
 ```
+OSx
+```
+brew install pkg-config yaml-cpp cmake
+```
+
 
 ### Building the command line version without cmake
 
