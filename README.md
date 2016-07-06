@@ -64,10 +64,10 @@ e.g. `dcm2niix /path/to/dicom/folder`
 
 Perform a batch conversion of multiple dicoms using the configurations specified in a yaml file.
 ```bash
-dcm2niibatch run_configuration.yaml
+dcm2niibatch batch_config.yml
 ```
 
-The configuration file should be in yaml format as shown in example `run_configuration.yaml`
+The configuration file should be in yaml format as shown in example `batch_config.yaml`
 
 ```yaml
 Options:
