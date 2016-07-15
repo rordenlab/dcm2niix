@@ -1289,6 +1289,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kASL	48
     char buff[LINESZ];
     float intenScalePhilips = 0.0f;
+    float maxBValue = 0.0f;
+    float maxDynTime = 0.0f;
+    float minDynTime = 999999.0f;
     bool ADCwarning = false;
     int parVers = 0;
     int nCols = 26;
@@ -1440,6 +1443,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
+        if (cols[kDynTime] > maxDynTime) maxDynTime = cols[kDynTime];
+        if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
         if (cols[kGradientNumber] > 0) {
 			/*int dir = (int) cols[kGradientNumber];
             if ((dir > 0) && (cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
@@ -1460,7 +1465,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                     dti4D->S[dir-1].V[1] = cols[kv1];
                     dti4D->S[dir-1].V[2] = cols[kv2];
                     dti4D->S[dir-1].V[3] = cols[kv3];
-
+					if (cols[kbval] > maxBValue)
+						maxBValue = cols[kbval];
                 } //save DTI direction
 
             }
@@ -1487,7 +1493,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     if (!isIndexSequential)
         std::cout<<"Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]" <<std::endl;
     printf("Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
-    std::cout<<"Done reading PAR header version "<< (float)parVers/10<<" with "<< d.CSA.numDti << "DTI directions"<<std::endl;
+    std::cout<<"Done reading PAR header version "<< (float)parVers/10<<" with "<< d.CSA.numDti << " volumes"<<std::endl;
 #else
     if (ADCwarning)
         printf("Warning: PAR/REC dataset includes an ADC map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
@@ -1496,7 +1502,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
        printf("Warning: intensity slope/intercept varies between slices! [solution: user dcm2nii instead]\n");
         if (!isIndexSequential)
             printf("Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
-            printf("Done reading PAR header version %.1f, with %d DTI directions\n", (float)parVers/10, d.CSA.numDti);
+            printf("Done reading PAR header version %.1f, with %d volumes\n", (float)parVers/10, d.CSA.numDti);
 #endif
 
             //see Xiangrui Li 's dicm2nii (also BSD license)
@@ -1574,6 +1580,12 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
     };
+    if ((maxBValue <= 0.0f) && (maxDynTime > minDynTime) && (d.CSA.numDti > 1)) {
+    	float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(d.CSA.numDti-1);
+    	if (fabs(TRms - d.TR) > 0.005f)
+    		printf("Warning: reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
+    	d.TR = TRms;
+    }
     if (intenScalePhilips != 0.0) {
         //printf("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
         //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
