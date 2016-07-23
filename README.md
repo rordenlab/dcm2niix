@@ -95,9 +95,9 @@ You can add as many files as you want to convert as long as this structure stays
 ### Build command line version with cmake (Linux, Windows, OSx)
 
 ```bash
-mkdir build
-cd build
+mkdir build && cd build
 cmake ..
+make
 ```
 `dcm2niix` will be created in the `bin` folder
 
