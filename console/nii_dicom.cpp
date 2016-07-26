@@ -1057,7 +1057,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
                 	if (isVerbose)
                 		printf(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
-                	CSA->sliceOrder != NIFTI_SLICE_UNKNOWN;
+                	CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
 
                 }
 #ifdef _MSC_VER
