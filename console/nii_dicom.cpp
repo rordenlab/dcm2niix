@@ -2987,18 +2987,21 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //printf("slices in Acq %d %d\n",d.locationsInAcquisition,locationsInAcquisitionPhilips);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionPhilips;
-        if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
-            d.locationsInAcquisition = locationsInAcquisitionGE;
-            if (zSpacing > 0) d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
-                //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionCount,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionCount > d.xyzDim[3]))
-                    printf("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionCount, d.xyzDim[3]); //Philips reported different positions for each slice!
-                    if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
-                        d.isValid = true;
-                        if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
-                            printf("Please check voxel size\n");
-                            d.xyzMM[2] = d.xyzMM[1];
-                        }
+    //if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
+    //    d.locationsInAcquisition = locationsInAcquisitionGE;
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition != 0))
+        d.locationsInAcquisition = 0;//locationsInAcquisitionGE; //GE appears to store number of slices acquired, but interpolates to more
+    if (zSpacing > 0)
+    	d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
+    //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionCount,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
+    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionCount > d.xyzDim[3]))
+        printf("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionCount, d.xyzDim[3]); //Philips reported different positions for each slice!
+    if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
+    	d.isValid = true;
+    if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
+    	printf("Please check voxel size\n");
+        d.xyzMM[2] = d.xyzMM[1];
+    }
     if ((d.xyzMM[2] > FLT_EPSILON) && (d.xyzMM[1] < FLT_EPSILON)) {
         printf("Please check voxel size\n");
         d.xyzMM[1] = d.xyzMM[2];
