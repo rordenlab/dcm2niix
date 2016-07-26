@@ -1006,6 +1006,9 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 		dti4D->S[z-1].sliceTiming = sliceTimes[z];
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
+                int nTimeZero = 0;
+                if (sliceTimes[1] == 0)
+                    	nTimeZero++;
                 int minTimeIndex = 1;
                 int maxTimeIndex = minTimeIndex;
                 minTimeValue = sliceTimes[1];
@@ -1013,8 +1016,10 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 if (isVerbose)
                     printf("sliceTimes %g\t", sliceTimes[1]);
 				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-					if (isVerbose)
+                    if (isVerbose)
                         printf("%g\t",  sliceTimes[z]);
+                    if (sliceTimes[z] == 0)
+                    	nTimeZero++;
                     if (sliceTimes[z] < minTimeValue) {
 						minTimeValue = sliceTimes[z];
 						minTimeIndex = (float) z;
@@ -1027,7 +1032,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 				}
                 if (isVerbose)
                     printf("\n");
-                //printf("min %d of %d\n", minTimeIndex, itemsOK);
                 CSA->slice_start = minTimeIndex -1;
                 CSA->slice_end = maxTimeIndex -1;
                 if (minTimeIndex == 2)
@@ -1049,6 +1053,12 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                      NSLog(@" Warning: unable to determine slice order for %lu slice mosaic: %@",(unsigned long)[sliceTimesNS count],sliceTimesNS );
                      */
                     printf("Warning: unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
+                }
+                if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
+                	if (isVerbose)
+                		printf(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
+                	CSA->sliceOrder != NIFTI_SLICE_UNKNOWN;
+
                 }
 #ifdef _MSC_VER
 				free(sliceTimes);
@@ -2374,6 +2384,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageNum 0x0020+(0x0013 << 16 )
 #define  kOrientationACR 0x0020+(0x0035 << 16 )
 #define  kOrientation 0x0020+(0x0037 << 16 )
+#define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
@@ -2423,7 +2434,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     dti4D->S[0].sliceTiming = -1.0;
     int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
-    int locationsInAcquisitionGE = 0; int locationsInAcquisitionPhilips = 0;
+    int locationsInAcquisitionGE = 0;
+    int locationsInAcquisitionPhilips = 0;
+    int imagesInAcquisition = 0;
     uint32_t lLength;
     uint32_t groupElement;
     long lPos = 0;
@@ -2943,7 +2956,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 isOrient = true;
                 break;
-
+            case kImagesInAcquisition :
+                imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
+                break;
 
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
@@ -2987,10 +3002,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //printf("slices in Acq %d %d\n",d.locationsInAcquisition,locationsInAcquisitionPhilips);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionPhilips;
-    //if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
-    //    d.locationsInAcquisition = locationsInAcquisitionGE;
-    if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition != 0))
-        d.locationsInAcquisition = 0;//locationsInAcquisitionGE; //GE appears to store number of slices acquired, but interpolates to more
+    if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
+        d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
+        d.locationsInAcquisition = locationsInAcquisitionGE;
     if (zSpacing > 0)
     	d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
     //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionCount,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
