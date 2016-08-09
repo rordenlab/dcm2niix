@@ -638,7 +638,9 @@ struct TDICOMdata clear_dicom_data() {
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
     strcpy(d.protocolName, "MPRAGE");
-    strcpy(d.scanningSequence, "GR");
+    strcpy(d.seriesDescription, "T1_mprage");
+    strcpy(d.sequenceName, "T1");
+    strcpy(d.scanningSequence, "tfl3d1_ns");
     d.manufacturer = kMANUFACTURER_UNKNOWN;
     d.isPlanarRGB = false;
     d.lastScanLoc = NAN;
@@ -1260,7 +1262,9 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
 
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
-    strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
+    strcpy(d.protocolName, ""); //erase dummy with empty
+    strcpy(d.seriesDescription, ""); //erase dummy with empty
+    strcpy(d.sequenceName, ""); //erase dummy with empty
     strcpy(d.scanningSequence, "");
     FILE *fp = fopen(parname, "r");
     if (fp == NULL) return d;
@@ -2283,8 +2287,10 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 //struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
-    strcpy(d.protocolName, ""); //fill dummy with empty space so we can detect kProtocolNameGE
-    strcpy(d.scanningSequence, "");
+    strcpy(d.protocolName, ""); //erase dummy with empty
+    strcpy(d.protocolName, ""); //erase dummy with empty
+    strcpy(d.seriesDescription, ""); //erase dummy with empty
+    strcpy(d.sequenceName, ""); //erase dummy with empty
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 
     struct stat s;
@@ -2352,7 +2358,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
 #define  kManufacturer 0x0008+(0x0070 << 16 )
-#define  kProtocolNameGE 0x0008+(0x103E << 16 )
+#define  kSeriesDescription 0x0008+(0x103E << 16 ) // '0008' '103E' 'LO' 'SeriesDescription'
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
@@ -2641,9 +2647,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
-            case kProtocolNameGE: {
-                if (strlen(d.protocolName) < 1) //if (d.manufacturer == kMANUFACTURER_GE)
-                    dcmStr (lLength, &buffer[lPos], d.protocolName);
+            case kSeriesDescription: {
+                //if (strlen(d.protocolName) < 1)
+                dcmStr (lLength, &buffer[lPos], d.seriesDescription);
                 break; }
             case kManufacturersModelName :
             	dcmStr (lLength, &buffer[lPos], d.manufacturersModelName);
@@ -2656,8 +2662,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             }
             case kProtocolName : {
-                if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
-                    dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
+                //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
+                dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
             case 	kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
@@ -2823,13 +2829,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
                 break;
             case kScanningSequence : {
-                if (strlen(d.scanningSequence) < 1) //precedence given to kProtocolName and kProtocolNameGE
-                    dcmStr (lLength, &buffer[lPos], d.scanningSequence);
+                dcmStr (lLength, &buffer[lPos], d.scanningSequence);
                 break;
             }
             case kSequenceName : {
-                if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
-                    dcmStr (lLength, &buffer[lPos], d.protocolName);
+                //if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
+                dcmStr (lLength, &buffer[lPos], d.sequenceName);
                 break;
             }
             case	kMRAcquisitionTypePhilips: //kMRAcquisitionType
@@ -3047,6 +3052,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     	d.CSA.mosaicSlices = (d.xyzDim[1] / phaseEncodingSteps) * (d.xyzDim[2] / phaseEncodingSteps);
     	printf("Warning: mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
     }
+    if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
+		strcpy(d.protocolName, d.seriesDescription);
+    if ((strlen(d.protocolName) < 1) && (strlen(d.sequenceName) > 1))
+		strcpy(d.protocolName, d.sequenceName);
 	//     if (!isOrient) {
 	//     	if (d.isNonImage)
 	//     		printf("Warning: spatial orientation ambiguous  (tag 0020,0037 not found) [probably not important: derived image]: %s\n", fname);

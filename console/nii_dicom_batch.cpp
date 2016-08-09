@@ -705,7 +705,9 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (pos < strlen(inname)) f = toupper(inname[pos]);
             if (f == 'C')
                 strcat (outname,dcm.imageComments);
-            //if (f == 'E') {
+            if (f == 'D')
+                strcat (outname,dcm.seriesDescription);
+        	//if (f == 'E') {
             //    sprintf(newstr, "%d", dcm.echoNum);
             //    strcat (outname,newstr);
             //}
@@ -748,6 +750,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 sprintf(newstr, "%0.0f", dcm.dateTime);
                 strcat (outname,newstr);
             }
+            if (f == 'Z')
+                strcat (outname,dcm.sequenceName);
             start = pos + 1;
         } //found a % character
         pos++;
