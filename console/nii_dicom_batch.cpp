@@ -243,9 +243,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
         if (isSameFloat(vx[i].V[1],-0)) vx[i].V[1] = 0.0f;
         if (isSameFloat(vx[i].V[2],-0)) vx[i].V[2] = 0.0f;
         if (isSameFloat(vx[i].V[3],-0)) vx[i].V[3] = 0.0f;
-
     }
-
 } //geCorrectBvecs()
 
 void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
@@ -539,7 +537,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         } else {
             fprintf(fp, "%g\t", vx[i].V[0]);
         }
-		}
+	}
     fprintf(fp, "%g\n", vx[numDti-1].V[0]);
     fclose(fp);
     strcpy(txtname,pathoutname);

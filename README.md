@@ -15,7 +15,8 @@ This software is open source. The bulk of the code is covered by the BSD license
  - Add new BIDS fields (field strength, manufacturer, etc).
  - Philips PAR/REC conversion now reports inconsistent requested vs measured TR (due to prospect. motion corr.?)
  - GE: Locations In Acquisition (0054, 0081) is inaccurate if slices are interpolated, use Images In Acquisition (0020,1002) if available
- - New filename options %d Series description (0008,103E) %z Sequence Name (0018,0024) [NEW]
+ - New filename options %d Series description (0008,103E) %z Sequence Name (0018,0024)
+
 5-May-2016
  - Crop 3D T1 acquisitions (e.g. ./dcm2niix -x y ~/DICOM).
 
