@@ -8,14 +8,16 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-9-Aug-2016
+15-Aug-2016
  - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
  - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
  - Add new BIDS fields (field strength, manufacturer, etc).
  - Philips PAR/REC conversion now reports inconsistent requested vs measured TR (due to prospect. motion corr.?)
  - GE: Locations In Acquisition (0054, 0081) is inaccurate if slices are interpolated, use Images In Acquisition (0020,1002) if available
- - New filename options %d Series description (0008,103E) %z Sequence Name (0018,0024)
+ - New filename options %d Series description (0008,103E), %z Sequence Name (0018,0024)
+ - New filename options %a antenna (coil) number, %e echo number
+
 
 5-May-2016
  - Crop 3D T1 acquisitions (e.g. ./dcm2niix -x y ~/DICOM).
@@ -117,7 +119,7 @@ Ubuntu 14.04
 ```
 sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake
 ```
-OSx
+OSX
 ```
 brew install pkg-config yaml-cpp cmake
 ```
@@ -211,9 +213,7 @@ file ./dcm2niix
 
 ##### OSX GRAPHICAL INTERFACE BUILD
 
-Building OSX graphical user interface using XCode:
- Copy contents of "console" folder to /xcode/dcm2/core
- Open and compile "dcm2.xcodeproj" with XCode 4.6 or later
+You can building the OSX graphical user interface using XCode. First, Copy contents of "console" folder to /xcode/dcm2/core. Next, open and compile the project "dcm2.xcodeproj" with XCode 4.6 or later
 
 ##### THE QT AND wxWIDGETS GUIs ARE NOT YET SUPPORT - FOLLOWING LINES FOR FUTURE VERSIONS
 

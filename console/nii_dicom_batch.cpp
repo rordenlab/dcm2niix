@@ -691,6 +691,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     }
     int start = 0;
     int pos = 0;
+    bool isCoilReported = false;
+    bool isEchoReported = false;
     while (pos < strlen(inname)) {
         if (inname[pos] == '%') {
             if (pos > start) {
@@ -701,14 +703,20 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             pos++; //extra increment: skip both % and following character
             char f = 'P';
             if (pos < strlen(inname)) f = toupper(inname[pos]);
+        	if ((f == 'A') && (dcm.coilNum > 0)) {
+        		isCoilReported = true;
+                sprintf(newstr, "%02d", dcm.coilNum);
+                strcat (outname,newstr);
+            }
+        	if (f == 'E') {
+        		isEchoReported = true;
+                sprintf(newstr, "%d", dcm.echoNum);
+                strcat (outname,newstr);
+            }
             if (f == 'C')
                 strcat (outname,dcm.imageComments);
             if (f == 'D')
                 strcat (outname,dcm.seriesDescription);
-        	//if (f == 'E') {
-            //    sprintf(newstr, "%d", dcm.echoNum);
-            //    strcat (outname,newstr);
-            //}
             if (f == 'F')
                 strcat (outname,opts.indirParent);
             if (f == 'I')
@@ -754,11 +762,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         } //found a % character
         pos++;
     } //for each character in input
-    if (dcm.coilNum > 1) {
+    if (!isCoilReported && (dcm.coilNum > 1)) {
         sprintf(newstr, "_c%d", dcm.coilNum);
         strcat (outname,newstr);
     }
-    if (dcm.echoNum > 1) {
+    if (!isEchoReported && (dcm.echoNum > 1)) {
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
     }
