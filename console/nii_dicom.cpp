@@ -1656,7 +1656,7 @@ unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, i
 #ifdef myUseCOut
      	std::cout<<"WARNING: CSA 'ProtocolSliceNumber' SUGGESTS REVERSED SLICE ORDER: SPATIAL AND DTI COORDINATES UNTESTED" <<std::endl;
 #else
-        printf("WARNING: CSA 'ProtocolSliceNumber' SUGGESTS REVERSED SLICE ORDER: SPATIAL AND DTI COORDINATES UNTESTED\n");
+        printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL AND DTI TRANSFORMS UNTESTED\n");
 #endif
     }
     /*if ((ProtocolSliceNumber1 > 1) && (hdr->dim[3] > 1)) { //exceptionally rare: reverse order of slices - now handled in matrix...
@@ -1672,7 +1672,6 @@ unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, i
      }*/
     free(inImg);
     return outImg;
-    //return [NSData dataWithBytes:&outImg length:outlen];
 } // nii_demosaic()
 
 unsigned char * nii_flipImgY(unsigned char* bImg, struct nifti_1_header *hdr){

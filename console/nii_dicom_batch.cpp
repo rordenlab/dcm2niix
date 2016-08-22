@@ -1492,10 +1492,15 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     int sliceDir = 0;
     if (hdr0.dim[3] > 1)
         sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
-    if (sliceDir < 0) {
+	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
+	//if ((dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) && (sliceDir == kSliceOrientMosaicNegativeDeterminant))
+	//	sliceDir = -1;
+
+	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir);
     }
+
     //nii_SaveBIDS(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, sliceDir, dti4D, &hdr0);
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
