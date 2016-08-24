@@ -13,7 +13,9 @@
 //#include <unistd.h>
 #include <stdio.h>
 #ifndef _MSC_VER
+
 	#include <unistd.h>
+
 #endif
 //#define MY_DEBUG //verbose text reporting
 
@@ -199,17 +201,17 @@ void  reOrientImg( unsigned char *  img, vec3i outDim, vec3i outInc, int bytePer
     for (int vol= 0; vol < nvol; vol++) {
         memcpy(&inbuf[0], &outbuf[vol*bytePerVol], bytePerVol); //copy source volume
         for (int z = 0; z < outDim.v[2]; z++)
-            for (int y = 0; y < outDim.v[1]; y++) 
+            for (int y = 0; y < outDim.v[1]; y++)
                 for (int x = 0; x < outDim.v[0]; x++) {
                     memcpy(&outbuf[o], &inbuf[xLUT[x]+yLUT[y]+zLUT[z]], bytePerVox);
                     o = o+ bytePerVox;
                 } //for each x
     } //for each volume
     //free arrays
-    free(inbuf); 
+    free(inbuf);
     free(xLUT);
-    free(yLUT); 
-    free(zLUT); 
+    free(yLUT);
+    free(zLUT);
 } //reOrientImg
 
 unsigned char *  reOrient(unsigned char* img, struct nifti_1_header *h, vec3i orientVec, mat33 orient, vec3 minMM)
@@ -219,7 +221,7 @@ unsigned char *  reOrient(unsigned char* img, struct nifti_1_header *h, vec3i or
     if (nvox < 1) return img;
     vec3i outDim= {0,0,0};
     vec3i outInc= {0,0,0};
-    for (int i = 0; i < 3; i++) { //set dimension, pixdim and 
+    for (int i = 0; i < 3; i++) { //set dimension, pixdim and
         outDim.v[i] =  h->dim[abs(orientVec.v[i])];
         if (abs(orientVec.v[i]) == 1) outInc.v[i] = 1;
         if (abs(orientVec.v[i]) == 2) outInc.v[i] = h->dim[1];
@@ -365,9 +367,9 @@ unsigned char *  nii_setOrtho(unsigned char* img, struct nifti_1_header *h) {
     #ifdef MY_DEBUG
     printf("NewRotation= %d %d %d\n", orientVec.v[0],orientVec.v[1],orientVec.v[2]);
     printf("MinCorner= %.2f %.2f %.2f\n", minMM.v[0],minMM.v[1],minMM.v[2]);
-    reportMat44o("input",s);
+    reportMat44o((char*)"input",s);
     s = sFormMat(h);
-    reportMat44o("output",s);
+    reportMat44o((char*)"output",s);
     #endif
     return img;
 }

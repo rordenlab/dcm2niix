@@ -7,10 +7,10 @@
 #ifdef  __cplusplus
 extern "C" {
 #endif
-    
+
 #include <stdbool.h>
 #include <string.h>
-    
+
 typedef struct {                   /** 4x4 matrix struct **/
     float m[3][3] ;
 } mat33 ;
@@ -45,22 +45,14 @@ float nifti_mat33_determ( mat33 R ) ;
 int isSameFloat (float a, float b) ;
 mat33 nifti_mat33_inverse( mat33 R );
 mat33 nifti_mat33_mul( mat33 A , mat33 B );
-mat33 nifti_mat33_mul( mat33 A , mat33 B );
-mat33 nifti_mat33_transpose( mat33 A ) ;
 mat33 nifti_mat33_transpose( mat33 A ) ;
 mat44 nifti_dicom2mat(float orient[7], float patientPosition[4], float xyzMM[4]);
-mat44 nifti_dicom2mat(float orient[7], float patientPosition[4], float xyzMM[4]);
 mat44 nifti_mat44_inverse( mat44 R );
-mat44 nifti_mat44_inverse( mat44 R );
-mat44 nifti_mat44_mul( mat44 A , mat44 B );
 mat44 nifti_mat44_mul( mat44 A , mat44 B );
 vec3 crossProduct(vec3 u, vec3 v);
 vec3 nifti_vect33_norm (vec3 v);
-//vec3 nifti_vect33_norm (vec3 v);
 vec3 nifti_vect33mat33_mul(vec3 v, mat33 m );
-//vec3 nifti_vect33mat33_mul(vec3 v, mat33 m );
 vec3 setVec3(float x, float y, float z);
-//vec4 nifti_vect44mat44_mul(vec4 v, mat44 m );
 vec4 setVec4(float x, float y, float z);
 vec4 nifti_vect44mat44_mul(vec4 v, mat44 m );
 void nifti_swap_2bytes( size_t n , void *ar );    // 2 bytes at a time

@@ -1493,8 +1493,11 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if (hdr0.dim[3] > 1)
         sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
-	//if ((dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) && (sliceDir == kSliceOrientMosaicNegativeDeterminant))
-	//	sliceDir = -1;
+	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
+		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n");
+		//&& (sliceDir == kSliceOrientMosaicNegativeDeterminant)
+		sliceDir = -1;
+	}
 
 	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);

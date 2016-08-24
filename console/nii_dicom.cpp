@@ -412,7 +412,7 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     }
 #ifdef MY_DEBUG
     printf("verify slice dir %d %d %d\n",h->dim[1],h->dim[2],h->dim[3]);
-    reportMat44("Rout",*R);
+    reportMat44((char*)"Rout",*R);
     printf("iSL = %d\n",iSL);
     printf(" pos1 = %f\n",pos1);
 #endif
@@ -463,10 +463,169 @@ void setQSForm(struct nifti_1_header *h, mat44 Q44i) {
     h->qform_code = NIFTI_XFORM_SCANNER_ANAT;
 } //setQSForm()
 
+ivec3 maxCol(mat33 R) {
+//return index of maximum column in 3x3 matrix, e.g. [1 0 0; 0 1 0; 0 0 1] -> 1,2,3
+	ivec3 ixyz;
+	//foo is abs(R)
+    mat33 foo;
+    for (int i=0 ; i < 3 ; i++ )
+        for (int j=0 ; j < 3 ; j++ )
+            foo.m[i][j] =  fabs(R.m[i][j]);
+	//ixyz.v[0] : row with largest value in column 1
+	ixyz.v[0] = 1;
+	if ((foo.m[1][0] > foo.m[0][0]) && (foo.m[1][0] >= foo.m[2][0]))
+		ixyz.v[0] = 2; //2nd column largest column
+	else if ((foo.m[2][0] > foo.m[0][0]) && (foo.m[2][0] > foo.m[1][0]))
+		ixyz.v[0] = 3; //3rd column largest column
+	//ixyz.v[1] : row with largest value in column 2, but not the same row as ixyz.v[1]
+	if (ixyz.v[0] == 1) {
+		ixyz.v[1] = 2;
+		if (foo.m[2][1] > foo.m[1][1])
+			ixyz.v[1] = 3;
+	} else if (ixyz.v[0] == 2) {
+		ixyz.v[1] = 1;
+		if (foo.m[2][1] > foo.m[0][1])
+			ixyz.v[1] = 3;
+	} else { //ixyz.v[0] == 3
+		ixyz.v[1] = 1;
+		if (foo.m[1][1] > foo.m[0][1])
+			ixyz.v[1] = 2;
+	}
+	//ixyz.v[2] : 3rd row, constrained by previous rows
+	ixyz.v[2] = 6 - ixyz.v[1] - ixyz.v[0];//sum of 1+2+3
+	return ixyz;
+}
+
+int sign(float x) {
+//returns -1,0,1 depending on if X is less than, equal to or greater than zero
+	if (x < 0)
+		return -1;
+	else if (x > 0)
+		return 1;
+	return 0;
+}
+
+// Subfunction: get dicom xform matrix and related info
+// This is a direct port of  Xiangrui Li's dicm2nii function
+mat44 xform_mat(struct TDICOMdata d) {
+	vec3 readV = setVec3(d.orient[1],d.orient[2],d.orient[3]);
+	vec3 phaseV = setVec3(d.orient[4],d.orient[5],d.orient[6]);
+    vec3 sliceV = crossProduct(readV ,phaseV);
+    mat33 R;
+    LOAD_MAT33(R, readV.v[0], readV.v[1], readV.v[2],
+    	phaseV.v[0], phaseV.v[1], phaseV.v[2],
+    	sliceV.v[0], sliceV.v[1], sliceV.v[2]);
+    R = nifti_mat33_transpose(R);
+	//reportMat33((char*)"R",R);
+	ivec3 ixyz = maxCol(R);
+	//printf("%d %d %d\n", ixyz.v[0], ixyz.v[1], ixyz.v[2]);
+	int iSL = ixyz.v[2]; // 1/2/3 for Sag/Cor/Tra slice
+	float cosSL = R.m[iSL-1][2];
+	//printf("cosSL\t%g\n", cosSL);
+	//vec3 pixdim = setVec3(d.xyzMM[1], d.xyzMM[2], d.xyzMM[3]);
+	//printf("%g %g %g\n", pixdim.v[0], pixdim.v[1], pixdim.v[2]);
+	mat33 pixdim;
+    LOAD_MAT33(pixdim, d.xyzMM[1], 0.0, 0.0,
+    	0.0, d.xyzMM[2], 0.0,
+    	0.0, 0.0, d.xyzMM[3]);
+	R = nifti_mat33_mul(R, pixdim);
+	//reportMat33((char*)"R",R);
+	mat44 R44;
+	LOAD_MAT44(R44, R.m[0][0], R.m[0][1], R.m[0][2], d.patientPosition[1],
+		R.m[1][0], R.m[1][1], R.m[1][2], d.patientPosition[2],
+		R.m[2][0], R.m[2][1], R.m[2][2], d.patientPosition[3]);
+	//reportMat44((char*)"R",R44);
+	//rest are former: R = verify_slice_dir(R, s, dim, iSL)
+
+
+	if ((d.xyzDim[3]<2) && (d.CSA.mosaicSlices < 2))
+		return R44; //don't care direction for single slice
+	vec3 dim = setVec3(d.xyzDim[1], d.xyzDim[2], d.xyzDim[3]);
+	if (d.CSA.mosaicSlices > 1) { //Siemens mosaic: use dim(1) since no transpose to img
+        float nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
+        dim.v[0] = dim.v[0] / nRowCol;
+        dim.v[1] = dim.v[1] / nRowCol;
+        dim.v[2] = d.CSA.mosaicSlices;
+		vec4 dim4 = setVec4((nRowCol-1)*dim.v[0]/2.0f, (nRowCol-1)*dim.v[1]/2.0f, 0);
+		vec4 offset = nifti_vect44mat44_mul(dim4, R44 );
+        //printf("%g %g %g\n", dim.v[0], dim.v[1], dim.v[2]);
+        //printf("%g %g %g\n", dim4.v[0], dim4.v[1], dim4.v[2]);
+        //printf("%g %g %g %g\n", offset.v[0], offset.v[1], offset.v[2], offset.v[3]);
+		//printf("nRowCol\t%g\n", nRowCol);
+		R44.m[0][3] = offset.v[0];
+		R44.m[1][3] = offset.v[1];
+		R44.m[2][3] = offset.v[2];
+		//R44.m[3][3] = offset.v[3];
+		if (sign(d.CSA.sliceNormV[iSL]) != sign(cosSL)) {
+			R44.m[0][2] = -R44.m[0][2];
+			R44.m[1][2] = -R44.m[1][2];
+			R44.m[2][2] = -R44.m[2][2];
+			R44.m[3][2] = -R44.m[3][2];
+		}
+        //reportMat44((char*)"iR44",R44);
+		return R44;
+	} else if (true) {
+//SliceNormalVector 666 TO DO
+		printf("Not completed");
+		exit(2);
+		return R44;
+	}
+	printf("Unable to determine spatial transform\n");
+	exit(1);
+}
+
+
+mat44 set_nii_header(struct TDICOMdata d) {
+	mat44 R = xform_mat(d);
+	//R(1:2,:) = -R(1:2,:); % dicom LPS to nifti RAS, xform matrix before reorient
+    for (int i=0; i<2; i++)
+        for(int j=0; j<4; j++)
+            R.m[i][j] = -R.m[i][j];
+	#ifdef MY_DEBUG
+    reportMat44((char*)"R44",R);
+	#endif
+}
+
+// This code predates  Xiangrui Li's set_nii_header function
+mat44 set_nii_header_old(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir) {
+    *sliceDir = 0;
+    mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
+    if (d.CSA.mosaicSlices > 1) {
+        double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
+        double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
+        double lFactorY = (d.xyzDim[2] -(d.xyzDim[2]/nRowCol)   )/2.0;
+        Q44.m[0][3] =(float)((Q44.m[0][0]*lFactorX)+(Q44.m[0][1]*lFactorY)+Q44.m[0][3]);
+		Q44.m[1][3] = (float)((Q44.m[1][0] * lFactorX) + (Q44.m[1][1] * lFactorY) + Q44.m[1][3]);
+		Q44.m[2][3] = (float)((Q44.m[2][0] * lFactorX) + (Q44.m[2][1] * lFactorY) + Q44.m[2][3]);
+        for (int c=0; c<2; c++)
+            for (int r=0; r<4; r++)
+                Q44.m[c][r] = -Q44.m[c][r];
+        mat33 Q;
+        LOAD_MAT33(Q, d.orient[1], d.orient[4],d.CSA.sliceNormV[1],
+                   d.orient[2],d.orient[5],d.CSA.sliceNormV[2],
+                   d.orient[3],d.orient[6],d.CSA.sliceNormV[3]);
+        if  (nifti_mat33_determ(Q) < 0) { //Siemens sagittal are R>>L, whereas NIfTI is L>>R, we retain Siemens order on disk so ascending is still ascending, but we need to have the spatial transform reflect this.
+            mat44 det;
+            *sliceDir = kSliceOrientMosaicNegativeDeterminant; //we need to handle DTI vectors accordingly
+            LOAD_MAT44(det, 1.0l,0.0l,0.0l,0.0l, 0.0l,1.0l,0.0l,0.0l, 0.0l,0.0l,-1.0l,0.0l);
+            //patient_to_tal.m[2][3] = 1-d.CSA.MosaicSlices;
+            Q44 = nifti_mat44_mul(Q44,det);
+        }
+    } else { //not a mosaic
+        *sliceDir = verify_slice_dir(d, d2, h, &Q44);
+        for (int c=0; c<4; c++)// LPS to nifti RAS, xform matrix before reorient
+            for (int r=0; r<2; r++) //swap rows 1 & 2
+                Q44.m[r][c] = - Q44.m[r][c];
+    }
+	#ifdef MY_DEBUG
+    reportMat44((char*)"Q44",Q44);
+	#endif
+    return Q44;
+}
+
 int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_1_header *h) { //fill header s and q form
     //see http://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1_io.c
-    //returns sliceDirection: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
-    //
+    //returns sliceDir: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
     int sliceDir = 0;
     if (h->dim[3] < 2) return sliceDir; //don't care direction for single slice
     h->sform_code = NIFTI_XFORM_UNKNOWN;
@@ -474,9 +633,6 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     bool isOK = false;
     for (int i = 1; i <= 6; i++)
         if (d.orient[i] != 0.0) isOK = true;
-
-    //for (int i = 1; i <= 6; i++)
-    //    printf ("%g\n",d.orient[i]);
     if (!isOK) {
         //we will have to guess, assume axial acquisition saved in standard Siemens style?
         d.orient[1] = 1.0f; d.orient[2] = 0.0f;  d.orient[3] = 0.0f;
@@ -485,89 +641,12 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
            printf("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
         else
             printf("Unable to determine spatial orientation: 0020,0037 missing!\n");
-        //return sliceDir;
     }
-    mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
-    //reportMat44((char*)"out",*R);
-    if (d.CSA.mosaicSlices > 1) {
-        double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
-        double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
-        double lFactorY = (d.xyzDim[2] -(d.xyzDim[2]/nRowCol)   )/2.0;
-        Q44.m[0][3] =(float)((Q44.m[0][0]*lFactorX)+(Q44.m[0][1]*lFactorY)+Q44.m[0][3]);
-		Q44.m[1][3] = (float)((Q44.m[1][0] * lFactorX) + (Q44.m[1][1] * lFactorY) + Q44.m[1][3]);
-		Q44.m[2][3] = (float)((Q44.m[2][0] * lFactorX) + (Q44.m[2][1] * lFactorY) + Q44.m[2][3]);
-        /* #ifdef obsolete_mosaic_flip
-         double val = d.xyzDim[2]/nRowCol; //obsolete!!!
-         //Q44 now equals 'dicom_to_patient' in spm_dicom_convert
-         mat44 patient_to_tal, analyze_to_dicom;
-         LOAD_MAT44(patient_to_tal, -1.0l,0.0l,0.0l,0.0l, 0.0l,-1.0l,0.0l,0.0l, 0.0l,0.0l,1.0l,0.0l);
-         LOAD_MAT44(analyze_to_dicom, 1.0l,0.0l,0.0l,-1.0l, 0.0l,-1.0l,0.0l,val, 0.0l,0.0l,1.0l,-1.0l);
-         Q44 = nifti_mat44_mul(patient_to_tal,Q44);
-         Q44 = nifti_mat44_mul(Q44,analyze_to_dicom);
-         //Q44 now equals 'mat' in spm_dicom_convert
-         //subasgn.m in SPM5 translates by one voxel...
-         LOAD_MAT44(analyze_to_dicom, 1.0l,0.0l,0.0l,1.0l, 0.0l,1.0l,0.0l,1.0l, 0.0l,0.0l,1.0l,1.0l);
-         Q44 = nifti_mat44_mul(Q44,analyze_to_dicom);
-         #else */
-        for (int c=0; c<2; c++)
-            for (int r=0; r<4; r++)
-                Q44.m[c][r] = -Q44.m[c][r];
-        // #endif
-        mat33 Q;
-        LOAD_MAT33(Q, d.orient[1], d.orient[4],d.CSA.sliceNormV[1],
-                   d.orient[2],d.orient[5],d.CSA.sliceNormV[2],
-                   d.orient[3],d.orient[6],d.CSA.sliceNormV[3]);
-        if  (nifti_mat33_determ(Q) < 0) { //Siemens sagittal are R>>L, whereas NIfTI is L>>R, we retain Siemens order on disk so ascending is still ascending, but we need to have the spatial transform reflect this.
-            mat44 det;
-            sliceDir = kSliceOrientMosaicNegativeDeterminant; //we need to handle DTI vectors accordingly
-            LOAD_MAT44(det, 1.0l,0.0l,0.0l,0.0l, 0.0l,1.0l,0.0l,0.0l, 0.0l,0.0l,-1.0l,0.0l);
-            //patient_to_tal.m[2][3] = 1-d.CSA.MosaicSlices;
-            Q44 = nifti_mat44_mul(Q44,det);
-        }
-    } else { //not a mosaic
-        sliceDir = verify_slice_dir(d, d2, h, &Q44);
-        for (int c=0; c<4; c++)// LPS to nifti RAS, xform matrix before reorient
-            for (int r=0; r<2; r++) //swap rows 1 & 2
-                Q44.m[r][c] = - Q44.m[r][c];
-#ifdef MY_DEBUG
-        reportMat44("final",Q44);
-#endif
-    }
+    //mat44 Q44 = set_nii_header(d);
+    mat44 Q44 = set_nii_header_old(d, d2, h, &sliceDir);
     setQSForm(h,Q44);
     return sliceDir;
 } //headerDcm2NiiSForm()
-
-#ifdef _MSC_VER
-/*
-#define snprintf c99_snprintf
-
-inline int c99_vsnprintf(char* str, size_t size, const char* format, va_list ap)
-{
-	int count = -1;
-
-	if (size != 0)
-		count = _vsnprintf_s(str, size, _TRUNCATE, format, ap);
-	if (count == -1)
-		count = _vscprintf(format, ap);
-
-	return count;
-}
-
-inline int c99_snprintf(char* str, size_t size, const char* format, ...)
-{
-	int count;
-	va_list ap;
-
-	va_start(ap, format);
-	count = c99_vsnprintf(str, size, format, ap);
-	va_end(ap);
-
-	return count;
-}
-*/
-
-
-#endif // _MSC_VER
 
 int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h) { //final pass after de-mosaic
     char txt[1024] = {""};
@@ -1652,13 +1731,14 @@ unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, i
             col = 0;
         } //start new column
     } //for m = each mosaic slice
+    /* //we now provide a warning once per series rather than once per volume (see nii_dicom_batch)
     if (ProtocolSliceNumber1 > 1) {
 #ifdef myUseCOut
      	std::cout<<"WARNING: CSA 'ProtocolSliceNumber' SUGGESTS REVERSED SLICE ORDER: SPATIAL AND DTI COORDINATES UNTESTED" <<std::endl;
 #else
         printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL AND DTI TRANSFORMS UNTESTED\n");
 #endif
-    }
+    }*/
     /*if ((ProtocolSliceNumber1 > 1) && (hdr->dim[3] > 1)) { //exceptionally rare: reverse order of slices - now handled in matrix...
      int sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
      memcpy(&inImg[0], &outImg[0],sliceBytes*hdr->dim[3]); //copy data with reversed order dest, src, bytes
@@ -1752,7 +1832,7 @@ unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h){
     LOAD_MAT44(Q44,h->srow_x[0],h->srow_x[1],h->srow_x[2],h->srow_x[3],
                h->srow_y[0],h->srow_y[1],h->srow_y[2],h->srow_y[3],
                h->srow_z[0],h->srow_z[1],h->srow_z[2],h->srow_z[3]);
-    vec4 v=  setVec4(0.0f,0.0f,(float) h->dim[3]-1.0f);
+    vec4 v= setVec4(0.0f,0.0f,(float) h->dim[3]-1.0f);
     v = nifti_vect44mat44_mul(v, Q44); //after flip this voxel will be the origin
     mat33 mFlipZ;
     LOAD_MAT33(mFlipZ,1.0f, 0.0f, 0.0f, 0.0f,1.0f,0.0f, 0.0f,0.0f,-1.0f);
