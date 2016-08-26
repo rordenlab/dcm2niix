@@ -567,7 +567,7 @@ mat44 xform_mat(struct TDICOMdata d) {
         //reportMat44((char*)"iR44",R44);
 		return R44;
 	} else if (true) {
-//SliceNormalVector 666 TO DO
+//SliceNormalVector TO DO
 		printf("Not completed");
 		exit(2);
 		return R44;
