@@ -161,20 +161,6 @@ int is_dir(const char *pathname, int follow_link) {
         }
     }
 } //is_dir
-/*int is_dir(const char *pathname, int follow_link) {
-    //http://sources.gentoo.org/cgi-bin/viewvc.cgi/path-sandbox/trunk/libsbutil/get_tmp_dir.c?revision=260
-	struct stat buf;
-	int retval;
-	if ((NULL == pathname) || (0 == strlen(pathname)))
-		return 0;
-	retval = follow_link ? stat(pathname, &buf) : lstat(pathname, &buf);
-	if ((-1 != retval) && (S_ISDIR(buf.st_mode)))
-		return 1;
-	if ((-1 == retval) && (ENOENT != errno)) // Some or other error occurred
-		return -1;
-	return 0;
-} //is_dir()
-*/
 
 void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //0018,1312 phase encoding is either in row or column direction
@@ -203,26 +189,26 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     if (d->phaseEncodingRC== 'C')
         col = true;
     else if (d->phaseEncodingRC!= 'R') {
-        #ifdef myUseCOut
-     	std::cout<<"Error: Unable to determine DTI gradients, 0018,1312 should be either R or C" <<std::endl;
-    	#else
         printf("Error: Unable to determine DTI gradients, 0018,1312 should be either R or C");
-        #endif
         return;
     }
     if (abs(sliceDir) != 3)
-            #ifdef myUseCOut
-     	std::cout<<"GE DTI gradients only tested for axial acquisitions" <<std::endl;
-    	#else
-        printf("GE DTI gradients only tested for axial acquisitions");
-        #endif
-    //printf("GE row(0) or column(1) = %d",col);
-    #ifdef myUseCOut
-    std::cout<<"Reorienting "<< d->CSA.numDti << "GE DTI gradients. Please validate if you are conducting DTI analyses. isCol="<<col <<std::endl;
-    #else
-    printf("Reorienting %d GE DTI gradients. Please validate if you are conducting DTI analyses. isCol=%d\n", d->CSA.numDti, col);
-    #endif
-
+        printf("Warning: GE DTI only tested for axial acquisitions (solution: use Xiangrui Li's dicm2nii)\n");
+    //GE vectors from Xiangrui Li' dicm2nii, validated with datasets from https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
+	ivec3 flp;
+	if (abs(sliceDir) == 1)
+		flp = setiVec3(1, 1, 0); //SAGITTAL
+	else if (abs(sliceDir) == 2)
+		flp = setiVec3(0, 1, 1); //CORONAL
+	else if (abs(sliceDir) == 3)
+		flp = setiVec3(0, 0, 1); //AXIAL
+	else
+		printf("Impossible GE slice orientation!");
+	if (sliceDir < 0)
+    	flp.v[2] = 1 - flp.v[2];
+    printf("Reorienting %s : %d GE DTI vectors: please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->protocolName, d->CSA.numDti, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
+	if (!col)
+		printf(" reorienting for ROW phase-encoding untested.\n");
     for (int i = 0; i < d->CSA.numDti; i++) {
         float vLen = sqrt( (vx[i].V[1]*vx[i].V[1])
                           + (vx[i].V[2]*vx[i].V[2])
@@ -232,18 +218,30 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
                 vx[i].V[v] =0.0f;
             continue; //do not normalize or reorient b0 vectors
         }
-        vx[i].V[1] = -vx[i].V[1];
         if (!col) { //rows need to be swizzled
+        	//see Stanford dataset Ax_DWI_Tetrahedral_7 unable to resolve between possible solutions
+        	// http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
             float swap = vx[i].V[1];
-            vx[i].V[1] = -vx[i].V[2];
+            vx[i].V[1] = vx[i].V[2];
             vx[i].V[2] = swap;
+            vx[i].V[2] = -vx[i].V[2]; //because of transpose?
         }
-        if (sliceDir < 0)
-                vx[i].V[3] = -vx[i].V[3];
-        if (isSameFloat(vx[i].V[1],-0)) vx[i].V[1] = 0.0f;
-        if (isSameFloat(vx[i].V[2],-0)) vx[i].V[2] = 0.0f;
-        if (isSameFloat(vx[i].V[3],-0)) vx[i].V[3] = 0.0f;
+		for (int v = 0; v < 3; v++)
+			if (flp.v[v] == 1)
+				vx[i].V[v+1] = -vx[i].V[v+1];
+		vx[i].V[2] = -vx[i].V[2]; //we read out Y-direction opposite order as dicm2nii, see also opts.isFlipY
     }
+    //These next lines are only so files appear identical to old versions of dcm2niix:
+    //  dicm2nii and dcm2niix generate polar opposite gradient directions.
+    //  this does not matter, since intensity is the normal of the gradient vector.
+    for (int i = 0; i < d->CSA.numDti; i++)
+    	for (int v = 1; v < 4; v++)
+    		vx[i].V[v] = -vx[i].V[v];
+    //These next lines convert any "-0" values to "0"
+    for (int i = 0; i < d->CSA.numDti; i++)
+    	for (int v = 1; v < 4; v++)
+    		if (isSameFloat(vx[i].V[v],-0))
+    			vx[i].V[v] = 0.0f;
 } //geCorrectBvecs()
 
 void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
@@ -286,26 +284,17 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
         vx[i].V[1] = bvecs_new.v[0];
         vx[i].V[2] = -bvecs_new.v[1];
         vx[i].V[3] = bvecs_new.v[2];
-        if (sliceDir == kSliceOrientMosaicNegativeDeterminant) vx[i].V[2] = -vx[i].V[2];
+        if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) vx[i].V[2] = -vx[i].V[2];
         for (int v= 0; v < 4; v++)
             if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
     } //for each direction
 
-    #ifdef myUseCOut
-    if (sliceDir == kSliceOrientMosaicNegativeDeterminant)
-        std::cout<<"WARNING: please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal)."<<std::endl;
-    else if ( d->sliceOrient == kSliceOrientTra)
-    	std::cout<<"Saving "<<d->CSA.numDti<<" DTI gradients. Please validate if you are conducting DTI analyses."<<std::endl;
-    else
-    	std::cout<<"WARNING: DTI gradient directions only tested for axial (transverse) acquisitions. Please validate bvec files."<<std::endl;
-    #else
-    if (sliceDir == kSliceOrientMosaicNegativeDeterminant)
+    if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant)
        printf("WARNING: please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal).\n");
     else if ( d->sliceOrient == kSliceOrientTra)
         printf("Saving %d DTI gradients. Please validate if you are conducting DTI analyses.\n", d->CSA.numDti);
     else
         printf("WARNING: DTI gradient directions only tested for axial (transverse) acquisitions. Please validate bvec files.\n");
-	#endif
 } //siemensPhilipsCorrectBvecs()
 
 bool isNanPosition (struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
@@ -338,7 +327,7 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }
 
-void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, struct nifti_1_header *h) {
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
 // sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
@@ -465,7 +454,6 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
             firstB0 = i;
             break;
         }
-    //printf("2015ALPHA %d -> %d\n",numDti, nConvert);
     #ifdef myUseCOut
     if (firstB0 < 0)
     	std::cout<<"Warning: this diffusion series does not have a B0 (reference) volume"<<std::endl;
@@ -510,15 +498,9 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     } //if not a mosaic
     if (opts.isVerbose) {
         for (int i = 0; i < (numDti); i++) {
-#ifdef myUseCOut
-            std::cout<<i<<"\tB=\t"<<dcmList[indx0].CSA.dtiV[i][0]<<"\tVec=\t"<<
-            dcmList[indx0].CSA.dtiV[i][1]<<"\t"<<dcmList[indx0].CSA.dtiV[i][2]
-            <<"\t"<<dcmList[indx0].CSA.dtiV[i][3]<<std::endl;
-#else
             printf("%d\tB=\t%g\tVec=\t%g\t%g\t%g\n",i, vx[i].V[0],
                    vx[i].V[1],vx[i].V[2],vx[i].V[3]);
 
-#endif
         } //for each direction
     }
     //printf("%f\t%f\t%f",dcmList[indx0].CSA.dtiV[1][1],dcmList[indx0].CSA.dtiV[1][2],dcmList[indx0].CSA.dtiV[1][3]);
@@ -1495,17 +1477,16 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
 		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n");
-		//&& (sliceDir == kSliceOrientMosaicNegativeDeterminant)
-		sliceDir = -1;
-	}
+		//see https://github.com/neurolabusc/dcm2niix/issues/40
+		sliceDir = -1; //not sure how to handle negative determinants?
 
+	}
 	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
-        sliceDir = abs(sliceDir);
+        sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
 
-    //nii_SaveBIDS(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
-    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, sliceDir, dti4D, &hdr0);
+    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0);
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined

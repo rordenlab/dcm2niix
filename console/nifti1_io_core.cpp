@@ -63,6 +63,12 @@ int isSameFloat (float a, float b) {
     return (fabs (a - b) <= FLT_EPSILON);
 }
 
+ivec3 setiVec3(int x, int y, int z)
+{
+    ivec3 v = {x, y, z};
+    return v;
+}
+
 vec3 setVec3(float x, float y, float z)
 {
     vec3 v = {x, y, z};
@@ -390,13 +396,13 @@ mat44 nifti_quatern_to_mat44( float qb, float qc, float qd,
 {
     mat44 R ;
     double a,b=qb,c=qc,d=qd , xd,yd,zd ;
-    
+
     /* last row is always [ 0 0 0 1 ] */
-    
+
     R.m[3][0]=R.m[3][1]=R.m[3][2] = 0.0f ; R.m[3][3]= 1.0f ;
-    
+
     /* compute a parameter from b,c,d */
-    
+
     a = 1.0l - (b*b + c*c + d*d) ;
     if( a < 1.e-7l ){                   /* special case */
         a = 1.0l / sqrt(b*b+c*c+d*d) ;
@@ -405,15 +411,15 @@ mat44 nifti_quatern_to_mat44( float qb, float qc, float qd,
     } else{
         a = sqrt(a) ;                     /* angle = 2*arccos(a) */
     }
-    
+
     /* load rotation matrix, including scaling factors for voxel sizes */
-    
+
     xd = (dx > 0.0) ? dx : 1.0l ;       /* make sure are positive */
     yd = (dy > 0.0) ? dy : 1.0l ;
     zd = (dz > 0.0) ? dz : 1.0l ;
-    
+
     if( qfac < 0.0 ) zd = -zd ;         /* left handedness? */
-    
+
     R.m[0][0] = (float)( (a*a+b*b-c*c-d*d) * xd) ;
     R.m[0][1] = 2.0l * (b*c-a*d        ) * yd ;
     R.m[0][2] = 2.0l * (b*d+a*c        ) * zd ;
@@ -423,11 +429,11 @@ mat44 nifti_quatern_to_mat44( float qb, float qc, float qd,
     R.m[2][0] = 2.0l * (b*d-a*c        ) * xd ;
     R.m[2][1] = 2.0l * (c*d+a*b        ) * yd ;
     R.m[2][2] = (float)( (a*a+d*d-c*c-b*b) * zd) ;
-    
+
     /* load offsets */
-    
+
     R.m[0][3] = qx ; R.m[1][3] = qy ; R.m[2][3] = qz ;
-    
+
     return R ;
 }
 

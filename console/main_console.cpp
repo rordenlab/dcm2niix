@@ -106,7 +106,14 @@ int main(int argc, const char * argv[])
      //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
 	 strcpy(opts.indir, "e:\\t1s");
 #else
-    printf("Chris Rorden's dcm2niiX version %s (%llu-bit)\n",kDCMvers, (unsigned long long) sizeof(size_t)*8);
+	#if defined(__APPLE__)
+		#define kOS "MacOS"
+	#elif (defined(__linux) || defined(__linux__))
+		#define kOS "Linux"
+	#else
+		#define kOS "Windows"
+	#endif
+    printf("Chris Rorden's dcm2niiX version %s (%llu-bit %s)\n",kDCMvers, (unsigned long long) sizeof(size_t)*8, kOS);
     if (argc < 2) {
         showHelp(argv, opts);
         return 0;

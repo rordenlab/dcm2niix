@@ -410,16 +410,16 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
         for (int i = 0; i < 4; i++)
             R->m[i][2] = -R->m[i][2];
     }
-#ifdef MY_DEBUG
-    printf("verify slice dir %d %d %d\n",h->dim[1],h->dim[2],h->dim[3]);
-    reportMat44((char*)"Rout",*R);
-    printf("iSL = %d\n",iSL);
-    printf(" pos1 = %f\n",pos1);
-#endif
     if (flip)
-        return -iSL;
-    else
-        return iSL;
+        iSL = -iSL;
+	#ifdef MY_DEBUG
+    printf("verify slice dir %d %d %d\n",h->dim[1],h->dim[2],h->dim[3]);
+    //reportMat44((char*)"Rout",*R);
+    printf("flip = %d\n",flip);
+    printf("sliceDir = %d\n",iSL);
+    printf(" pos1 = %f\n",pos1);
+	#endif
+	return iSL;
 } //verify_slice_dir()
 
 mat44 noNaN(mat44 Q44) //simplify any headers that have NaN values
@@ -462,6 +462,8 @@ void setQSForm(struct nifti_1_header *h, mat44 Q44i) {
     nifti_mat44_to_quatern( Q44 , &h->quatern_b, &h->quatern_c, &h->quatern_d,&h->qoffset_x, &h->qoffset_y, &h->qoffset_z, &dumdx, &dumdy, &dumdz,&h->pixdim[0]) ;
     h->qform_code = NIFTI_XFORM_SCANNER_ANAT;
 } //setQSForm()
+
+#ifdef my_unused
 
 ivec3 maxCol(mat33 R) {
 //return index of maximum column in 3x3 matrix, e.g. [1 0 0; 0 1 0; 0 0 1] -> 1,2,3
@@ -585,9 +587,10 @@ mat44 set_nii_header(struct TDICOMdata d) {
     reportMat44((char*)"R44",R);
 	#endif
 }
+#endif
 
 // This code predates  Xiangrui Li's set_nii_header function
-mat44 set_nii_header_old(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir) {
+mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir) {
     *sliceDir = 0;
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
     if (d.CSA.mosaicSlices > 1) {
@@ -643,7 +646,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
             printf("Unable to determine spatial orientation: 0020,0037 missing!\n");
     }
     //mat44 Q44 = set_nii_header(d);
-    mat44 Q44 = set_nii_header_old(d, d2, h, &sliceDir);
+    mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
     setQSForm(h,Q44);
     return sliceDir;
 } //headerDcm2NiiSForm()
@@ -3131,6 +3134,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     	d.CSA.mosaicSlices = (d.xyzDim[1] / phaseEncodingSteps) * (d.xyzDim[2] / phaseEncodingSteps);
     	printf("Warning: mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
     }
+    if ((d.manufacturer == kMANUFACTURER_GE) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
+		strcpy(d.protocolName, d.seriesDescription);
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
     if ((strlen(d.protocolName) < 1) && (strlen(d.sequenceName) > 1))
