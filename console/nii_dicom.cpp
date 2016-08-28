@@ -851,15 +851,15 @@ float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//r
     float retVal;
     memcpy(&retVal, (char*)&lBuffer[0], 4);
     if (!swap) return retVal;
-    char *floatToConvert = ( char* ) & lBuffer;
-    char *returnFloat = ( char* ) & retVal;
-    //swap the bytes into a temporary buffer
-    returnFloat[0] = floatToConvert[3];
-    returnFloat[1] = floatToConvert[2];
-    returnFloat[2] = floatToConvert[1];
-    returnFloat[3] = floatToConvert[0];
-    //printf("swapped val = %f\n",retVal);
-    return retVal;
+    float swapVal;
+    char *inFloat = ( char* ) & retVal;
+    char *outFloat = ( char* ) & swapVal;
+    outFloat[0] = inFloat[3];
+    outFloat[1] = inFloat[2];
+    outFloat[2] = inFloat[1];
+    outFloat[3] = inFloat[0];
+    //printf("swapped val = %f\n",swapVal);
+    return swapVal;
 } //dcmFloat()
 
 double dcmFloatDouble(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
@@ -1309,12 +1309,6 @@ bool isFloatDiff (float a, float b) {
     return (fabs (a - b) > FLT_EPSILON);
 } //isFloatDiff()
 
-ivec3 setVec3i(int x, int y, int z)
-{
-    ivec3 v = {x, y, z};
-    return v;
-} //setVec3i()
-
 mat33 nifti_mat33_reorder_cols( mat33 m, ivec3 v ) {
     // matlab equivalent ret = m(:, v); where v is 1,2,3 [INDEXED FROM ONE!!!!]
     mat33 ret;
@@ -1613,14 +1607,14 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     LOAD_MAT33(rz, ca.v[2], -sa.v[2], 0.0f, sa.v[2], ca.v[2], 0.0f, 0.0f, 0.0f, 1.0f);
     mat33 R = nifti_mat33_mul( rx,ry );
     R = nifti_mat33_mul( R,rz);
-    ivec3 ixyz = setVec3i(1,2,3);
+    ivec3 ixyz = setiVec3(1,2,3);
     if (d.sliceOrient == kSliceOrientSag) {
-        ixyz = setVec3i(2,3,1);
+        ixyz = setiVec3(2,3,1);
         for (int r = 0; r < 3; r++)
             for (int c = 0; c < 3; c++)
                 if (c != 1) R.m[r][c] = -R.m[r][c]; //invert first and final columns
     }else if (d.sliceOrient == kSliceOrientCor) {
-        ixyz = setVec3i(1,3,2);
+        ixyz = setiVec3(1,3,2);
         for (int r = 0; r < 3; r++)
             R.m[r][2] = -R.m[r][2]; //invert rows of final column
     }
@@ -2491,7 +2485,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //#define  kObjectGraphics  0x0029+(0x1210 << 16 )    //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
 #define  kRealWorldIntercept  0x0040+uint32_t(0x9224 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
-
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
@@ -2961,6 +2954,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                         dti4D->S[0].V[2] = d.CSA.dtiV[2];
                         dti4D->S[0].V[3] = d.CSA.dtiV[3];
                     }
+
                     d.CSA.dtiV[0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
                     if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
                         dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
@@ -3134,6 +3128,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     	d.CSA.mosaicSlices = (d.xyzDim[1] / phaseEncodingSteps) * (d.xyzDim[2] / phaseEncodingSteps);
     	printf("Warning: mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
     }
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
+    	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
     if ((d.manufacturer == kMANUFACTURER_GE) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
 		strcpy(d.protocolName, d.seriesDescription);
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
@@ -3151,6 +3147,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     if (isVerbose) {
         printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
+        if (d.CSA.dtiV[0] > 0)
+        	printf(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
     if (d.CSA.numDti >= kMaxDTI4D) {
         printf("Error: unable to convert DTI [increase kMaxDTI4D]\n");

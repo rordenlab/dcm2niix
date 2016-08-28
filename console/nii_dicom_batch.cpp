@@ -744,6 +744,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         } //found a % character
         pos++;
     } //for each character in input
+    if (pos > start) { //append any trailing characters
+        strncpy(&newstr[0], &inname[0] + start, pos - start);
+        newstr[pos - start] = '\0';
+        strcat (outname,newstr);
+    }
     if (!isCoilReported && (dcm.coilNum > 1)) {
         sprintf(newstr, "_c%d", dcm.coilNum);
         strcat (outname,newstr);
@@ -754,11 +759,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     }
     if (dcm.isHasPhase)
     	strcat (outname,"_ph"); //manufacturer name not available
-    if (pos > start) { //append any trailing characters
-        strncpy(&newstr[0], &inname[0] + start, pos - start);
-        newstr[pos - start] = '\0';
-        strcat (outname,newstr);
-    }
+    //printf("%s -> %s\n", inname, outname);
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
@@ -1604,32 +1605,32 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
     if (isForceStackSameSeries) return true; //we will stack these images, even if they differ in the following attributes
     if (!isSameFloatDouble(d1.dateTime, d2.dateTime)) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
-    		printf("slices not stacked: Study Data/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+    		printf("slices not stacked: Study Data/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f ('-m y' to force stacking)\n", d1.dateTime, d2.dateTime);
     	warnings->dateTimeVaries = true;
     	return false;
     }
     if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
         if (!warnings->echoVaries)
-        	printf("slices not stacked: echo varies (TE %g, %g; echo %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        	printf("slices not stacked: echo varies (TE %g, %g; echo %d, %d). ('-m y' to force stacking)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         warnings->echoVaries = true;
         return false;
     }
     if (d1.coilNum != d2.coilNum) {
         if (!warnings->coilVaries)
-        	printf("slices not stacked: coil varies\n");
+        	printf("slices not stacked: coil varies ('-m y' to force stacking)\n");
         warnings->coilVaries = true;
         return false;
     }
     if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
         if ((!warnings->nameVaries))
-        	printf("slices not stacked: protocol name varies\n");
+        	printf("slices not stacked: protocol name varies ('-m y' to force stacking)\n");
         warnings->nameVaries = true;
         return false;
     }
     if ((!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) ||  !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
     		!isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) ||  !isSameFloatGE(d1.orient[6], d2.orient[6]) ) ) {
         if (!warnings->orientVaries)
-        	printf("slices not stacked: orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
+        	printf("slices not stacked: orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g] ('-m y' to force stacking)\n",
                d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6],
                d2.orient[1], d2.orient[2], d2.orient[3],d2.orient[4], d2.orient[5], d2.orient[6]);
         warnings->orientVaries = true;
