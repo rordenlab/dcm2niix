@@ -1476,8 +1476,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if (hdr0.dim[3] > 1)
         sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
-	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
-		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n");
+	if ((dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) && (hdr0.dim[3] > 1)) { //only report warning for 3D images, not localizers (which already generate a warning since they can not be stacked)
+		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber=%d': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n", dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1);
 		//see https://github.com/neurolabusc/dcm2niix/issues/40
 		sliceDir = -1; //not sure how to handle negative determinants?
 
