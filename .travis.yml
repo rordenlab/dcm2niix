@@ -13,6 +13,6 @@ matrix:
       env: TARGET=osx
 
 before_install:
- - "if [ ${TRAVIS_OS_NAME} = 'osx' ]; then brew update && brew install pkg-config yaml-cpp cmake; fi"
+ - "if [ ${TRAVIS_OS_NAME} = 'osx' ]; then brew update && brew install pkg-config yaml-cpp; fi"
 script:
   - mkdir build && cd build && cmake -DBATCH_VERSION=ON .. && make
