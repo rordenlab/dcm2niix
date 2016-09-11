@@ -7,4 +7,4 @@ matrix:
     - os: osx
       env: TARGET=osx
 script:
-  - mkdir build && cd build && cmake .. && make
+  - mkdir build && cd build && cmake -DBATCH_VERSION=ON .. && make
