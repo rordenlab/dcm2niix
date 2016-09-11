@@ -4,10 +4,11 @@ environment:
   matrix:
     - TARGET: windows
 
-build:
+build: off
+
+test_script:
   - cmd: cd console
   - cmd: cl /EHsc main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -DmyDisableOpenJPEG -DmyDisableJasper /odcm2niix
-
 
 before_deploy:
   # Generate artifacts for release
