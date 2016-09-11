@@ -4,19 +4,9 @@ environment:
   matrix:
     - TARGET: windows
 
-install:
-  - ps: wget https://s3.amazonaws.com/biibinaries/thirdparty/cmake-3.0.2-win32-x86.zip -OutFile cmake.zip
-  - cmd: echo "Unzipping cmake..."
-  - cmd: 7z x cmake.zip -o"C:\Program Files (x86)\" -y > nul
-  - cmd: set PATH=%PATH:CMake 2.8\bin=%;C:\Program Files (x86)\cmake-3.0.2-win32-x86\bin
-  - cmd: cmake --version
-  - cmd: del cmake.zip
-
 test_script:
-  - cmd: mkdir build
-  - cmd: cd build
-  - cmd: cmake ..
-  - cmd: make
+  - cmd: cd console
+  - cmd: cl /EHsc main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -DmyDisableOpenJPEG -DmyDisableJasper /odcm2niix
 
 before_deploy:
   # Generate artifacts for release
