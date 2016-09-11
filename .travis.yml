@@ -4,6 +4,14 @@ matrix:
     # Stable channel
     - os: linux
       env: TARGET=linux
+      dist: trusty
+      addons:
+        apt:
+          packages:
+            - pkg-config
+            - libyaml-cpp-dev
+            - libyaml-cpp0.5
+            - cmake
     - os: osx
       env: TARGET=osx
 script:
