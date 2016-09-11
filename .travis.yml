@@ -15,7 +15,10 @@ matrix:
 before_install:
  - "if [ ${TRAVIS_OS_NAME} = 'osx' ]; then brew update && brew install yaml-cpp; fi"
 script:
-  - mkdir build && cd build && cmake -DBATCH_VERSION=ON .. && make
+  - mkdir build && cd build && cmake -DBATCH_VERSION=ON .. && make && cd -
+
+before_deploy:
+  - zip ${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.zip build/bin/dcm2niibatch build/bin/dcm2niix
 
 deploy:
   provider: releases
