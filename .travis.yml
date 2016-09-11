@@ -8,7 +8,7 @@ matrix:
       sudo: required
       addons:
         apt:
-          packages: pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake
+          packages: pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake libboost-dev
     - os: osx
       env: TARGET=osx
 
