@@ -117,7 +117,7 @@ e.g. the dependencies can be installed as follows:
 
 Ubuntu 14.04
 ```
-sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake
+sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake libboost-dev
 ```
 OSX
 ```
@@ -232,10 +232,10 @@ wxWdigets makefiles are pretty complex and specific for your operating system. F
  rename 's/\.c$/\.cpp/' *
  g.) edit the /samples/clipboard makefile: Add "nii_dicom.o nifti1_io_core.o nii_ortho.o nii_dicom_batch.o \" to CLIPBOARD_OBJECTS:
 CLIPBOARD_OBJECTS =  \
-	nii_dicom.o nifti1_io_core.o nii_ortho.o nii_dicom_batch.o \
-	$(__clipboard___win32rc) \
-	$(__clipboard_os2_lib_res) \
-	clipboard_clipboard.o
+  nii_dicom.o nifti1_io_core.o nii_ortho.o nii_dicom_batch.o \
+  $(__clipboard___win32rc) \
+  $(__clipboard_os2_lib_res) \
+  clipboard_clipboard.o
  h.) edit the /samples/clipboard makefile: With wxWidgets we will capture std::cout comments, not printf, so we need to add "-DDmyUseCOut" to CXXFLAGS:
 CXXFLAGS = -DmyUseCOut -DWX_PRECOMP ....
  i.) For a full refresh
