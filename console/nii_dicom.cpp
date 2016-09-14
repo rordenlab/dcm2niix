@@ -2242,6 +2242,8 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     //return decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
     unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
     //printf("JPEG %fms\n", ((double)(clock()-start))/1000);
+    if (hdr.dim[3] != frames)
+        printf("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
     return ret;
 }
 
