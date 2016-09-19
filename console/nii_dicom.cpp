@@ -1212,6 +1212,7 @@ float dcmStrFloat (int lByteLength, unsigned char lBuffer[]) { //read float stor
 
 int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     //printf("bytes %dx%dx%d %d, %d\n",d.XYZdim[1],d.XYZdim[2],d.XYZdim[3], d.Allocbits_per_pixel, d.samplesPerPixel);
+    memset(h, 0, sizeof(nifti_1_header)); //zero-fill structure so unused items are consistent
     for (int i = 0; i < 80; i++) h->descrip[i] = 0;
     for (int i = 0; i < 24; i++) h->aux_file[i] = 0;
     for (int i = 0; i < 18; i++) h->db_name[i] = 0;
@@ -1240,7 +1241,6 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
 #else
         printf("Unsupported DICOM bit-depth %d with %d samples per pixel\n",d.bitsAllocated,d.samplesPerPixel);
 #endif
-
         return EXIT_FAILURE;
     }
     if ((h->datatype == DT_UINT16) && (d.bitsStored > 0) &&(d.bitsStored < 16))
@@ -1249,7 +1249,13 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
         h->pixdim[i] = 0.0f;
         h->dim[i] = 0;
     }
-    h->regular = 114;
+    //next items listed as unused in NIfTI format, but zeroed for consistency across runs
+	h->extents = 0;
+    h->session_error = 0;
+    h->glmin = 0; //unused, but make consistent
+    h->glmax = 0; //unused, but make consistent
+    h->regular = 114; //in legacy Analyze this was always 114
+    //these are important
     h->scl_inter = d.intenIntercept;
     h->scl_slope = d.intenScale;
     h->cal_max = 0;
@@ -1327,7 +1333,6 @@ void changeExt (char *file_name, const char* ext) {
         strcpy(++p_extension, ext);
     }
 } //changeExt()
-
 
 float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
     if ((lRS*lSS) == 0) //avoid divide by zero

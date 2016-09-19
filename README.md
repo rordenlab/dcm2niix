@@ -8,7 +8,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-28-Aug-2016
+18-Sept-2016
  - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
  - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
@@ -17,6 +17,7 @@ This software is open source. The bulk of the code is covered by the BSD license
  - GE: Locations In Acquisition (0054, 0081) is inaccurate if slices are interpolated, use Images In Acquisition (0020,1002) if available
  - New filename options %d Series description (0008,103E), %z Sequence Name (0018,0024)
  - New filename options %a antenna (coil) number, %e echo number
+ - Initialize unused portions of NIfTI header to zero so multiple runs always produce identical results
 
 
 5-May-2016

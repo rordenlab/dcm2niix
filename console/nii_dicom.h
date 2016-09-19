@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "28Aug2016j" //JASPER for JPEG2000
+    #define kDCMvers "18Sept2016j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "28Aug2016" //no decompressor
+    #define kDCMvers "18Sept2016" //no decompressor
 	#else
-    #define kDCMvers "28Aug2016o" //OPENJPEG for JPEG2000
+    #define kDCMvers "18Sept2016o" //OPENJPEG for JPEG2000
     #endif
 #endif
 

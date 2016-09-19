@@ -1346,7 +1346,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     bool saveAs3D = dcmList[indx].isHasPhase;
-    struct nifti_1_header hdr0;
+    struct nifti_1_header hdr0 = { 0 }; //zero-fill structure so unused items are consistent
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag);
     if ( (dcmList[indx0].compressionScheme != kCompressNone) && (opts.compressFlag != kCompressNone))
         printf("Image Decompression is new: please validate conversions\n");
