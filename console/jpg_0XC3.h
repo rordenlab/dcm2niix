@@ -14,7 +14,7 @@
 extern "C" {
 #endif
     
-unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames);
+unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames, int diskBytes);
 
 #ifdef  __cplusplus
 }

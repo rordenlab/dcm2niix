@@ -1694,6 +1694,15 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 
     return d;
 } //nii_readParRec()
+                    
+size_t nii_SliceBytes(struct nifti_1_header hdr) {
+    //size of 2D slice
+    size_t imgsz = hdr.bitpix/8;
+    for (int i = 1; i < 3; i++)
+        if (hdr.dim[i]  > 1)
+            imgsz = imgsz * hdr.dim[i];
+    return imgsz;
+} //nii_ImgBytes()
 
 size_t nii_ImgBytes(struct nifti_1_header hdr) {
     size_t imgsz = hdr.bitpix/8;
@@ -2239,16 +2248,85 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
     return img;
 } //nii_loadImgCoreJasper()
 #endif
+        
+struct TJPEG {
+    long offset;
+    long size;
+};
 
-unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
-    //printf("offset %d\n", dcm.imageStart);
+TJPEG *  decode_JPEG_SOF_0XC3_stack (const char *fn, int skipBytes, bool isVerbose, int frames, bool isLittleEndian) {
+#define abortGoto() free(lOffsetRA); return NULL;
+    TJPEG *lOffsetRA = (TJPEG*) malloc(frames * sizeof(TJPEG));
+    FILE *reader = fopen(fn, "rb");
+    fseek(reader, 0, SEEK_END);
+    long lRawSz = ftell(reader)- skipBytes;
+    if (lRawSz <= 8) {
+        printf("Error opening %s\n", fn);
+        abortGoto(); //read failure
+    }
+    fseek(reader, skipBytes, SEEK_SET);
+    unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
+    fread(lRawRA, 1, lRawSz, reader);
+    fclose(reader);
+    long lRawPos = 0; //starting position
+    int frame = 0;
+    while ((frame < frames) && ((lRawPos+10) < lRawSz)) {
+        int tag = dcmInt(4,&lRawRA[lRawPos],isLittleEndian);
+        lRawPos += 4; //read tag
+        int tagLength = dcmInt(4,&lRawRA[lRawPos],isLittleEndian);
+        long tagEnd =lRawPos + tagLength + 4;
+        if (isVerbose)
+            printf("Tag %#x length %d end at %ld\n", tag, tagLength, tagEnd+skipBytes);
+        lRawPos += 4; //read tag length
+        if ((lRawRA[lRawPos] != 0xFF) || (lRawRA[lRawPos+1] != 0xD8) || (lRawRA[lRawPos +2] != 0xFF)) {
+            if (isVerbose)
+                printf("Warning: JPEG signature 0xFFD8FF not found at offset %d of %s\n", skipBytes, fn);
+        } else {
+            lOffsetRA[frame].offset = lRawPos+skipBytes;
+            lOffsetRA[frame].size = tagLength;
+            frame ++;
+        }
+        lRawPos = tagEnd;
+    }
+    free(lRawRA);
+    if (frame < frames) {
+        printf("Only found %d of %d JPEG fragments. Please use dcmdjpeg to uncompress data.\n", frame, frames);
+        abortGoto();
+    }
+    return lOffsetRA;
+}
+
+unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, bool isVerbose) {
+    //arcane and inefficient lossless compression method popularized by dcmcjpeg, examples at http://www.osirix-viewer.com/resources/dicom-image-library/
     int dimX, dimY, bits, frames;
     //clock_t start = clock();
-    //return decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
-    unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, false, &dimX, &dimY, &bits, &frames);
+    unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, isVerbose, &dimX, &dimY, &bits, &frames, 0);
     //printf("JPEG %fms\n", ((double)(clock()-start))/1000);
-    if (hdr.dim[3] != frames)
-        printf("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
+    if (hdr.dim[3] != frames) { //multi-slice image saved as multiple image fragments rather than a single image
+        //printf("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
+        if (ret != NULL) free(ret);
+        TJPEG * offsetRA = decode_JPEG_SOF_0XC3_stack (imgname, dcm.imageStart-8, isVerbose, hdr.dim[3], dcm.isLittleEndian);
+        if (offsetRA == NULL) return NULL;
+        size_t slicesz = nii_SliceBytes(hdr);
+        size_t imgsz = slicesz * hdr.dim[3];
+        size_t pos = 0;
+        unsigned char *bImg = (unsigned char *)malloc(imgsz);
+        for (int frame = 0; frame < hdr.dim[3]; frame++) {
+            if (isVerbose)
+                printf("JPEG frame %d has %ld bytes @ %ld\n", frame, offsetRA[frame].size, offsetRA[frame].offset);
+            unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, (int)offsetRA[frame].offset, false, &dimX, &dimY, &bits, &frames, (int)offsetRA[frame].size);
+            if (ret == NULL) {
+                printf("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
+                free(bImg);
+                return NULL;
+            }
+            memcpy(&bImg[pos], ret, slicesz); //dest, src, size
+            free(ret);
+            pos += slicesz;
+        }
+        free(offsetRA);
+        return bImg;
+    }
     return ret;
 }
 
@@ -2289,15 +2367,14 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
     return bImg;
 }
 
-
-unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag) {
+unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
     if (dcm.compressionScheme == kCompress50)  {
         img = nii_loadImgJPEG50(imgname, *hdr, dcm);
     } else if (dcm.compressionScheme == kCompressC3) {
-            img = nii_loadImgJPEGC3(imgname, *hdr, dcm);
+            img = nii_loadImgJPEGC3(imgname, *hdr, dcm, (isVerbose > 0));
     } else
     #ifndef myDisableOpenJPEG
     if ( ((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone) )

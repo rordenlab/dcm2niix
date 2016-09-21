@@ -101,12 +101,15 @@ int decodePixelDifference(unsigned char *lRawRA, long *lRawPos, int *lCurrentBit
     return lDiff;
 } //end decodePixelDifference()
 
-unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames) {
+unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames, int diskBytes) {
+    //decompress JPEG image named "fn" where image data is located skipBytes into file. diskBytes is compressed size of image (set to 0 if unknown)
     #define abortGoto() free(lRawRA); return NULL;
     unsigned char *lImgRA8 = NULL;
     FILE *reader = fopen(fn, "rb");
     fseek(reader, 0, SEEK_END);
     long lRawSz = ftell(reader)- skipBytes;
+    if ((diskBytes > 0) and (diskBytes < lRawSz)) //only if diskBytes is known and does not exceed length of file
+        lRawSz = diskBytes;
     if (lRawSz <= 8) {
         printf("Error opening %s\n", fn);
         return NULL; //read failure
@@ -119,8 +122,11 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         printf("Error: JPEG signature 0xFFD8FF not found at offset %d of %s\n", skipBytes, fn);
         abortGoto();//goto abortGoto; //signature failure http://en.wikipedia.org/wiki/List_of_file_signatures
     }
+    if (verbose)
+        printf("JPEG signature 0xFFD8FF found at offset %d of %s\n", skipBytes, fn);
     //next: read header
     long lRawPos = 2; //Skip initial 0xFFD8, begin with third byte
+    //long lRawPos = 0; //Skip initial 0xFFD8, begin with third byte
     unsigned char btS1, btS2, SOSss, SOSse, SOSahal, SOSpttrans, btMarkerType, SOSns = 0x00; //tag
     uint8_t SOFnf, SOFprecision;
     uint16_t SOFydim, SOFxdim; //, lRestartSegmentSz;
@@ -286,8 +292,6 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             l[lFrameCount].LookUpRA[lInc] = 255; //Impossible value for SSSS, suggests 8-bits can not describe answer
     }
     //NEXT: fill lookuptable
-
-    
     for (int lFrameCount = 1; lFrameCount <= lnHufTables; lFrameCount ++) {
         int lIncY = 0;
         for (int lSz = 1; lSz <= 8; lSz ++) { //set the huffman lookup table for keys with lengths <=8
@@ -487,6 +491,8 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     *dimX = SOFxdim;
     *dimY = SOFydim;
     *frames = SOFnf;
+    if (verbose)
+        printf("JPEG ends %ld@%ld\n", lRawPos, lRawPos+skipBytes);
     return lImgRA8;
 } //end decode_JPEG_SOF_0XC3()
 

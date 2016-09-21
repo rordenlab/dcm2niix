@@ -8,7 +8,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-18-Sept-2016
+21-Sept-2016
  - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
  - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
@@ -18,6 +18,7 @@ This software is open source. The bulk of the code is covered by the BSD license
  - New filename options %d Series description (0008,103E), %z Sequence Name (0018,0024)
  - New filename options %a antenna (coil) number, %e echo number
  - Initialize unused portions of NIfTI header to zero so multiple runs always produce identical results
+ - Supports 3D lossless JPEG saved as [multiple fragments](http://www.nitrc.org/forum/forum.php?thread_id=5872&forum_id=4703)
 
 
 5-May-2016

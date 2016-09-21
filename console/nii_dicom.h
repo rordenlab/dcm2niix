@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #ifdef myEnableJasper
-    #define kDCMvers "18Sept2016j" //JASPER for JPEG2000
+    #define kDCMvers "21Sept2016j" //JASPER for JPEG2000
 #else
 	#ifdef myDisableOpenJPEG
-    #define kDCMvers "18Sept2016" //no decompressor
+    #define kDCMvers "21Sept2016" //no decompressor
 	#else
-    #define kDCMvers "18Sept2016o" //OPENJPEG for JPEG2000
+    #define kDCMvers "21Sept2016o" //OPENJPEG for JPEG2000
     #endif
 #endif
 
@@ -76,7 +76,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
 
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h);
     //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
-    unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag);
+    unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose);
     //int foo (float vx);
 #ifdef  __cplusplus
 }
