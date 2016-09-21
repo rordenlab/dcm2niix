@@ -997,11 +997,7 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
             max16 = img16[i];
     //printf("max16= %d vox=%d %fms\n",max16, nVox, ((double)(clock()-start))/1000);
     if (max16 > 32767)
-            #ifdef myUseCOut
-    	std::cout<<"Note: intensity range requires saving as rare 16-bit UNSIGNED integer. Subsequent tools may require 32-bit conversion"<<std::endl;
-		#else
-        printf("Note: intensity range requires saving as rare 16-bit UNSIGNED integer. Subsequent tools may require 32-bit conversion\n");
-    	#endif
+        printf("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
     else
         hdr->datatype = DT_INT16;
 } //nii_check16bitUnsigned()
@@ -1347,8 +1343,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
-    if ( (dcmList[indx0].compressionScheme != kCompressNone) && (opts.compressFlag != kCompressNone))
-        printf("Image Decompression is new: please validate conversions\n");
     if (opts.isVerbose)
     #ifdef myUseCOut
     	std::cout<<"Converting "<<nameList->str[indx]<<std::endl;
@@ -1591,7 +1585,7 @@ TWarnings setWarnings() {
 }
 
 bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSameSeries,struct TWarnings* warnings) {
-    //returns true if d1 and d2 should be stacked together as a signle output
+    //returns true if d1 and d2 should be stacked together as a single output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
     if  (d1.seriesNum != d2.seriesNum) return false;
@@ -2041,6 +2035,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
     struct TDTI4D dti4D;
     int nConvertTotal = 0;
+    bool compressionWarning = false;
     for (int i = 0; i < nDcm; i++ ) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
         if (dcmList[i].CSA.numDti > 1) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
@@ -2051,6 +2046,10 @@ int nii_loadDir (struct TDCMopts* opts) {
             saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
             nConvertTotal++;
         }
+    	if ((dcmList[i].compressionScheme != kCompressNone) && (!compressionWarning) && (opts->compressFlag != kCompressNone)) {
+    		compressionWarning = true; //generate once per conversion rather than once per image
+        	printf("Image Decompression is new: please validate conversions\n");
+    	}
     }
     //3: stack DICOMs with the same Series
     for (int i = 0; i < nDcm; i++ ) {
