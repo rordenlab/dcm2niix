@@ -8,6 +8,9 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
+29-Sept-2016
+ - Save ImageType (0x0008,0x0008) to BIDS.
+
 21-Sept-2016
  - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
  - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
