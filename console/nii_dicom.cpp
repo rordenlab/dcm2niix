@@ -713,6 +713,7 @@ struct TDICOMdata clear_dicom_data() {
     d.sliceOrient = kSliceOrientUnknown;
     strcpy(d.patientName, "John_Doe");
     strcpy(d.patientID, "ID123");
+    strcpy(d.imageType,"ORIGINAL");
     strcpy(d.imageComments, "imgComments");
     strcpy(d.studyDate, "1/1/1977");
     strcpy(d.studyTime, "11:11:11");
@@ -1694,7 +1695,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 
     return d;
 } //nii_readParRec()
-                    
+
 size_t nii_SliceBytes(struct nifti_1_header hdr) {
     //size of 2D slice
     size_t imgsz = hdr.bitpix/8;
@@ -2248,7 +2249,7 @@ unsigned char * nii_loadImgCoreJasper(char* imgname, struct nifti_1_header hdr, 
     return img;
 } //nii_loadImgCoreJasper()
 #endif
-        
+
 struct TJPEG {
     long offset;
     long size;
@@ -2768,16 +2769,15 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 }
                 break;} //{} provide scope for variable 'transferSyntax
             case kImageTypeTag:
-            	char typestr[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], typestr);
+            	dcmStr (lLength, &buffer[lPos], d.imageType);
                 int slen;
-                slen = (int) strlen(typestr);
+                slen = (int) strlen(d.imageType);
 				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
-                if((slen > 5) && !strcmp(typestr + slen - 6, "MOSAIC") )
+                if((slen > 5) && !strcmp(d.imageType + slen - 6, "MOSAIC") )
                 	isMosaic = true;
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
-                if((slen > 6) && (strstr(typestr, "DERIVED") != NULL) )
+                if((slen > 6) && (strstr(d.imageType, "DERIVED") != NULL) )
                 	d.isNonImage = true;
                 //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )
                 //	d.isNonImage = true;
