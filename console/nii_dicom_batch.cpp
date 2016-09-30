@@ -739,6 +739,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 sprintf(newstr, "%0.0f", dcm.dateTime);
                 strcat (outname,newstr);
             }
+            if (f == 'U') {
+              sprintf(newstr, "%d", dcm.acquNum);
+              strcat (outname,newstr);
+            }
             if (f == 'Z')
                 strcat (outname,dcm.sequenceName);
             start = pos + 1;
