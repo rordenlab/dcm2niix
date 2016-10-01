@@ -49,6 +49,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <sstream>
+#include <ostream>
+#include <iterator>
 #include <sys/stat.h>
 #ifdef myEnableOtsu
 #include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
@@ -63,6 +69,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+using namespace std;
 
 //gcc -O3 -o main main.c nii_dicom.c
 #if defined(_WIN64) || defined(_WIN32)
@@ -356,7 +363,27 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 						break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
-	if (strlen(d.imageType) > 0) fprintf(fp, "\t\"ImageType\": \"%s\",\n", d.imageType );
+  bool first = 1;
+  if (strlen(d.imageType) > 0) {
+      //split the string by '_'
+      stringstream image_type = stringstream(d.imageType);
+      string segment;
+      vector<std::string> seglist;
+      while(getline(image_type, segment, '_'))
+      {
+       seglist.push_back("\"" + segment + "\"");
+      }
+
+      fprintf(fp, "\t\"ImageType\": [");
+      for(vector<string>::iterator it=seglist.begin() ; it < seglist.end(); it++) {
+        if (!first)
+          fprintf(fp, ", ");
+        else
+          first = 0;
+        fprintf(fp, "%s", (*it).c_str() );
+      }
+      fprintf(fp, "],\n");
+  }
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
 	if (d.flipAngle > 0.0) fprintf(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
@@ -371,7 +398,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
-	bool first = 1;
+	first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < kMaxDTI4D; i++) {
