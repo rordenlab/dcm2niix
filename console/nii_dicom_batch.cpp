@@ -355,8 +355,26 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 						fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 						break;
 	};
-	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
-	if (strlen(d.imageType) > 0) fprintf(fp, "\t\"ImageType\": \"%s\",\n", d.imageType );
+	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );a
+  bool first = 1;
+  char *saveptr, *subtoken, *str1;
+  const char sep = '_';
+  if (strlen(d.imageType) > 0) {
+      fprintf(fp, "\t\"ImageType\": [");
+      for (str1 = d.imageType; ; str1 = NULL ) {
+         subtoken = strtok_r(str1, &sep, &saveptr);
+         printf("%s", subtoken);
+         if (subtoken == NULL)
+             break;
+         if (!first)
+           fprintf(fp, ", ");
+         else
+           first = 0;
+         fprintf(fp, "\"%s\"", subtoken );
+      }
+      fprintf(fp, "],\n");
+  }
+
 	if (d.dateTime > 0.0) fprintf(fp, "\t\"AcquisitionDateTime\": %f,\n", d.dateTime );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
@@ -372,7 +390,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
-	bool first = 1;
+	first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < kMaxDTI4D; i++) {
