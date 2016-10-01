@@ -355,7 +355,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 						fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 						break;
 	};
-	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
+	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );a
   bool first = 1;
   char *saveptr, *subtoken, *str1;
   const char sep = '_';
@@ -374,6 +374,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
       }
       fprintf(fp, "],\n");
   }
+
+	if (d.dateTime > 0.0) fprintf(fp, "\t\"AcquisitionDateTime\": %f,\n", d.dateTime );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
 	if (d.flipAngle > 0.0) fprintf(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
