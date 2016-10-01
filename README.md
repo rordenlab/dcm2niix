@@ -218,7 +218,7 @@ file ./dcm2niix
 
 ##### OSX GRAPHICAL INTERFACE BUILD
 
-You can building the OSX graphical user interface using XCode. First, Copy contents of "console" folder to /xcode/dcm2/core. Next, open and compile the project "dcm2.xcodeproj" with XCode 4.6 or later
+You can building the OSX graphical user interface using Xcode. First, Copy contents of "console" folder to /xcode/dcm2/core. Next, open and compile the project "dcm2.xcodeproj" with Xcode 4.6 or later
 
 ##### THE QT AND wxWIDGETS GUIs ARE NOT YET SUPPORT - FOLLOWING LINES FOR FUTURE VERSIONS
 
@@ -233,7 +233,7 @@ wxWdigets makefiles are pretty complex and specific for your operating system. F
  c.) DELETE console/makefile. WE DO NOT WANT TO OVERWRITE the WX MAKEFILE
  d.) with the exception of "makefile", copy the contents of console to /samples/clipboard
  e.) overwrite the original /samples/clipboard.cpp with the dcm2niix file of the same name
- f.) Older XCodes have problems with .cpp files, whereas wxWidgets's makefiles do not compile with "-x cpp". So the core files are called '.c' but we will rename them to .cpp for wxWidgets:
+ f.) Older Xcodes have problems with .cpp files, whereas wxWidgets's makefiles do not compile with "-x cpp". So the core files are called '.c' but we will rename them to .cpp for wxWidgets:
  rename 's/\.c$/\.cpp/' *
  g.) edit the /samples/clipboard makefile: Add "nii_dicom.o nifti1_io_core.o nii_ortho.o nii_dicom_batch.o \" to CLIPBOARD_OBJECTS:
 CLIPBOARD_OBJECTS =  \
