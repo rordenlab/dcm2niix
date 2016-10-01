@@ -49,12 +49,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <string>
-#include <vector>
-#include <iostream>
-#include <sstream>
-#include <ostream>
-#include <iterator>
 #include <sys/stat.h>
 #ifdef myEnableOtsu
 #include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
@@ -69,7 +63,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-using namespace std;
 
 //gcc -O3 -o main main.c nii_dicom.c
 #if defined(_WIN64) || defined(_WIN32)
@@ -364,23 +357,20 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
   bool first = 1;
+  char *saveptr, *subtoken, *str1;
+  const char sep = '_';
   if (strlen(d.imageType) > 0) {
-      //split the string by '_'
-      stringstream image_type = stringstream(d.imageType);
-      string segment;
-      vector<std::string> seglist;
-      while(getline(image_type, segment, '_'))
-      {
-       seglist.push_back("\"" + segment + "\"");
-      }
-
       fprintf(fp, "\t\"ImageType\": [");
-      for(vector<string>::iterator it=seglist.begin() ; it < seglist.end(); it++) {
-        if (!first)
-          fprintf(fp, ", ");
-        else
-          first = 0;
-        fprintf(fp, "%s", (*it).c_str() );
+      for (str1 = d.imageType; ; str1 = NULL ) {
+         subtoken = strtok_r(str1, &sep, &saveptr);
+         printf("%s", subtoken);
+         if (subtoken == NULL)
+             break;
+         if (!first)
+           fprintf(fp, ", ");
+         else
+           first = 0;
+         fprintf(fp, "\"%s\"", subtoken );
       }
       fprintf(fp, "],\n");
   }
