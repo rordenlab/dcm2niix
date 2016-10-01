@@ -363,7 +363,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	  fprintf(fp, "\t\"ImageType\": [");
 	  for (str1 = d.imageType; ; str1 = NULL ) {
 		 subtoken = strtok_r(str1, &sep, &saveptr);
-		 printf("%s", subtoken);
 		 if (subtoken == NULL)
 			 break;
 		 if (!first)
