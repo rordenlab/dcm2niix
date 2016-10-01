@@ -355,26 +355,25 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 						fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 						break;
 	};
-	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );a
-  bool first = 1;
-  char *saveptr, *subtoken, *str1;
-  const char sep = '_';
-  if (strlen(d.imageType) > 0) {
-      fprintf(fp, "\t\"ImageType\": [");
-      for (str1 = d.imageType; ; str1 = NULL ) {
-         subtoken = strtok_r(str1, &sep, &saveptr);
-         printf("%s", subtoken);
-         if (subtoken == NULL)
-             break;
-         if (!first)
-           fprintf(fp, ", ");
-         else
-           first = 0;
-         fprintf(fp, "\"%s\"", subtoken );
-      }
-      fprintf(fp, "],\n");
-  }
-
+	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
+	bool first = true;
+	char *saveptr, *subtoken, *str1;
+	const char sep = '_';
+	if (strlen(d.imageType) > 0) {
+	  fprintf(fp, "\t\"ImageType\": [");
+	  for (str1 = d.imageType; ; str1 = NULL ) {
+		 subtoken = strtok_r(str1, &sep, &saveptr);
+		 printf("%s", subtoken);
+		 if (subtoken == NULL)
+			 break;
+		 if (!first)
+		   fprintf(fp, ", ");
+		 else
+		   first = false;
+		 fprintf(fp, "\"%s\"", subtoken );
+	  }
+	  fprintf(fp, "],\n");
+	}
 	if (d.dateTime > 0.0) fprintf(fp, "\t\"AcquisitionDateTime\": %f,\n", d.dateTime );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
