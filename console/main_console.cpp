@@ -202,7 +202,8 @@ int main(int argc, const char * argv[])
     for (i = (lastCommandArg+1); i < argc; i++) {
     	strcpy(opts.indir,argv[i]); // [argc-1]
     	if (!isCustomOutDir) strcpy(opts.outdir,opts.indir);
-    	nii_loadDir(&opts);
+    	if (nii_loadDir(&opts) != EXIT_SUCCESS)
+    		return EXIT_FAILURE;
     }
     printf ("Conversion required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
     saveIniFile(opts);
