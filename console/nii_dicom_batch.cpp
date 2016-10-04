@@ -756,6 +756,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 sprintf(newstr, "%0.0f", dcm.dateTime);
                 strcat (outname,newstr);
             }
+            if (f == 'U') {
+              sprintf(newstr, "%d", dcm.acquNum);
+              strcat (outname,newstr);
+            }
             if (f == 'Z')
                 strcat (outname,dcm.sequenceName);
             start = pos + 1;
@@ -1606,7 +1610,8 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
     //returns true if d1 and d2 should be stacked together as a single output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
-    if  (d1.seriesNum != d2.seriesNum) return false;
+    if (d1.seriesNum != d2.seriesNum) return false;
+    if (d1.acquNum != d2.acquNum) return false;
     if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
         if (!warnings->bitDepthVaries)
         	printf("slices not stacked: dimensions or bit-depth varies\n");
