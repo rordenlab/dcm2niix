@@ -1985,12 +1985,13 @@ int nii_loadDir (struct TDCMopts* opts) {
     if (strlen(opts->outdir) < 1)
         strcpy(opts->outdir,opts->indir);
     else if (!is_dir(opts->outdir,true)) {
-        #ifdef myUseCOut
-    	std::cout << "Warning: output folder invalid "<< opts->outdir<<" will try %s\n"<< opts->indir <<std::endl;
-    	#else
-     	printf("Warning: output folder invalid %s will try %s\n",opts->outdir,opts->indir);
-        #endif
-        strcpy(opts->outdir,opts->indir);
+		#ifdef myUseInDirIfOutDirUnavailable
+		printf("Warning: output folder invalid %s will try %s\n",opts->outdir,opts->indir);
+		strcpy(opts->outdir,opts->indir);
+		#else
+		printf("Error: output folder invalid: %s\n",opts->outdir);
+		return EXIT_FAILURE;
+		#endif
     }
     /*if (isFile && ((isExt(indir, ".gz")) || (isExt(indir, ".tgz"))) ) {
         #ifndef myDisableTarGz
