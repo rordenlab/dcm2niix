@@ -2926,7 +2926,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 d.TR = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case 	kTE :
-                d.TE = dcmStrFloat(lLength, &buffer[lPos]);
+            	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kEchoNum :
                 d.echoNum =  dcmStrInt(lLength, &buffer[lPos]);
@@ -2947,7 +2947,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kXRayExposure : //CTs do not have echo times, we use this field to detect different exposures: https://github.com/neurolabusc/dcm2niix/pull/48
-            	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
+            	if (d.TE == 0) // for CT we will use exposure (0018,1152) whereas for MR we use echo time (0018,0081)
+                	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
+            	break;
             case 	kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
                 break;

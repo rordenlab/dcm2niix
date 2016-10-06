@@ -742,7 +742,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if ((f >= '0') && (f <= '9')) {
                 if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'S')) {
                     char zeroPad[12] = {""};
-                    sprintf(zeroPad,"%%0%dd",atoi(&f));
+                    //sprintf(zeroPad,"%%0%dd",atoi(&f));
+                    sprintf(zeroPad,"%%0%dd",f - '0');
                     sprintf(newstr, zeroPad, dcm.seriesNum);
                     strcat (outname,newstr);
                     pos++; // e.g. %3f requires extra increment: skip both number and following character
