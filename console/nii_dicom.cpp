@@ -720,6 +720,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.manufacturersModelName, "N/A");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
+    d.acquisitionDate = 0.0f;
     strcpy(d.protocolName, "MPRAGE");
     strcpy(d.seriesDescription, "T1_mprage");
     strcpy(d.sequenceName, "T1");
@@ -2516,6 +2517,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
 #define  kStudyDate 0x0008+(0x0020 << 16 )
+#define  kAcquisitionDate 0x0008+(0x0022 << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
 #define  kManufacturer 0x0008+(0x0070 << 16 )
@@ -2783,6 +2785,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )
                 //	d.isNonImage = true;
             	break;
+            case kAcquisitionDate:
+            	char acquisitionDateTxt[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], acquisitionDateTxt);
+                d.acquisitionDate = atof(acquisitionDateTxt);
+            	break;
             case kStudyDate:
                 dcmStr (lLength, &buffer[lPos], d.studyDate);
                 break;
@@ -2793,11 +2800,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 d.isHasPhase = (buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H');
                 d.isHasMagnitude = (buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A');
                 break;
-            case 	kAcquisitionTime : {
+            case 	kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
-                break;}
+                break;
             case 	kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
                 break;

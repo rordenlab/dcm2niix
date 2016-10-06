@@ -10,6 +10,8 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 29-Sept-2016
  - Save ImageType (0x0008,0x0008) to BIDS.
+ - Separate CT scans with different exposures.
+ - Fixed issues where some compilers would generate erratic filenames for zero-padded series (e.g. "-f %3s")
 
 21-Sept-2016
  - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
