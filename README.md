@@ -8,7 +8,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-29-Sept-2016
+30-Sept-2016
  - Save ImageType (0x0008,0x0008) to BIDS.
  - Separate CT scans with different exposures.
  - Fixed issues where some compilers would generate erratic filenames for zero-padded series (e.g. "-f %3s")
