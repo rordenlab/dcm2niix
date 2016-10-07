@@ -765,7 +765,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 				sprintf(newstr, "%d", dcm.acquNum);
 				strcat (outname,newstr);
 				#else
-    			printf("Warning: ignoring '%f' in output filename (recompile to segment by acquisition)\n");
+    			printf("Warning: ignoring '%%f' in output filename (recompile to segment by acquisition)\n");
     			#endif
 			}
             if (f == 'Z')
