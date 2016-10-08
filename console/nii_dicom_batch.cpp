@@ -327,34 +327,6 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }
 
-#ifdef __MINGW32__
-/* http://stackoverflow.com/questions/12975022/strtok-r-for-mingw
- * public domain strtok_r() by Charlie Gordon
- *
- *   from comp.lang.c  9/14/2007
- *
- *      http://groups.google.com/group/comp.lang.c/msg/2ab1ecbb86646684
- *
- *     (Declaration that it's public domain):
- *      http://groups.google.com/group/comp.lang.c/msg/7c7b39328fefab9c
- */
-
-char* strtok_r( char *str, const char *delim, char **nextp) {
-    char *ret;
-    if (str == NULL)
-        str = *nextp;
-    str += strspn(str, delim);
-    if (*str == '\0')
-        return NULL;
-    ret = str;
-    str += strcspn(str, delim);
-    if (*str)
-        *str++ = '\0';
-    *nextp = str;
-    return ret;
-}
-#endif
-
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
@@ -364,42 +336,39 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 //  https://www.ietf.org/rfc/rfc4627.txt
 	if (!opts.isCreateBIDS) return;
 	char txtname[2048] = {""};
-    strcpy (txtname,pathoutname);
-    strcat (txtname,".json");
-    //printf("Saving DTI %s\n",txtname);
-    FILE *fp = fopen(txtname, "w");
-    fprintf(fp, "{\n");
+	strcpy (txtname,pathoutname);
+	strcat (txtname,".json");
+	//printf("Saving DTI %s\n",txtname);
+	FILE *fp = fopen(txtname, "w");
+	fprintf(fp, "{\n");
 	switch (d.manufacturer) {
-				case kMANUFACTURER_SIEMENS:
-						fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
-						break;
-				case kMANUFACTURER_GE:
-						fprintf(fp, "\t\"Manufacturer\": \"GE\",\n" );
-						break;
-				case kMANUFACTURER_PHILIPS:
-						fprintf(fp, "\t\"Manufacturer\": \"Philips\",\n" );
-						break;
-				case kMANUFACTURER_TOSHIBA:
-						fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
-						break;
+		case kMANUFACTURER_SIEMENS:
+			fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
+			break;
+		case kMANUFACTURER_GE:
+			fprintf(fp, "\t\"Manufacturer\": \"GE\",\n" );
+			break;
+		case kMANUFACTURER_PHILIPS:
+			fprintf(fp, "\t\"Manufacturer\": \"Philips\",\n" );
+			break;
+		case kMANUFACTURER_TOSHIBA:
+			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
+			break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
-	bool first = true;
-	char *saveptr, *subtoken, *str1;
-	const char sep = '_';
 	if (strlen(d.imageType) > 0) {
-	  fprintf(fp, "\t\"ImageType\": [");
-	  for (str1 = d.imageType; ; str1 = NULL ) {
-		 subtoken = strtok_r(str1, &sep, &saveptr);
-		 if (subtoken == NULL)
-			 break;
-		 if (!first)
-		   fprintf(fp, ", ");
-		 else
-		   first = false;
-		 fprintf(fp, "\"%s\"", subtoken );
-	  }
-	  fprintf(fp, "],\n");
+		fprintf(fp, "\t\"ImageType\": [\"");
+		bool isSep = false;
+		for (int i = 0; i < strlen(d.imageType); i++) {
+			if (d.imageType[i] != '_') {
+				if (isSep)
+		  			fprintf(fp, "\", \"");
+				isSep = false;
+				fprintf(fp, "%c", d.imageType[i]);
+			} else
+				isSep = true;
+		}
+		fprintf(fp, "\"],\n");
 	}
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
 	//Lines below directly save DICOM values
@@ -419,7 +388,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
-	first = 1;
+	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < kMaxDTI4D; i++) {
