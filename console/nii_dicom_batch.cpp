@@ -1998,15 +1998,13 @@ int nii_loadDir (struct TDCMopts* opts) {
     char indir[512];
     strcpy(indir,opts->indir);
     bool isFile = is_fileNotDir(opts->indir);
-    if (isFile) {//if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
+    if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
-    }
-    isFile = is_fileNotDir(opts->outdir);
-    if (isFile) {//if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
-        dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
-    }
     if (strlen(opts->outdir) < 1)
         strcpy(opts->outdir,opts->indir);
+    isFile = is_fileNotDir(opts->outdir);
+    if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
+        dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
     else if (!is_dir(opts->outdir,true)) {
 		#ifdef myUseInDirIfOutDirUnavailable
 		printf("Warning: output folder invalid %s will try %s\n",opts->outdir,opts->indir);
