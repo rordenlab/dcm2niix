@@ -2001,6 +2001,10 @@ int nii_loadDir (struct TDCMopts* opts) {
     if (isFile) {//if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
     }
+    isFile = is_fileNotDir(opts->outdir);
+    if (isFile) {//if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
+        dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
+    }
     if (strlen(opts->outdir) < 1)
         strcpy(opts->outdir,opts->indir);
     else if (!is_dir(opts->outdir,true)) {
