@@ -30,7 +30,6 @@
     #else
         #include <zlib.h>
     #endif
-
 #endif
 #ifdef myUseCOut
  #include <iostream>
@@ -62,7 +61,6 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
 
 //gcc -O3 -o main main.c nii_dicom.c
 #if defined(_WIN64) || defined(_WIN32)
@@ -992,7 +990,6 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     return EXIT_SUCCESS;
 } //nii_saveNII()
 
-
 int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //save 4D series as sequence of 3D volumes
     struct nifti_1_header hdr1 = hdr;
@@ -1520,7 +1517,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
-
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     #ifdef myUseCOut
      std::cout<<"Convert "<<nConvert<<" DICOM as "<<pathoutname<<
@@ -2238,7 +2234,6 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     #endif
 } //readFindPigz()
 
-
 #if defined(_WIN64) || defined(_WIN32)
 //windows has unusual file permissions for many users - lets save preferences to the registry
 void saveIniFile (struct TDCMopts opts) {
@@ -2355,7 +2350,6 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     }
     fclose(fp);
 } //readIniFile()
-
 
 void saveIniFile (struct TDCMopts opts) {
     FILE *fp = fopen(opts.optsname, "w");
