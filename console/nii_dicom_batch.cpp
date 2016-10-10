@@ -98,6 +98,15 @@ void dropFilenameFromPath(char *path) { //
     }
 }
 
+void dropTrailingFileSep(char *path) { //
+   int len = strlen(path) - 1;
+   if (len <= 0) return;
+   if (path[len] == '/')
+   	path[len] = '\0';
+   else if (path[len] == '\\')
+   	path[len] = '\0';
+}
+
 
 void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
 {
@@ -2000,8 +2009,10 @@ int nii_loadDir (struct TDCMopts* opts) {
     bool isFile = is_fileNotDir(opts->indir);
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
+    dropTrailingFileSep(opts->indir);
     if (strlen(opts->outdir) < 1)
         strcpy(opts->outdir,opts->indir);
+    dropTrailingFileSep(opts->outdir);
     isFile = is_fileNotDir(opts->outdir);
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
