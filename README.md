@@ -9,7 +9,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 ## Versions
 
 10-Oct-2016
- - Fixes two issues specific to the 30-Sept-2016 release. First, MinGW compilation. Second, reinstate flexibility for input directory naming (e.g. c:\dir\ is converted to c:\dir) [related to issue 51](https://github.com/neurolabusc/dcm2niix/issues/51).
+ - Restores/improves building for the Windows operating system using MinGW.
 
 30-Sept-2016
  - Save ImageType (0x0008,0x0008) to BIDS.
