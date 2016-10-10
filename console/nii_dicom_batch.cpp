@@ -99,7 +99,7 @@ void dropFilenameFromPath(char *path) { //
 }
 
 void dropTrailingFileSep(char *path) { //
-   int len = strlen(path) - 1;
+   size_t len = strlen(path) - 1;
    if (len <= 0) return;
    if (path[len] == '/')
    	path[len] = '\0';
