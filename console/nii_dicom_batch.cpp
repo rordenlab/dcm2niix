@@ -7,6 +7,8 @@
 
 	#define chdir _chrdir
 
+    #define strtok_r strtok_s
+
 	#include "io.h"
 
 	//#include <math.h>

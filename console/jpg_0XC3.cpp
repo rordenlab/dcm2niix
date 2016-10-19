@@ -108,7 +108,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     FILE *reader = fopen(fn, "rb");
     fseek(reader, 0, SEEK_END);
     long lRawSz = ftell(reader)- skipBytes;
-    if ((diskBytes > 0) and (diskBytes < lRawSz)) //only if diskBytes is known and does not exceed length of file
+    if ((diskBytes > 0) && (diskBytes < lRawSz)) //only if diskBytes is known and does not exceed length of file
         lRawSz = diskBytes;
     if (lRawSz <= 8) {
         printf("Error opening %s\n", fn);
@@ -144,7 +144,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             btMarkerType =  readByte(lRawRA, &lRawPos, lRawSz);
             if ((btMarkerType == 0x01) || (btMarkerType == 0xFF) || ((btMarkerType >= 0xD0) && (btMarkerType <= 0xD7) ) )
                 btMarkerType = 0;//only process segments with length fields
-            
+
         } while ((lRawPos < lRawSz) && (btMarkerType == 0));
         uint16_t lSegmentLength = readWord (lRawRA, &lRawPos, lRawSz); //read marker length
         long lSegmentEnd = lRawPos+(lSegmentLength - 2);
@@ -225,7 +225,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                             Si = Si + 1;
                         }//while Si
                     }//K <= 17
-                    
+
                 } while (K <= DHTnLi);
                 //if (verbose)
                 //    for (int j = 1; j <= DHTnLi; j++)
@@ -323,7 +323,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     int lItems =  SOFxdim*SOFydim*SOFnf;
     // lRawPos++;// <- only for Pascal where array is indexed from 1 not 0 first byte of data
     int lCurrentBitPos = 0; //read in a new byte
-    
+
     //depending on SOSss, we see Table H.1
     int lPredA = 0;
     int lPredB = 0;
