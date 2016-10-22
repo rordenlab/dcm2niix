@@ -11,11 +11,11 @@ unsigned char  readByte(unsigned char *lRawRA, long *lRawPos, long lRawSz) {
         ret = lRawRA[*lRawPos];
     (*lRawPos)++;
     return ret;
-} //end readByte()
+}// readByte()
 
 uint16_t  readWord(unsigned char *lRawRA, long *lRawPos, long lRawSz) {
     return ( (readByte(lRawRA, lRawPos, lRawSz) << 8) + readByte(lRawRA, lRawPos, lRawSz));
-} //end readWord()
+}// readWord()
 
 int readBit(unsigned char *lRawRA, long *lRawPos,  int *lCurrentBitPos) {//Read the next single bit
     int result = (lRawRA[*lRawPos] >> (7 - *lCurrentBitPos)) & 1;
@@ -25,24 +25,24 @@ int readBit(unsigned char *lRawRA, long *lRawPos,  int *lCurrentBitPos) {//Read 
         *lCurrentBitPos = 0;
     }
     return result;
-} //end readBit()
+}// readBit()
 
 int bitMask(int bits) {
     return ( (2 << (bits - 1)) -1);
-} //bitMask()
+}// bitMask()
 
 int readBits (unsigned char *lRawRA, long *lRawPos,  int *lCurrentBitPos, int  lNum) { //lNum: bits to read, not to exceed 16
     int result = lRawRA[*lRawPos];
     result = (result << 8) + lRawRA[(*lRawPos)+1];
     result = (result << 8) + lRawRA[(*lRawPos)+2];
-    result = (result >> (24 - *lCurrentBitPos -lNum)) & bitMask(lNum); //lCurrentBitPos is incremented from 1, so -1
+    result = (result >> (24 - * lCurrentBitPos -lNum)) & bitMask(lNum); //lCurrentBitPos is incremented from 1, so -1
     *lCurrentBitPos = *lCurrentBitPos + lNum;
     if (*lCurrentBitPos > 7) {
             *lRawPos = *lRawPos + (*lCurrentBitPos >> 3); // div 8
             *lCurrentBitPos = *lCurrentBitPos & 7; //mod 8
     }
     return result;
-} //end readBits()
+}// readBits()
 
 struct HufTables {
     uint8_t SSSSszRA[18];
@@ -54,7 +54,7 @@ struct HufTables {
     int HufVal[32];
     int MaxHufSi;
     int MaxHufVal;
-}; //end HufTables()
+};// HufTables()
 
 int decodePixelDifference(unsigned char *lRawRA, long *lRawPos, int *lCurrentBitPos, struct HufTables l) {
     int lByte = (lRawRA[*lRawPos] << *lCurrentBitPos) + (lRawRA[*lRawPos+1] >> (8- *lCurrentBitPos));
@@ -99,7 +99,7 @@ int decodePixelDifference(unsigned char *lRawRA, long *lRawPos, int *lCurrentBit
     if (lDiff <= bitMask(lHufValSSSS-1))  //add
         lDiff = lDiff - bitMask(lHufValSSSS);
     return lDiff;
-} //end decodePixelDifference()
+}// decodePixelDifference()
 
 unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames, int diskBytes) {
     //decompress JPEG image named "fn" where image data is located skipBytes into file. diskBytes is compressed size of image (set to 0 if unknown)
@@ -108,7 +108,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     FILE *reader = fopen(fn, "rb");
     fseek(reader, 0, SEEK_END);
     long lRawSz = ftell(reader)- skipBytes;
-    if ((diskBytes > 0) and (diskBytes < lRawSz)) //only if diskBytes is known and does not exceed length of file
+    if ((diskBytes > 0) && (diskBytes < lRawSz)) //only if diskBytes is known and does not exceed length of file
         lRawSz = diskBytes;
     if (lRawSz <= 8) {
         printf("Error opening %s\n", fn);
@@ -144,13 +144,12 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             btMarkerType =  readByte(lRawRA, &lRawPos, lRawSz);
             if ((btMarkerType == 0x01) || (btMarkerType == 0xFF) || ((btMarkerType >= 0xD0) && (btMarkerType <= 0xD7) ) )
                 btMarkerType = 0;//only process segments with length fields
-            
+
         } while ((lRawPos < lRawSz) && (btMarkerType == 0));
         uint16_t lSegmentLength = readWord (lRawRA, &lRawPos, lRawSz); //read marker length
         long lSegmentEnd = lRawPos+(lSegmentLength - 2);
-        if (lSegmentEnd > lRawSz)  {
+        if (lSegmentEnd > lRawSz)
             abortGoto(); //goto abortGoto;
-        }
         if (verbose)
             printf("btMarkerType %#02X length %d@%ld\n", btMarkerType, lSegmentLength, lRawPos);
         if ( ((btMarkerType >= 0xC0) && (btMarkerType <= 0xC3)) || ((btMarkerType >= 0xC5) && (btMarkerType <= 0xCB)) || ((btMarkerType >= 0xCD) && (btMarkerType <= 0xCF)) )  {
@@ -225,7 +224,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                             Si = Si + 1;
                         }//while Si
                     }//K <= 17
-                    
+
                 } while (K <= DHTnLi);
                 //if (verbose)
                 //    for (int j = 1; j <= DHTnLi; j++)
@@ -284,7 +283,6 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     } while (lIncO > 0);
     //NEXT: some RGB images use only a single Huffman table for all 3 colour planes. In this case, replicate the correct values
     //NEXT: prepare lookup table
-
     for (int lFrameCount = 1; lFrameCount <= lnHufTables; lFrameCount ++) {
         for (int lInc = 0; lInc <= 17; lInc ++)
             l[lFrameCount].SSSSszRA[lInc] = 123; //Impossible value for SSSS, suggests 8-bits can not describe answer
@@ -323,7 +321,6 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     int lItems =  SOFxdim*SOFydim*SOFnf;
     // lRawPos++;// <- only for Pascal where array is indexed from 1 not 0 first byte of data
     int lCurrentBitPos = 0; //read in a new byte
-    
     //depending on SOSss, we see Table H.1
     int lPredA = 0;
     int lPredB = 0;
@@ -443,7 +440,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                 } //for lIncX
             } // if..else possible predictors
         }//for lIncY
-    }else { //if 8-bit data 3frames; else 8-bit 1 frames
+    } else { //if 8-bit data 3frames; else 8-bit 1 frames
         *bits = 8;
         lImgRA8 = (unsigned char*) malloc(lItems );
         int lPx = -1; //pixel position
@@ -494,5 +491,4 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     if (verbose)
         printf("JPEG ends %ld@%ld\n", lRawPos, lRawPos+skipBytes);
     return lImgRA8;
-} //end decode_JPEG_SOF_0XC3()
-
+}// decode_JPEG_SOF_0XC3()

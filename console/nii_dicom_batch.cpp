@@ -1,16 +1,10 @@
 //#define myNoSave //do not save images to disk
 #ifdef _MSC_VER
-
 	#include <direct.h>
-
 	#define getcwd _getcwd
-
 	#define chdir _chrdir
-
 	#include "io.h"
-
 	//#include <math.h>
-
     #define MiniZ
 #else
 	#include <unistd.h>
@@ -32,7 +26,7 @@
     #endif
 #endif
 #ifdef myUseCOut
- #include <iostream>
+	#include <iostream>
 #endif
 #include "nifti1_io_core.h"
 #include "nifti1.h"
@@ -50,25 +44,22 @@
 #include <string.h>
 #include <sys/stat.h>
 #ifdef myEnableOtsu
-#include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
+	#include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
 #endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
     #include <windows.h> //write to registry
 #endif
-
 #ifndef M_PI
-#define M_PI 3.14159265358979323846
+	#define M_PI 3.14159265358979323846
 #endif
-
-//gcc -O3 -o main main.c nii_dicom.c
 #if defined(_WIN64) || defined(_WIN32)
-const char kPathSeparator ='\\';
-const char kFileSep[2] = "\\";
+	const char kPathSeparator ='\\';
+	const char kFileSep[2] = "\\";
 #else
-const char kPathSeparator ='/';
-const char kFileSep[2] = "/";
+	const char kPathSeparator ='/';
+	const char kFileSep[2] = "/";
 #endif
 
 struct TDCMsort {
@@ -132,11 +123,11 @@ bool is_fileexists(const char * filename) {
 }
 
 #ifndef S_ISDIR
-#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
+	#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
 #endif
 
 #ifndef S_ISREG
-#define S_ISREG(mode)  (((mode) & S_IFMT) == S_IFREG)
+	#define S_ISREG(mode)  (((mode) & S_IFMT) == S_IFREG)
 #endif
 
 bool is_fileNotDir(const char* path) { //returns false if path is a folder; requires #include <sys/stat.h>
@@ -167,7 +158,7 @@ int is_dir(const char *pathname, int follow_link) {
             return 0;/* exists but is no dir */
         }
     }
-} //is_dir
+}// is_dir()
 
 void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //0018,1312 phase encoding is either in row or column direction
@@ -249,7 +240,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     	for (int v = 1; v < 4; v++)
     		if (isSameFloat(vx[i].V[v],-0))
     			vx[i].V[v] = 0.0f;
-} //geCorrectBvecs()
+}// geCorrectBvecs()
 
 void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //see Matthew Robson's  http://users.fmrib.ox.ac.uk/~robson/internal/Dicom2Nifti111.m
@@ -302,22 +293,22 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
         printf("Saving %d DTI gradients. Please validate if you are conducting DTI analyses.\n", d->CSA.numDti);
     else
         printf("WARNING: DTI gradient directions only tested for axial (transverse) acquisitions. Please validate bvec files.\n");
-} //siemensPhilipsCorrectBvecs()
+}// siemensPhilipsCorrectBvecs()
 
-bool isNanPosition (struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
+bool isNanPosition(struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
     if (isnan(d.patientPosition[1])) return true;
     if (isnan(d.patientPosition[2])) return true;
     if (isnan(d.patientPosition[3])) return true;
     return false;
-}
+}// isNanPosition()
 
-bool isSamePosition (struct TDICOMdata d, struct TDICOMdata d2){
+bool isSamePosition(struct TDICOMdata d, struct TDICOMdata d2){
     if ( isNanPosition(d) ||  isNanPosition(d2)) return false;
     if (!isSameFloat(d.patientPosition[1],d2.patientPosition[1])) return false;
     if (!isSameFloat(d.patientPosition[2],d2.patientPosition[2])) return false;
     if (!isSameFloat(d.patientPosition[3],d2.patientPosition[3])) return false;
     return true;
-} //isSamePosition()
+}// isSamePosition()
 
 void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, char * dcmname) {
 	if (!opts.isCreateText) return;
@@ -332,7 +323,7 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
             d.coilNum,d.echoNum, d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
             d.bitsAllocated, dcmname);
     fclose(fp);
-}
+}// nii_SaveText()
 
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
@@ -423,7 +414,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	fprintf(fp, "\"\n");
     fprintf(fp, "}\n");
     fclose(fp);
-}
+}// nii_SaveBIDS()
 
 int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
     //reports non-zero if last volumes should be excluded (e.g. philip stores an ADC maps)
@@ -568,11 +559,11 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     fclose(fp);
     free(vx);
     return numFinalADC;
-} //nii_SaveDTI()
+}// nii_SaveDTI()
 
 float sqr(float v){
     return v*v;
-}  //sqr()
+}// sqr()
 
 float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
     //some MRI scans have gaps between slices, some CT have overlapping slices. Comparing adjacent slices provides measure for dx between slices
@@ -845,10 +836,9 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
         strcat(niiFilename,".nii.gz'");
     else
         strcat(niiFilename,".nii'");
-} //nii_createDummyFilename()
+}// nii_createDummyFilename()
 
 #ifndef myDisableZLib
-
 
 #ifndef MiniZ
 unsigned long mz_compressBound(unsigned long source_len) {
@@ -988,7 +978,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
         #endif
     }
     return EXIT_SUCCESS;
-} //nii_saveNII()
+}// nii_saveNII()
 
 int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //save 4D series as sequence of 3D volumes
@@ -1012,7 +1002,7 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
         pos += imgsz;
     }
     return EXIT_SUCCESS;
-} //nii_saveNII3D
+}// nii_saveNII3D()
 
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
     //default NIfTI 16-bit is signed, set to unusual 16-bit unsigned if required...
@@ -1054,7 +1044,7 @@ int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         prevDx = dx;
     }
     return nConvert; //all images in sequential order
-}
+}// siemensCtKludge()
 
 int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
@@ -1236,7 +1226,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     nii_saveNII3D(niiFilenameEq, hdrX, imX, opts);
     free(imX);
     return EXIT_SUCCESS;
-}
+}// nii_saveNII3Deq()
 
 void smooth1D(int num, double * im) {
 	if (num < 3) return;
@@ -1246,7 +1236,7 @@ void smooth1D(int num, double * im) {
 	for (int i = 1; i < (num-1); i++)
 		im[i] = (src[i-1]*frac) + (src[i]*frac*2) + (src[i+1]*frac);
 	free(src);
-}
+}// smooth1D()
 
 void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //remove excess neck slices - assumes output of nii_setOrtho()
@@ -1340,7 +1330,6 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     ventralCrop = dorsalCrop - round( kMaxDVmm / hdr.pixdim[3]);
     if (ventralCrop < 0) ventralCrop = 0;
 	//apply crop
-
 	printf(" Cropping from slice %d to %d (of %d)\n", ventralCrop, dorsalCrop, slices);
     struct nifti_1_header hdrX = hdr;
     slices = dorsalCrop - ventralCrop + 1;
@@ -1366,7 +1355,7 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts);
     free(imX);
     return;
-} //nii_saveCrop()
+}// nii_saveCrop()
 
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
@@ -1408,14 +1397,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 for (int i = 0; i < nConvert; i++)
                     if (isSamePosition(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx])) nAcq++;
             }
-
             /*int nImg = 1+abs( dcmList[dcmSort[nConvert-1].indx].imageNum-dcmList[dcmSort[0].indx].imageNum);
             if (((nConvert/nAcq) > 1) && ((nConvert%nAcq)==0) && (nImg == nConvert) && (dcmList[dcmSort[0].indx].locationsInAcquisition == 0) ) {
                 printf(" stacking %d acquisitions as a single volume\n", nAcq);
                 //some Siemens CT scans use multiple acquisitions for a single volume, perhaps also check that slice position does not repeat?
                 hdr0.dim[3] = nConvert;
             } else*/ if ( (nAcq > 1) && ((nConvert/nAcq) > 1) && ((nConvert%nAcq)==0) ) {
-
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
@@ -1431,7 +1418,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
                     dxVaries = true;
             if (hdr0.dim[4] < 2) {
-
                 if (dxVaries) {
                     sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
                     sliceMMarray[0] = 0.0f;
@@ -1512,7 +1498,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
-
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0);
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
     int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
@@ -1578,7 +1563,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     	nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
     free(imgM);
     return EXIT_SUCCESS;
-} //saveDcm2Nii()
+}// saveDcm2Nii()
 
 int compareTDCMsort(void const *item1, void const *item2) {
     //for quicksort http://blog.ablepear.com/2011/11/objective-c-tuesdays-sorting-arrays.html
@@ -1672,7 +1657,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
         return false;
     }
     return true;
-} //isSameSet()
+}// isSameSet()
 
 /*
 #if defined(__APPLE__) && defined(__MACH__)
@@ -1734,7 +1719,7 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     dcmList[0].converted2NII = 1;
     dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
     return saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
-}
+}// singleDICOM()
 
 void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth) {
     tinydir_dir dir;
@@ -1775,7 +1760,7 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         tinydir_next(&dir);
     }
     tinydir_close(&dir);
-} //searchDirForDICOM()
+}// searchDirForDICOM()
 
 int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
     //done AFTER sorting, so duplicates will be sequential
@@ -1796,7 +1781,7 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
     	printf("Some images have identical time, series, acquisition and image values. DUPLICATES REMOVED.\n");
     	#endif
     return nConvert - nDuplicates;
-} //removeDuplicates()
+}// removeDuplicates()
 
 int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSearchList *nameList){
     //done AFTER sorting, so duplicates will be sequential
@@ -1822,7 +1807,7 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
     	printf("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
     	#endif
     	return nConvert - nDuplicates;
-} //removeDuplicates()
+}// removeDuplicates()
 
 int strcicmp(char const *a, char const *b) //case insensitive compare
 {
@@ -1831,7 +1816,7 @@ int strcicmp(char const *a, char const *b) //case insensitive compare
         if (d != 0 || !*a)
             return d;
     }
-} //strcicmp()
+}// strcicmp()
 
 bool isExt (char *file_name, const char* ext) {
     char *p_extension;
@@ -1839,7 +1824,7 @@ bool isExt (char *file_name, const char* ext) {
         if(strcicmp(p_extension,ext) == 0) return true;
     //if(strcmp(p_extension,ext) == 0) return true;
     return false;
-} //isExt()
+}// isExt()
 
 /*int nii_readpic(char * fname, struct nifti_1_header *nhdr) {
     //https://github.com/jefferis/pic2nifti/blob/master/libpic2nifti.c
@@ -1978,7 +1963,7 @@ int convert_parRec(struct TDCMopts opts) {
     free(nameList.str);
 
     return EXIT_SUCCESS;
-} //convert_parRec()
+}// convert_parRec()
 
 void freeNameList(struct TSearchList nameList) {
     if (nameList.numItems > 0) {
@@ -1990,7 +1975,7 @@ void freeNameList(struct TSearchList nameList) {
     free(nameList.str);
 }
 
-int nii_loadDir (struct TDCMopts* opts) {
+int nii_loadDir(struct TDCMopts* opts) {
     //Identifies all the DICOM files in a folder and its subfolders
     if (strlen(opts->indir) < 1) {
          #ifdef myUseCOut
@@ -2147,8 +2132,7 @@ int nii_loadDir (struct TDCMopts* opts) {
     //        free(nameList.str[i]);
     //free(nameList.str);
     return EXIT_SUCCESS;
-} //nii_loadDir()
-
+}// nii_loadDir()
 
 /* cleaner than findPigz - perhaps validate someday
  void findExe(char name[512], const char * argv[]) {
@@ -2315,7 +2299,6 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
 		#endif
 	#endif
     //printf("%d %s\n",opts->compressFlag, opts->compressname);
-
     sprintf(opts->optsname, "%s%s", getenv("HOME"), STATUSFILENAME);
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");
@@ -2349,7 +2332,7 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
             strcpy(opts->filename,Value);
     }
     fclose(fp);
-} //readIniFile()
+}// readIniFile()
 
 void saveIniFile (struct TDCMopts opts) {
     FILE *fp = fopen(opts.optsname, "w");
