@@ -74,7 +74,12 @@ if (BATCH_VERSION)
             nii_ortho.cpp
             nii_dicom_batch.cpp)
 
-    target_link_libraries(dcm2niibatch yaml-cpp)
+    if (YAML_CPP_LIBRARY)
+        target_link_libraries(dcm2niibatch ${YAML_CPP_LIBRARY})
+    else()
+        target_link_libraries(dcm2niibatch yaml-cpp)
+    endif()
+
 
     if (YAML_CPP_INCLUDE_DIR)
         include_directories(${YAML_CPP_INCLUDE_DIR})
