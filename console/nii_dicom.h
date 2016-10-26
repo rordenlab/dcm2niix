@@ -50,7 +50,6 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
         int numDti, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
     };
     struct TDICOMdata {
-        //struct TDTI * dti4D; //only for 4D diffusion volumes - otherwise use more compact CSA.dtiV
         long seriesNum;
         int xyzDim[5];//, xyzOri[4];
         int coilNum, echoNum,sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme; //

@@ -15,10 +15,7 @@
 #else
 	#include <unistd.h>
 #endif
-
 //#include <time.h> //clock()
-
-
 #include "nifti1.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
@@ -40,7 +37,6 @@
 #ifdef myEnableJasper
     #include <jasper/jasper.h>
 #endif
-
 #ifndef myDisableOpenJPEG
     #include <openjpeg-2.1/openjpeg.h>//"openjpeg.h"
 
@@ -1686,6 +1682,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     if (intenScalePhilips != 0.0) {
         //printf("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
         //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
+        //# === PIXEL VALUES =============================================================
+		//#  PV = pixel value in REC file, FP = floating point value, DV = displayed value on console
+		//#  RS = rescale slope,           RI = rescale intercept,    SS = scale slope
+		//#  DV = PV * RS + RI             FP = DV / (RS * SS)
         float l0 = PhilipsPreciseVal (0, d.intenScale, d.intenIntercept, intenScalePhilips);
         float l1 = PhilipsPreciseVal (1, d.intenScale, d.intenIntercept, intenScalePhilips);
         if (l0 != l1) {
