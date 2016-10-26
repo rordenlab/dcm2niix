@@ -2996,8 +2996,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kNumberOfDynamicScans:
                 d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
-            case	kMRAcquisitionType:
+            case	kMRAcquisitionType: //detect 3D acquisition: we can reorient these without worrying about slice time correct or BVEC/BVAL orientation
+            	#ifndef myDisableReorient3dToOrtho
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
+                #endif
                 break;
             case kScanningSequence : {
                 dcmStr (lLength, &buffer[lPos], d.scanningSequence);
