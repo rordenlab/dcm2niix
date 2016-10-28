@@ -1,6 +1,9 @@
 project(dcm2niix)
 cmake_minimum_required(VERSION 2.6)
 
+include(ucm.cmake)
+ucm_set_runtime(STATIC)
+
 # Option1: Choose whether to build the batch version
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions as well" OFF)
 message(${BATCH_VERSION})
