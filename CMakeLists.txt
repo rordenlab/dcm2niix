@@ -2,11 +2,22 @@ project(dcm2niix)
 cmake_minimum_required(VERSION 2.6)
 
 include(ucm.cmake)
-ucm_set_runtime(STATIC)
 
 # Option1: Choose whether to build the batch version
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions as well" OFF)
 message(${BATCH_VERSION})
+
+# Option2: Choose whether to use static runtime
+option(USE_STATIC_RUNTIME "Use static runtime" ON)
+if(USE_STATIC_RUNTIME)
+    ucm_set_runtime(STATIC)
+else()
+    ucm_set_runtime(DYNAMIC)
+endif()
+
+# Option3: Choose build type
+set(CMAKE_BUILD_TYPE "Release" CACHE STRING
+    "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 

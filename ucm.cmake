@@ -25,8 +25,8 @@ else()
     set(ucm_with_cotire 0)
 endif()
 
-option(UCM_UNITY_BUILD          "Enable unity build for targets registered with the ucm_add_target() macro"                     OFF)
-option(UCM_NO_COTIRE_FOLDER     "Do not use a cotire folder in the solution explorer for all unity and cotire related targets"  ON)
+# option(UCM_UNITY_BUILD          "Enable unity build for targets registered with the ucm_add_target() macro"                     OFF)
+# option(UCM_NO_COTIRE_FOLDER     "Do not use a cotire folder in the solution explorer for all unity and cotire related targets"  ON)
 
 # ucm_add_flags
 # Adds compiler flags to CMAKE_<LANG>_FLAGS or to a specific config
