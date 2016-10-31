@@ -1,5 +1,5 @@
 [![Build Status](https://travis-ci.org/rordenlab/dcm2niix.svg?branch=master)](https://travis-ci.org/rordenlab/dcm2niix)
-[![Build status](https://ci.appveyor.com/api/projects/status/github/rordenlab/dcm2niix?branch=master&svg=true)](https://ci.appveyor.com/project/rordenlab/dcm2niix)
+[![Build status](https://ci.appveyor.com/api/projects/status/github/chrisfilo/dcm2niix?branch=master&svg=true)](https://ci.appveyor.com/project/chrisfilo/dcm2niix)
 
 ## About
 
