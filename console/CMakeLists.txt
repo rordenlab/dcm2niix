@@ -1,6 +1,10 @@
 project(console)
 set(PROGRAMS dcm2niix)
 
+if(POLICY CMP0054)
+  cmake_policy(SET CMP0054 NEW)
+endif()
+
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # using Clang
     add_definitions(-dead_strip)

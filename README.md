@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/rordenlab/dcm2niix.svg?branch=master)](https://travis-ci.org/rordenlab/dcm2niix)
+[![Build status](https://ci.appveyor.com/api/projects/status/github/rordenlab/dcm2niix?branch=master&svg=true)](https://ci.appveyor.com/project/rordenlab/dcm2niix)
+
 ## About
 
 dcm2niix is a designed to convert neuroimaging data from the DICOM format to the NIfTI format. For details and compiled versions visit the [NITRC wiki](http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage).

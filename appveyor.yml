@@ -1,47 +1,50 @@
-environment:
-  global:
-    PROJECT_NAME: dcm2niix
-  matrix:
-    - TARGET: windows
-
-build: off
-
-test_script:
-  - cmd: cd console
-  - cmd: vcvarsall amd64
-  - cmd: cl /EHsc main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -DmyDisableOpenJPEG -DmyDisableJasper /odcm2niix
-
-before_deploy:
-  # Generate artifacts for release
-  - cargo build --release
-  - mkdir staging
-  # TODO update this part to copy the artifacts that make sense for your project
-  - copy target\release\hello.exe staging
-  - cd staging
-    # release zipfile will look like 'rust-everywhere-v1.2.3-x86_64-pc-windows-msvc'
-  - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip *
-  - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip
-
-deploy:
-  description: 'Windows release'
-  # All the zipped artifacts will be deployed
-  artifact: /.*\.zip/
-  # TODO Regenerate this auth_token for your project, this one won't work for you. Here's how:
-  # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
-  # `public_repo` scope enabled
-  # - Then go to 'https://ci.appveyor.com/tools/encrypt' and enter the newly generated token.
-  # - Enter the "encrypted value" below
-  auth_token:
-    secure: xv0gNKR4j8Zyr3yFkqBADMdkR/6CMOp5ixVFc1uf8SHOndhTXHns4dPpQJKS6MWx
-  provider: GitHub
-  # deploy when a new tag is pushed and only on the stable channel
-  on:
-    # channel to use to produce the release artifacts
-    # NOTE make sure you only release *once* per target
-    # TODO you may want to pick a different channel
-    CHANNEL: stable
-    appveyor_repo_tag: true
+version: build-{build}
 
 branches:
   only:
-    - master
+  - master
+
+configuration: Release
+
+platform: x64
+
+clone_depth: 1
+
+clone_folder: c:\projects\dcm2niix
+
+init:
+- ps: >-
+    $version = Get-Date -Format "d-MMM-yyyy"
+
+    $githash = $env:APPVEYOR_REPO_COMMIT.Substring(0, 7)
+
+    Update-AppveyorBuild -Version "$version-$githash"
+
+before_build:
+- cmd: >-
+    echo "Clone yaml-cpp"
+
+    git clone -q --depth=1 --branch=master https://github.com/jbeder/yaml-cpp.git c:\projects\dcm2niix\yaml-cpp
+
+    echo "Running cmake"
+
+    mkdir c:\projects\dcm2niix\build
+
+    cd c:\projects\dcm2niix\build
+
+    cmake -G "Visual Studio 14 2015 Win64" -DBATCH_VERSION=ON -Wno-dev ..\
+
+build:
+  project: c:\projects\dcm2niix\build\dcm2niix.sln
+
+  verbosity: normal
+
+after_build:
+- ps: >-
+    cd c:\projects\dcm2niix
+
+    7z a dcm2niix-$version-win.zip c:\projects\dcm2niix\bin\Release\* >$null
+
+artifacts:
+  - path: 'dcm2niix-*.zip'
+    name: dcm2niix
