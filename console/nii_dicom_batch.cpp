@@ -1433,10 +1433,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                     printf("]\n");
                 }
             }
-            if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) {
+            if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) &&  ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS))  ) { //Niels Janssen has provided GE sequential multi-phase acquisitions that also require swizzling
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
-                //printf("swizzling 3rd and 4th dimensions (XYTZ -> XYZT), assuming interslice distance is %f\n",dx);
+                printf("swizzling 3rd and 4th dimensions (XYTZ -> XYZT), assuming interslice distance is %f\n",dx);
             }
             if ((dx == 0.0 ) && (!dxVaries)) { //all images are the same slice - 16 Dec 2014
                 printf(" Warning: all images appear to be a single slice - please check slice/vector orientation\n");
