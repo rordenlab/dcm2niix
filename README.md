@@ -11,6 +11,10 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
+1-Nov-2016
+ - AppVeyor Support (Ningfei Li & Chris Filo Gorgolewski)
+ - Swap 3rd/4th dimensions for GE sequential multi-phase acquisitions (Niels Janssen)
+
 10-Oct-2016
  - Restores/improves building for the Windows operating system using MinGW.
 
