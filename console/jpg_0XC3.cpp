@@ -148,8 +148,9 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         } while ((lRawPos < lRawSz) && (btMarkerType == 0));
         uint16_t lSegmentLength = readWord (lRawRA, &lRawPos, lRawSz); //read marker length
         long lSegmentEnd = lRawPos+(lSegmentLength - 2);
-        if (lSegmentEnd > lRawSz)
+        if (lSegmentEnd > lRawSz) {
             abortGoto(); //goto abortGoto;
+        }
         if (verbose)
             printf("btMarkerType %#02X length %d@%ld\n", btMarkerType, lSegmentLength, lRawPos);
         if ( ((btMarkerType >= 0xC0) && (btMarkerType <= 0xC3)) || ((btMarkerType >= 0xC5) && (btMarkerType <= 0xCB)) || ((btMarkerType >= 0xCD) && (btMarkerType <= 0xCF)) )  {
