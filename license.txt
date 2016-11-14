@@ -1,9 +1,9 @@
 The following files are from different authors and have their own licenses
 
-nifti.h, nifti1_io.h/nifti1_io.c is public domain
+nifti.h, nifti1_io.h/nifti1_io_core.cpp is public domain
   http://niftilib.sourceforge.net
   http://sourceforge.net/projects/niftilib/files/latest/download
-ujpeg.h/ujpeg.c see web site for licenses
+ujpeg.h/ujpeg.cpp uses the MIT license (see file for license text)
   http://keyj.emphy.de/nanojpeg/
 miniz.c is public domain (http://unlicense.org)
  https://code.google.com/p/miniz/

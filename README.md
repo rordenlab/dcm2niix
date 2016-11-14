@@ -7,7 +7,7 @@ dcm2niix is a designed to convert neuroimaging data from the DICOM format to the
 
 ## License
 
-This software is open source. The bulk of the code is covered by the BSD license. Some units are either public domain or have similar licenses. See the license.txt file for more details.
+This software is open source. The bulk of the code is covered by the BSD license. Some units are either public domain (nifti*.*, miniz.c) or use the MIT license (ujpeg.cpp). See the license.txt file for more details.
 
 ## Versions
 

@@ -1,7 +1,253 @@
+// NanoJPEG -- KeyJ's Tiny Baseline JPEG Decoder
+// version 1.3.5 (2016-11-14)
+// Copyright (c) 2009-2016 Martin J. Fiedler <martin.fiedler@gmx.net>
+// published under the terms of the MIT license
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to
+// deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+// sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
+
+///////////////////////////////////////////////////////////////////////////////
+// DOCUMENTATION SECTION                                                     //
+// read this if you want to know what this is all about                      //
+///////////////////////////////////////////////////////////////////////////////
+
+// INTRODUCTION
+// ============
+//
+// This is a minimal decoder for baseline JPEG images. It accepts memory dumps
+// of JPEG files as input and generates either 8-bit grayscale or packed 24-bit
+// RGB images as output. It does not parse JFIF or Exif headers; all JPEG files
+// are assumed to be either grayscale or YCbCr. CMYK or other color spaces are
+// not supported. All YCbCr subsampling schemes with power-of-two ratios are
+// supported, as are restart intervals. Progressive or lossless JPEG is not
+// supported.
+// Summed up, NanoJPEG should be able to decode all images from digital cameras
+// and most common forms of other non-progressive JPEG images.
+// The decoder is not optimized for speed, it's optimized for simplicity and
+// small code. Image quality should be at a reasonable level. A bicubic chroma
+// upsampling filter ensures that subsampled YCbCr images are rendered in
+// decent quality. The decoder is not meant to deal with broken JPEG files in
+// a graceful manner; if anything is wrong with the bitstream, decoding will
+// simply fail.
+// The code should work with every modern C compiler without problems and
+// should not emit any warnings. It uses only (at least) 32-bit integer
+// arithmetic and is supposed to be endianness independent and 64-bit clean.
+// However, it is not thread-safe.
+
+
+// COMPILE-TIME CONFIGURATION
+// ==========================
+//
+// The following aspects of NanoJPEG can be controlled with preprocessor
+// defines:
+//
+// _NJ_EXAMPLE_PROGRAM     = Compile a main() function with an example
+//                           program.
+// _NJ_INCLUDE_HEADER_ONLY = Don't compile anything, just act as a header
+//                           file for NanoJPEG. Example:
+//                               #define _NJ_INCLUDE_HEADER_ONLY
+//                               #include "nanojpeg.c"
+//                               int main(void) {
+//                                   njInit();
+//                                   // your code here
+//                                   njDone();
+//                               }
+// NJ_USE_LIBC=1           = Use the malloc(), free(), memset() and memcpy()
+//                           functions from the standard C library (default).
+// NJ_USE_LIBC=0           = Don't use the standard C library. In this mode,
+//                           external functions njAlloc(), njFreeMem(),
+//                           njFillMem() and njCopyMem() need to be defined
+//                           and implemented somewhere.
+// NJ_USE_WIN32=0          = Normal mode (default).
+// NJ_USE_WIN32=1          = If compiling with MSVC for Win32 and
+//                           NJ_USE_LIBC=0, NanoJPEG will use its own
+//                           implementations of the required C library
+//                           functions (default if compiling with MSVC and
+//                           NJ_USE_LIBC=0).
+// NJ_CHROMA_FILTER=1      = Use the bicubic chroma upsampling filter
+//                           (default).
+// NJ_CHROMA_FILTER=0      = Use simple pixel repetition for chroma upsampling
+//                           (bad quality, but faster and less code).
+
+
+// API
+// ===
+//
+// For API documentation, read the "header section" below.
+
+
+// EXAMPLE
+// =======
+//
+// A few pages below, you can find an example program that uses NanoJPEG to
+// convert JPEG files into PGM or PPM. To compile it, use something like
+//     gcc -O3 -D_NJ_EXAMPLE_PROGRAM -o nanojpeg nanojpeg.c
+// You may also add -std=c99 -Wall -Wextra -pedantic -Werror, if you want :)
+// The only thing you might need is -Wno-shift-negative-value, because this
+// code relies on the target machine using two's complement arithmetic, but
+// the C standard does not, even though *any* practically useful machine
+// nowadays uses two's complement.
+
+
+///////////////////////////////////////////////////////////////////////////////
+// HEADER SECTION                                                            //
+// copy and pase this into nanojpeg.h if you want                            //
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _NANOJPEG_H
+#define _NANOJPEG_H
+
+// nj_result_t: Result codes for njDecode().
+typedef enum _nj_result {
+    NJ_OK = 0,        // no error, decoding successful
+    NJ_NO_JPEG,       // not a JPEG file
+    NJ_UNSUPPORTED,   // unsupported format
+    NJ_OUT_OF_MEM,    // out of memory
+    NJ_INTERNAL_ERR,  // internal error
+    NJ_SYNTAX_ERROR,  // syntax error
+    __NJ_FINISHED,    // used internally, will never be reported
+} nj_result_t;
+
+// njInit: Initialize NanoJPEG.
+// For safety reasons, this should be called at least one time before using
+// using any of the other NanoJPEG functions.
+void njInit(void);
+
+// njDecode: Decode a JPEG image.
+// Decodes a memory dump of a JPEG file into internal buffers.
+// Parameters:
+//   jpeg = The pointer to the memory dump.
+//   size = The size of the JPEG file.
+// Return value: The error code in case of failure, or NJ_OK (zero) on success.
+nj_result_t njDecode(const void* jpeg, const int size);
+
+// njGetWidth: Return the width (in pixels) of the most recently decoded
+// image. If njDecode() failed, the result of njGetWidth() is undefined.
+int njGetWidth(void);
+
+// njGetHeight: Return the height (in pixels) of the most recently decoded
+// image. If njDecode() failed, the result of njGetHeight() is undefined.
+int njGetHeight(void);
+
+// njIsColor: Return 1 if the most recently decoded image is a color image
+// (RGB) or 0 if it is a grayscale image. If njDecode() failed, the result
+// of njGetWidth() is undefined.
+int njIsColor(void);
+
+// njGetImage: Returns the decoded image data.
+// Returns a pointer to the most recently image. The memory layout it byte-
+// oriented, top-down, without any padding between lines. Pixels of color
+// images will be stored as three consecutive bytes for the red, green and
+// blue channels. This data format is thus compatible with the PGM or PPM
+// file formats and the OpenGL texture formats GL_LUMINANCE8 or GL_RGB8.
+// If njDecode() failed, the result of njGetImage() is undefined.
+unsigned char* njGetImage(void);
+
+// njGetImageSize: Returns the size (in bytes) of the image data returned
+// by njGetImage(). If njDecode() failed, the result of njGetImageSize() is
+// undefined.
+int njGetImageSize(void);
+
+// njDone: Uninitialize NanoJPEG.
+// Resets NanoJPEG's internal state and frees all memory that has been
+// allocated at run-time by NanoJPEG. It is still possible to decode another
+// image after a njDone() call.
+void njDone(void);
+
+#endif//_NANOJPEG_H
+
+
+///////////////////////////////////////////////////////////////////////////////
+// CONFIGURATION SECTION                                                     //
+// adjust the default settings for the NJ_ defines here                      //
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef NJ_USE_LIBC
+    #define NJ_USE_LIBC 1
+#endif
+
+#ifndef NJ_USE_WIN32
+  #ifdef _MSC_VER
+    #define NJ_USE_WIN32 (!NJ_USE_LIBC)
+  #else
+    #define NJ_USE_WIN32 0
+  #endif
+#endif
+
+#ifndef NJ_CHROMA_FILTER
+    #define NJ_CHROMA_FILTER 1
+#endif
+
+
+///////////////////////////////////////////////////////////////////////////////
+// EXAMPLE PROGRAM                                                           //
+// just define _NJ_EXAMPLE_PROGRAM to compile this (requires NJ_USE_LIBC)    //
+///////////////////////////////////////////////////////////////////////////////
+
+#ifdef  _NJ_EXAMPLE_PROGRAM
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "ujpeg.h"
+
+int main(int argc, char* argv[]) {
+    int size;
+    char *buf;
+    FILE *f;
+
+    if (argc < 2) {
+        printf("Usage: %s <input.jpg> [<output.ppm>]\n", argv[0]);
+        return 2;
+    }
+    f = fopen(argv[1], "rb");
+    if (!f) {
+        printf("Error opening the input file.\n");
+        return 1;
+    }
+    fseek(f, 0, SEEK_END);
+    size = (int) ftell(f);
+    buf = (char*) malloc(size);
+    fseek(f, 0, SEEK_SET);
+    size = (int) fread(buf, 1, size, f);
+    fclose(f);
+
+    njInit();
+    if (njDecode(buf, size)) {
+        free((void*)buf);
+        printf("Error decoding the input file.\n");
+        return 1;
+    }
+    free((void*)buf);
+
+    f = fopen((argc > 2) ? argv[2] : (njIsColor() ? "nanojpeg_out.ppm" : "nanojpeg_out.pgm"), "wb");
+    if (!f) {
+        printf("Error opening the output file.\n");
+        return 1;
+    }
+    fprintf(f, "P%d\n%d %d\n255\n", njIsColor() ? 6 : 5, njGetWidth(), njGetHeight());
+    fwrite(njGetImage(), 1, njGetImageSize(), f);
+    fclose(f);
+    njDone();
+    return 0;
+}
+
+#endif
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -18,8 +264,6 @@
     #define NJ_INLINE static inline
     #define NJ_FORCE_INLINE static inline
 #endif
-
-#define NJ_USE_LIBC 1
 
 #if NJ_USE_LIBC
     #include <stdlib.h>
@@ -280,10 +524,12 @@ NJ_INLINE void njDecodeSOF(void) {
     int i, ssxmax = 0, ssymax = 0;
     nj_component_t* c;
     njDecodeLength();
+    njCheckError();
     if (nj.length < 9) njThrow(NJ_SYNTAX_ERROR);
     if (nj.pos[0] != 8) njThrow(NJ_UNSUPPORTED);
     nj.height = njDecode16(nj.pos+1);
     nj.width = njDecode16(nj.pos+3);
+    if (!nj.width || !nj.height) njThrow(NJ_SYNTAX_ERROR);
     nj.ncomp = nj.pos[5];
     njSkip(6);
     switch (nj.ncomp) {
@@ -312,19 +558,17 @@ NJ_INLINE void njDecodeSOF(void) {
     }
     nj.mbsizex = ssxmax << 3;
     nj.mbsizey = ssymax << 3;
-    if ((nj.mbsizex == 0) || (nj.mbsizey == 0)) return;
     nj.mbwidth = (nj.width + nj.mbsizex - 1) / nj.mbsizex;
     nj.mbheight = (nj.height + nj.mbsizey - 1) / nj.mbsizey;
     for (i = 0, c = nj.comp;  i < nj.ncomp;  ++i, ++c) {
         c->width = (nj.width * c->ssx + ssxmax - 1) / ssxmax;
-        c->stride = (c->width + 7) & 0x7FFFFFF8;
         c->height = (nj.height * c->ssy + ssymax - 1) / ssymax;
-        c->stride = nj.mbwidth * nj.mbsizex * c->ssx / ssxmax;
+        c->stride = nj.mbwidth * c->ssx << 3;
         if (((c->width < 3) && (c->ssx != ssxmax)) || ((c->height < 3) && (c->ssy != ssymax))) njThrow(NJ_UNSUPPORTED);
-        if (!(c->pixels = (unsigned char *)njAllocMem(c->stride * (nj.mbheight * nj.mbsizey * c->ssy / ssymax)))) njThrow(NJ_OUT_OF_MEM);
+        if (!(c->pixels = (unsigned char*) njAllocMem(c->stride * nj.mbheight * c->ssy << 3))) njThrow(NJ_OUT_OF_MEM);
     }
     if (nj.ncomp == 3) {
-        nj.rgb = (unsigned char *)njAllocMem(nj.width * nj.height * nj.ncomp);
+        nj.rgb = (unsigned char*) njAllocMem(nj.width * nj.height * nj.ncomp);
         if (!nj.rgb) njThrow(NJ_OUT_OF_MEM);
     }
     njSkip(nj.length);
@@ -335,6 +579,7 @@ NJ_INLINE void njDecodeDHT(void) {
     nj_vlc_code_t *vlc;
     static unsigned char counts[16];
     njDecodeLength();
+    njCheckError();
     while (nj.length >= 17) {
         i = nj.pos[0];
         if (i & 0xEC) njThrow(NJ_SYNTAX_ERROR);
@@ -353,7 +598,7 @@ NJ_INLINE void njDecodeDHT(void) {
             remain -= currcnt << (16 - codelen);
             if (remain < 0) njThrow(NJ_SYNTAX_ERROR);
             for (i = 0;  i < currcnt;  ++i) {
-                unsigned char code = nj.pos[i];
+                register unsigned char code = nj.pos[i];
                 for (j = spread;  j;  --j) {
                     vlc->bits = (unsigned char) codelen;
                     vlc->code = code;
@@ -374,6 +619,7 @@ NJ_INLINE void njDecodeDQT(void) {
     int i;
     unsigned char *t;
     njDecodeLength();
+    njCheckError();
     while (nj.length >= 65) {
         i = nj.pos[0];
         if (i & 0xFC) njThrow(NJ_SYNTAX_ERROR);
@@ -388,6 +634,7 @@ NJ_INLINE void njDecodeDQT(void) {
 
 NJ_INLINE void njDecodeDRI(void) {
     njDecodeLength();
+    njCheckError();
     if (nj.length < 2) njThrow(NJ_SYNTAX_ERROR);
     nj.rstinterval = njDecode16(nj.pos);
     njSkip(nj.length);
@@ -433,6 +680,7 @@ NJ_INLINE void njDecodeScan(void) {
     int rstcount = nj.rstinterval, nextrst = 0;
     nj_component_t* c;
     njDecodeLength();
+    njCheckError();
     if (nj.length < (4 + 2 * nj.ncomp)) njThrow(NJ_SYNTAX_ERROR);
     if (nj.pos[0] != nj.ncomp) njThrow(NJ_UNSUPPORTED);
     njSkip(1);
@@ -489,7 +737,7 @@ NJ_INLINE void njUpsampleH(nj_component_t* c) {
     const int xmax = c->width - 3;
     unsigned char *out, *lin, *lout;
     int x, y;
-    out = njAllocMem((c->width * c->height) << 1);
+    out = (unsigned char*) njAllocMem((c->width * c->height) << 1);
     if (!out) njThrow(NJ_OUT_OF_MEM);
     lin = c->pixels;
     lout = out;
@@ -509,7 +757,7 @@ NJ_INLINE void njUpsampleH(nj_component_t* c) {
     }
     c->width <<= 1;
     c->stride = c->width;
-    njFreeMem(c->pixels);
+    njFreeMem((void*)c->pixels);
     c->pixels = out;
 }
 
@@ -517,7 +765,7 @@ NJ_INLINE void njUpsampleV(nj_component_t* c) {
     const int w = c->width, s1 = c->stride, s2 = s1 + s1;
     unsigned char *out, *cin, *cout;
     int x, y;
-    out = njAllocMem((c->width * c->height) << 1);
+    out = (unsigned char*) njAllocMem((c->width * c->height) << 1);
     if (!out) njThrow(NJ_OUT_OF_MEM);
     for (x = 0;  x < w;  ++x) {
         cin = &c->pixels[x];
@@ -538,7 +786,7 @@ NJ_INLINE void njUpsampleV(nj_component_t* c) {
     }
     c->height <<= 1;
     c->stride = c->width;
-    njFreeMem(c->pixels);
+    njFreeMem((void*) c->pixels);
     c->pixels = out;
 }
 
@@ -549,9 +797,9 @@ NJ_INLINE void njUpsample(nj_component_t* c) {
     unsigned char *out, *lin, *lout;
     while (c->width < nj.width) { c->width <<= 1; ++xshift; }
     while (c->height < nj.height) { c->height <<= 1; ++yshift; }
-    out = (unsigned char *)njAllocMem(c->width * c->height);
+    out = (unsigned char*) njAllocMem(c->width * c->height);
     if (!out) njThrow(NJ_OUT_OF_MEM);
-    //lin = c->pixels;
+    lin = c->pixels;
     lout = out;
     for (y = 0;  y < c->height;  ++y) {
         lin = &c->pixels[(y >> yshift) * c->stride];
@@ -560,13 +808,13 @@ NJ_INLINE void njUpsample(nj_component_t* c) {
         lout += c->width;
     }
     c->stride = c->width;
-    njFreeMem(c->pixels);
+    njFreeMem((void*) c->pixels);
     c->pixels = out;
 }
 
 #endif
 
-NJ_INLINE void njConvert() {
+NJ_INLINE void njConvert(void) {
     int i;
     nj_component_t* c;
     for (i = 0, c = nj.comp;  i < nj.ncomp;  ++i, ++c) {
@@ -592,9 +840,9 @@ NJ_INLINE void njConvert() {
         const unsigned char *pcr = nj.comp[2].pixels;
         for (yy = nj.height;  yy;  --yy) {
             for (x = 0;  x < nj.width;  ++x) {
-                 int y = py[x] << 8;
-                 int cb = pcb[x] - 128;
-                 int cr = pcr[x] - 128;
+                register int y = py[x] << 8;
+                register int cb = pcb[x] - 128;
+                register int cr = pcr[x] - 128;
                 *prgb++ = njClip((y            + 359 * cr + 128) >> 8);
                 *prgb++ = njClip((y -  88 * cb - 183 * cr + 128) >> 8);
                 *prgb++ = njClip((y + 454 * cb            + 128) >> 8);
