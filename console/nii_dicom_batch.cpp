@@ -370,6 +370,23 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
 	//Lines below directly save DICOM values
+  if (d.acquisitionTime > 0.0 && d.acquisitionDate > 0.0){
+     long acquisitionDate = d.acquisitionDate;
+     float acquisitionTime = d.acquisitionTime;
+     char acqDateTimeBuf[64];
+     snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
+     int ayear,amonth,aday,ahour,amin;
+     float asec;
+     int count = 0;
+     sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%f%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);
+     if (count) {
+        // ISO 8601 specifies a sign must exist for distant years.
+        fprintf(fp, "\t\"AcquisitionDateTime\": ");
+        fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "%4d" : "%+4d", ayear);
+        fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\n", amonth, aday, ahour, amin, asec);
+        }
+  }
+
 	// if (d.acquisitionTime > 0.0) fprintf(fp, "\t\"AcquisitionTime\": %f,\n", d.acquisitionTime );
 	// if (d.acquisitionDate > 0.0) fprintf(fp, "\t\"AcquisitionDate\": %8.0f,\n", d.acquisitionDate );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
