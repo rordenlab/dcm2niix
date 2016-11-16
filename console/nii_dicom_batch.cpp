@@ -383,7 +383,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
         // ISO 8601 specifies a sign must exist for distant years.
         fprintf(fp, "\t\"AcquisitionDateTime\": ");
         fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "%4d" : "%+4d", ayear);
-        fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\n", amonth, aday, ahour, amin, asec);
+        fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f,\n", amonth, aday, ahour, amin, asec);
         }
   }
 
