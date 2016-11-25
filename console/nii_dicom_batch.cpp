@@ -2086,7 +2086,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     bool compressionWarning = false;
     for (int i = 0; i < nDcm; i++ ) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
-        if (dcmList[i].CSA.numDti > 1) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+        if ((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1)) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
             struct TDCMsort dcmSort[1];
             dcmSort[0].indx = i;
             dcmSort[0].img = ((uint64_t)dcmList[i].seriesNum << 32) + dcmList[i].imageNum;

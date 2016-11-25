@@ -731,6 +731,7 @@ struct TDICOMdata clear_dicom_data() {
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.coilNum = 1;
+    d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
     d.intenScale = 1;
     d.intenIntercept = 0;
@@ -2578,8 +2579,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
+#define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
+#define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
-#define  kLocationsInAcquisitionPhilips  0x2001+(0x1018 << 16 )
+//#define  kLocationsInAcquisitionPhilips  0x2001+(0x1018 << 16 ) //
 #define  kNumberOfDynamicScans  0x2001+(0x1081 << 16 )//'2001' '1081' 'IS' 'NumberOfDynamicScans'
 #define  kMRAcquisitionTypePhilips 0x2005+(0x106F << 16)
 #define  kAngulationAP 0x2005+(0x1071 << 16)//'2005' '1071' 'FL' 'MRStackAngulationAP'
@@ -2632,9 +2635,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     bool isMosaic = false;
     int phaseEncodingSteps = 0;
-    int patientPositionCount = 0;
+    int patientPositionNum = 0;
     int sqDepth = 0;
-    //long coilNum = 0; //Siemens can save one image per coil (H12,H13,etc) or one combined image for array (HEA;HEP)
+    float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
+    for (int k = 0; k < 4; k++)
+		d.patientPositionStartPhilips[k] = NAN;
+    for (int k = 0; k < 4; k++)
+		d.patientPositionEndPhilips[k] = NAN;
     while ((d.imageStart == 0) && ((lPos+8) <  fileLen)) {
         if (d.isLittleEndian)
             groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -2866,20 +2873,28 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #endif
                     is2005140FSQwarned = true;
                 } else {
-                    patientPositionCount++;
+                    patientPositionNum++;
                     isAtFirstPatientPosition = true;
-                    if (isnan(d.patientPosition[1]))
-                        dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
-                    else {
-                        dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPositionLast[0]); //slice direction for 4D
+                    dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &patientPosition[0]); //slice position
+                    if (isnan(d.patientPosition[1])) {
+                        //dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
+						for (int k = 0; k < 4; k++)
+							d.patientPosition[k] = patientPosition[k];
+                    } else {
+                        //dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPositionLast[0]); //slice direction for 4D
+                        for (int k = 0; k < 4; k++)
+							d.patientPositionLast[k] = patientPosition[k];
                         if ((isFloatDiff(d.patientPositionLast[1],d.patientPosition[1]))  ||
                             (isFloatDiff(d.patientPositionLast[2],d.patientPosition[2]))  ||
                             (isFloatDiff(d.patientPositionLast[3],d.patientPosition[3])) ) {
                             isAtFirstPatientPosition = false; //this slice is not at position of 1st slice
                             if (d.patientPositionSequentialRepeats == 0) //this is the first slice with different position
-                                d.patientPositionSequentialRepeats = patientPositionCount-1;
+                                d.patientPositionSequentialRepeats = patientPositionNum-1;
                         } //if different position from 1st slice in file
                     } //if not first slice in file
+                    if (isVerbose > 1)
+                    	printf("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%d\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
+
                 } //not after 2005,140F
                 break;
             case 	kInPlanePhaseEncodingDirection:
@@ -2987,9 +3002,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kLocationsInAcquisitionPhilips:
-                locationsInAcquisitionPhilips = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-                break;
             case kIconImageSequence:
                 isIconImageSequence = true;
                 break;
@@ -3060,6 +3072,29 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                        d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 }
                 break;
+            case kSliceNumberMrPhilips :
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+            	if (d.patientPositionNumPhilips < kMaxDTI4D)
+                        dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = dcmStrInt(lLength, &buffer[lPos]);
+            	d.patientPositionNumPhilips++;
+            	//Philips can save 3D acquisitions in a single file with slices stored in non-sequential order. We need to know the first and final spatial position
+            	if (d.patientPositionNumPhilips == 1) {
+            		for (int k = 0; k < 4; k++)
+						d.patientPositionStartPhilips[k] = NAN;
+            	}
+            	//patientPositionNum
+            	if (d.patientPositionNumPhilips == locationsInAcquisitionPhilips) {
+            		for (int k = 0; k < 4; k++)
+						d.patientPositionEndPhilips[k] = NAN;
+            	}
+            	break;
+            case kNumberOfSlicesMrPhilips :
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+                locationsInAcquisitionPhilips = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	//printf(">>>>%d\n,",locationsInAcquisitionPhilips);
+				break;
             case    kDiffusionDirectionRL:
                 if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
                     d.CSA.dtiV[1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
@@ -3138,7 +3173,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kImagesInAcquisition :
                 imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
-
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
@@ -3146,12 +3180,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 //geiisBug = false;
                 //http://www.dclunie.com/medical-image-faq/html/part6.html
                 //unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
-                if (d.compressionScheme != kCompressNone) {
+                if ((d.compressionScheme != kCompressNone) && (!isIconImageSequence)) {
                     lLength = 0;
                     isEncapsulatedData = true;
                 }
-
-                isIconImageSequence = false;
+				isIconImageSequence = false;
                 break;
             case 	kImageStartFloat:
                 d.isFloat = true;
@@ -3170,12 +3203,20 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         } //switch/case for groupElement
         } //if nest
         //#ifdef MY_DEBUG
-        if (isVerbose > 1)
-            printf(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest);
-            //printf(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
+        if (isVerbose > 1) {
+        	if ((lLength > 8) && (lLength < 128)) { //if length is greater than 8 bytes the data must be a string [or image data]
+        		char tagStr[kDICOMStr];
+            	tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
+                dcmStr (lLength, &buffer[lPos], tagStr);
+            	printf(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
+            }	else
+            	printf(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest);
+        }   //printf(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         //#endif
         lPos = lPos + (lLength);
-    }
+        //printf("%d\n",d.imageStart);
+    } //while d.imageStart == 0
+
     free (buffer);
     d.dateTime = (atof(d.studyDate)* 1000000) + atof(d.studyTime);
     //printf("slices in Acq %d %d\n",d.locationsInAcquisition,locationsInAcquisitionPhilips);
@@ -3187,9 +3228,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         d.locationsInAcquisition = locationsInAcquisitionGE;
     if (zSpacing > 0)
     	d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
-    //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionCount,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
-    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionCount > d.xyzDim[3]))
-        printf("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionCount, d.xyzDim[3]); //Philips reported different positions for each slice!
+    //printf("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionNum,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
+    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3]))
+        printf("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionNum, d.xyzDim[3]); //Philips reported different positions for each slice!
     if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
     	d.isValid = true;
     if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
