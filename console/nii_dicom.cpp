@@ -741,6 +741,7 @@ struct TDICOMdata clear_dicom_data() {
     d.imageNum = 1;
     d.imageStart = 0;
     d.is3DAcq = false; //e.g. MP-RAGE, SPACE, TFE
+    d.isSlicesSpatiallySequentialPhilips = true; //Philips can save slices in random order, e.g. 4,5,6,1,2,3
     d.isNonImage = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
@@ -1836,6 +1837,34 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
     return bImg;
 } // nii_flipImgZ()
 
+unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h, struct TDTI4D *dti4D){
+    //flip slice order - Philips scanners can save data in non-contiguous order
+    if ((h->dim[3] < 2) || (h->dim[4] > 1)) return bImg;
+    if (h->dim[3] >= kMaxDTI4D) {
+    	printf("Warning: unable to reorder slices (%d > %d)\n", h->dim[3], kMaxDTI4D);
+    	return bImg;
+    }
+    //printf("<<< Slices not spatially contiguous: please check output [new feature]\n");
+    int dim4to7 = 1;
+    for (int i = 4; i < 8; i++)
+        if (h->dim[i] > 1) dim4to7 = dim4to7 * h->dim[i];
+    int sliceBytes = h->dim[1] * h->dim[2] * h->bitpix/8;
+    if (sliceBytes < 0)  return bImg;
+    long long volBytes = sliceBytes * h->dim[3];
+    unsigned char *srcImg = (unsigned char *)malloc(volBytes);
+    for (int v = 0; v < dim4to7; v++) {
+    	long long volStart = v * volBytes;
+    	memcpy(&srcImg[volStart], &bImg[volStart], volBytes); //dest, src, size
+    	for (int z = 0; z < h->dim[3]; z++) { //for each slice
+			int src = dti4D->S[z].sliceNumberMrPhilips - 1; //-1 as Philips indexes slices from 1 not 0
+			if ((src < 0) || (src >= h->dim[3])) continue;
+			memcpy(&bImg[volStart+(src*sliceBytes)], &srcImg[volStart+(z*sliceBytes)], sliceBytes); //dest, src, size
+    	}
+    }
+    free(srcImg);
+    return bImg;
+}// nii_reorderSlices()
+
 unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h){
     //flip slice order
     if (h->dim[3] < 2) return bImg;
@@ -2638,10 +2667,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     int patientPositionNum = 0;
     int sqDepth = 0;
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
-    for (int k = 0; k < 4; k++)
-		d.patientPositionStartPhilips[k] = NAN;
-    for (int k = 0; k < 4; k++)
-		d.patientPositionEndPhilips[k] = NAN;
+    float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
+    float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
     while ((d.imageStart == 0) && ((lPos+8) <  fileLen)) {
         if (d.isLittleEndian)
             groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -3075,25 +3102,32 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kSliceNumberMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
-            	if (d.patientPositionNumPhilips < kMaxDTI4D)
-                        dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = dcmStrInt(lLength, &buffer[lPos]);
+
+            	if (d.patientPositionNumPhilips >= kMaxDTI4D) {
+            		d.patientPositionNumPhilips++;
+            		break;
+            	}
+            	int sliceNumber;
+            	sliceNumber = dcmStrInt(lLength, &buffer[lPos]);
+                dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = sliceNumber;
+				if ((d.patientPositionNumPhilips > 0) && (abs(dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips - dti4D->S[d.patientPositionNumPhilips -1].sliceNumberMrPhilips) != 1) )
+						d.isSlicesSpatiallySequentialPhilips = false; //slices not sequential (1,2,3,4 or 4,3,2,1) but 4,3,1,2
             	d.patientPositionNumPhilips++;
             	//Philips can save 3D acquisitions in a single file with slices stored in non-sequential order. We need to know the first and final spatial position
-            	if (d.patientPositionNumPhilips == 1) {
+            	if (sliceNumber == 1) {
             		for (int k = 0; k < 4; k++)
-						d.patientPositionStartPhilips[k] = NAN;
+						patientPositionStartPhilips[k] = patientPosition[k];
             	}
             	//patientPositionNum
-            	if (d.patientPositionNumPhilips == locationsInAcquisitionPhilips) {
+            	if (sliceNumber == locationsInAcquisitionPhilips) {
             		for (int k = 0; k < 4; k++)
-						d.patientPositionEndPhilips[k] = NAN;
+						patientPositionEndPhilips[k] = patientPosition[k];
             	}
             	break;
             case kNumberOfSlicesMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
                 locationsInAcquisitionPhilips = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-            	//printf(">>>>%d\n,",locationsInAcquisitionPhilips);
 				break;
             case    kDiffusionDirectionRL:
                 if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
@@ -3283,6 +3317,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	//     	else
 	//     		printf("Serious error: spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
 	//     }
+	if ((d.numberOfDynamicScans < 2) && (!d.isSlicesSpatiallySequentialPhilips) && (patientPositionStartPhilips[1] != NAN) && (patientPositionEndPhilips[1] != NAN)) {
+		//to do: check for d.numberOfDynamicScans > 1
+		for (int k = 0; k < 4; k++) {
+			d.patientPosition[k] = patientPositionStartPhilips[k];
+			d.patientPositionLast[k] = patientPositionEndPhilips[k];
+		}
+		printf("<<< Slices not spatially contiguous: please check output [new feature]\n");
+    }
     if (isVerbose) {
         printf("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printf(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);

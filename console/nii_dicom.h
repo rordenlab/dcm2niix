@@ -55,9 +55,9 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
         int xyzDim[5];//, xyzOri[4];
         int patientPositionNumPhilips, coilNum, echoNum,sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme; //
         float flipAngle, fieldStrength, TE, TR,intenScale,intenIntercept, gantryTilt, lastScanLoc, angulation[4];
-        float orient[7], patientPositionStartPhilips[4], patientPositionEndPhilips[4], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
+        float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
         double dateTime, acquisitionTime, acquisitionDate;
-        bool isNonImage, isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
+        bool isSlicesSpatiallySequentialPhilips, isNonImage, isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC;
         char  imageType[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],seriesDescription[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],scanningSequence[kDICOMStr], birthDate[kDICOMStr], gender[kDICOMStr], age[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;
@@ -69,6 +69,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDICOMdata clear_dicom_data();
     unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h);
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
+    unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h, struct TDTI4D *dti4D);
     void changeExt (char *file_name, const char* ext);
     struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D);
     unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar);

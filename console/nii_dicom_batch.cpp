@@ -1509,7 +1509,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n");
 		//see https://github.com/neurolabusc/dcm2niix/issues/40
 		sliceDir = -1; //not sure how to handle negative determinants?
-
 	}
 	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
@@ -1526,6 +1525,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     #else
     printf( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     #endif
+    if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
+    	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
     #ifdef myUseCOut
     	std::cout<<"WARNING: check that 2D images are not mirrored"<<std::endl;
