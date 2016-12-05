@@ -114,11 +114,15 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         printf("Error opening %s\n", fn);
         return NULL; //read failure
     }
-    fseek(reader, skipBytes, SEEK_SET);
+    size_t lSz = fseek(reader, skipBytes, SEEK_SET);
+    if (lSz < skipBytes) {
+        printf("Error: unable to load JPEG  %s\n", fn);
+        return NULL; //read failure
+    }
     unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
-    fread(lRawRA, 1, lRawSz, reader);
+    lSz = fread(lRawRA, 1, lRawSz, reader);
     fclose(reader);
-    if ((lRawRA[0] != 0xFF) || (lRawRA[1] != 0xD8) || (lRawRA[2] != 0xFF)) {
+    if ((lSz < lRawSz) || (lRawRA[0] != 0xFF) || (lRawRA[1] != 0xD8) || (lRawRA[2] != 0xFF)) {
         printf("Error: JPEG signature 0xFFD8FF not found at offset %d of %s\n", skipBytes, fn);
         abortGoto();//goto abortGoto; //signature failure http://en.wikipedia.org/wiki/List_of_file_signatures
     }

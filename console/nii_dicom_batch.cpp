@@ -1914,15 +1914,16 @@ bool isExt (char *file_name, const char* ext) {
         char noteheaderbuf[BIORAD_NOTE_HEADER_SIZE];
         char note[BIORAD_NOTE_SIZE];
         while (!feof(f)) {
-            fread(&noteheaderbuf, BIORAD_NOTE_HEADER_SIZE, 1, f);
-            fread(&note, BIORAD_NOTE_SIZE, 1, f);
+            size_t sz = fread(&noteheaderbuf, BIORAD_NOTE_HEADER_SIZE, 1, f);
+            if (sz < BIORAD_NOTE_HEADER_SIZE) return EXIT_FAILURE;
+            sz = fread(&note, BIORAD_NOTE_SIZE, 1, f);
+            if (sz < BIORAD_NOTE_SIZE) return EXIT_FAILURE;
             memcpy(&nh.note_flag, noteheaderbuf+2, sizeof(nh.note_flag));
             memcpy(&nh.note_type, noteheaderbuf+10, sizeof(nh.note_type));
             //		printf("regular note line %s\n",note);
             //		printf("note flag = %d, note type = %d\n",nh.note_flag,nh.note_type);
             // These are not interesting notes
             if(nh.note_type==1) continue;
-
             // Look for calibration information
             double d1, d2, d3;
             if ( 3 == sscanf( note, "AXIS_2 %lf %lf %lf", &d1, &d2, &d3 ) )
@@ -1942,7 +1943,6 @@ bool isExt (char *file_name, const char* ext) {
     convertForeignToNifti(nhdr);
     return EXIT_SUCCESS;
 }
-
 
 int convert_foreign(struct TDCMopts opts) {
     nifti_1_header nhdr ;

@@ -196,8 +196,9 @@ unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr
     if (size <= 8) return NULL;
     fseek(reader, dcm.imageStart, SEEK_SET);
     unsigned char *data = (unsigned char*) malloc(size);
-    fread(data, 1, size, reader);
+    size_t sz = fread(data, 1, size, reader);
     fclose(reader);
+    if (sz < size) return NULL;
     OPJ_CODEC_FORMAT format = OPJ_CODEC_JP2;
     //DICOM JPEG2k is SUPPOSED to start with codestream, but some vendors include a header
     if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51) format = OPJ_CODEC_J2K;
@@ -249,8 +250,9 @@ int foo (float vx) {
     if (size <= 8) return NULL;
     fseek(reader, dcmimageStart, SEEK_SET);
     unsigned char *data = (unsigned char*) malloc(size);
-    fread(data, 1, size, reader);
+    size_t sz = fread(data, 1, size, reader);
     fclose(reader);
+    if (sz < size) return NULL;
     OPJ_CODEC_FORMAT format = OPJ_CODEC_JP2;
     //DICOM JPEG2k is SUPPOSED to start with codestream, but some vendors include a header
     if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51) format = OPJ_CODEC_J2K;
@@ -1977,8 +1979,12 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
     }
 	fseek(file, (long) hdr.vox_offset, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
-    fread(bImg, imgszRead, 1, file);
+    size_t  sz = fread(bImg, imgszRead, 1, file);
 	fclose(file);
+	if (sz < imgsz) {
+         printf("Error: unable to load %s\n", imgname);
+         return NULL;
+    }
 	if (bitsAllocated == 12)
 	 conv12bit16bit(bImg, hdr);
     return bImg;
@@ -2471,8 +2477,9 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
     }
 	fseek(fp, 0, SEEK_SET);
 	unsigned char buffer[256];
-	fread(buffer, 256, 1, fp);
+	size_t sz = fread(buffer, 256, 1, fp);
 	fclose(fp);
+	if (sz < 256) return 0;
     if ((buffer[128] == 'D') && (buffer[129] == 'I')  && (buffer[130] == 'C') && (buffer[131] == 'M'))
     	return 1; //valid DICOM
     if ((buffer[0] == 8) && (buffer[1] == 0)  && (buffer[3] == 0))
@@ -2532,8 +2539,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		return d;
 	}
 	//Read file contents into buffer
-	fread(buffer, fileLen, 1, file);
+	size_t sz = fread(buffer, fileLen, 1, file);
 	fclose(file);
+	if (sz < fileLen) {
+         printf("Error: unable to load %s\n", fname);
+         return d;
+    }
 	//bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
     //if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')) {
     //    if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
