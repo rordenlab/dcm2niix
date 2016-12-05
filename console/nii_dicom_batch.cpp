@@ -1295,8 +1295,7 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     	return;
     }
     smooth1D(slices, sliceSums);
-    for (int i = 0; i  < slices; i++)
-    	sliceSums[i] = sliceSums[i] / maxSliceVal; //so brightest slice has value 1
+    for (int i = 0; i  < slices; i++) sliceSums[i] = sliceSums[i] / maxSliceVal; //so brightest slice has value 1
 	//dorsal crop: eliminate slices with more than 5% brightness
 	int dorsalCrop;
 	for (dorsalCrop = (slices-1); dorsalCrop >= 1; dorsalCrop--)
@@ -1502,8 +1501,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         return EXIT_FAILURE;
     }
     int sliceDir = 0;
-    if (hdr0.dim[3] > 1)
-        sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
+    if (hdr0.dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
 		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n");
@@ -1819,12 +1817,12 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
         }
     }
     if (nDuplicates > 0)
-            #ifdef myUseCOut
+        #ifdef myUseCOut
     	std::cout<<"Some images have identical time, series, acquisition and image values. Duplicates removed."<<std::endl;
 		#else
     	printf("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
     	#endif
-    	return nConvert - nDuplicates;
+    return nConvert - nDuplicates;
 }// removeDuplicates()
 
 int strcicmp(char const *a, char const *b) //case insensitive compare

@@ -848,7 +848,8 @@ float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//r
 #else
     bool swap = !littleEndian;
 #endif
-    float retVal;
+    float retVal = 0;
+    if (lByteLength < 4) return retVal;
     memcpy(&retVal, (char*)&lBuffer[0], 4);
     if (!swap) return retVal;
     float swapVal;
@@ -1595,18 +1596,17 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 
     if (isIntenScaleVaries)
        printf("Warning: intensity slope/intercept varies between slices! [solution: user dcm2nii instead]\n");
-        if (!isIndexSequential)
-            printf("Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
-            printf("Done reading PAR header version %.1f, with %d volumes\n", (float)parVers/10, d.CSA.numDti);
+    if (!isIndexSequential)
+    	printf("Warning: slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
+    printf("Done reading PAR header version %.1f, with %d volumes\n", (float)parVers/10, d.CSA.numDti);
 #endif
-
-            //see Xiangrui Li 's dicm2nii (also BSD license)
-            // http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
-            // Rotation order and signs are figured out by try and err, not 100% sure
-            float d2r = (float) (M_PI/180.0);
-            vec3 ca = setVec3(cos(d.angulation[1]*d2r),cos(d.angulation[2]*d2r),cos(d.angulation[3]*d2r));
-            vec3 sa = setVec3(sin(d.angulation[1]*d2r),sin(d.angulation[2]*d2r),sin(d.angulation[3]*d2r));
-            mat33 rx,ry,rz;
+	//see Xiangrui Li 's dicm2nii (also BSD license)
+	// http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
+	// Rotation order and signs are figured out by try and err, not 100% sure
+	float d2r = (float) (M_PI/180.0);
+	vec3 ca = setVec3(cos(d.angulation[1]*d2r),cos(d.angulation[2]*d2r),cos(d.angulation[3]*d2r));
+	vec3 sa = setVec3(sin(d.angulation[1]*d2r),sin(d.angulation[2]*d2r),sin(d.angulation[3]*d2r));
+	mat33 rx,ry,rz;
     LOAD_MAT33(rx,1.0f, 0.0f, 0.0f, 0.0f, ca.v[0], -sa.v[0], 0.0f, sa.v[0], ca.v[0]);
     LOAD_MAT33(ry, ca.v[1], 0.0f, sa.v[1], 0.0f, 1.0f, 0.0f, -sa.v[1], 0.0f, ca.v[1]);
     LOAD_MAT33(rz, ca.v[2], -sa.v[2], 0.0f, sa.v[2], ca.v[2], 0.0f, 0.0f, 0.0f, 1.0f);
@@ -1636,9 +1636,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     vec3 x;
     if (parVers > 40) //guess
         x = setVec3(((float)d.xyzDim[1]-1)/2,((float)d.xyzDim[2]-1)/2,((float)d.xyzDim[3]-1)/2);
-        else
-            x = setVec3((float)d.xyzDim[1]/2,(float)d.xyzDim[2]/2,((float)d.xyzDim[3]-1)/2);
-            mat44 eye;
+    else
+        x = setVec3((float)d.xyzDim[1]/2,(float)d.xyzDim[2]/2,((float)d.xyzDim[3]-1)/2);
+    mat44 eye;
     LOAD_MAT44(eye, 1.0f,0.0f,0.0f,x.v[0],
                0.0f,1.0f,0.0f,x.v[1],
                0.0f,0.0f,1.0f,x.v[2]);
@@ -2298,8 +2298,12 @@ TJPEG *  decode_JPEG_SOF_0XC3_stack (const char *fn, int skipBytes, bool isVerbo
     }
     fseek(reader, skipBytes, SEEK_SET);
     unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
-    fread(lRawRA, 1, lRawSz, reader);
+    size_t lSz = fread(lRawRA, 1, lRawSz, reader);
     fclose(reader);
+    if (lSz < lRawSz) {
+        printf("Error reading %s\n", fn);
+        abortGoto(); //read failure
+    }
     long lRawPos = 0; //starting position
     int frame = 0;
     while ((frame < frames) && ((lRawPos+10) < lRawSz)) {
@@ -2920,7 +2924,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                         } //if different position from 1st slice in file
                     } //if not first slice in file
                     if (isVerbose > 1)
-                    	printf("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%d\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
+                    	printf("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 
                 } //not after 2005,140F
                 break;

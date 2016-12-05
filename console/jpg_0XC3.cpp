@@ -201,7 +201,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                             btS1 = readByte(lRawRA, &lRawPos, lRawSz);
                             l[lFrameCount].HufVal[lIncY] = btS1;
                             l[lFrameCount].MaxHufVal = btS1;
-                            if ((btS1 >= 0) && (btS1 <= 16))
+                            if (btS1 <= 16) //unsigned ints ALWAYS >0, so no need for(btS1 >= 0)
                                 l[lFrameCount].HufSz[lIncY] = lInc;
                             else {
                                 printf("Huffman size array corrupted.\n");
