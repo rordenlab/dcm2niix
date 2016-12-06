@@ -1979,10 +1979,10 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
     }
 	fseek(file, (long) hdr.vox_offset, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
-    size_t  sz = fread(bImg, imgszRead, 1, file);
+    size_t  sz = fread(bImg, 1, imgszRead, file);
 	fclose(file);
-	if (sz < imgsz) {
-         printf("Error: unable to load %s\n", imgname);
+	if (sz < imgszRead) {
+         printf("Error: only loaded %zu of %zu bytes for %s\n", sz, imgszRead, imgname);
          return NULL;
     }
 	if (bitsAllocated == 12)
@@ -2477,7 +2477,7 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
     }
 	fseek(fp, 0, SEEK_SET);
 	unsigned char buffer[256];
-	size_t sz = fread(buffer, 256, 1, fp);
+	size_t sz = fread(buffer, 1, 256, fp);
 	fclose(fp);
 	if (sz < 256) return 0;
     if ((buffer[128] == 'D') && (buffer[129] == 'I')  && (buffer[130] == 'C') && (buffer[131] == 'M'))
@@ -2539,10 +2539,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		return d;
 	}
 	//Read file contents into buffer
-	size_t sz = fread(buffer, fileLen, 1, file);
+	size_t sz = fread(buffer, 1, fileLen, file);
 	fclose(file);
 	if (sz < fileLen) {
-         printf("Error: unable to load %s\n", fname);
+         printf("Error: only loaded %zu of %lld bytes for %s\n", sz, fileLen, fname);
          return d;
     }
 	//bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
