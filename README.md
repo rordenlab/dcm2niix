@@ -11,13 +11,14 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-25-Nov-2016
+7-Dec-2016
  - Handle 3D Philips DICOM files where images are not stored in a spatially contiguous order.
- - Handle DICOM violations where icon is uncompressed but image data is compressed
+ - Handle DICOM violations where icon is uncompressed but image data is compressed.
+ - Best guess matrix for 2D slices (similar to dcm2nii, SPM and MRIconvert).
 
 1-Nov-2016
  - AppVeyor Support (Ningfei Li & Chris Filo Gorgolewski)
- - Swap 3rd/4th dimensions for GE sequential multi-phase acquisitions (Niels Janssen)
+ - Swap 3rd/4th dimensions for GE sequential multi-phase acquisitions (Niels Janssen).
 
 10-Oct-2016
  - Restores/improves building for the Windows operating system using MinGW.
@@ -25,19 +26,19 @@ This software is open source. The bulk of the code is covered by the BSD license
 30-Sept-2016
  - Save ImageType (0x0008,0x0008) to BIDS.
  - Separate CT scans with different exposures.
- - Fixed issues where some compilers would generate erratic filenames for zero-padded series (e.g. "-f %3s")
+ - Fixed issues where some compilers would generate erratic filenames for zero-padded series (e.g. "-f %3s").
 
 21-Sept-2016
  - Reduce verbosity (reduce number of repeated warnings, less scary warnings for derived rather than raw images).
  - Re-enable custom output directory "-o" option broken by 30-Apr-2016 version.
  - Deal with mis-behaved GE CT images where slice direction across images is not consistent.
  - Add new BIDS fields (field strength, manufacturer, etc).
- - Philips PAR/REC conversion now reports inconsistent requested vs measured TR (due to prospect. motion corr.?)
- - GE: Locations In Acquisition (0054, 0081) is inaccurate if slices are interpolated, use Images In Acquisition (0020,1002) if available
- - New filename options %d Series description (0008,103E), %z Sequence Name (0018,0024)
- - New filename options %a antenna (coil) number, %e echo number
- - Initialize unused portions of NIfTI header to zero so multiple runs always produce identical results
- - Supports 3D lossless JPEG saved as [multiple fragments](http://www.nitrc.org/forum/forum.php?thread_id=5872&forum_id=4703)
+ - Philips PAR/REC conversion now reports inconsistent requested vs measured TR (due to prospect. motion corr.?).
+ - GE: Locations In Acquisition (0054, 0081) is inaccurate if slices are interpolated, use Images In Acquisition (0020,1002) if available.
+ - New filename options %d Series description (0008,103E), %z Sequence Name (0018,0024).
+ - New filename options %a antenna (coil) number, %e echo number.
+ - Initialize unused portions of NIfTI header to zero so multiple runs always produce identical results.
+ - Supports 3D lossless JPEG saved as [multiple fragments](http://www.nitrc.org/forum/forum.php?thread_id=5872&forum_id=4703).
 
 
 5-May-2016

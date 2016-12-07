@@ -1880,7 +1880,7 @@ bool isExt (char *file_name, const char* ext) {
     unsigned char buffer[BIORAD_HEADER_SIZE];
     FILE *f = fopen(fname, "rb");
     if (f)
-        n = fread(&buffer, BIORAD_HEADER_SIZE, 1, f);
+        n = fread(&buffer, 1, BIORAD_HEADER_SIZE, f);
     if(!f || n!=1) {
         printf("Problem reading biorad file!\n");
         fclose(f);
@@ -1914,9 +1914,9 @@ bool isExt (char *file_name, const char* ext) {
         char noteheaderbuf[BIORAD_NOTE_HEADER_SIZE];
         char note[BIORAD_NOTE_SIZE];
         while (!feof(f)) {
-            size_t sz = fread(&noteheaderbuf, BIORAD_NOTE_HEADER_SIZE, 1, f);
+            size_t sz = fread(&noteheaderbuf, 1, BIORAD_NOTE_HEADER_SIZE, f);
             if (sz < BIORAD_NOTE_HEADER_SIZE) return EXIT_FAILURE;
-            sz = fread(&note, BIORAD_NOTE_SIZE, 1, f);
+            sz = fread(&note, 1, BIORAD_NOTE_SIZE, f);
             if (sz < BIORAD_NOTE_SIZE) return EXIT_FAILURE;
             memcpy(&nh.note_flag, noteheaderbuf+2, sizeof(nh.note_flag));
             memcpy(&nh.note_type, noteheaderbuf+10, sizeof(nh.note_type));

@@ -628,7 +628,11 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     //see http://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1_io.c
     //returns sliceDir: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
     int sliceDir = 0;
-    if (h->dim[3] < 2) return sliceDir; //don't care direction for single slice
+    if (h->dim[3] < 2) {
+    	mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
+    	setQSForm(h,Q44);
+    	return sliceDir; //don't care direction for single slice
+    }
     h->sform_code = NIFTI_XFORM_UNKNOWN;
     h->qform_code = NIFTI_XFORM_UNKNOWN;
     bool isOK = false;
@@ -643,7 +647,6 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
         else
             printf("Unable to determine spatial orientation: 0020,0037 missing!\n");
     }
-    //mat44 Q44 = set_nii_header(d);
     mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
     setQSForm(h,Q44);
     return sliceDir;
