@@ -30,7 +30,9 @@
 #include <float.h>
 #include <stdint.h>
 #include "nifti1_io_core.h"
-#include "ujpeg.h"
+#ifndef myDisableClassicJPEG
+	#include "ujpeg.h"
+#endif
 #ifdef myUseCOut
 #include <iostream>
 #endif
@@ -2379,6 +2381,7 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
 #define F_OK 0 /* existence check */
 #endif
 
+#ifndef myDisableClassicJPEG
 unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
     //printf("50 offset %d\n", dcm.imageStart);
     if( access(imgname, F_OK ) == -1 ) {
@@ -2411,13 +2414,19 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
     njDone();
     return bImg;
 }
+#endif
 
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
     unsigned char * img;
     if (dcm.compressionScheme == kCompress50)  {
-        img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+    	#ifdef myDisableClassicJPEG
+        	printf("Software not compiled to decompress classic JPEG DICOM images\n");
+        	return NULL;
+    	#else
+        	img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+        #endif
     } else if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm, (isVerbose > 0));
     } else
