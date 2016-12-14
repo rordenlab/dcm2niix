@@ -41,7 +41,6 @@
 #include <stdio.h>
 #include "nii_dicom_batch.h"
 #include "nii_dicom.h"
-#include "nifti1_io_core.h"
 #include <math.h>
 
 const char* removePath(const char* path) { // "/usr/path/filename.exe" -> "filename.exe"

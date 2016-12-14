@@ -1,3 +1,20 @@
+//This unit uses a subset of the functions from the nifti1_io available from
+//  https://sourceforge.net/projects/niftilib/files/nifticlib/
+//These functions were extended by Chris Rorden (2014) and maintain the same license
+/*****===================================================================*****/
+/*****     Sample functions to deal with NIFTI-1 and ANALYZE files       *****/
+/*****...................................................................*****/
+/*****            This code is released to the public domain.            *****/
+/*****...................................................................*****/
+/*****  Author: Robert W Cox, SSCC/DIRP/NIMH/NIH/DHHS/USA/EARTH          *****/
+/*****  Date:   August 2003                                              *****/
+/*****...................................................................*****/
+/*****  Neither the National Institutes of Health (NIH), nor any of its  *****/
+/*****  employees imply any warranty of usefulness of this software for  *****/
+/*****  any purpose, and do not assume any liability for damages,        *****/
+/*****  incidental or otherwise, caused by any use of this document.     *****/
+/*****===================================================================*****/
+
 #include "nifti1_io_core.h"
 #include <math.h>
 #include <stdlib.h>
