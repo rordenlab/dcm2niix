@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.0)
 project(console)
 set(PROGRAMS dcm2niix)
 
@@ -16,13 +17,6 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     # using Visual Studio C++
 endif ()
 
-
-#We now use miniz, removing zlib dependency
-#if(ZLIB_FOUND)
-#  TARGET_LINK_LIBRARIES(dcm2niix z)
-#else(ZLIB_FOUND)
-#  ADD_DEFINITIONS(-DmyDisableZlib)
-#endif(ZLIB_FOUND)
 add_definitions(-DmyDisableJasper)
 add_definitions(-DmyDisableOpenJPEG)
 
@@ -35,6 +29,15 @@ add_executable(dcm2niix
         nii_ortho.cpp
         nii_dicom_batch.cpp)
 
+FIND_PACKAGE(ZLIB QUIET)
+if(ZLIB_FOUND)
+  TARGET_LINK_LIBRARIES(dcm2niix z)
+  ADD_DEFINITIONS(-DmyDisableMiniZ)
+else(ZLIB_FOUND)
+  #We now use miniz, so we can still deal with zcompressed files
+  #The following line would disable z compression
+  # ADD_DEFINITIONS(-DmyDisableZlib)
+endif(ZLIB_FOUND)
 
 if (BATCH_VERSION)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -77,7 +80,10 @@ if (BATCH_VERSION)
             nifti1_io_core.cpp
             nii_ortho.cpp
             nii_dicom_batch.cpp)
-
+	if(ZLIB_FOUND)
+		ADD_DEFINITIONS(-DmyDisableMiniZ)
+  		TARGET_LINK_LIBRARIES(dcm2niibatch z)
+	endif(ZLIB_FOUND)
     if (YAML_CPP_LIBRARY)
         target_link_libraries(dcm2niibatch ${YAML_CPP_LIBRARY})
     else()

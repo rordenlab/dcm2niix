@@ -78,7 +78,11 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		else
 			printf("  -z : gz compress images (y/n, default %c) [REQUIRES pigz]\n", gzCh);
     #else
+    	#ifdef myDisableMiniZ
+    	printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal:zlib, n=no]\n", gzCh);
+		#else
 		printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal, n=no]\n", gzCh);
+		#endif
     #endif
 
 #if defined(_WIN64) || defined(_WIN32)
