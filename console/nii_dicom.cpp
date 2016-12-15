@@ -31,7 +31,11 @@
 #include <stdint.h>
 #include "nifti1_io_core.h"
 #ifndef myDisableClassicJPEG
+  #ifdef myTurboJPEG
+   #include <turbojpeg.h>
+  #else
 	#include "ujpeg.h"
+  #endif
 #endif
 #ifdef myUseCOut
 #include <iostream>
@@ -2382,7 +2386,61 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
 #endif
 
 #ifndef myDisableClassicJPEG
+
+#ifdef myTurboJPEG //if turboJPEG instead of nanoJPEG for classic JPEG decompression
+
 unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+//decode classic JPEG using nanoJPEG
+    //printf("50 offset %d\n", dcm.imageStart);
+    if ((dcm.samplesPerPixel != 1) && (dcm.samplesPerPixel != 3)) {
+        printf("Error: %d components in a JPEG image '%s'\n", dcm.samplesPerPixel, imgname);
+        return NULL;
+    }
+    if( access(imgname, F_OK ) == -1 ) {
+        printf("Error: unable to find '%s'\n", imgname);
+        return NULL;
+    }
+    //load compressed data
+    FILE *f = fopen(imgname, "rb");
+    fseek(f, 0, SEEK_END);
+    long unsigned int _jpegSize = (long unsigned int) ftell(f);
+    _jpegSize = _jpegSize - dcm.imageStart;
+    if (_jpegSize < 8) {
+        printf("Error file too small\n");
+        fclose(f);
+        return NULL;
+    }
+    unsigned char* _compressedImage = (unsigned char *)malloc(_jpegSize);
+    fseek(f, dcm.imageStart, SEEK_SET);
+    _jpegSize = (long unsigned int) fread(_compressedImage, 1, _jpegSize, f);
+    fclose(f);
+    int jpegSubsamp, width, height;
+    printf("Decoding with turboJPEG\n");
+	tjhandle _jpegDecompressor = tjInitDecompress();
+	tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp);
+	int COLOR_COMPONENTS = dcm.samplesPerPixel;
+	printf("turboJPEG h*w %d*%d sampling %d components %d\n", width, height, jpegSubsamp, COLOR_COMPONENTS);
+	if ((jpegSubsamp == TJSAMP_GRAY) && (COLOR_COMPONENTS != 1)) {
+        printf("Error: grayscale jpegs should not have %d components '%s'\n", COLOR_COMPONENTS, imgname);
+	}
+	if ((jpegSubsamp != TJSAMP_GRAY) && (COLOR_COMPONENTS != 3)) {
+        printf("Error: color jpegs should not have %d components '%s'\n", COLOR_COMPONENTS, imgname);
+	}
+	//unsigned char bImg[width*height*COLOR_COMPONENTS]; //!< will contain the decompressed image
+	unsigned char *bImg = (unsigned char *)malloc(width*height*COLOR_COMPONENTS);
+	if (COLOR_COMPONENTS == 1) //TJPF_GRAY
+		tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, bImg, width, 0/*pitch*/, height, TJPF_GRAY, TJFLAG_FASTDCT);
+	else
+		tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, bImg, width, 0/*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
+	printf("turboJPEG h*w %d*%d (sampling %d)\n", width, height, jpegSubsamp);
+	tjDestroy(_jpegDecompressor);
+	return bImg;
+}
+
+#else //if turboJPEG else use nanojpeg...
+
+unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+//decode classic JPEG using nanoJPEG
     //printf("50 offset %d\n", dcm.imageStart);
     if( access(imgname, F_OK ) == -1 ) {
         printf("Error: unable to find '%s'\n", imgname);
@@ -2414,6 +2472,7 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
     njDone();
     return bImg;
 }
+#endif
 #endif
 
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {

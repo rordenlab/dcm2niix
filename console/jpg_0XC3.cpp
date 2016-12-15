@@ -116,7 +116,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     }
     size_t lSz = fseek(reader, skipBytes, SEEK_SET);
     if (lSz < skipBytes) {
-        printf("Error: unable to load JPEG  %s\n", fn);
+        printf("Error: unable to load 0XC3 JPEG  %s\n", fn);
         return NULL; //read failure
     }
     unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
