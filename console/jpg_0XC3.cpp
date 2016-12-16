@@ -106,21 +106,21 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     #define abortGoto() free(lRawRA); return NULL;
     unsigned char *lImgRA8 = NULL;
     FILE *reader = fopen(fn, "rb");
-    fseek(reader, 0, SEEK_END);
+    int lSuccess = fseek(reader, 0, SEEK_END);
     long lRawSz = ftell(reader)- skipBytes;
     if ((diskBytes > 0) && (diskBytes < lRawSz)) //only if diskBytes is known and does not exceed length of file
         lRawSz = diskBytes;
-    if (lRawSz <= 8) {
-        printf("Error opening %s\n", fn);
+    if ((lSuccess != 0) || (lRawSz <= 8)) {
+        printf("Error opening 0XC3 JPEG %s\n", fn);
         return NULL; //read failure
     }
-    size_t lSz = fseek(reader, skipBytes, SEEK_SET);
-    if (lSz < skipBytes) {
+    lSuccess = fseek(reader, skipBytes, SEEK_SET); //If successful, the function returns zero
+    if (lSuccess != 0) {
         printf("Error: unable to load 0XC3 JPEG  %s\n", fn);
         return NULL; //read failure
     }
     unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
-    lSz = fread(lRawRA, 1, lRawSz, reader);
+    size_t lSz = fread(lRawRA, 1, lRawSz, reader);
     fclose(reader);
     if ((lSz < lRawSz) || (lRawRA[0] != 0xFF) || (lRawRA[1] != 0xD8) || (lRawRA[2] != 0xFF)) {
         printf("Error: JPEG signature 0xFFD8FF not found at offset %d of %s\n", skipBytes, fn);

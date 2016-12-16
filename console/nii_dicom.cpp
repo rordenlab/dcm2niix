@@ -426,7 +426,7 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
 	return iSL;
 } //verify_slice_dir()
 
-mat44 noNaN(mat44 Q44) //simplify any headers that have NaN values
+mat44 noNaN(mat44 Q44, bool isVerbose) //simplify any headers that have NaN values
 {
     mat44 ret = Q44;
     bool isNaN44 = false;
@@ -435,7 +435,8 @@ mat44 noNaN(mat44 Q44) //simplify any headers that have NaN values
             if (isnan(ret.m[i][j]))
                 isNaN44 = true;
     if (isNaN44) {
-        printf("Warning: bogus spatial matrix (perhaps non-spatial image): inspect spatial orientation\n");
+        if (isVerbose)
+        	printf("Warning: bogus spatial matrix (perhaps non-spatial image): inspect spatial orientation\n");
         for (int i = 0; i < 4; i++)
             for (int j = 0; j < 4; j++)
                 if (i == j)
@@ -447,8 +448,8 @@ mat44 noNaN(mat44 Q44) //simplify any headers that have NaN values
     return ret;
 }
 
-void setQSForm(struct nifti_1_header *h, mat44 Q44i) {
-    mat44 Q44 = noNaN(Q44i);
+void setQSForm(struct nifti_1_header *h, mat44 Q44i, bool isVerbose) {
+    mat44 Q44 = noNaN(Q44i, isVerbose);
     h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
     h->srow_x[0] = Q44.m[0][0];
     h->srow_x[1] = Q44.m[0][1];
@@ -630,13 +631,13 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
     return Q44;
 }
 
-int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_1_header *h) { //fill header s and q form
+int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_1_header *h, int isVerbose) { //fill header s and q form
     //see http://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1_io.c
     //returns sliceDir: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
     int sliceDir = 0;
     if (h->dim[3] < 2) {
     	mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
-    	setQSForm(h,Q44);
+    	setQSForm(h,Q44, isVerbose);
     	return sliceDir; //don't care direction for single slice
     }
     h->sform_code = NIFTI_XFORM_UNKNOWN;
@@ -654,7 +655,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
             printf("Unable to determine spatial orientation: 0020,0037 missing!\n");
     }
     mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
-    setQSForm(h,Q44);
+    setQSForm(h,Q44, isVerbose);
     return sliceDir;
 } //headerDcm2NiiSForm()
 
@@ -686,7 +687,7 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     snprintf(h->descrip,80, "%s",txt);
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%s",d.imageComments);
-    return headerDcm2NiiSForm(d,d2, h);
+    return headerDcm2NiiSForm(d,d2, h, true);
 } //headerDcm2Nii2()
 
 int dcmStrLen (int len) {
@@ -758,6 +759,7 @@ struct TDICOMdata clear_dicom_data() {
     d.bitsStored = 0;
     d.samplesPerPixel = 1;
     d.isValid = false;
+    d.isXRay = false;
     d.isSigned = false; //default is unsigned!
     d.isFloat = false; //default is for integers, not single or double precision
     d.isResampled = false; //assume data not resliced to remove gantry tilt problems
@@ -1895,7 +1897,7 @@ unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h){
                s.m[1][0],s.m[1][1],s.m[1][2],v.v[1],
                s.m[2][0],s.m[2][1],s.m[2][2],v.v[2]);
     //printf(" ----------> %f %f %f\n",v.v[0],v.v[1],v.v[2]);
-    setQSForm(h,Q44);
+    setQSForm(h,Q44, true);
     //printf("nii_flipImgY dims %dx%dx%d %d \n",h->dim[1],h->dim[2], dim3to7,h->bitpix/8);
     return nii_flipImgZ(bImg,h);
 }// nii_flipZ()
@@ -1917,8 +1919,8 @@ unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h){
     LOAD_MAT44(Q44, s.m[0][0],s.m[0][1],s.m[0][2],v.v[0],
                s.m[1][0],s.m[1][1],s.m[1][2],v.v[1],
                s.m[2][0],s.m[2][1],s.m[2][2],v.v[2]);
-    setQSForm(h,Q44);
-    //printf("nii_flipImgY dims %dx%dx%d %d \n",h->dim[1],h->dim[2], dim3to7,h->bitpix/8);
+    setQSForm(h,Q44, true);
+    //printf("nii_flipImgY dims %dx%d %d \n",h->dim[1],h->dim[2], h->bitpix/8);
     return nii_flipImgY(bImg,h);
 }// nii_flipY()
 
@@ -2352,6 +2354,10 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     int dimX, dimY, bits, frames;
     //clock_t start = clock();
     unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, isVerbose, &dimX, &dimY, &bits, &frames, 0);
+    if (ret == NULL) {
+    	printf("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
+        return NULL;
+    }
     //printf("JPEG %fms\n", ((double)(clock()-start))/1000);
     if (hdr.dim[3] != frames) { //multi-slice image saved as multiple image fragments rather than a single image
         //printf("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
@@ -2415,11 +2421,11 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
     _jpegSize = (long unsigned int) fread(_compressedImage, 1, _jpegSize, f);
     fclose(f);
     int jpegSubsamp, width, height;
-    printf("Decoding with turboJPEG\n");
+    //printf("Decoding with turboJPEG\n");
 	tjhandle _jpegDecompressor = tjInitDecompress();
 	tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp);
 	int COLOR_COMPONENTS = dcm.samplesPerPixel;
-	printf("turboJPEG h*w %d*%d sampling %d components %d\n", width, height, jpegSubsamp, COLOR_COMPONENTS);
+	//printf("turboJPEG h*w %d*%d sampling %d components %d\n", width, height, jpegSubsamp, COLOR_COMPONENTS);
 	if ((jpegSubsamp == TJSAMP_GRAY) && (COLOR_COMPONENTS != 1)) {
         printf("Error: grayscale jpegs should not have %d components '%s'\n", COLOR_COMPONENTS, imgname);
 	}
@@ -2432,7 +2438,7 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
 		tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, bImg, width, 0/*pitch*/, height, TJPF_GRAY, TJFLAG_FASTDCT);
 	else
 		tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, bImg, width, 0/*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
-	printf("turboJPEG h*w %d*%d (sampling %d)\n", width, height, jpegSubsamp);
+	//printf("turboJPEG h*w %d*%d (sampling %d)\n", width, height, jpegSubsamp);
 	tjDestroy(_jpegDecompressor);
 	return bImg;
 }
@@ -2485,6 +2491,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         	return NULL;
     	#else
         	img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+    		if (hdr->datatype ==DT_RGB24) //convert to planar
+        		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
         #endif
     } else if (dcm.compressionScheme == kCompressC3) {
             img = nii_loadImgJPEGC3(imgname, *hdr, dcm, (isVerbose > 0));
@@ -2533,7 +2541,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     }
     if ((hdr->dim[0] > 3) && (dcm.patientPositionSequentialRepeats > 1)) //swizzle 3rd and 4th dimension (Philips stores time as 3rd dimension)
         img = nii_XYTZ_XYZT(img, hdr,dcm.patientPositionSequentialRepeats );
-    headerDcm2NiiSForm(dcm,dcm, hdr);
+    headerDcm2NiiSForm(dcm,dcm, hdr, false);
     return img;
 } //nii_loadImgXL()
 
@@ -2960,7 +2968,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
                 /*case kDiffusionBFactorSiemens :
                  if (d.manufacturer == kMANUFACTURER_SIEMENS)
-                 printf(">>>>%f\n,",dcmStrFloat(lLength, &buffer[lPos]));
+                 printf("last scan location %f\n,",dcmStrFloat(lLength, &buffer[lPos]));
 
                  break;*/
             case kDiffusionDirectionGEX :
@@ -3082,8 +3090,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kXRayExposure : //CTs do not have echo times, we use this field to detect different exposures: https://github.com/neurolabusc/dcm2niix/pull/48
-            	if (d.TE == 0) // for CT we will use exposure (0018,1152) whereas for MR we use echo time (0018,0081)
-                	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
+            	if (d.TE == 0) {// for CT we will use exposure (0018,1152) whereas for MR we use echo time (0018,0081)
+                	d.isXRay = true;
+            		d.TE = dcmStrFloat(lLength, &buffer[lPos]);
+                }
             	break;
             case 	kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
