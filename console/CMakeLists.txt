@@ -29,15 +29,22 @@ add_executable(dcm2niix
         nii_ortho.cpp
         nii_dicom_batch.cpp)
 
-FIND_PACKAGE(ZLIB QUIET)
-if(ZLIB_FOUND)
-  TARGET_LINK_LIBRARIES(dcm2niix z)
-  ADD_DEFINITIONS(-DmyDisableMiniZ)
-else(ZLIB_FOUND)
-  #We now use miniz, so we can still deal with zcompressed files
-  #The following line would disable z compression
-  # ADD_DEFINITIONS(-DmyDisableZlib)
-endif(ZLIB_FOUND)
+option(USE_SYSTEM_ZLIB "Use the system zlib" OFF)
+if (USE_SYSTEM_ZLIB)
+  find_package(ZLIB REQUIRED)
+  add_definitions(-DmyDisableMiniZ)
+  target_include_directories(dcm2niix PRIVATE ${ZLIB_INCLUDE_DIRS})
+  target_link_libraries(dcm2niix ${ZLIB_LIBRARIES})
+endif ()
+
+option(USE_SYSTEM_TURBOJPEG "Use the system TurboJPEG" OFF)
+if (USE_SYSTEM_TURBOJPEG)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(TurboJPEG libturbojpeg)
+  add_definitions(-DmyTurboJPEG)
+  target_include_directories(dcm2niix PRIVATE ${TurboJPEG_INCLUDE_DIRS})
+  target_link_libraries(dcm2niix ${TurboJPEG_LIBRARIES})
+endif ()
 
 if (BATCH_VERSION)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
