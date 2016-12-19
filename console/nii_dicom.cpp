@@ -854,13 +854,15 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
 #endif
 } //dcmStr()
 
+inline bool littleEndianPlatform ()
+{
+    uint32_t value = 1;
+    return (*((char *) &value) == 1);
+}
+
 float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
-#ifdef __BIG_ENDIAN__
-    bool swap = littleEndian;
-#else
-    bool swap = !littleEndian;
-#endif
+    bool swap = (littleEndian != littleEndianPlatform());
     float retVal = 0;
     if (lByteLength < 4) return retVal;
     memcpy(&retVal, (char*)&lBuffer[0], 4);
@@ -878,11 +880,7 @@ float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//r
 
 double dcmFloatDouble(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
-#ifdef __BIG_ENDIAN__
-    bool swap = littleEndian;
-#else
-    bool swap = !littleEndian;
-#endif
+    bool swap = (littleEndian != littleEndianPlatform());
     double retVal = 0.0f;
     if (lByteLength < 8) return retVal;
     memcpy(&retVal, (char*)&lBuffer[0], 8);
@@ -994,6 +992,11 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
     for (int lI = 1; lI <= nItems; lI++) {
         memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
         lPos +=sizeof(itemCSA);
+        
+        // Storage order is always little-endian, so byte-swap required values if necessary
+        if (!littleEndianPlatform())
+            nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+        
         if (itemCSA.xx2_Len > 0) {
 #ifdef _MSC_VER
 			char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
@@ -1022,6 +1025,11 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
     for (int lI = 1; lI <= nItems; lI++) {
         memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
         lPos +=sizeof(itemCSA);
+        
+        // Storage order is always little-endian, so byte-swap required values if necessary
+        if (!littleEndianPlatform())
+            nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+        
         if (itemCSA.xx2_Len > 0) {
 #ifdef _MSC_VER
             char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
@@ -1057,6 +1065,11 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
         lPos +=sizeof(tagCSA);
+        
+        // Storage order is always little-endian, so byte-swap required values if necessary
+        if (!littleEndianPlatform())
+            nifti_swap_4bytes(1, &tagCSA.nitems);
+        
         if (isVerbose > 1) //extreme verbosity: show every CSA tag
         	printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         if (tagCSA.nitems > 0) {
@@ -1168,6 +1181,9 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
             for (int lI = 1; lI <= tagCSA.nitems; lI++) {
                 memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
                 lPos +=sizeof(itemCSA);
+                // Storage order is always little-endian, so byte-swap required values if necessary
+                if (!littleEndianPlatform())
+                    nifti_swap_4bytes(1, &itemCSA.xx2_Len);
                 lPos += ((itemCSA.xx2_Len +3)/4)*4;
             }
         } //if at least 1 item
@@ -2515,13 +2531,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
     if (img == NULL) return img;
     if (dcm.compressionScheme == kCompressNone) {
-#ifdef __BIG_ENDIAN__
-    if ((dcm.isLittleEndian) && (hdr->bitpix > 8))
+    if ((dcm.isLittleEndian != littleEndianPlatform()) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
-#else
-    if ((!dcm.isLittleEndian) && (hdr->bitpix > 8))
-        img = nii_byteswap(img, hdr);
-#endif
     }
     if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) //img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB); //
         img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
