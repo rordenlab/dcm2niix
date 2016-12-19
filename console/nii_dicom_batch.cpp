@@ -1504,7 +1504,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if (hdr0.dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
-		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber': SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n");
+		printf("WARNING: WEIRD CSA 'ProtocolSliceNumber' (%d): SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n", dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1);
 		//see https://github.com/neurolabusc/dcm2niix/issues/40
 		sliceDir = -1; //not sure how to handle negative determinants?
 	}
@@ -2204,7 +2204,12 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
         strcpy(opts->pigzname,"/usr/bin/pigz");
         if (!is_exe(opts->pigzname)) {
         strcpy(opts->pigzname,"/usr/local/bin/pigz_mricron");
-        if (!is_exe(opts->pigzname)) {
+        if (argv == NULL) { //no exectuable path provided
+			if (!is_exe(opts->pigzname))
+				strcpy(opts->pigzname,"");
+        	return;
+        }
+        if (!is_exe(opts->pigzname))  {
             strcpy(opts->pigzname,argv[0]);
             dropFilenameFromPath(opts->pigzname);//, opts.pigzname);
             char appendChar[2] = {"a"};
@@ -2236,6 +2241,38 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     #endif
 } //readFindPigz()
 
+void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "setDefaultOpts(opts,NULL)" or "setDefaultOpts(opts,argv)" where argv[0] is path to search
+    strcpy(opts->pigzname,"");
+    readFindPigz(opts, argv);
+    #ifdef myEnableJasper
+    opts->compressFlag = kCompressYes; //JASPER for JPEG2000
+	#else
+		#ifdef myDisableOpenJPEG
+		opts->compressFlag = kCompressNone; //no decompressor
+		#else
+		opts->compressFlag = kCompressYes; //OPENJPEG for JPEG2000
+		#endif
+	#endif
+    //printf("%d %s\n",opts->compressFlag, opts->compressname);
+    strcpy(opts->indir,"");
+    strcpy(opts->outdir,"");
+    opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
+    opts->isForceStackSameSeries = false;
+    opts->isCrop = false;
+    opts->isGz = false;
+    opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
+    opts->isRGBplanar = false;
+    opts->isCreateBIDS =  false;
+    opts->isCreateText = false;
+#ifdef myDebug
+        opts->isVerbose =   true;
+#else
+        opts->isVerbose = false;
+#endif
+    opts->isTiltCorrect = true;
+    strcpy(opts->filename,"%f_%p_%t_%s");
+} // setDefaultOpts()
+
 #if defined(_WIN64) || defined(_WIN32)
 //windows has unusual file permissions for many users - lets save preferences to the registry
 void saveIniFile (struct TDCMopts opts) {
@@ -2253,33 +2290,7 @@ DWORD dwValue    = opts.isGz;
 } //saveIniFile()
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
-    readFindPigz(opts, argv);
-    #ifdef myEnableJasper
-    opts->compressFlag = kCompressYes; //JASPER for JPEG2000
-	#else
-		#ifdef myDisableOpenJPEG
-		opts->compressFlag = kCompressNone; //no decompressor
-		#else
-		opts->compressFlag = kCompressYes; //OPENJPEG for JPEG2000
-		#endif
-	#endif
-    strcpy(opts->indir,"");
-    strcpy(opts->outdir,"");
-    opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
-    opts->isForceStackSameSeries = false;
-    opts->isCrop = false;
-    opts->isGz = false;
-    opts->isFlipY = true;
-    opts->isRGBplanar = false;
-    opts->isCreateBIDS =  false;
-    opts->isCreateText = false;
-#ifdef myDebug
-    opts->isVerbose =   true;
-#else
-    opts->isVerbose = false;
-#endif
-    opts->isTiltCorrect = true;
-    strcpy(opts->filename,"%f_%p_%t_%s");
+    setDefaultOpts(opts, argv);
      HKEY  hKey;
     DWORD vSize     = 0;
     DWORD dwDataType = 0;
@@ -2306,35 +2317,8 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
 #define STATUSFILENAME "/.dcm2nii.ini"
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
-    readFindPigz(opts, argv);
-    #ifdef myEnableJasper
-    opts->compressFlag = kCompressYes; //JASPER for JPEG2000
-	#else
-		#ifdef myDisableOpenJPEG
-		opts->compressFlag = kCompressNone; //no decompressor
-		#else
-		opts->compressFlag = kCompressYes; //OPENJPEG for JPEG2000
-		#endif
-	#endif
-    //printf("%d %s\n",opts->compressFlag, opts->compressname);
+	setDefaultOpts(opts, argv);
     sprintf(opts->optsname, "%s%s", getenv("HOME"), STATUSFILENAME);
-    strcpy(opts->indir,"");
-    strcpy(opts->outdir,"");
-    opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
-    opts->isForceStackSameSeries = false;
-    opts->isCrop = false;
-    opts->isGz = false;
-    opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
-    opts->isRGBplanar = false;
-    opts->isCreateBIDS =  false;
-    opts->isCreateText = false;
-#ifdef myDebug
-        opts->isVerbose =   true;
-#else
-        opts->isVerbose = false;
-#endif
-    opts->isTiltCorrect = true;
-    strcpy(opts->filename,"%f_%p_%t_%s");
     FILE *fp = fopen(opts->optsname, "r");
     if (fp == NULL) return;
     char Setting[20],Value[255];
