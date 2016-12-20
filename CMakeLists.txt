@@ -35,3 +35,8 @@ set(FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 ## Sub-projects
 ##
 add_subdirectory(console)
+
+option(BUILD_DOCS "Build documentation (manpages)" OFF)
+if (BUILD_DOCS)
+    add_subdirectory(docs)
+endif ()
