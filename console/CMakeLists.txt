@@ -101,6 +101,8 @@ if (BATCH_VERSION)
     if (YAML_CPP_INCLUDE_DIR)
         include_directories(${YAML_CPP_INCLUDE_DIR})
     endif ()
+    
+    list(APPEND PROGRAMS dcm2niibatch)
 endif ()
 
 install(TARGETS ${PROGRAMS} DESTINATION bin)
