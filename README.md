@@ -11,10 +11,12 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-7-Dec-2016
+12-Dec-2016
  - Handle 3D Philips DICOM files where images are not stored in a spatially contiguous order.
  - Handle DICOM violations where icon is uncompressed but image data is compressed.
  - Best guess matrix for 2D slices (similar to dcm2nii, SPM and MRIconvert).
+ - Linux (case sensitive filenames) now handles par/rec as well as PAR/REC
+ - Unified printMessage/printWarning/printError aids embedding in other projects, such as [divest](https://github.com/jonclayden/divest).
 
 1-Nov-2016
  - AppVeyor Support (Ningfei Li & Chris Filo Gorgolewski)
