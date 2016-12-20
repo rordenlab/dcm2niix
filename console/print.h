@@ -36,7 +36,10 @@
 			#define printMessage printf
 		#endif //myUseCOut
 		//n.b. use ({}) for multi-line macros http://www.geeksforgeeks.org/multiline-macros-in-c/
-		#define printWarning(...) ({printMessage("Warning: "); printMessage(__VA_ARGS__);})
-		#define printError(...) ({ printMessage("Error: "); printMessage(__VA_ARGS__);})
+		//these next lines work on GCC but not _MSC_VER
+		// #define printWarning(...) ({printMessage("Warning: "); printMessage(__VA_ARGS__);})
+		// #define printError(...) ({ printMessage("Error: "); printMessage(__VA_ARGS__);})
+		#define printWarning(...) do {printMessage("Warning: "); printMessage(__VA_ARGS__);} while(0)
+		#define printError(...) do { printMessage("Error: "); printMessage(__VA_ARGS__);} while(0)
 	#endif //HAVE_R
 #endif //_R_PRINT_H_
