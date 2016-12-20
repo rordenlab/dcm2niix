@@ -992,11 +992,11 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
     for (int lI = 1; lI <= nItems; lI++) {
         memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
         lPos +=sizeof(itemCSA);
-        
+
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-        
+
         if (itemCSA.xx2_Len > 0) {
 #ifdef _MSC_VER
 			char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
@@ -1025,11 +1025,11 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
     for (int lI = 1; lI <= nItems; lI++) {
         memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
         lPos +=sizeof(itemCSA);
-        
+
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-        
+
         if (itemCSA.xx2_Len > 0) {
 #ifdef _MSC_VER
             char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
@@ -1065,11 +1065,11 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
         lPos +=sizeof(tagCSA);
-        
+
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &tagCSA.nitems);
-        
+
         if (isVerbose > 1) //extreme verbosity: show every CSA tag
         	printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         if (tagCSA.nitems > 0) {
@@ -1697,6 +1697,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             }
     //finish up
     changeExt (parname, "REC");
+    if( access( parname, F_OK ) != -1 ) changeExt (parname, "rec");
     d.locationsInAcquisition = d.xyzDim[3];
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.imageStart = 0;

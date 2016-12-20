@@ -253,7 +253,7 @@ file ./dcm2niix
 
 You can building the OSX graphical user interface using Xcode. First, Copy contents of "console" folder to /xcode/dcm2/core. Next, open and compile the project "dcm2.xcodeproj" with Xcode 4.6 or later
 
-##### THE QT AND wxWIDGETS GUIs ARE NOT YET SUPPORT - FOLLOWING LINES FOR FUTURE VERSIONS
+##### THE QT AND wxWIDGETS GUIs ARE NOT YET SUPPORTED - FOLLOWING LINES FOR FUTURE VERSIONS
 
 Building QT graphical user interface:
   Open "dcm2.pro" with QTCreator. This should work on OSX and Linux. On Windows the printf information is not redirected to the user interface
