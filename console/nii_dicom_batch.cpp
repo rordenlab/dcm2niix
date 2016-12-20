@@ -2041,9 +2041,9 @@ int nii_loadDir(struct TDCMopts* opts) {
         strcpy(rname,indir);
         changeExt (pname, "PAR");
         changeExt (rname, "REC");
-    	#ifdef _MSC_VER //Linux is case sensitive	#include <unistd.h>
-   		if( access( rname, F_OK ) != -1 ) changeExt (rname, "rec");
-   		if( access( pname, F_OK ) != -1 ) changeExt (pname, "rec");
+        #ifndef _MSC_VER //Linux is case sensitive, #include <unistd.h>
+   		if( access( rname, F_OK ) != 0 ) changeExt (rname, "rec");
+   		if( access( pname, F_OK ) != 0 ) changeExt (pname, "par");
 		#endif
         if (is_fileNotDir(rname)  &&  is_fileNotDir(pname) ) {
             strcpy(opts->indir, pname); //set to original file name, not path

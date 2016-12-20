@@ -1697,7 +1697,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             }
     //finish up
     changeExt (parname, "REC");
-    if( access( parname, F_OK ) != -1 ) changeExt (parname, "rec");
+    #ifndef _MSC_VER //Linux is case sensitive, #include <unistd.h>
+    if( access( parname, F_OK ) != 0 ) changeExt (parname, "rec");
+	#endif
     d.locationsInAcquisition = d.xyzDim[3];
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.imageStart = 0;
