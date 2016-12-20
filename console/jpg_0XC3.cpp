@@ -104,7 +104,10 @@ int decodePixelDifference(unsigned char *lRawRA, long *lRawPos, int *lCurrentBit
 
 unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames, int diskBytes) {
     //decompress JPEG image named "fn" where image data is located skipBytes into file. diskBytes is compressed size of image (set to 0 if unknown)
-    #define abortGoto(...) ({printError(__VA_ARGS__); free(lRawRA); return NULL;})
+    //next line breaks MSVC
+    // #define abortGoto(...) ({printError(__VA_ARGS__); free(lRawRA); return NULL;})
+    #define abortGoto(...) do {printError(__VA_ARGS__); free(lRawRA); return NULL;} while(0)
+
     unsigned char *lImgRA8 = NULL;
     FILE *reader = fopen(fn, "rb");
     int lSuccess = fseek(reader, 0, SEEK_END);
