@@ -4,7 +4,7 @@
 //  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
 #ifdef _MSC_VER
-	#define access _access
+	#include  <io.h> //access(); F_OK
 #else
 	#include <unistd.h> //access()
 #endif
