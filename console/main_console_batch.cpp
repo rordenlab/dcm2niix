@@ -3,18 +3,22 @@
 //  Copyright (c) 2014 Chris Rorden. All rights reserved.
 //  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
-#include <stdio.h>
+#ifdef _MSC_VER
+	#define access _access
+#else
+	#include <unistd.h> //access()
+#endif
 #include <cmath>
-#include <string>
+#include <fstream>
 #include <iostream>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
+#include <yaml-cpp/yaml.h>
 #include "nii_dicom.h"
 #include "nii_dicom_batch.h"
-#include <fstream>
-#include <yaml-cpp/yaml.h>
 
 const char* removePath(const char* path) { // "/usr/path/filename.exe" -> "filename.exe"
     const char* pDelimeter = strrchr (path, '\\');
