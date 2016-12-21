@@ -4,7 +4,10 @@
 //  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
 #ifdef _MSC_VER
-	#include  <io.h> //access(); F_OK
+	#include  <io.h> //access()
+	#ifndef F_OK
+	#define F_OK 0 /* existence check */
+	#endif
 #else
 	#include <unistd.h> //access()
 #endif
