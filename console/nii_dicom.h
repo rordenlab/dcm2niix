@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 static const int kMaxDTI4D = 4000; //#define kMaxDTIv  4000
-#define kDICOMStr  31
+#define kDICOMStr 40
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
 #define kMANUFACTURER_GE  2
@@ -59,7 +59,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
         double dateTime, acquisitionTime, acquisitionDate;
         bool isXRay, isSlicesSpatiallySequentialPhilips, isNonImage, isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC;
-        char  imageType[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],seriesDescription[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],scanningSequence[kDICOMStr], birthDate[kDICOMStr], gender[kDICOMStr], age[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
+        char  procedureStepDescription[kDICOMStr], imageType[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],seriesDescription[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],scanningSequence[kDICOMStr], birthDate[kDICOMStr], gender[kDICOMStr], age[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;
     };
 

@@ -620,6 +620,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.studyDate, "1/1/1977");
     strcpy(d.studyTime, "11:11:11");
     strcpy(d.manufacturersModelName, "N/A");
+    strcpy(d.procedureStepDescription, "");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
     d.acquisitionDate = 0.0f;
@@ -741,6 +742,9 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
     //while ((len > 0) && (cString[len]=='_')) len--; //remove trailing '_'
     cString[len] = 0; //null-terminate, strlcpy does this anyway
     len = dcmStrLen(len);
+    if (len == kDICOMStr) { //we need space for null-termination
+		if (cString[len-2] == '_') len = len -2;
+	}
     memcpy(lOut,cString,len-1);
     lOut[len-1] = 0;
 #ifdef _MSC_VER
@@ -2564,6 +2568,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
     //#define  kObjectGraphics  0x0029+(0x1210 << 16 )    //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
+#define  kProcedureStepDescription 0x0040+(0x0254 << 16 )
 #define  kRealWorldIntercept  0x0040+uint32_t(0x9224 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
@@ -2804,7 +2809,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
             case kSeriesDescription: {
-                //if (strlen(d.protocolName) < 1)
                 dcmStr (lLength, &buffer[lPos], d.seriesDescription);
                 break; }
             case kManufacturersModelName :
@@ -2820,7 +2824,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kProtocolName : {
                 //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
                 dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
-                break; }
+                break;
+            }
             case 	kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
@@ -3139,6 +3144,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     isIconImageSequence = true;
                     //geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not re-use pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
                 }
+                break;
+            case kProcedureStepDescription:
+            	dcmStr (lLength, &buffer[lPos], d.procedureStepDescription);
                 break;
             case 	kOrientationACR : //use in emergency if kOrientation is not present!
                 if (!isOrient) dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);

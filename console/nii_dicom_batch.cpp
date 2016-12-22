@@ -343,6 +343,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
+	if (strlen(d.procedureStepDescription) > 0)
+		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
+	if (strlen(d.protocolName) > 0)
+		fprintf(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName );
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
@@ -696,19 +700,21 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 sprintf(newstr, "%02d", dcm.coilNum);
                 strcat (outname,newstr);
             }
+            if (f == 'C')
+                strcat (outname,dcm.imageComments);
+            if (f == 'D')
+                strcat (outname,dcm.seriesDescription);
         	if (f == 'E') {
         		isEchoReported = true;
                 sprintf(newstr, "%d", dcm.echoNum);
                 strcat (outname,newstr);
             }
-            if (f == 'C')
-                strcat (outname,dcm.imageComments);
-            if (f == 'D')
-                strcat (outname,dcm.seriesDescription);
             if (f == 'F')
                 strcat (outname,opts.indirParent);
             if (f == 'I')
                 strcat (outname,dcm.patientID);
+            if (f == 'L') //"L"ocal Institution-generated description or classification of the Procedure Step that was performed.
+                strcat (outname,dcm.procedureStepDescription);
             if (f == 'M') {
                 if (dcm.manufacturer == kMANUFACTURER_GE)
                     strcat (outname,"GE");
@@ -727,16 +733,6 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,dcm.protocolName);
             if (f == 'Q')
                 strcat (outname,dcm.scanningSequence);
-            if ((f >= '0') && (f <= '9')) {
-                if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'S')) {
-                    char zeroPad[12] = {""};
-                    //sprintf(zeroPad,"%%0%dd",atoi(&f));
-                    sprintf(zeroPad,"%%0%dd",f - '0');
-                    sprintf(newstr, zeroPad, dcm.seriesNum);
-                    strcat (outname,newstr);
-                    pos++; // e.g. %3f requires extra increment: skip both number and following character
-                }
-            }
             if (f == 'S') {
                 sprintf(newstr, "%ld", dcm.seriesNum);
                 strcat (outname,newstr);
@@ -755,6 +751,16 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 			}
             if (f == 'Z')
                 strcat (outname,dcm.sequenceName);
+            if ((f >= '0') && (f <= '9')) {
+                if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'S')) {
+                    char zeroPad[12] = {""};
+                    //sprintf(zeroPad,"%%0%dd",atoi(&f));
+                    sprintf(zeroPad,"%%0%dd",f - '0');
+                    sprintf(newstr, zeroPad, dcm.seriesNum);
+                    strcat (outname,newstr);
+                    pos++; // e.g. %3f requires extra increment: skip both number and following character
+                }
+            }
             start = pos + 1;
         } //found a % character
         pos++;

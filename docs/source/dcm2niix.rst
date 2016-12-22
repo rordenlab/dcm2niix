@@ -28,7 +28,7 @@ Options
 
 -f <format>     Format string for the output filename(s). The following
                 specifiers are supported:
-                        
+
                 - %a, antenna (coil) number
                 - %c, comments
                 - %d, description
@@ -42,7 +42,7 @@ Options
                 - %t, time
                 - %u, acquisition number
                 - %z, sequence name.
-                        
+
                 The default format string is "%p_%e_%4s".
 
 -m <y/n>        Merge slices from the same series regardless of study time,
@@ -56,12 +56,14 @@ Options
 
 -t <y/n>        Save patient details.
 
--v <y/n>        Enable verbose output.
+-v <h/y/n>  	Enable verbose output. "n" for succinct, "y" for verbose, "h" for
+                high verbosity
 
 -x <y/n>        Crop images.
 
--z <y/i/n>      Desired compression method.
-
+-z <y/i/n>      Desired compression method. The "y"es option uses the external
+                program pigz if available. The "i" option compresses the image
+                using the slower slower built-in compression routines.
 
 Licensing
 ---------
