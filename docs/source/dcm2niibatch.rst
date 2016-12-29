@@ -1,7 +1,7 @@
 :orphan:
 
-dcm2niix manual
-===============
+dcm2niibatch manual
+===================
 
 Synopsis
 --------
@@ -65,9 +65,17 @@ out_dir    Path to save the nifti file
 filename   File name of nifti file to save
 
 
+See also
+--------
+
+:manpage:`dcm2niix(1)`
+
+
 Licensing
 ---------
 
 Copying and distribution of this file, with or without modification, are
 permitted in any medium without royalty provided the copyright notice and this
 notice are preserved. This file is offered as-is, without any warranty.
+
+
