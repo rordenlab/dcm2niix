@@ -302,7 +302,9 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('dcm2niix', 'dcm2niix', u'DICOM to NifTI converter',
-     ['Ghislain Antony Vaillant <ghisvail@gmail.com>'], 1)
+     ['Ghislain Antony Vaillant <ghisvail@gmail.com>'], 1),
+    ('dcm2niibatch', 'dcm2niibatch', u'DICOM to NifTI batch converter',
+     ['Benjamin Irving <mail@birving.com>'], 1)
 ]
 
 # If true, show URL addresses after external links.
