@@ -63,7 +63,7 @@ Options
 
 -z <y/i/n>      Desired compression method. The "y"es option uses the external
                 program pigz if available. The "i" option compresses the image
-                using the slower slower built-in compression routines.
+                using the slower built-in compression routines.
 
 Licensing
 ---------
