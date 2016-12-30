@@ -126,7 +126,7 @@ mkdir build && cd build
 cmake ..
 make
 ```
-`dcm2niix` will be created in the `bin` folder
+`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install`. 
 
 **optional batch processing version:**
 
