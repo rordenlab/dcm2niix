@@ -185,6 +185,8 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                     l[lFrameCount].DHTliRA[lInc] = readByte(lRawRA, &lRawPos, lRawSz);
                     DHTnLi = DHTnLi +  l[lFrameCount].DHTliRA[lInc];
                     if (l[lFrameCount].DHTliRA[lInc] != 0) l[lFrameCount].MaxHufSi = lInc;
+                    if (verbose) printf("DHT has %d combinations with %d bits\n", l[lFrameCount].DHTliRA[lInc], lInc);
+                    
                 }
                 if (DHTnLi > 17) {
                     abortGoto("Huffman table corrupted.\n");
@@ -203,6 +205,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                             btS1 = readByte(lRawRA, &lRawPos, lRawSz);
                             l[lFrameCount].HufVal[lIncY] = btS1;
                             l[lFrameCount].MaxHufVal = btS1;
+                            if (verbose) printf("DHT combination %d has a value of %d\n", lIncY, btS1);
                             if (btS1 <= 16) //unsigned ints ALWAYS >0, so no need for(btS1 >= 0)
                                 l[lFrameCount].HufSz[lIncY] = lInc;
                             else {

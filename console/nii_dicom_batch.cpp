@@ -582,11 +582,11 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
     //swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...
     int nConvert = d3 * d4;
-#ifdef _MSC_VER
+//#ifdef _MSC_VER
 	TDCMsort * dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
-#else
-    struct TDCMsort dcmSortIn[nConvert];
-#endif
+//#else
+//    struct TDCMsort dcmSortIn[nConvert];
+//#endif
     for (int i = 0; i < nConvert; i++) dcmSortIn[i] = dcmSort[i];
     int i = 0;
     for (int b = 0; b < d3; b++)
@@ -596,9 +596,9 @@ void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
             dcmSort[k] = dcmSortIn[i];
             i++;
         }
-#ifdef _MSC_VER
+//#ifdef _MSC_VER
 	free(dcmSortIn);
-#endif
+//#endif
 } //swapDim3Dim4()
 
 bool intensityScaleVaries(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[]){
@@ -2023,11 +2023,11 @@ int nii_loadDir(struct TDCMopts* opts) {
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 
-#ifdef _MSC_VER
+//#ifdef _MSC_VER
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
-#else
-			struct TDCMsort dcmSort[nConvert];
-#endif
+//#else
+//			struct TDCMsort dcmSort[nConvert];
+//#endif
 			nConvert = 0;
 			//warnings = setWarnings();
 			for (int j = i; j < nDcm; j++)
@@ -2044,9 +2044,9 @@ int nii_loadDir(struct TDCMopts* opts) {
 				nConvert = removeDuplicates(nConvert, dcmSort);
 			nConvertTotal += nConvert;
 			saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
-#ifdef _MSC_VER
+//#ifdef _MSC_VER
 			free(dcmSort);
-#endif
+//#endif
 		}//convert all images of this series
     }
     free(dcmList);
