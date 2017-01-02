@@ -271,6 +271,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         abortGoto("Decoding error: no Huffman tables.\n");
     }
     //NEXT: unpad data - delete byte that follows $FF
+    int lIsRestartSegments = 0;
     long lIncI = lRawPos; //input position
     long lIncO = lRawPos; //output position
     do {
@@ -280,10 +281,14 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                 lIncI = lIncI+1;
             else if (lRawRA[lIncI+1] == 0xD9)
                 lIncO = -666; //end of padding
+            else
+                lIsRestartSegments = lRawRA[lIncI+1];
         }
         lIncI++;
         lIncO++;
     } while (lIncO > 0);
+    if (lIsRestartSegments != 0) //detects both restart and corruption https://groups.google.com/forum/#!topic/comp.protocols.dicom/JUuz0B_aE5o
+        printf("Warning: detected restart segments, decompress with dcmdjpeg or gdcmconv 0xFF%02X.\n", lIsRestartSegments);
     //NEXT: some RGB images use only a single Huffman table for all 3 colour planes. In this case, replicate the correct values
     //NEXT: prepare lookup table
     for (int lFrameCount = 1; lFrameCount <= lnHufTables; lFrameCount ++) {
