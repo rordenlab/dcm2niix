@@ -2246,8 +2246,10 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
     //I have never seen these segmented images in the wild, so we will simply warn the user if we encounter such a file
     //int Sz = JPEG_SOF_0XC3_sz (imgname, (dcm.imageStart - 4), dcm.isLittleEndian);
     //printf("Sz %d %d\n", Sz, dcm.imageBytes );
+    //This behavior is legal but appears extremely rare
+    //ftp://medical.nema.org/medical/dicom/final/cp900_ft.pdf
     if (65536 == dcm.imageBytes)
-        printError("Images are segmented SOFxC3 lossless JPEG. Please extract with dcmdjpeg or gdcmconv.\n");
+        printError("One frame may span multiple fragments. SOFxC3 lossless JPEG. Please extract with dcmdjpeg or gdcmconv.\n");
     unsigned char * ret = decode_JPEG_SOF_0XC3 (imgname, dcm.imageStart, isVerbose, &dimX, &dimY, &bits, &frames, 0);
     if (ret == NULL) {
     	printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
