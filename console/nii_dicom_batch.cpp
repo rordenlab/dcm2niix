@@ -412,8 +412,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	if (d.phaseEncodingRC == 'C')
 		fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
-	else
-		fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
+	else if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+			fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
 	//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 	//However, DICOM and NIfTI are reversed in the j (ROW) direction
 	//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"

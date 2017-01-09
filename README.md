@@ -11,11 +11,12 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-12-Dec-2016
+1-Jan-2017
  - Handle 3D Philips DICOM files where images are not stored in a spatially contiguous order.
  - Handle DICOM violations where icon is uncompressed but image data is compressed.
  - Best guess matrix for 2D slices (similar to dcm2nii, SPM and MRIconvert).
- - Linux (case sensitive filenames) now handles par/rec as well as PAR/REC
+ - Linux (case sensitive filenames) now handles par/rec as well as PAR/REC.
+ - Images with unknown phase encoding do not generate [BIDS entry](https://github.com/rordenlab/dcm2niix/issues/79).
  - Unified printMessage/printWarning/printError aids embedding in other projects, such as [divest](https://github.com/jonclayden/divest).
 
 1-Nov-2016
@@ -126,7 +127,7 @@ mkdir build && cd build
 cmake ..
 make
 ```
-`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install`. 
+`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install`.
 
 **optional batch processing version:**
 
