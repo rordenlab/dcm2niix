@@ -1509,9 +1509,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if (dcmList[indx0].gantryTilt != 0.0) {
         if (dcmList[indx0].isResampled)
             printMessage("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
-        else if (opts.isTiltCorrect)
+        else if (opts.isTiltCorrect) {
             imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
-        else
+            strcat(pathoutname,"_Tilt");
+        } else
             printMessage("Tilt correction skipped\n");
     }
     if (sliceMMarray != NULL) {
