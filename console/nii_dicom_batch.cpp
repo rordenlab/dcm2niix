@@ -178,9 +178,9 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
 		return;
     }
     bool col = false;
-    if (d->phaseEncodingRC== 'C')
+    if (d->phaseEncodingRC == 'C')
         col = true;
-    else if (d->phaseEncodingRC!= 'R') {
+    else if (d->phaseEncodingRC != 'R') {
         printWarning("Unable to determine DTI gradients, 0018,1312 should be either R or C");
         return;
     }
@@ -388,12 +388,15 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (d.TE > 0.0) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     if (d.TR > 0.0) fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
-		float dwellTime = 0;
-		if (d.phaseEncodingRC =='C')
+		float dwellTime = 0.0f;
+		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
 			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
-		else
+		else if (d.phaseEncodingRC =='R')
+			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
+		else if (d.phaseEncodingRC =='C')
 			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[1];
-		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
+		if (dwellTime != 0.0f) //as long as phase encoding = R or C or does not matter
+			fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
 
     }
 	bool first = 1;
@@ -412,7 +415,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	if (d.phaseEncodingRC == 'C')
 		fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
-	else if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+	else if (d.phaseEncodingRC == 'R') //Values should be "R"ow, "C"olumn or "?"Unknown
 			fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
 	//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 	//However, DICOM and NIfTI are reversed in the j (ROW) direction
