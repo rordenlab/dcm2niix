@@ -1934,11 +1934,13 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
     dropTrailingFileSep(opts->indir);
-    if (strlen(opts->outdir) < 1)
+    if (strlen(opts->outdir) < 1) {
         strcpy(opts->outdir,opts->indir);
-    dropTrailingFileSep(opts->outdir);
-    if (is_fileNotDir(opts->outdir)) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
-        dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
+    	dropTrailingFileSep(opts->outdir);
+    	if (is_fileNotDir(opts->outdir)) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
+        	dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
+    } else
+    	dropTrailingFileSep(opts->outdir);
     if (!is_dir(opts->outdir,true)) {
 		#ifdef myUseInDirIfOutDirUnavailable
 		printWarning("Output folder invalid %s will try %s\n",opts->outdir,opts->indir);
