@@ -422,9 +422,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 	//However, DICOM and NIfTI are reversed in the j (ROW) direction
 	//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
-	if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((opts.isFlipY)))
+	if (d.CSA.phaseEncodingDirectionPositive == -1)
+		fprintf(fp, "?"); //unknown
+	else if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((opts.isFlipY)))
 		fprintf(fp, "-");
-	if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
+	else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
 		fprintf(fp, "-");
 	fprintf(fp, "\"\n");
     fprintf(fp, "}\n");
