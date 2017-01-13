@@ -413,10 +413,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		fprintf(fp, "\t],\n");
 	}
-	if (d.phaseEncodingRC == 'C')
+	if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
 		fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
-	else if (d.phaseEncodingRC == 'R') //Values should be "R"ow, "C"olumn or "?"Unknown
+	else if (d.phaseEncodingRC == 'R')
 			fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
+	else
+		fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
 	//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 	//However, DICOM and NIfTI are reversed in the j (ROW) direction
 	//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
@@ -1934,12 +1936,9 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
     dropTrailingFileSep(opts->indir);
-    if (strlen(opts->outdir) < 1) {
+    if (strlen(opts->outdir) < 1)
         strcpy(opts->outdir,opts->indir);
-    	dropTrailingFileSep(opts->outdir);
-    	if (is_fileNotDir(opts->outdir)) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
-        	dropFilenameFromPath(opts->outdir);//getParentFolder(opts.indir, opts.indir);
-    } else
+    else
     	dropTrailingFileSep(opts->outdir);
     if (!is_dir(opts->outdir,true)) {
 		#ifdef myUseInDirIfOutDirUnavailable
