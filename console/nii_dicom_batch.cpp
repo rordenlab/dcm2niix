@@ -413,22 +413,24 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		fprintf(fp, "\t],\n");
 	}
-	if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
-		fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
-	else if (d.phaseEncodingRC == 'R')
-			fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
-	else
-		fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
-	//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
-	//However, DICOM and NIfTI are reversed in the j (ROW) direction
-	//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
-	if (d.CSA.phaseEncodingDirectionPositive == -1)
-		fprintf(fp, "?"); //unknown
-	else if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((opts.isFlipY)))
-		fprintf(fp, "-");
-	else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
-		fprintf(fp, "-");
-	fprintf(fp, "\"\n");
+	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && ((d.CSA.phaseEncodingDirectionPositive == 1) || (d.CSA.phaseEncodingDirectionPositive == 0))) {
+		if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+			fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
+		else if (d.phaseEncodingRC == 'R')
+				fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
+		else
+			fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
+		//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
+		//However, DICOM and NIfTI are reversed in the j (ROW) direction
+		//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
+		if (d.CSA.phaseEncodingDirectionPositive == -1)
+			fprintf(fp, "?"); //unknown
+		else if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((opts.isFlipY)))
+			fprintf(fp, "-");
+		else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
+			fprintf(fp, "-");
+		fprintf(fp, "\"\n");
+	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
     fprintf(fp, "}\n");
     fclose(fp);
 }// nii_SaveBIDS()
