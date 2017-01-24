@@ -429,8 +429,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "-");
 		else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
 			fprintf(fp, "-");
-		fprintf(fp, "\"\n");
+		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
+	fprintf(fp, "\t\"dcm2niixVersion\": \"%s\"\n", kDCMvers );
     fprintf(fp, "}\n");
     fclose(fp);
 }// nii_SaveBIDS()
