@@ -29,6 +29,9 @@
 #include <unistd.h>
 #endif
 
+#include "print.h"
+
+#ifndef HAVE_R
 void nifti_swap_8bytes( size_t n , void *ar )    // 4 bytes at a time
 {
     size_t ii ;
@@ -75,6 +78,7 @@ void nifti_swap_2bytes( size_t n , void *ar )    // 2 bytes at a time
     }
     return ;
 }
+#endif
 
 int isSameFloat (float a, float b) {
     return (fabs (a - b) <= FLT_EPSILON);
@@ -147,7 +151,7 @@ mat44 nifti_dicom2mat(float orient[7], float patientPosition[4], float xyzMM[4])
     mat33 Q, diagVox;
     Q.m[0][0] = orient[1]; Q.m[0][1] = orient[2] ; Q.m[0][2] = orient[3] ; // load Q
     Q.m[1][0] = orient[4]; Q.m[1][1] = orient[5] ; Q.m[1][2] = orient[6];
-    //printf("Orient %g %g %g %g %g %g\n",orient[1],orient[2],orient[3],orient[4],orient[5],orient[6] );
+    //printMessage("Orient %g %g %g %g %g %g\n",orient[1],orient[2],orient[3],orient[4],orient[5],orient[6] );
     /* normalize row 1 */
     double val = Q.m[0][0]*Q.m[0][0] + Q.m[0][1]*Q.m[0][1] + Q.m[0][2]*Q.m[0][2] ;
     if( val > 0.0l ){
@@ -184,6 +188,7 @@ mat44 nifti_dicom2mat(float orient[7], float patientPosition[4], float xyzMM[4])
     return Q44;
 }
 
+#ifndef HAVE_R
 float nifti_mat33_determ( mat33 R )   /* determinant of 3x3 matrix */
 {
     double r11,r12,r13,r21,r22,r23,r31,r32,r33 ;
@@ -206,6 +211,7 @@ mat33 nifti_mat33_mul( mat33 A , mat33 B )  /* multiply 2 3x3 matrices */
             + A.m[i][2] * B.m[2][j] ;
     return C ;
 }
+#endif
 
 mat44 nifti_mat44_mul( mat44 A , mat44 B )  /* multiply 2 3x3 matrices */
 {
@@ -229,6 +235,7 @@ mat33 nifti_mat33_transpose( mat33 A )  /* transpose 3x3 matrix */
     return B;
 }
 
+#ifndef HAVE_R
 mat33 nifti_mat33_inverse( mat33 R )   /* inverse of 3x3 matrix */
 {
     double r11,r12,r13,r21,r22,r23,r31,r32,r33 , deti ;
@@ -485,7 +492,7 @@ mat44 nifti_mat44_inverse( mat44 R )
     Q.m[3][3] = (deti == 0.0l) ? 0.0l : 1.0l ; // failure flag if deti == 0
     return Q ;
 }
-
+#endif
 
 
 

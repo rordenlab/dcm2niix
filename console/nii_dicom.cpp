@@ -16,7 +16,9 @@
 	#include <unistd.h>
 #endif
 //#include <time.h> //clock()
+#ifndef HAVE_R
 #include "nifti1.h"
+#endif
 #include "print.h"
 #include "nii_dicom.h"
 #include <sys/types.h>
@@ -31,6 +33,12 @@
 #include <float.h>
 #include <stdint.h>
 #include "nifti1_io_core.h"
+
+#ifdef HAVE_R
+#undef isnan
+#define isnan ISNAN
+#endif
+
 #ifndef myDisableClassicJPEG
   #ifdef myTurboJPEG
    #include <turbojpeg.h>
@@ -543,10 +551,11 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
         //we will have to guess, assume axial acquisition saved in standard Siemens style?
         d.orient[1] = 1.0f; d.orient[2] = 0.0f;  d.orient[3] = 0.0f;
         d.orient[1] = 0.0f; d.orient[2] = 1.0f;  d.orient[3] = 0.0f;
-        if ((d.isNonImage) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS)))
+        if ((d.isNonImage) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
            printMessage("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
-        else
+        } else {
             printMessage("Unable to determine spatial orientation: 0020,0037 missing!\n");
+        }
     }
     mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
     setQSForm(h,Q44, isVerbose);
@@ -893,22 +902,15 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-
+        
         if (itemCSA.xx2_Len > 0) {
-#ifdef _MSC_VER
-			char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
-#else
-			char cString[itemCSA.xx2_Len];
-#endif
-            memcpy(cString, &buff[lPos], sizeof(cString)); //TPX memcpy(&cString, &buff[lPos], sizeof(cString));
+            char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
+            memcpy(cString, &buff[lPos], itemCSA.xx2_Len); //TPX memcpy(&cString, &buff[lPos], sizeof(cString));
             lPos += ((itemCSA.xx2_Len +3)/4)*4;
             //printMessage(" %d item length %d = %s\n",lI, itemCSA.xx2_Len, cString);
             Floats[lI] = (float) atof(cString);
             *ItemsOK = lI; //some sequences have store empty items
-
-#ifdef _MSC_VER
-			free(cString);
-#endif
+            free(cString);
         }
     } //for each item
     return Floats[1];
@@ -926,7 +928,7 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-
+        
         if (itemCSA.xx2_Len > 0) {
 //#ifdef _MSC_VER
             char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
@@ -1711,15 +1713,15 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
     for (int i = 4; i < 8; i++)
         if (hdr->dim[i] > 1) dim4to7 = dim4to7 * hdr->dim[i];
     int sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
-    long long volBytes = sliceBytes * hdr->dim[3];
+    size_t volBytes = sliceBytes * hdr->dim[3];
 //#ifdef _MSC_VER
 	unsigned char * slice = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes));
 //#else
 //	unsigned char slice[sliceBytes];
 //#endif
     for (int vol = 0; vol < dim4to7; vol++) { //for each 2D slice
-        long long slBottom = vol*volBytes;
-        long long slTop = ((vol+1)*volBytes)-sliceBytes;
+        size_t slBottom = vol*volBytes;
+        size_t slTop = ((vol+1)*volBytes)-sliceBytes;
         for (int z = 0; z < halfZ; z++) {
             //swap order of lines
             memcpy(slice, &bImg[slBottom], sliceBytes); //TPX memcpy(&slice, &bImg[slBottom], sliceBytes);
@@ -1748,10 +1750,10 @@ unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h,
         if (h->dim[i] > 1) dim4to7 = dim4to7 * h->dim[i];
     int sliceBytes = h->dim[1] * h->dim[2] * h->bitpix/8;
     if (sliceBytes < 0)  return bImg;
-    long long volBytes = sliceBytes * h->dim[3];
+    size_t volBytes = sliceBytes * h->dim[3];
     unsigned char *srcImg = (unsigned char *)malloc(volBytes);
     for (int v = 0; v < dim4to7; v++) {
-    	long long volStart = v * volBytes;
+    	size_t volStart = v * volBytes;
     	memcpy(&srcImg[volStart], &bImg[volStart], volBytes); //dest, src, size
     	for (int z = 0; z < h->dim[3]; z++) { //for each slice
 			int src = dti4D->S[z].sliceNumberMrPhilips - 1; //-1 as Philips indexes slices from 1 not 0
@@ -1868,7 +1870,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
          return NULL;
     }
 	fseek(file, 0, SEEK_END);
-	long long fileLen=ftell(file);
+	size_t fileLen=ftell(file);
     if (fileLen < (imgszRead+hdr.vox_offset)) {
         printMessage("File not large enough to store image data: %s\n", imgname);
         return NULL;
@@ -1897,7 +1899,6 @@ unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, 
                         //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
                         int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
                         int sliceBytes24 = sliceBytes8 * 3;
-    //printMessage("planar->rgb %dx%dx%d\n", hdr->dim[1],hdr->dim[2], dim3to7);
 //#ifdef _MSC_VER
                         unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
 //#else
@@ -2441,7 +2442,7 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
     FILE *fp = fopen(fname, "rb");
 	if (!fp)  return 0;
 	fseek(fp, 0, SEEK_END);
-	long long fileLen=ftell(fp);
+	size_t fileLen=ftell(fp);
     if (fileLen < 256) {
         fclose(fp);
         return 0;
@@ -2488,7 +2489,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		return d;
 	}
 	fseek(file, 0, SEEK_END);
-	long long fileLen=ftell(file); //Get file length
+	size_t fileLen=ftell(file); //Get file length
     if (fileLen < 256) {
         printMessage( "File too small to be a DICOM image %s\n", fname);
 		return d;

@@ -25,12 +25,14 @@
         #include <zlib.h>
     #endif
 #endif
+#include "tinydir.h"
 #include "print.h"
 #include "nifti1_io_core.h"
+#ifndef HAVE_R
 #include "nifti1.h"
+#endif
 #include "nii_dicom_batch.h"
 #include "nii_dicom.h"
-#include "tinydir.h"
 #include <ctype.h> //toupper
 #include <float.h>
 #include <math.h>
@@ -58,6 +60,13 @@
 #else
 	const char kPathSeparator ='/';
 	const char kFileSep[2] = "/";
+#endif
+
+#ifdef HAVE_R
+#include "ImageList.h"
+
+#undef isnan
+#define isnan ISNAN
 #endif
 
 struct TDCMsort {
@@ -276,12 +285,13 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
         for (int v= 0; v < 4; v++)
             if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
     } //for each direction
-    if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant)
+    if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
        printWarning("Please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal).\n");
-    else if ( d->sliceOrient == kSliceOrientTra)
+    } else if ( d->sliceOrient == kSliceOrientTra) {
         printMessage("Saving %d DTI gradients. Please validate if you are conducting DTI analyses.\n", d->CSA.numDti);
-    else
+    } else {
         printWarning("DTI gradient directions only tested for axial (transverse) acquisitions. Please validate bvec files.\n");
+    }
 }// siemensPhilipsCorrectBvecs()
 
 bool isNanPosition(struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
@@ -306,7 +316,7 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     strcat (txtname,".txt");
     //printMessage("Saving text %s\n",txtname);
     FILE *fp = fopen(txtname, "w");
-    fprintf(fp, "%s\tField Strength:\t%g\tProtocolName:\t%s\tScanningSequence00180020:\t%s\tTE:\t%g\tTR:\t%g\tSeriesNum:\t%ld\tAcquNum:\t%d\tImageNum:\t%d\tImageComments:\t%s\tDateTime:\t%F\tName:\t%s\tConvVers:\t%s\tDoB:\t%s\tGender:\t%s\tAge:\t%s\tDimXYZT:\t%d\t%d\t%d\t%d\tCoil:\t%d\tEchoNum:\t%d\tOrient(6)\t%g\t%g\t%g\t%g\t%g\t%g\tbitsAllocated\t%d\tInputName\t%s\n",
+    fprintf(fp, "%s\tField Strength:\t%g\tProtocolName:\t%s\tScanningSequence00180020:\t%s\tTE:\t%g\tTR:\t%g\tSeriesNum:\t%ld\tAcquNum:\t%d\tImageNum:\t%d\tImageComments:\t%s\tDateTime:\t%f\tName:\t%s\tConvVers:\t%s\tDoB:\t%s\tGender:\t%s\tAge:\t%s\tDimXYZT:\t%d\t%d\t%d\t%d\tCoil:\t%d\tEchoNum:\t%d\tOrient(6)\t%g\t%g\t%g\t%g\t%g\t%g\tbitsAllocated\t%d\tInputName\t%s\n",
       pathoutname, d.fieldStrength, d.protocolName, d.scanningSequence, d.TE, d.TR, d.seriesNum, d.acquNum, d.imageNum, d.imageComments,
       d.dateTime, d.patientName, kDCMvers, d.birthDate, d.gender, d.age, h->dim[1], h->dim[2], h->dim[3], h->dim[4],
             d.coilNum,d.echoNum, d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
@@ -532,6 +542,21 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         } //for each direction
     }
     //printMessage("%f\t%f\t%f",dcmList[indx0].CSA.dtiV[1][1],dcmList[indx0].CSA.dtiV[1][2],dcmList[indx0].CSA.dtiV[1][3]);
+#ifdef HAVE_R
+    std::vector<double> bValues(numDti);
+    std::vector<double> bVectors(numDti*3);
+    for (int i = 0; i < numDti; i++)
+    {
+        bValues[i] = vx[i].V[0];
+        for (int j = 0; j < 3; j++)
+            bVectors[i+j*numDti] = vx[i].V[j+1];
+    }
+    
+    // The image hasn't been created yet, so the attributes must be deferred
+    ImageList *images = (ImageList *) opts.imageList;
+    images->addDeferredAttribute("bValues", bValues);
+    images->addDeferredAttribute("bVectors", bVectors, numDti, 3);
+#else
     char txtname[2048] = {""};
     strcpy (txtname,pathoutname);
     strcat (txtname,".bval");
@@ -569,6 +594,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         fprintf(fp, "%g\n", vx[numDti-1].V[v]);
     }
     fclose(fp);
+#endif
     free(vx);
     return numFinalADC;
 }// nii_SaveDTI()
@@ -930,6 +956,87 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 } //writeNiiGz()
 #endif
 
+#ifdef HAVE_R
+
+// Version of nii_saveNII() for R/divest: create nifti_image pointer and push onto stack
+int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts)
+{
+    hdr.vox_offset = 352;
+    
+    // Extract the basename from the full file path
+    // R always uses '/' as the path separator, so this should work on all platforms
+    char *start = niiFilename + strlen(niiFilename);
+    while (*start != '/')
+        start--;
+    std::string name(++start);
+    
+    nifti_image *image = nifti_convert_nhdr2nim(hdr, niiFilename);
+    if (image == NULL)
+        return EXIT_FAILURE;
+    image->data = (void *) im;
+    
+    ImageList *images = (ImageList *) opts.imageList;
+    images->append(image, name);
+    
+    free(image);
+    return EXIT_SUCCESS;
+}
+
+void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header, struct TDCMopts &opts)
+{
+    ImageList *images = (ImageList *) opts.imageList;
+    
+    switch (data.manufacturer)
+    {
+        case kMANUFACTURER_SIEMENS:
+        images->addAttribute("manufacturer", "Siemens");
+        break;
+        
+        case kMANUFACTURER_GE:
+        images->addAttribute("manufacturer", "GE");
+        break;
+        
+        case kMANUFACTURER_PHILIPS:
+        images->addAttribute("manufacturer", "Philips");
+        break;
+        
+        case kMANUFACTURER_TOSHIBA:
+        images->addAttribute("manufacturer", "Toshiba");
+        break;
+    }
+    
+    if (strlen(data.manufacturersModelName) > 0)
+        images->addAttribute("scannerModelName", data.manufacturersModelName);
+    if (strlen(data.imageType) > 0)
+        images->addAttribute("imageType", data.imageType);
+    if (strlen(data.studyDate) >= 8 && strcmp(data.studyDate,"00000000") != 0)
+        images->addDateAttribute("studyDate", data.studyDate);
+    if (strlen(data.studyTime) > 0 && strncmp(data.studyTime,"000000",6) != 0)
+        images->addAttribute("studyTime", data.studyTime);
+    if (data.fieldStrength > 0.0)
+        images->addAttribute("fieldStrength", data.fieldStrength);
+    if (data.flipAngle > 0.0)
+        images->addAttribute("flipAngle", data.flipAngle);
+    if (data.TE > 0.0)
+        images->addAttribute("echoTime", data.TE);
+    if (data.TR > 0.0)
+        images->addAttribute("repetitionTime", data.TR);
+    if ((data.CSA.bandwidthPerPixelPhaseEncode > 0.0) && (header.dim[2] > 0) && (header.dim[1] > 0)) {
+        if (data.phaseEncodingRC =='C')
+            images->addAttribute("dwellTime", 1.0/data.CSA.bandwidthPerPixelPhaseEncode/header.dim[2]);
+        else if (data.phaseEncodingRC == 'R')
+            images->addAttribute("dwellTime", 1.0/data.CSA.bandwidthPerPixelPhaseEncode/header.dim[1]);
+    }
+    if (data.phaseEncodingRC == 'C')
+        images->addAttribute("phaseEncodingDirection", "j");
+    else if (data.phaseEncodingRC == 'R')
+        images->addAttribute("phaseEncodingDirection", "i");
+    if (data.CSA.phaseEncodingDirectionPositive != -1)
+        images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
+}
+
+#else
+
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
@@ -978,6 +1085,8 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     return EXIT_SUCCESS;
 }// nii_saveNII()
 
+#endif
+
 int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //save 4D series as sequence of 3D volumes
     struct nifti_1_header hdr1 = hdr;
@@ -1017,8 +1126,9 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
         if (img16[i] > max16)
             max16 = img16[i];
     //printMessage("max16= %d vox=%d %fms\n",max16, nVox, ((double)(clock()-start))/1000);
-    if (max16 > 32767)
+    if (max16 > 32767) {
         printMessage("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
+    }
     else
         hdr->datatype = DT_INT16;
 } //nii_check16bitUnsigned()
@@ -1232,13 +1342,13 @@ void smooth1D(int num, double * im) {
 	free(src);
 }// smooth1D()
 
-void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //remove excess neck slices - assumes output of nii_setOrtho()
     int nVox2D = hdr.dim[1]*hdr.dim[2];
-    if ((nVox2D < 1) || (fabs(hdr.pixdim[3]) < 0.001) || (hdr.dim[0] != 3) || (hdr.dim[3] < 128)) return;
+    if ((nVox2D < 1) || (fabs(hdr.pixdim[3]) < 0.001) || (hdr.dim[0] != 3) || (hdr.dim[3] < 128)) return EXIT_FAILURE;
     if ((hdr.datatype != DT_INT16) && (hdr.datatype != DT_UINT16)) {
         printMessage("Only able to crop 16-bit volumes.");
-        return;
+        return EXIT_FAILURE;
     }
 	short * im16 = ( short*) im;
 	unsigned short * imu16 = (unsigned short*) im;
@@ -1269,7 +1379,7 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     }
     if (maxSliceVal <= 0) {
     	free(sliceSums);
-    	return;
+    	return EXIT_FAILURE;
     }
     smooth1D(slices, sliceSums);
     for (int i = 0; i  < slices; i++) sliceSums[i] = sliceSums[i] / maxSliceVal; //so brightest slice has value 1
@@ -1279,7 +1389,7 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
 		if (sliceSums[dorsalCrop-1] > kThresh) break;
 	if (dorsalCrop <= 1) {
 		free(sliceSums);
-		return;
+		return EXIT_FAILURE;
 	}
 	/*
 	//find brightest band within 90mm of top of head
@@ -1293,7 +1403,7 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     ventralMaxSlice = maxSlice - round(45 /fabs(hdr.pixdim[3])); //gap at least 60mm
     if (ventralMaxSlice < 0) {
     	free(sliceSums);
-    	return;
+    	return EXIT_FAILURE;
     }
     int ventralMinSlice = maxSlice - round(90/fabs(hdr.pixdim[3])); //gap no more than 120mm
     if (ventralMinSlice < 0) ventralMinSlice = 0;
@@ -1310,7 +1420,7 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
 	if ((minSlice-gap) > 1)
         ventralCrop = minSlice-gap;
 	free(sliceSums);
-	if (ventralCrop > dorsalCrop) return;
+	if (ventralCrop > dorsalCrop) return EXIT_FAILURE;
 	//FindDVCrop2
 	const double kMaxDVmm = 180.0;
     double sliceMM = hdr.pixdim[3] * (dorsalCrop-ventralCrop);
@@ -1345,9 +1455,9 @@ void nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     char niiFilenameCrop[2048] = {""};
     strcat(niiFilenameCrop,niiFilename);
     strcat(niiFilenameCrop,"_Crop");
-    nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts);
+    const int returnCode = nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts);
     free(imX);
-    return;
+    return returnCode;
 }// nii_saveCrop()
 
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
@@ -1491,8 +1601,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
     	printWarning("Check that 2D images are not mirrored.\n");
+#ifndef HAVE_R
     else
         fflush(stdout); //GUI buffers printf, display all results
+#endif
     if ((dcmList[dcmSort[0].indx].is3DAcq) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
         imgM = nii_setOrtho(imgM, &hdr0); //printMessage("ortho %d\n", echoInt (33));
     else if (opts.isFlipY)//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
@@ -1500,40 +1612,55 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     else
     	printMessage("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
 #ifndef myNoSave
+    // Indicates success or failure of the (last) save
+    int returnCode = EXIT_FAILURE;
     //printMessage(" x--> %d ----\n", nConvert);
     if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
         imgM = nii_planar2rgb(imgM, &hdr0, true);
     if ((hdr0.dim[4] > 1) && (saveAs3D))
-        nii_saveNII3D(pathoutname, hdr0, imgM,opts);
+        returnCode = nii_saveNII3D(pathoutname, hdr0, imgM,opts);
     else {
         if ((numFinalADC > 0) && (hdr0.dim[4] > (numFinalADC+1))) { //ADC maps can disrupt analysis: save a copy with the ADC map, and another without
+#ifndef HAVE_R
             char pathoutnameADC[2048] = {""};
             strcat(pathoutnameADC,pathoutname);
             strcat(pathoutnameADC,"_ADC");
             nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
+#endif
             hdr0.dim[4] = hdr0.dim[4]-numFinalADC;
         };
-        nii_saveNII(pathoutname, hdr0, imgM, opts);
+#ifndef HAVE_R
+        returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts);
+#endif
     }
 #endif
     if (dcmList[indx0].gantryTilt != 0.0) {
-        if (dcmList[indx0].isResampled)
+        if (dcmList[indx0].isResampled) {
             printMessage("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
-        else if (opts.isTiltCorrect) {
+        } else if (opts.isTiltCorrect) {
             imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
             strcat(pathoutname,"_Tilt");
         } else
             printMessage("Tilt correction skipped\n");
     }
     if (sliceMMarray != NULL) {
-        if (dcmList[indx0].isResampled)
+        if (dcmList[indx0].isResampled) {
             printMessage("Slice thickness correction skipped: 0008,2111 reports RESAMPLED\n");
+        }
         else
-            nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
+            returnCode = nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
         free(sliceMMarray);
     }
     if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
-    	nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
+        returnCode = nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
+    
+#ifdef HAVE_R
+    // Note that for R, only one image should be created per series
+    // Hence the logical OR here
+    if (returnCode == EXIT_SUCCESS || nii_saveNII(pathoutname,hdr0,imgM,opts) == EXIT_SUCCESS)
+        nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts);
+#endif
+    
     free(imgM);
     return EXIT_SUCCESS;
 }// saveDcm2Nii()
@@ -2001,7 +2128,7 @@ int nii_loadDir(struct TDCMopts* opts) {
         free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
         return EXIT_FAILURE;
     }
-    long long nDcm = nameList.numItems;
+    size_t nDcm = nameList.numItems;
     printMessage( "Found %lu DICOM image(s)\n", nameList.numItems);
     // struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
@@ -2023,6 +2150,42 @@ int nii_loadDir(struct TDCMopts* opts) {
         	printMessage("Image Decompression is new: please validate conversions\n");
     	}
     }
+#ifdef HAVE_R
+    if (opts->isScanOnly) {
+        TWarnings warnings = setWarnings();
+        
+        // Create the first series from the first DICOM file
+        TDicomSeries firstSeries;
+        firstSeries.representativeData = dcmList[0];
+        firstSeries.files.push_back(nameList.str[0]);
+        opts->series.push_back(firstSeries);
+        
+        // Iterate over the remaining files
+        for (size_t i = 1; i < nDcm; i++) {
+            bool matched = false;
+            
+            // If the file matches an existing series, add it to the corresponding file list
+            for (int j = 0; j < opts->series.size(); j++) {
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts->isForceStackSameSeries, &warnings)) {
+                    opts->series[j].files.push_back(nameList.str[i]);
+                    matched = true;
+                    break;
+                }
+            }
+            
+            // If not, create a new series object
+            if (!matched) {
+                TDicomSeries nextSeries;
+                nextSeries.representativeData = dcmList[i];
+                nextSeries.files.push_back(nameList.str[i]);
+                opts->series.push_back(nextSeries);
+            }
+        }
+        
+        // To avoid a spurious warning below
+        nConvertTotal = nDcm;
+    } else {
+#endif
     //3: stack DICOMs with the same Series
     for (int i = 0; i < nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
@@ -2059,6 +2222,9 @@ int nii_loadDir(struct TDCMopts* opts) {
 //#endif
 		}//convert all images of this series
     }
+#ifdef HAVE_R
+    }
+#endif
     free(dcmList);
     if (nConvertTotal == 0) {
         printMessage("No valid DICOM files were found\n");
