@@ -10,17 +10,16 @@
 extern "C" {
 #endif
 
-#ifdef myEnableJasper
- #define kDCMsuf "jasper"
-#else
- #ifdef myDisableOpenJPEG
-   #define kDCMsuf ""
+ #ifdef myEnableJasper
+  #define kDCMsuf " (jasper build)"
  #else
-   #define kDCMsuf "openJPEG"
+  #ifdef myDisableOpenJPEG
+    #define kDCMsuf ""
+  #else
+    #define kDCMsuf " (openJPEG build)"
+  #endif
  #endif
-#endif
-
-#define kDCMvers "v1.0.20170124" kDCMsuf
+ #define kDCMvers "v1.0.20170124" kDCMsuf
 
 static const int kMaxDTI4D = 4000; //#define kMaxDTIv  4000
 #define kDICOMStr 40
