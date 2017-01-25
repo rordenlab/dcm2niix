@@ -1870,7 +1870,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
          return NULL;
     }
 	fseek(file, 0, SEEK_END);
-	size_t fileLen=ftell(file);
+	long fileLen=ftell(file);
     if (fileLen < (imgszRead+hdr.vox_offset)) {
         printMessage("File not large enough to store image data: %s\n", imgname);
         return NULL;
@@ -2442,7 +2442,7 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
     FILE *fp = fopen(fname, "rb");
 	if (!fp)  return 0;
 	fseek(fp, 0, SEEK_END);
-	size_t fileLen=ftell(fp);
+	long fileLen=ftell(fp);
     if (fileLen < 256) {
         fclose(fp);
         return 0;
@@ -2489,7 +2489,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		return d;
 	}
 	fseek(file, 0, SEEK_END);
-	size_t fileLen=ftell(file); //Get file length
+	long fileLen=ftell(file); //Get file length
     if (fileLen < 256) {
         printMessage( "File too small to be a DICOM image %s\n", fname);
 		return d;
@@ -2506,7 +2506,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	size_t sz = fread(buffer, 1, fileLen, file);
 	fclose(file);
 	if (sz < fileLen) {
-         printError("Only loaded %zu of %lld bytes for %s\n", sz, fileLen, fname);
+         printError("Only loaded %zu of %ld bytes for %s\n", sz, fileLen, fname);
          return d;
     }
 	//bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
