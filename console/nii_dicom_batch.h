@@ -10,14 +10,27 @@ extern "C" {
 
 #include <stdbool.h>
 #include <string.h>
+#ifndef HAVE_R
 #include "nifti1.h"
-#include "nifti1.h"
+#endif
 #include "nii_dicom.h"
+
+#ifdef HAVE_R
+    struct TDicomSeries {
+        TDICOMdata representativeData;
+        std::vector<std::string> files;
+    };
+#endif
 
     struct TDCMopts {
         bool isGz, isFlipY,  isCreateBIDS, isCreateText, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackSameSeries, isCrop;
         int isVerbose, compressFlag; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512];
+#ifdef HAVE_R
+        bool isScanOnly;
+        void *imageList;
+        std::vector<TDicomSeries> series;
+#endif
     };
     void saveIniFile (struct TDCMopts opts);
     void setDefaultOpts (struct TDCMopts *opts, const char * argv[]); //either "setDefaultOpts(opts,NULL)" or "setDefaultOpts(opts,argv)" where argv[0] is path to search

@@ -1,6 +1,8 @@
 #include <stdbool.h>
 #include <string.h>
+#ifndef HAVE_R
 #include "nifti1.h"
+#endif
 
 #ifndef MRIpro_nii_dcm_h
 

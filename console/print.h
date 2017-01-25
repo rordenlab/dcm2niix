@@ -11,9 +11,9 @@
 	#ifdef HAVE_R
 		#define R_USE_C99_IN_CXX
 		#include <R_ext/Print.h>
-		#define printMessage Rprintf
-		#define printWarning(...) { REprintf("Warning: "); REprintf(__VA_ARGS__); }
-		#define printError(...) { REprintf("Error: "); REprintf(__VA_ARGS__); }
+		#define printMessage(...) { Rprintf("[dcm2niix info] "); Rprintf(__VA_ARGS__); }
+		#define printWarning(...) { Rprintf("[dcm2niix WARNING] "); Rprintf(__VA_ARGS__); }
+		#define printError(...) { Rprintf("[dcm2niix ERROR] "); Rprintf(__VA_ARGS__); }
 	#else
 		#ifdef myUseCOut
 			//for piping output to Qtextedit
