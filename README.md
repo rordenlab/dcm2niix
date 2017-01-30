@@ -11,7 +11,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-1-Jan-2017
+30-Jan-2017
  - Handle 3D Philips DICOM files where images are not stored in a spatially contiguous order.
  - Handle DICOM violations where icon is uncompressed but image data is compressed.
  - Best guess matrix for 2D slices (similar to dcm2nii, SPM and MRIconvert).
