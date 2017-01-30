@@ -441,8 +441,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
-	//fprintf(fp, "\t\"dcm2niixVersion\": \"%s\"\n", kDCMvers );
-	fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
+	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n", kDCMvers );
+	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
+	//fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
     fprintf(fp, "}\n");
     fclose(fp);
 }// nii_SaveBIDS()
@@ -552,7 +553,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         for (int j = 0; j < 3; j++)
             bVectors[i+j*numDti] = vx[i].V[j+1];
     }
-    
+
     // The image hasn't been created yet, so the attributes must be deferred
     ImageList *images = (ImageList *) opts.imageList;
     images->addDeferredAttribute("bValues", bValues);
@@ -963,22 +964,22 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts)
 {
     hdr.vox_offset = 352;
-    
+
     // Extract the basename from the full file path
     // R always uses '/' as the path separator, so this should work on all platforms
     char *start = niiFilename + strlen(niiFilename);
     while (*start != '/')
         start--;
     std::string name(++start);
-    
+
     nifti_image *image = nifti_convert_nhdr2nim(hdr, niiFilename);
     if (image == NULL)
         return EXIT_FAILURE;
     image->data = (void *) im;
-    
+
     ImageList *images = (ImageList *) opts.imageList;
     images->append(image, name);
-    
+
     free(image);
     return EXIT_SUCCESS;
 }
@@ -986,26 +987,26 @@ int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header, struct TDCMopts &opts)
 {
     ImageList *images = (ImageList *) opts.imageList;
-    
+
     switch (data.manufacturer)
     {
         case kMANUFACTURER_SIEMENS:
         images->addAttribute("manufacturer", "Siemens");
         break;
-        
+
         case kMANUFACTURER_GE:
         images->addAttribute("manufacturer", "GE");
         break;
-        
+
         case kMANUFACTURER_PHILIPS:
         images->addAttribute("manufacturer", "Philips");
         break;
-        
+
         case kMANUFACTURER_TOSHIBA:
         images->addAttribute("manufacturer", "Toshiba");
         break;
     }
-    
+
     if (strlen(data.manufacturersModelName) > 0)
         images->addAttribute("scannerModelName", data.manufacturersModelName);
     if (strlen(data.imageType) > 0)
@@ -1654,14 +1655,14 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
         returnCode = nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
-    
+
 #ifdef HAVE_R
     // Note that for R, only one image should be created per series
     // Hence the logical OR here
     if (returnCode == EXIT_SUCCESS || nii_saveNII(pathoutname,hdr0,imgM,opts) == EXIT_SUCCESS)
         nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts);
 #endif
-    
+
     free(imgM);
     return EXIT_SUCCESS;
 }// saveDcm2Nii()
@@ -2154,17 +2155,17 @@ int nii_loadDir(struct TDCMopts* opts) {
 #ifdef HAVE_R
     if (opts->isScanOnly) {
         TWarnings warnings = setWarnings();
-        
+
         // Create the first series from the first DICOM file
         TDicomSeries firstSeries;
         firstSeries.representativeData = dcmList[0];
         firstSeries.files.push_back(nameList.str[0]);
         opts->series.push_back(firstSeries);
-        
+
         // Iterate over the remaining files
         for (size_t i = 1; i < nDcm; i++) {
             bool matched = false;
-            
+
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
                 if (isSameSet(opts->series[j].representativeData, dcmList[i], opts->isForceStackSameSeries, &warnings)) {
@@ -2173,7 +2174,7 @@ int nii_loadDir(struct TDCMopts* opts) {
                     break;
                 }
             }
-            
+
             // If not, create a new series object
             if (!matched) {
                 TDicomSeries nextSeries;
@@ -2182,7 +2183,7 @@ int nii_loadDir(struct TDCMopts* opts) {
                 opts->series.push_back(nextSeries);
             }
         }
-        
+
         // To avoid a spurious warning below
         nConvertTotal = nDcm;
     } else {
