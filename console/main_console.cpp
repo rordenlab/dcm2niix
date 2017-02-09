@@ -64,6 +64,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
     #endif
     printf("  -h : show help\n");
+    printf("  -i : ignore derived and 2D images (y/n, default n)\n");
+    printf("  -t : text notes includes private patient details (y/n, default n)\n");
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
@@ -125,7 +127,7 @@ int main(int argc, const char * argv[])
         showHelp(argv, opts);
         return 0;
     }
-    bool isCustomOutDir = false;
+    //bool isCustomOutDir = false;
     int i = 1;
     int lastCommandArg = 0;
     while (i < (argc)) { //-1 as final parameter is DICOM directory
@@ -138,6 +140,12 @@ int main(int argc, const char * argv[])
                     opts.isCreateBIDS = false;
                 else
                     opts.isCreateBIDS = true;
+            } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isIgnoreDerivedAnd2D = false;
+                else
+                    opts.isIgnoreDerivedAnd2D = true;
             } else if ((argv[i][1] == 'm') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
@@ -184,7 +192,7 @@ int main(int argc, const char * argv[])
                 strcpy(opts.filename,argv[i]);
             } else if ((argv[i][1] == 'o') && ((i+1) < argc)) {
                 i++;
-                isCustomOutDir = true;
+                //isCustomOutDir = true;
                 strcpy(opts.outdir,argv[i]);
             }
             lastCommandArg = i;
@@ -204,7 +212,7 @@ int main(int argc, const char * argv[])
     clock_t start = clock();
     for (i = (lastCommandArg+1); i < argc; i++) {
     	strcpy(opts.indir,argv[i]); // [argc-1]
-    	if (!isCustomOutDir) strcpy(opts.outdir,opts.indir);
+    	//if (!isCustomOutDir) strcpy(opts.outdir,opts.indir);
     	if (nii_loadDir(&opts) != EXIT_SUCCESS)
     		return EXIT_FAILURE;
     }

@@ -11,8 +11,8 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-30-Jan-2017
- - Handle 3D Philips DICOM files where images are not stored in a spatially contiguous order.
+7-Feb-2017
+ - Handle 3D Philips DICOM and [PAR/REC](https://www.nitrc.org/forum/forum.php?thread_id=7707&forum_id=4703) files where images are not stored in a spatially contiguous order.
  - Handle DICOM violations where icon is uncompressed but image data is compressed.
  - Best guess matrix for 2D slices (similar to dcm2nii, SPM and MRIconvert).
  - Linux (case sensitive filenames) now handles par/rec as well as PAR/REC.

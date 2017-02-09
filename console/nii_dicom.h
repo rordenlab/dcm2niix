@@ -21,7 +21,7 @@ extern "C" {
     #define kDCMsuf " (openJPEG build)"
   #endif
  #endif
- #define kDCMvers "v1.0.20170130" kDCMsuf
+ #define kDCMvers "v1.0.20170207" kDCMsuf
 
 static const int kMaxDTI4D = 4000; //#define kMaxDTIv  4000
 #define kDICOMStr 40

@@ -324,6 +324,14 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }// nii_SaveText()
 
+bool isDerived(struct TDICOMdata d) {
+	#define kDerivedStr "DERIVED"
+	if ((strlen(d.imageType) < strlen(kDerivedStr)) || (strstr(d.imageType, kDerivedStr) == NULL))
+		return false;
+	else
+		return true;
+}
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
@@ -1467,6 +1475,14 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
+    if (opts.isIgnoreDerivedAnd2D && isDerived(dcmList[indx])) {
+    	printMessage("Ignoring DERIVED image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
+    	return EXIT_SUCCESS;
+    }
+    if ((nConvert < 2) && (dcmList[indx].xyzDim[3] < 2)) {
+    	printMessage("Ignoring 2D image of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
+    	return EXIT_SUCCESS;
+    }
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
@@ -2067,12 +2083,13 @@ int nii_loadDir(struct TDCMopts* opts) {
     char indir[512];
     strcpy(indir,opts->indir);
     bool isFile = is_fileNotDir(opts->indir);
+    //bool isParRec = (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) );
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
     dropTrailingFileSep(opts->indir);
-    if (strlen(opts->outdir) < 1)
+    if (strlen(opts->outdir) < 1) {
         strcpy(opts->outdir,opts->indir);
-    else
+    } else
     	dropTrailingFileSep(opts->outdir);
     if (!is_dir(opts->outdir,true)) {
 		#ifdef myUseInDirIfOutDirUnavailable
@@ -2095,7 +2112,7 @@ int nii_loadDir(struct TDCMopts* opts) {
         return convert_foreign(*opts);
     }*/
     getFileName(opts->indirParent, opts->indir);
-    if (isFile && ((isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
+    if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         char pname[512], rname[512];
         strcpy(pname,indir);
         strcpy(rname,indir);
@@ -2329,6 +2346,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     strcpy(opts->outdir,"");
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isForceStackSameSeries = false;
+    opts->isIgnoreDerivedAnd2D = false;
     opts->isCrop = false;
     opts->isGz = false;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates

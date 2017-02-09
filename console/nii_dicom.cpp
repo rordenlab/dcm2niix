@@ -902,7 +902,7 @@ float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *Item
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-        
+
         if (itemCSA.xx2_Len > 0) {
             char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
             memcpy(cString, &buff[lPos], itemCSA.xx2_Len); //TPX memcpy(&cString, &buff[lPos], sizeof(cString));
@@ -928,7 +928,7 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-        
+
         if (itemCSA.xx2_Len > 0) {
 //#ifdef _MSC_VER
             char * cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
@@ -1453,6 +1453,21 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kDynTime] > maxDynTime) maxDynTime = cols[kDynTime];
         if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
+        if ((cols[kEcho] == 1) && (cols[kDyn] == 1) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 1)) {
+			if (cols[kSlice] == 1) {
+				d.patientPosition[1] = cols[kPositionRL];
+            	d.patientPosition[2] = cols[kPositionAP];
+            	d.patientPosition[3] = cols[kPositionFH];
+			}
+			if (d.patientPositionNumPhilips < kMaxDTI4D) {
+				dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = round(cols[kSlice]);
+				if ((d.patientPositionNumPhilips > 0) && (dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips < dti4D->S[d.patientPositionNumPhilips-1].sliceNumberMrPhilips)) {
+					d.isSlicesSpatiallySequentialPhilips = false;
+					//printMessage("slices are not contiguous\n");
+				}
+			}
+			d.patientPositionNumPhilips++;
+        }
         if (cols[kGradientNumber] > 0) {
 			/*int dir = (int) cols[kGradientNumber];
             if ((dir > 0) && (cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
@@ -1599,7 +1614,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             d.intenScale = l1-l0;
         }
     }
-
     return d;
 } //nii_readParRec()
 
@@ -1739,7 +1753,8 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
 
 unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h, struct TDTI4D *dti4D){
     //flip slice order - Philips scanners can save data in non-contiguous order
-    if ((h->dim[3] < 2) || (h->dim[4] > 1)) return bImg;
+    //if ((h->dim[3] < 2) || (h->dim[4] > 1)) return bImg;
+    if (h->dim[3] < 2) return bImg;
     if (h->dim[3] >= kMaxDTI4D) {
     	printWarning("Unable to reorder slices (%d > %d)\n", h->dim[3], kMaxDTI4D);
     	return bImg;
@@ -1754,11 +1769,11 @@ unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h,
     unsigned char *srcImg = (unsigned char *)malloc(volBytes);
     for (int v = 0; v < dim4to7; v++) {
     	size_t volStart = v * volBytes;
-    	memcpy(&srcImg[volStart], &bImg[volStart], volBytes); //dest, src, size
+    	memcpy(&srcImg[0], &bImg[volStart], volBytes); //dest, src, size
     	for (int z = 0; z < h->dim[3]; z++) { //for each slice
 			int src = dti4D->S[z].sliceNumberMrPhilips - 1; //-1 as Philips indexes slices from 1 not 0
 			if ((src < 0) || (src >= h->dim[3])) continue;
-			memcpy(&bImg[volStart+(src*sliceBytes)], &srcImg[volStart+(z*sliceBytes)], sliceBytes); //dest, src, size
+			memcpy(&bImg[volStart+(src*sliceBytes)], &srcImg[z*sliceBytes], sliceBytes); //dest, src, size
     	}
     }
     free(srcImg);
