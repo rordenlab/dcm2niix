@@ -449,7 +449,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
-	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n", kDCMvers );
+	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
 	//fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
     fprintf(fp, "}\n");
