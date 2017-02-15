@@ -12,6 +12,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 ## Versions
 
 7-Feb-2017
+ - Can be compiled to use either Philips [Float or Display](http://www.nitrc.org/forum/message.php?msg_id=20213) intensity intercept and slope values.
  - Handle 3D Philips DICOM and [PAR/REC](https://www.nitrc.org/forum/forum.php?thread_id=7707&forum_id=4703) files where images are not stored in a spatially contiguous order.
  - Handle DICOM violations where icon is uncompressed but image data is compressed.
  - Best guess matrix for 2D slices (similar to dcm2nii, SPM and MRIconvert).

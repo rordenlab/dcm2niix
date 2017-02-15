@@ -1266,6 +1266,34 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
         return (lPV * lRS + lRI) / (lRS * lSS);
 }
 
+void philipsPrecise (struct TDICOMdata * d, float intenScalePhilips) {
+	if (intenScalePhilips == 0) return; //not Philips
+	//we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
+	float l0 = PhilipsPreciseVal (0, d->intenScale, d->intenIntercept, intenScalePhilips);
+	float l1 = PhilipsPreciseVal (1, d->intenScale, d->intenIntercept, intenScalePhilips);
+	float intenScaleP = d->intenScale;
+	float intenInterceptP = d->intenIntercept;
+	if (l0 != l1) {
+		intenInterceptP = l0;
+		intenScaleP = l1-l0;
+	}
+	if (isSameFloat(d->intenIntercept,intenInterceptP) && isSameFloat(d->intenScale, intenScaleP)) return; //same result for both methods: nothing to do or report!
+	printMessage("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,intenScalePhilips);
+	printMessage(" R = raw value, P = precise value, D = displayed value\n");
+	printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
+	printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
+	printMessage(" D scl_slope:scl_inter = %g:%g\n", d->intenScale,d->intenIntercept);
+	printMessage(" P scl_slope:scl_inter = %g:%g\n", intenScaleP,intenInterceptP);
+	//#define myUsePhilipsPrecise
+	#ifdef myUsePhilipsPrecise
+	printMessage(" Using P values (recompile for D values)\n");
+	d->intenScale = intenScaleP;
+	d->intenIntercept = intenInterceptP;
+	#else
+	printMessage(" Using D values (recompile for P values)\n");
+	#endif
+} //philipsPrecise()
+
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //erase dummy with empty
@@ -1600,20 +1628,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
     }
-    if (intenScalePhilips != 0.0) {
-        //printMessage("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
-        //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
-        //# === PIXEL VALUES =============================================================
-		//#  PV = pixel value in REC file, FP = floating point value, DV = displayed value on console
-		//#  RS = rescale slope,           RI = rescale intercept,    SS = scale slope
-		//#  DV = PV * RS + RI             FP = DV / (RS * SS)
-        float l0 = PhilipsPreciseVal (0, d.intenScale, d.intenIntercept, intenScalePhilips);
-        float l1 = PhilipsPreciseVal (1, d.intenScale, d.intenIntercept, intenScalePhilips);
-        if (l0 != l1) {
-            d.intenIntercept = l0;
-            d.intenScale = l1-l0;
-        }
-    }
+    philipsPrecise (&d, intenScalePhilips);
     return d;
 } //nii_readParRec()
 
@@ -3312,16 +3327,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         printError("Unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
     }
-    if (intenScalePhilips != 0.0) {
-        printMessage("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d.intenScale,d.intenIntercept,intenScalePhilips);
-        //we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
-        float l0 = PhilipsPreciseVal (0, d.intenScale, d.intenIntercept, intenScalePhilips);
-        float l1 = PhilipsPreciseVal (1, d.intenScale, d.intenIntercept, intenScalePhilips);
-        if (l0 != l1) {
-            d.intenIntercept = l0;
-            d.intenScale = l1-l0;
-        }
-    }
+    philipsPrecise (&d, intenScalePhilips);
     return d;
 } // readDICOM()
 
