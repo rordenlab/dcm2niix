@@ -397,10 +397,15 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
         fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
         }
   }
-
 	// if (d.acquisitionTime > 0.0) fprintf(fp, "\t\"AcquisitionTime\": %f,\n", d.acquisitionTime );
 	// if (d.acquisitionDate > 0.0) fprintf(fp, "\t\"AcquisitionDate\": %8.0f,\n", d.acquisitionDate );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
+	if ((d.intenScalePhilips != 0) || (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
+		fprintf(fp, "\t\"PhilipsRescaleSlope\": %g,\n", d.intenScale );
+		fprintf(fp, "\t\"PhilipsRescaleIntercept\": %g,\n", d.intenIntercept );
+		fprintf(fp, "\t\"PhilipsScaleSlope\": %g,\n", d.intenScalePhilips );
+		fprintf(fp, "\t\"UsePhilipsFloatNotDisplayScaling\": %d,\n", opts.isPhilipsFloatNotDisplayScaling);
+	}
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
 	if (d.flipAngle > 0.0) fprintf(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	if (d.TE > 0.0) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
@@ -1342,6 +1347,45 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     return EXIT_SUCCESS;
 }// nii_saveNII3Deq()
 
+float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
+    if ((lRS*lSS) == 0) //avoid divide by zero
+        return 0.0;
+    else
+        return (lPV * lRS + lRI) / (lRS * lSS);
+}
+
+void PhilipsPrecise (struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling, struct nifti_1_header *h) {
+	if ((d->intenScalePhilips == 0) || (d->manufacturer != kMANUFACTURER_PHILIPS)) return; //not Philips
+	//we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
+	float l0 = PhilipsPreciseVal (0, d->intenScale, d->intenIntercept, d->intenScalePhilips);
+	float l1 = PhilipsPreciseVal (1, d->intenScale, d->intenIntercept, d->intenScalePhilips);
+	float intenScaleP = d->intenScale;
+	float intenInterceptP = d->intenIntercept;
+	if (l0 != l1) {
+		intenInterceptP = l0;
+		intenScaleP = l1-l0;
+	}
+	if (isSameFloat(d->intenIntercept,intenInterceptP) && isSameFloat(d->intenScale, intenScaleP)) return; //same result for both methods: nothing to do or report!
+	printMessage("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
+	printMessage(" R = raw value, P = precise value, D = displayed value\n");
+	printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
+	printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
+	printMessage(" D scl_slope:scl_inter = %g:%g\n", d->intenScale,d->intenIntercept);
+	printMessage(" P scl_slope:scl_inter = %g:%g\n", intenScaleP,intenInterceptP);
+	//#define myUsePhilipsPrecise
+	if (isPhilipsFloatNotDisplayScaling) {
+		printMessage(" Using P values ('-p n ' for D values)\n");
+		//to change DICOM:
+		//d->intenScale = intenScaleP;
+		//d->intenIntercept = intenInterceptP;
+		//to change NIfTI
+    	h->scl_slope = intenScaleP;
+    	h->scl_inter = intenInterceptP;
+    	d->intenScalePhilips = 0; //so we never run this TWICE!
+	} else
+		printMessage(" Using D values ('-p y ' for P values)\n");
+} //PhilipsPrecise()
+
 void smooth1D(int num, double * im) {
 	if (num < 3) return;
 	double * src = (double *) malloc(sizeof(double)*num);
@@ -1615,6 +1659,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
+    PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0);
+
     if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
@@ -2347,6 +2393,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isForceStackSameSeries = false;
     opts->isIgnoreDerivedAnd2D = false;
+    opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isGz = false;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates

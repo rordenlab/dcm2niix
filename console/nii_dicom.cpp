@@ -650,6 +650,7 @@ struct TDICOMdata clear_dicom_data() {
     d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
     d.intenScale = 1;
+    d.intenScalePhilips = 0;
     d.intenIntercept = 0;
     d.gantryTilt = 0.0;
     d.seriesNum = 1;
@@ -1259,41 +1260,6 @@ void changeExt (char *file_name, const char* ext) {
     }
 } //changeExt()
 
-float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
-    if ((lRS*lSS) == 0) //avoid divide by zero
-        return 0.0;
-    else
-        return (lPV * lRS + lRI) / (lRS * lSS);
-}
-
-void philipsPrecise (struct TDICOMdata * d, float intenScalePhilips) {
-	if (intenScalePhilips == 0) return; //not Philips
-	//we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
-	float l0 = PhilipsPreciseVal (0, d->intenScale, d->intenIntercept, intenScalePhilips);
-	float l1 = PhilipsPreciseVal (1, d->intenScale, d->intenIntercept, intenScalePhilips);
-	float intenScaleP = d->intenScale;
-	float intenInterceptP = d->intenIntercept;
-	if (l0 != l1) {
-		intenInterceptP = l0;
-		intenScaleP = l1-l0;
-	}
-	if (isSameFloat(d->intenIntercept,intenInterceptP) && isSameFloat(d->intenScale, intenScaleP)) return; //same result for both methods: nothing to do or report!
-	printMessage("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,intenScalePhilips);
-	printMessage(" R = raw value, P = precise value, D = displayed value\n");
-	printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
-	printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
-	printMessage(" D scl_slope:scl_inter = %g:%g\n", d->intenScale,d->intenIntercept);
-	printMessage(" P scl_slope:scl_inter = %g:%g\n", intenScaleP,intenInterceptP);
-	//#define myUsePhilipsPrecise
-	#ifdef myUsePhilipsPrecise
-	printMessage(" Using P values (recompile for D values)\n");
-	d->intenScale = intenScaleP;
-	d->intenIntercept = intenInterceptP;
-	#else
-	printMessage(" Using D values (recompile for P values)\n");
-	#endif
-} //philipsPrecise()
-
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //erase dummy with empty
@@ -1336,7 +1302,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kv3	46
 #define	kASL	48
     char buff[LINESZ];
-    float intenScalePhilips = 0.0f;
+    //float intenScalePhilips = 0.0f;
     float maxBValue = 0.0f;
     float maxDynTime = 0.0f;
     float minDynTime = 999999.0f;
@@ -1463,7 +1429,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			d.bitsStored = (int) cols[kBitsPerVoxel];
             d.intenIntercept = cols[kRI];
             d.intenScale = cols[kRS];
-            intenScalePhilips = cols[kSS];
+            d.intenScalePhilips = cols[kSS];
         } else {
             if ((d.xyzDim[1] != cols[kXdim]) || (d.xyzDim[2] != cols[kYdim]) || (d.bitsAllocated != cols[kBitsPerVoxel]) ) {
                 printError("Slice dimensions or bit depth varies %s\n", parname);
@@ -1628,7 +1594,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
     }
-    philipsPrecise (&d, intenScalePhilips);
     return d;
 } //nii_readParRec()
 
@@ -2658,7 +2623,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         	printMessage("DICOM appears corrupt: first group:element should be 0x0002:0x0000\n");
     }
     char vr[2];
-    float intenScalePhilips = 0.0;
+    //float intenScalePhilips = 0.0;
     bool isEncapsulatedData = false;
     bool isOrient = false;
     bool isIconImageSequence = false;
@@ -3002,7 +2967,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case kPhilipsSlope :
                 if ((lLength == 4) && (d.manufacturer == kMANUFACTURER_PHILIPS))
-                    intenScalePhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                    d.intenScalePhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
 
             case 	kIntercept :
@@ -3327,7 +3292,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         printError("Unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
     }
-    philipsPrecise (&d, intenScalePhilips);
     return d;
 } // readDICOM()
 

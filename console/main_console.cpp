@@ -68,6 +68,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
     printf("  -o : output directory (omit to save to input folder)\n");
+    printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
     printf("  -v : verbose (y/n, default n)\n");
@@ -152,6 +153,13 @@ int main(int argc, const char * argv[])
                     opts.isForceStackSameSeries = false;
                 else
                     opts.isForceStackSameSeries = true;
+            } else if ((argv[i][1] == 'p') && ((i+1) < argc)) {
+                i++;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isPhilipsFloatNotDisplayScaling = false;
+                else
+                    opts.isPhilipsFloatNotDisplayScaling = true;
+
             } else if ((argv[i][1] == 's') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
