@@ -365,6 +365,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
 	if (strlen(d.protocolName) > 0)
 		fprintf(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName );
+	if (strlen(d.sequenceName) > 0)
+		fprintf(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName );
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
