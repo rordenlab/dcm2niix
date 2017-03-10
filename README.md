@@ -194,11 +194,12 @@ g++ -dead_strip -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp ni
 
 ##### JPEG2000 BUILD
 
- If you want to build this with JPEG2000 decompression support using OpenJPEG. You will need to have the OpenJPEG 2.1 libraries installed (https://code.google.com/p/openjpeg/wiki/Installation). I suggest building static libraries...
- svn checkout http://openjpeg.googlecode.com/svn/trunk/ openjpeg-read-only
+ If you want to build this with JPEG2000 decompression support using OpenJPEG. You will need to have the OpenJPEG 2.1 libraries installed (https://code.google.com/p/openjpeg/wiki/Installation). I suggest building static libraries where you would [download the code](https://github.com/uclouvain/openjpeg) and run
+```
  cmake -DBUILD_SHARED_LIBS:bool=off .
  make
  sudo make install
+```
 You should then be able to run then run:
 
 ```
