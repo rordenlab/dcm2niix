@@ -23,7 +23,7 @@ extern "C" {
  #endif
  #define kDCMvers "v1.0.20170207" kDCMsuf
 
-static const int kMaxDTI4D = 12000; //#define kMaxDTIv  4000
+static const int kMaxDTI4D = 16000; //#define kMaxDTIv  4000
 #define kDICOMStr 40
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
