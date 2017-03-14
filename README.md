@@ -11,6 +11,9 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
+14-March-2017
+ - Better detection of image order for Philips 4D DICOM (issue reported by Jason McMorrow).
+
 7-Feb-2017
  - Can be compiled to use either Philips [Float or Display](http://www.nitrc.org/forum/message.php?msg_id=20213) intensity intercept and slope values.
  - Handle 3D Philips DICOM and [PAR/REC](https://www.nitrc.org/forum/forum.php?thread_id=7707&forum_id=4703) files where images are not stored in a spatially contiguous order.
