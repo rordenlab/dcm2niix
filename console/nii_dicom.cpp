@@ -3073,8 +3073,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	int sliceNumber;
             	sliceNumber = dcmStrInt(lLength, &buffer[lPos]);
                 dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = sliceNumber;
-				if ((d.patientPositionNumPhilips > 0) && (abs(dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips - dti4D->S[d.patientPositionNumPhilips -1].sliceNumberMrPhilips) != 1) )
-						d.isSlicesSpatiallySequentialPhilips = false; //slices not sequential (1,2,3,4 or 4,3,2,1) but 4,3,1,2
+				if ((d.patientPositionNumPhilips > 0) && (abs(dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips - dti4D->S[d.patientPositionNumPhilips -1].sliceNumberMrPhilips) > 1) )
+					d.isSlicesSpatiallySequentialPhilips = false; //slices not sequential (1,2,3,4 or 4,3,2,1) but 4,3,1,2
             	d.patientPositionNumPhilips++;
             	//Philips can save 3D acquisitions in a single file with slices stored in non-sequential order. We need to know the first and final spatial position
             	if (sliceNumber == 1) {
@@ -3274,22 +3274,27 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	//     	else
 	//     		printWarning("Spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
 	//     }
-	if ((d.numberOfDynamicScans < 2) && (!d.isSlicesSpatiallySequentialPhilips) && (patientPositionStartPhilips[1] != NAN) && (patientPositionEndPhilips[1] != NAN)) {
+	if ((d.numberOfDynamicScans < 2) && (!d.isSlicesSpatiallySequentialPhilips) && (!isnan(patientPositionStartPhilips[1])) && (!isnan(patientPositionEndPhilips[1]))) {
 		//to do: check for d.numberOfDynamicScans > 1
 		for (int k = 0; k < 4; k++) {
 			d.patientPosition[k] = patientPositionStartPhilips[k];
 			d.patientPositionLast[k] = patientPositionEndPhilips[k];
 		}
-		printMessage("<<< Slices not spatially contiguous: please check output [new feature]\n");
+		printMessage("Slices not spatially contiguous: please check output [new feature]\n");
     }
+    d.isSlicesSpatiallySequentialPhilips = true;
     if (isVerbose) {
         printMessage("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printMessage(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
+    if (d.patientPositionNumPhilips >= kMaxDTI4D) {
+        printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.patientPositionNumPhilips, kMaxDTI4D);
+        d.CSA.numDti = 0;
+    }
     if (d.CSA.numDti >= kMaxDTI4D) {
-        printError("Unable to convert DTI [increase kMaxDTI4D]\n");
+        printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
     return d;
