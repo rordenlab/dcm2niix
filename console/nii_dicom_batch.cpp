@@ -895,7 +895,7 @@ unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_l
 }
 #endif
 
-void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len) {
+void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len, int gzLevel) {
     //create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
     // in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
     char fname[2048] = {""};
@@ -912,8 +912,12 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     strm.opaque = Z_NULL;
     strm.next_out = pCmp; // output char array
     strm.avail_out = (unsigned int)cmp_len; // size of output
-    //if ( deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15, 8, Z_DEFAULT_STRATEGY)!= Z_OK) return;
-    if (deflateInit(&strm, Z_DEFAULT_COMPRESSION)!= Z_OK) {
+    int zLevel = Z_DEFAULT_COMPRESSION;
+    if ((gzLevel > 0) && (gzLevel < 11))
+    	zLevel = gzLevel;
+    if (zLevel > MZ_UBER_COMPRESSION)
+    	zLevel = MZ_UBER_COMPRESSION;
+    if (deflateInit(&strm, zLevel)!= Z_OK) {
         free(pCmp);
         return;
     }
@@ -1059,8 +1063,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     size_t imgsz = nii_ImgBytes(hdr);
     #ifndef myDisableZLib
     if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
-    //if (true) {//TPX
-        writeNiiGz (niiFilename, hdr,  im,imgsz);
+        writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
         return EXIT_SUCCESS;
     }
     #endif
@@ -1078,7 +1081,12 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	char command[768];
     	strcpy(command, "\"" );
         strcat(command, opts.pigzname );
-        strcat(command, "\" -n -f \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+        if ((opts.gzLevel > 0) &&  (opts.gzLevel < 12)) {
+        	char newstr[256];
+        	sprintf(newstr, "\" -n -f -%d \"", opts.gzLevel);
+        	strcat(command, newstr);
+        } else
+        	strcat(command, "\" -n -f \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
         strcat(command, fname);
         strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
     	#if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
@@ -2398,6 +2406,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isGz = false;
+    opts->gzLevel = -1;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;
     opts->isCreateBIDS =  false;
