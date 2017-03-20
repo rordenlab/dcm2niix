@@ -618,7 +618,7 @@ struct TDICOMdata clear_dicom_data() {
         d.xyzDim[i] = 1;
     for (int i = 0; i < 7; i++)
         d.orient[i] = 0.0f;
-    d.patientPositionSequentialRepeats = 0;//d.isHasMixed = false;
+    d.patientPositionSequentialRepeats = 0;
     d.isHasPhase = false;
     d.isHasMagnitude = false;
     d.sliceOrient = kSliceOrientUnknown;
@@ -3282,7 +3282,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		}
 		printMessage("Slices not spatially contiguous: please check output [new feature]\n");
     }
-    d.isSlicesSpatiallySequentialPhilips = true;
     if (isVerbose) {
         printMessage("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         printMessage(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum);
