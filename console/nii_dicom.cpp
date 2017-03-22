@@ -3065,14 +3065,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kSliceNumberMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
-
-            	if (d.patientPositionNumPhilips >= kMaxDTI4D) {
+            	if ((d.patientPositionNumPhilips >= kMaxDTI4D) || (d.patientPositionNumPhilips >= locationsInAcquisitionPhilips)) {
             		d.patientPositionNumPhilips++;
             		break;
             	}
             	int sliceNumber;
             	sliceNumber = dcmStrInt(lLength, &buffer[lPos]);
-                dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = sliceNumber;
+				dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = sliceNumber;
 				if ((d.patientPositionNumPhilips > 0) && (abs(dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips - dti4D->S[d.patientPositionNumPhilips -1].sliceNumberMrPhilips) > 1) )
 					d.isSlicesSpatiallySequentialPhilips = false; //slices not sequential (1,2,3,4 or 4,3,2,1) but 4,3,1,2
             	d.patientPositionNumPhilips++;
@@ -3081,11 +3080,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             		for (int k = 0; k < 4; k++)
 						patientPositionStartPhilips[k] = patientPosition[k];
             	}
-            	//patientPositionNum
             	if (sliceNumber == locationsInAcquisitionPhilips) {
             		for (int k = 0; k < 4; k++)
 						patientPositionEndPhilips[k] = patientPosition[k];
             	}
+				if (isVerbose > 1)
+					printMessage("slice %d is position %d\n", d.patientPositionNumPhilips, sliceNumber);
             	break;
             case kNumberOfSlicesMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -3195,12 +3195,21 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         } //if nest
         //#ifdef MY_DEBUG
         if (isVerbose > 1) {
-        	if ((lLength > 8) && (lLength < 128)) { //if length is greater than 8 bytes the data must be a string [or image data]
+        	if ((lLength > 12) && (lLength < 128)) { //if length is greater than 8 bytes (+4 hdr) the data must be a string [or image data]
         		char tagStr[kDICOMStr];
             	tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
                 dcmStr (lLength, &buffer[lPos], tagStr);
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
-            }	else
+                if (strlen(tagStr) > 1) {
+                	for (int pos = 0; pos<strlen(tagStr); pos ++)
+						if ((tagStr[pos] == '<') || (tagStr[pos] == '>') || (tagStr[pos] == ':')
+            				|| (tagStr[pos] == '"') || (tagStr[pos] == '\\') || (tagStr[pos] == '/')
+           					|| (tagStr[pos] == '^') || (tagStr[pos] < 33)
+           					|| (tagStr[pos] == '*') || (tagStr[pos] == '|') || (tagStr[pos] == '?'))
+            					tagStr[pos] = 'x';
+				}
+            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, tagStr);
+            	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
+            } else
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         //#endif

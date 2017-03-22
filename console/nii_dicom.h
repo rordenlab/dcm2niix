@@ -23,7 +23,7 @@ extern "C" {
  #endif
  #define kDCMvers "v1.0.20170314" kDCMsuf
 
-static const int kMaxDTI4D = 16000; //#define kMaxDTIv  4000
+static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of slices for Philips 4D images
 #define kDICOMStr 40
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
@@ -55,7 +55,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     };
     struct TDICOMdata {
         long seriesNum;
-        int xyzDim[5];//, xyzOri[4];
+        int xyzDim[5];
         int patientPositionNumPhilips, coilNum, echoNum, sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme; //
         float flipAngle, fieldStrength, TE, TR,intenScale,intenIntercept,intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4]; //patientPosition2nd[4],
