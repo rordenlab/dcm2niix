@@ -363,6 +363,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
 	if (strlen(d.procedureStepDescription) > 0)
 		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
+	if (strlen(d.scanningSequence) > 0)
+		fprintf(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence );
+	if (strlen(d.sequenceVariant) > 0)
+		fprintf(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant );
+
 	if (strlen(d.protocolName) > 0)
 		fprintf(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName );
 	if (strlen(d.sequenceName) > 0)
@@ -383,22 +388,22 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
 	//Lines below directly save DICOM values
-  if (d.acquisitionTime > 0.0 && d.acquisitionDate > 0.0){
-     long acquisitionDate = d.acquisitionDate;
-     float acquisitionTime = d.acquisitionTime;
-     char acqDateTimeBuf[64];
-     snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
-     int ayear,amonth,aday,ahour,amin;
-     float asec;
-     int count = 0;
-     sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%f%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);
-     if (count) {
-        // ISO 8601 specifies a sign must exist for distant years.
-        fprintf(fp, "\t\"AcquisitionDateTime\": ");
-        fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
-        fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
-        }
-  }
+	if (d.acquisitionTime > 0.0 && d.acquisitionDate > 0.0){
+	 long acquisitionDate = d.acquisitionDate;
+	 float acquisitionTime = d.acquisitionTime;
+	 char acqDateTimeBuf[64];
+	 snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
+	 int ayear,amonth,aday,ahour,amin;
+	 float asec;
+	 int count = 0;
+	 sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%f%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);
+	 if (count) {
+		// ISO 8601 specifies a sign must exist for distant years.
+		fprintf(fp, "\t\"AcquisitionDateTime\": ");
+		fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
+		fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
+		}
+	}
 	// if (d.acquisitionTime > 0.0) fprintf(fp, "\t\"AcquisitionTime\": %f,\n", d.acquisitionTime );
 	// if (d.acquisitionDate > 0.0) fprintf(fp, "\t\"AcquisitionDate\": %8.0f,\n", d.acquisitionDate );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
@@ -412,7 +417,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (d.flipAngle > 0.0) fprintf(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	if (d.TE > 0.0) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     if (d.TR > 0.0) fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-    if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
+    if (d.TI > 0.0) fprintf(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
+	if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0.0f;
 		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
 			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
@@ -422,7 +428,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[1];
 		if (dwellTime != 0.0f) //as long as phase encoding = R or C or does not matter
 			fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
-
     }
 	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
@@ -1006,26 +1011,20 @@ int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header, struct TDCMopts &opts)
 {
     ImageList *images = (ImageList *) opts.imageList;
-
-    switch (data.manufacturer)
-    {
+    switch (data.manufacturer) {
         case kMANUFACTURER_SIEMENS:
-        images->addAttribute("manufacturer", "Siemens");
-        break;
-
+        	images->addAttribute("manufacturer", "Siemens");
+        	break;
         case kMANUFACTURER_GE:
-        images->addAttribute("manufacturer", "GE");
-        break;
-
+        	images->addAttribute("manufacturer", "GE");
+        	break;
         case kMANUFACTURER_PHILIPS:
-        images->addAttribute("manufacturer", "Philips");
-        break;
-
+        	images->addAttribute("manufacturer", "Philips");
+        	break;
         case kMANUFACTURER_TOSHIBA:
-        images->addAttribute("manufacturer", "Toshiba");
-        break;
+        	images->addAttribute("manufacturer", "Toshiba");
+        	break;
     }
-
     if (strlen(data.manufacturersModelName) > 0)
         images->addAttribute("scannerModelName", data.manufacturersModelName);
     if (strlen(data.imageType) > 0)
@@ -2186,7 +2185,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     if ((isFile) && (opts->isOnlySingleFile))
         return singleDICOM(opts, indir);
     struct TSearchList nameList;
-	nameList.maxItems = 32000; // larger requires more memory, smaller more passes
+	nameList.maxItems = 24000; // larger requires more memory, smaller more passes
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file

@@ -637,6 +637,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.seriesDescription, "T1_mprage");
     strcpy(d.sequenceName, "T1");
     strcpy(d.scanningSequence, "tfl3d1_ns");
+    strcpy(d.sequenceVariant, "tfl3d1_ns");
     d.manufacturer = kMANUFACTURER_UNKNOWN;
     d.isPlanarRGB = false;
     d.lastScanLoc = NAN;
@@ -2532,6 +2533,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
 #define  kScanningSequence 0x0018+(0x0020 << 16)
+#define  kSequenceVariant 0x0018+(0x0021 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
 #define  kSequenceName 0x0018+(0x0024 << 16)
 #define  kZThick  0x0018+(0x0050 << 16 )
@@ -3005,6 +3007,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case kScanningSequence : {
                 dcmStr (lLength, &buffer[lPos], d.scanningSequence);
+                break;
+            }
+            case kSequenceVariant : {
+                dcmStr (lLength, &buffer[lPos], d.sequenceVariant);
                 break;
             }
             case kSequenceName : {
