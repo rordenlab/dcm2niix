@@ -641,8 +641,9 @@ struct TDICOMdata clear_dicom_data() {
     d.manufacturer = kMANUFACTURER_UNKNOWN;
     d.isPlanarRGB = false;
     d.lastScanLoc = NAN;
-    d.TR = 0;
-    d.TE = 0;
+    d.TR = 0.0;
+    d.TE = 0.0;
+    d.TI = 0.0;
     d.flipAngle = 0.0;
     d.fieldStrength = 0.0;
     d.numberOfDynamicScans = 0;
@@ -2539,6 +2540,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kZThick  0x0018+(0x0050 << 16 )
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
+#define  kTI  0x0018+(0x0082 << 16) // Inversion time
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
 #define  kMagneticFieldStrength  0x0018+(0x0087 << 16 ) //DS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
@@ -2939,6 +2941,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case 	kTE :
             	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
+            case 	kTI :
+                d.TI = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kEchoNum :
                 d.echoNum =  dcmStrInt(lLength, &buffer[lPos]);
