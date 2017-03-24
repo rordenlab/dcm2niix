@@ -630,6 +630,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.studyTime, "11:11:11");
     strcpy(d.manufacturersModelName, "N/A");
     strcpy(d.procedureStepDescription, "");
+    strcpy(d.bodyPartExamined,"");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
     d.acquisitionDate = 0.0f;
@@ -655,6 +656,10 @@ struct TDICOMdata clear_dicom_data() {
     d.intenScalePhilips = 0;
     d.intenIntercept = 0;
     d.gantryTilt = 0.0;
+    d.radionuclidePositronFraction = 0.0;
+    d.radionuclideTotalDose = 0.0;
+    d.radionuclideHalfLife = 0.0;
+    d.doseCalibrationFactor = 0.0;
     d.seriesNum = 1;
     d.acquNum = 0;
     d.imageNum = 1;
@@ -2533,6 +2538,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kSequenceVariant 0x0018+(0x0021 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
@@ -2546,6 +2552,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kProtocolName  0x0018+(0x1030<< 16 )
+#define  kRadionuclideTotalDose  0x0018+(0x1074<< 16 )
+#define  kRadionuclideHalfLife  0x0018+(0x1075<< 16 )
+#define  kRadionuclidePositronFraction  0x0018+(0x1076<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kXRayExposure  0x0018+(0x1152  << 16 )
 #define  kFlipAngle  0x0018+(0x1314  << 16 )
@@ -2585,6 +2594,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
+#define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
@@ -2927,6 +2937,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kLocationsInAcquisitionGE:
                 locationsInAcquisitionGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
+            case kDoseCalibrationFactor :
+                d.doseCalibrationFactor = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
             case 	kBitsAllocated :
                 d.bitsAllocated = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
@@ -2960,6 +2973,15 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kFlipAngle :
             	d.flipAngle = dcmStrFloat(lLength, &buffer[lPos]);
             	break;
+            case kRadionuclideTotalDose :
+                d.radionuclideTotalDose = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
+            case kRadionuclideHalfLife :
+                d.radionuclideHalfLife = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
+            case kRadionuclidePositronFraction :
+                d.radionuclidePositronFraction = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
             case kGantryTilt :
                 d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -3010,6 +3032,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
                 #endif
                 break;
+            case kBodyPartExamined : {
+                dcmStr (lLength, &buffer[lPos], d.bodyPartExamined);
+                break;
+            }
             case kScanningSequence : {
                 dcmStr (lLength, &buffer[lPos], d.scanningSequence);
                 break;
