@@ -1761,11 +1761,13 @@ int compareTDCMsort(void const *item1, void const *item2) {
 
 int isSameFloatGE (float a, float b) {
 //Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
+    //return (a == b); //niave approach does not have any tolerance for rounding errors
     return (fabs (a - b) <= 0.0001);
 }
 
 int isSameFloatDouble (double a, double b) {
     //Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
+    // return (a == b); //niave approach does not have any tolerance for rounding errors
     return (fabs (a - b) <= 0.0001);
 }
 

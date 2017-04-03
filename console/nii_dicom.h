@@ -12,6 +12,9 @@
 extern "C" {
 #endif
 
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
  #ifdef myEnableJasper
   #define kDCMsuf " (jasper build)"
  #else
@@ -21,7 +24,19 @@ extern "C" {
     #define kDCMsuf " (openJPEG build)"
   #endif
  #endif
- #define kDCMvers "v1.0.20170314" kDCMsuf
+#if defined(__ICC) || defined(__INTEL_COMPILER)
+	#define kCCsuf  " IntelCC" STR(__INTEL_COMPILER)
+#elif defined(_MSC_VER)
+	#define kCCsuf  " MSC" STR(_MSC_VER)
+#elif defined(__clang__)
+	#define kCCsuf  " clang" STR(__clang_major__) "." STR(__clang_minor__) "." STR(__clang_patchlevel__)
+#elif defined(__GNUC__) || defined(__GNUG__)
+    #define kCCsuf  " GCC" STR(__GNUC__) "." STR(__GNUC_MINOR__) "." STR(__GNUC_PATCHLEVEL__)
+#else
+	#define kCCsuf " CompilerNA" //unknown compiler!
+#endif
+
+ #define kDCMvers "v1.0.20170331" kDCMsuf kCCsuf
 
 static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of slices for Philips 4D images
 #define kDICOMStr 64

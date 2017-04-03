@@ -151,7 +151,7 @@ int main(int argc, const char * argv[])
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
             else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
-            	opts.gzLevel = abs(strtol(argv[i], NULL, 10));
+            	opts.gzLevel = abs((int)strtol(argv[i], NULL, 10));
             	if (opts.gzLevel > 11)
         	 		opts.gzLevel = 11;
             } else if ((argv[i][1] == 'b') && ((i+1) < argc)) {
