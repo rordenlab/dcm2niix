@@ -13,6 +13,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 31-March-2017
  - Options -1..-9 to control [gz compression level](https://github.com/rordenlab/dcm2niix/issues/90).
+ - Includes some [PET details in the BIDS JSON sidecar](https://github.com/rordenlab/dcm2niix/issues/87).
  - Better detection of image order for Philips 4D DICOM (reported by Jason McMorrow and Stephen Wilson).
 
 7-Feb-2017
