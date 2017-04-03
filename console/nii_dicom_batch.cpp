@@ -910,6 +910,10 @@ unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_l
 }
 #endif
 
+#ifndef MZ_UBER_COMPRESSION //defined in miniz, not defined in zlib
+ #define MZ_UBER_COMPRESSION 9
+#endif
+
 void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len, int gzLevel) {
     //create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
     // in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
