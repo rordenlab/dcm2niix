@@ -38,7 +38,7 @@ extern "C" {
 
  #define kDCMvers "v1.0.20170331" kDCMsuf kCCsuf
 
-static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of slices for Philips 4D images
+static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
 #define kDICOMStr 64
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1

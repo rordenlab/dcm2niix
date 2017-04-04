@@ -2601,6 +2601,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
 //#define  kLocationsInAcquisitionPhilips  0x2001+(0x1018 << 16 ) //
+//#define  kStackSliceNumber  0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define  kNumberOfDynamicScans  0x2001+(0x1081 << 16 )//'2001' '1081' 'IS' 'NumberOfDynamicScans'
 #define  kMRAcquisitionTypePhilips 0x2005+(0x106F << 16)
 #define  kAngulationAP 0x2005+(0x1071 << 16)//'2005' '1071' 'FL' 'MRStackAngulationAP'
@@ -2819,6 +2820,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
+                //printMessage("%s\n",acquisitionTimeTxt);
                 break;
             case 	kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
@@ -3024,6 +3026,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kIconImageSequence:
                 isIconImageSequence = true;
                 break;
+            /*case kStackSliceNumber: { //https://github.com/Kevin-Mattheus-Moerman/GIBBON/blob/master/dicomDict/PMS-R32-dict.txt
+            	int stackSliceNumber = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	printf("%d\n",stackSliceNumber);
+            	break;
+			}*/
             case 	kNumberOfDynamicScans:
                 d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
@@ -3091,7 +3098,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                         dti4D->S[0].V[2] = d.CSA.dtiV[2];
                         dti4D->S[0].V[3] = d.CSA.dtiV[3];
                     }
-
                     d.CSA.dtiV[0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
                     if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
                         dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
@@ -3102,12 +3108,20 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kSliceNumberMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
-            	if ((d.patientPositionNumPhilips >= kMaxDTI4D) || (d.patientPositionNumPhilips >= locationsInAcquisitionPhilips)) {
+            	/*if ((d.patientPositionNumPhilips >= kMaxDTI4D) || (d.patientPositionNumPhilips >= locationsInAcquisitionPhilips)) {
             		d.patientPositionNumPhilips++;
             		break;
-            	}
-            	int sliceNumber;
+            	}*/
+				if ((locationsInAcquisitionPhilips > 0) && (d.patientPositionNumPhilips == locationsInAcquisitionPhilips))
+					break; //we have acquired all slices in volume (e.g. all volumes after 1st for XYZT storage
+				int sliceNumber;
             	sliceNumber = dcmStrInt(lLength, &buffer[lPos]);
+				if ((d.patientPositionNumPhilips > 0) && (sliceNumber == dti4D->S[d.patientPositionNumPhilips-1].sliceNumberMrPhilips)  )
+					break; //repeated spatial position (e.g. data saved XYTZ so several time points
+				if (d.patientPositionNumPhilips >= kMaxDTI4D) {
+            		d.patientPositionNumPhilips++; //fail: out of space
+            		break;
+            	}
 				dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips = sliceNumber;
 				if ((d.patientPositionNumPhilips > 0) && (abs(dti4D->S[d.patientPositionNumPhilips].sliceNumberMrPhilips - dti4D->S[d.patientPositionNumPhilips -1].sliceNumberMrPhilips) > 1) )
 					d.isSlicesSpatiallySequentialPhilips = false; //slices not sequential (1,2,3,4 or 4,3,2,1) but 4,3,1,2
@@ -3122,7 +3136,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 						patientPositionEndPhilips[k] = patientPosition[k];
             	}
 				if (isVerbose > 1)
-					printMessage("slice %d is position %d\n", d.patientPositionNumPhilips, sliceNumber);
+					printMessage("slice %d is spatial position %d\n", d.patientPositionNumPhilips, sliceNumber);
             	break;
             case kNumberOfSlicesMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -3335,13 +3349,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
     if (d.patientPositionNumPhilips >= kMaxDTI4D) {
-        printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.patientPositionNumPhilips, kMaxDTI4D);
+        printError("Too many 2D slices in a single file [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.patientPositionNumPhilips, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
+    //d.isValid = false; //debug only - will not create output!
     return d;
 } // readDICOM()
 

@@ -1563,6 +1563,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     free(img);
     //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
     if (nConvert > 1) {
+        //next: determine gantry tilt
         if (dcmList[indx0].gantryTilt != 0.0f)
             printMessage(" Warning: note these images have gantry tilt of %g degrees (manufacturer ID = %d)\n", dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
         if (hdr0.dim[3] < 2) {
@@ -1638,6 +1639,19 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             hdr0.dim[5] = nConvert;
             hdr0.dim[0] = 5;
         }
+        /*if (nConvert > 1) { //next determine if TR is true time between volumes
+        	double startTime = dcmList[indx0].acquisitionTime;
+        	double endTime = startTime;
+        	for (int i = 1; i < nConvert; i++) {
+            	double sliceTime = dcmList[dcmSort[i].indx].acquisitionTime;
+            	if (sliceTime < startTime) startTime = sliceTime;
+            	if (sliceTime > endTime) endTime = sliceTime;
+            }
+            double seriesTime = (endTime - startTime);
+            if (endTime > 0)
+            	printMessage("%g - %g = %g\n", endTime, startTime, seriesTime);
+
+        }*/
         //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
         struct nifti_1_header hdrI;
         for (int i = 1; i < nConvert; i++) { //stack additional images
@@ -2001,115 +2015,6 @@ bool isExt (char *file_name, const char* ext) {
     return false;
 }// isExt()
 
-/*int nii_readpic(char * fname, struct nifti_1_header *nhdr) {
-    //https://github.com/jefferis/pic2nifti/blob/master/libpic2nifti.c
-#define BIORAD_HEADER_SIZE 76
-#define BIORAD_NOTE_HEADER_SIZE 16
-#define BIORAD_NOTE_SIZE 80
-    typedef struct
-    {
-        unsigned short nx, ny;    //  0   2*2     image width and height in pixels
-        short npic;               //  4   2       number of images in file
-        short ramp1_min;          //  6   2*2     LUT1 ramp min. and max.
-        short ramp1_max;
-        int32_t notes;                // 10   4       no notes=0; has notes=non zero
-        short byte_format;        // 14   2       bytes=TRUE(1); words=FALSE(0)
-        unsigned short n;         // 16   2       image number within file
-        char name[32];            // 18   32      file name
-        short merged;             // 50   2       merged format
-        unsigned short color1;    // 52   2       LUT1 color status
-        unsigned short file_id;   // 54   2       valid .PIC file=12345
-        short ramp2_min;          // 56   2*2     LUT2 ramp min. and max.
-        short ramp2_max;
-        unsigned short color2;    // 60   2       LUT2 color status
-        short edited;             // 62   2       image has been edited=TRUE(1)
-        short lens;               // 64   2       Integer part of lens magnification
-        float mag_factor;         // 66   4       4 byte real mag. factor (old ver.)
-        unsigned short dummy[3];  // 70   6       NOT USED (old ver.=real lens mag.)
-    } biorad_header;
-    typedef struct
-    {
-        short blank;		// 0	2
-        int note_flag;		// 2	4
-        int blank2;			// 6	4
-        short note_type;	// 10	2
-        int blank3;			// 12	4
-    } biorad_note_header;
-    size_t n;
-    unsigned char buffer[BIORAD_HEADER_SIZE];
-    FILE *f = fopen(fname, "rb");
-    if (f)
-        n = fread(&buffer, 1, BIORAD_HEADER_SIZE, f);
-    if(!f || n!=1) {
-        printMessage("Problem reading biorad file!\n");
-        fclose(f);
-        return EXIT_FAILURE;
-    }
-    biorad_header bhdr;
-    memcpy( &bhdr.nx, buffer+0, sizeof( bhdr.nx ) );
-    memcpy( &bhdr.ny, buffer+2, sizeof( bhdr.ny ) );
-    memcpy( &bhdr.npic, buffer+4, sizeof( bhdr.npic ) );
-    memcpy( &bhdr.byte_format, buffer+14, sizeof( bhdr.byte_format ) );
-    memcpy( &bhdr.file_id, buffer+54, sizeof( bhdr.file_id ) );
-    if (bhdr.file_id != 12345) {
-        fclose(f);
-        return EXIT_FAILURE;
-    }
-    nhdr->dim[0]=3;//3D
-    nhdr->dim[1]=bhdr.nx;
-    nhdr->dim[2]=bhdr.ny;
-    nhdr->dim[3]=bhdr.npic;
-    nhdr->dim[4]=0;
-    nhdr->pixdim[1]=1.0;
-    nhdr->pixdim[2]=1.0;
-    nhdr->pixdim[3]=1.0;
-    if (bhdr.byte_format == 1)
-        nhdr->datatype = DT_UINT8; // 2
-    else
-        nhdr->datatype = DT_UINT16;
-    nhdr->vox_offset = BIORAD_HEADER_SIZE;
-    if(fseek(f, bhdr.nx*bhdr.ny*bhdr.npic*bhdr.byte_format, SEEK_CUR)==0) {
-        biorad_note_header nh;
-        char noteheaderbuf[BIORAD_NOTE_HEADER_SIZE];
-        char note[BIORAD_NOTE_SIZE];
-        while (!feof(f)) {
-            size_t sz = fread(&noteheaderbuf, 1, BIORAD_NOTE_HEADER_SIZE, f);
-            if (sz < BIORAD_NOTE_HEADER_SIZE) return EXIT_FAILURE;
-            sz = fread(&note, 1, BIORAD_NOTE_SIZE, f);
-            if (sz < BIORAD_NOTE_SIZE) return EXIT_FAILURE;
-            memcpy(&nh.note_flag, noteheaderbuf+2, sizeof(nh.note_flag));
-            memcpy(&nh.note_type, noteheaderbuf+10, sizeof(nh.note_type));
-            //		printMessage("regular note line %s\n",note);
-            //		printMessage("note flag = %d, note type = %d\n",nh.note_flag,nh.note_type);
-            // These are not interesting notes
-            if(nh.note_type==1) continue;
-            // Look for calibration information
-            double d1, d2, d3;
-            if ( 3 == sscanf( note, "AXIS_2 %lf %lf %lf", &d1, &d2, &d3 ) )
-                nhdr->pixdim[1] = d3;
-            if ( 3 == sscanf( note, "AXIS_3 %lf %lf %lf", &d1, &d2, &d3 ) )
-                nhdr->pixdim[2] = d3;
-            if ( 3 == sscanf( note, "AXIS_4 %lf %lf %lf", &d1, &d2, &d3 ) )
-                nhdr->pixdim[3] = d3;
-            if(nh.note_flag==0) break;
-        }
-    }
-    nhdr->sform_code = 1;
-    nhdr->srow_x[0]=nhdr->pixdim[1];nhdr->srow_x[1]=0.0f;nhdr->srow_x[2]=0.0f;nhdr->srow_x[3]=0.0f;
-    nhdr->srow_y[0]=0.0f;nhdr->srow_y[1]=nhdr->pixdim[2];nhdr->srow_y[2]=0.0f;nhdr->srow_y[3]=0.0f;
-    nhdr->srow_z[0]=0.0f;nhdr->srow_z[1]=0.0f;nhdr->srow_z[2]=nhdr->pixdim[3];nhdr->srow_z[3]=0.0f;
-    fclose(f);
-    convertForeignToNifti(nhdr);
-    return EXIT_SUCCESS;
-}
-
-int convert_foreign(struct TDCMopts opts) {
-    nifti_1_header nhdr ;
-    int OK = EXIT_FAILURE;
-    OK = nii_readpic(opts.indir, &nhdr);
-    return OK;
-}*/
-
 int convert_parRec(struct TDCMopts opts) {
     //sample dataset from Ed Gronenschild <ed.gronenschild@maastrichtuniversity.nl>
     struct TSearchList nameList;
@@ -2227,7 +2132,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     bool compressionWarning = false;
     for (int i = 0; i < nDcm; i++ ) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
-        if ((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1)) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+        if ((dcmList[i].isValid) &&((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
             struct TDCMsort dcmSort[1];
             dcmSort[0].indx = i;
             dcmSort[0].img = ((uint64_t)dcmList[i].seriesNum << 32) + dcmList[i].imageNum;
