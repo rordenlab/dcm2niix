@@ -2529,6 +2529,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
 #define  kStudyDate 0x0008+(0x0020 << 16 )
 #define  kAcquisitionDate 0x0008+(0x0022 << 16 )
+#define  kAcquisitionDateTime 0x0008+(0x002A << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
 #define  kManufacturer 0x0008+(0x0070 << 16 )
@@ -2639,6 +2640,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     }
     char vr[2];
     //float intenScalePhilips = 0.0;
+    char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
     bool isOrient = false;
     bool isIconImageSequence = false;
@@ -2805,6 +2807,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	char acquisitionDateTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionDateTxt);
                 d.acquisitionDate = atof(acquisitionDateTxt);
+            	break;
+            case kAcquisitionDateTime:
+            	//char acquisitionDateTimeTxt[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], acquisitionDateTimeTxt);
+                //printMessage("%s\n",acquisitionDateTimeTxt);
             	break;
             case kStudyDate:
                 dcmStr (lLength, &buffer[lPos], d.studyDate);
@@ -3267,8 +3274,22 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
     } //while d.imageStart == 0
-
     free (buffer);
+    //Recent Philips images include DateTime (0008,002A) but not separate date and time (0008,0022 and 0008,0032)
+    #define kYYYYMMDDlen 8 //how many characters to encode year,month,day in "YYYYDDMM" format
+    if ((strlen(acquisitionDateTimeTxt) > (kYYYYMMDDlen+5)) && (!isFloatDiff(d.acquisitionTime, 0.0f)) && (!isFloatDiff(d.acquisitionDate, 0.0f)) ) {
+		// 20161117131643.80000 -> date 20161117 time 131643.80000
+		//printMessage("acquisitionDateTime %s\n",acquisitionDateTimeTxt);
+    	char acquisitionDateTxt[kDICOMStr];
+        strncpy(acquisitionDateTxt, acquisitionDateTimeTxt, kYYYYMMDDlen);
+		acquisitionDateTxt[kYYYYMMDDlen] = '\0'; // IMPORTANT!
+        d.acquisitionDate = atof(acquisitionDateTxt);
+        char acquisitionTimeTxt[kDICOMStr];
+		int timeLen = strlen(acquisitionDateTimeTxt) - kYYYYMMDDlen;
+        strncpy(acquisitionTimeTxt, &acquisitionDateTimeTxt[kYYYYMMDDlen], timeLen);
+		acquisitionTimeTxt[timeLen] = '\0'; // IMPORTANT!
+		d.acquisitionTime = atof(acquisitionTimeTxt);
+    }
     d.dateTime = (atof(d.studyDate)* 1000000) + atof(d.studyTime);
     //printMessage("slices in Acq %d %d\n",d.locationsInAcquisition,locationsInAcquisitionPhilips);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.locationsInAcquisition == 0))

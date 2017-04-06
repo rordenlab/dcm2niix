@@ -393,13 +393,16 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	//Lines below directly save DICOM values
 	if (d.acquisitionTime > 0.0 && d.acquisitionDate > 0.0){
 	 long acquisitionDate = d.acquisitionDate;
-	 float acquisitionTime = d.acquisitionTime;
+	 double acquisitionTime = d.acquisitionTime;
 	 char acqDateTimeBuf[64];
-	 snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
+	 //snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
+	 snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+013.5f", acquisitionDate, acquisitionTime); //CR 20170404 add zero pad so 1:23am appears as +012300.00000 not +12300.00000
+	 printMessage("acquisitionDateTime %s\n",acqDateTimeBuf);
 	 int ayear,amonth,aday,ahour,amin;
-	 float asec;
+	 double asec;
 	 int count = 0;
-	 sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%f%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);
+	 sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%lf%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);  //CR 20170404 %lf not %f for double precision
+	 //printf("-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
 	 if (count) {
 		// ISO 8601 specifies a sign must exist for distant years.
 		fprintf(fp, "\t\"AcquisitionDateTime\": ");
