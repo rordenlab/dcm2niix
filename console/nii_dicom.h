@@ -16,12 +16,12 @@ extern "C" {
 #define STR(x) STR_HELPER(x)
 
  #ifdef myEnableJasper
-  #define kDCMsuf " (jasper build)"
+  #define kDCMsuf " (JasPer build)"
  #else
   #ifdef myDisableOpenJPEG
     #define kDCMsuf ""
   #else
-    #define kDCMsuf " (openJPEG build)"
+    #define kDCMsuf " (OpenJPEG build)"
   #endif
  #endif
 #if defined(__ICC) || defined(__INTEL_COMPILER)
@@ -29,7 +29,7 @@ extern "C" {
 #elif defined(_MSC_VER)
 	#define kCCsuf  " MSC" STR(_MSC_VER)
 #elif defined(__clang__)
-	#define kCCsuf  " clang" STR(__clang_major__) "." STR(__clang_minor__) "." STR(__clang_patchlevel__)
+	#define kCCsuf  " Clang" STR(__clang_major__) "." STR(__clang_minor__) "." STR(__clang_patchlevel__)
 #elif defined(__GNUC__) || defined(__GNUG__)
     #define kCCsuf  " GCC" STR(__GNUC__) "." STR(__GNUC_MINOR__) "." STR(__GNUC_PATCHLEVEL__)
 #else

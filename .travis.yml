@@ -1,39 +1,30 @@
 language: cpp
+
+git:
+  depth: 1
+
 matrix:
   include:
-    # Stable channel
     - os: linux
-      env: TARGET=linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages: pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake libboost-dev
+      env: TARGET=lnx
     - os: osx
-      env: TARGET=osx
+      env: TARGET=mac
 
-before_install:
-  - "if [ ${TRAVIS_OS_NAME} = 'osx' ]; then brew update && brew install yaml-cpp; fi"
 script:
-  - mkdir build && cd build && cmake -DBATCH_VERSION=ON .. && make && cd -
+  - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON .. && make && cd -
 
 before_deploy:
-  - zip ${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.zip build/bin/dcm2niibatch build/bin/dcm2niix
+  - export DATE=`date +%-d-%b-%Y`
+  - zip -j dcm2niix_${DATE}_${TARGET}.zip build/bin/*
+  - sleep 300 # make sure appveyor deployment is done, thus proper release name is set
 
 deploy:
   provider: releases
-  # TODO Regenerate this api_key for your project, this one won't work for you. Here's how:
-  # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
-  # `public_repo` scope enabled
-  # - Call `travis encrypt $github_token` where $github_token is the token you got in the previous
-  # step and `travis` is the official Travis CI gem (see https://rubygems.org/gems/travis/)
-  # - Enter the "encrypted value" below
   api_key:
-    secure: aLyVgmimaRMCvh2YF4ek0ZseWqKpqCSrvvYdf5rxhZUBnYK+KKlHBsPudtmWbHTh19PPC1C3wSHa8y94IObGl3iRRTICh5e/Oz9xzCiPYlQ0ZGmtM+MfRtUq2xFRc6aaAkrnfW0ur3uxk4a7ZBIOMg3D7kG7Ah4dg5dVf26OmpSBdEijo9bcvOLHXwZIc1bby+MJl8kxzdlwaV7UTrqHQFh+tmMsoO0GQcQpCP3y45f5/8aTkHRmnC1IKCiHKDZpRFDWhdoz02NGWcCnoH43iSwOobe1jacHicmZ7dNHKT/e1tfUIPpbO81fvQ7FHifvBRoO64Wvl5l/IaoDcngv6o11JlWRxIuZnr01oDv+DW8kv9POLYeh2xzMaQkZ8NkPZl82hqr8t0q0OtXZjm/Hysdcvr0T26hbwqs1sOkAAaeRdR0zl/Log53hNqM4HaZZ0CnKGU8dSatC+NOgHEfz68fHArf8DUdKIr3By73tD7T7kJjT1h6F+4E2nYVbHrl20/PV+XO97+9LUNOy6IhbQN0hQjoHVra5oWcZy9WiWgX8IV74yw6vEAQh6XDUWtU9XR7Tl1TjaO/mR8MgOJuQkLt58QWPs50BgUD9XSvDVIurPilZ0bQzvM7js6nTupmd3oaZiYSZCxOTj0LpV34fdEaFX0qSlrSFQw6YYMAawks=
+    secure: a9OkpPxOVtaKye9VpB3hdA/FSIHY/kSXn/F+0AxHCH1sNOyF7J0Ljn7xqT7vgdxWkAWACTtzLYXVvSmcr7z2JwDm846LvLvz8zr6X0da1P3dg9wMpQ6/yz1n3OE3N7DQMYUNa4g6i79SarTlm08kMTFDSzsNsBleS0dDoJAS5vitZPp4kwOUqB8qpAoV4dzwN7HDVYARWodP+tYzxptbjeQAhuv6TglxSs0xM7gXG+QmSmOAdnJkBNkPkyItdMoUx0G2hjnbn3aJaaIeovlShdBapu2vyJNPQ2FktIjl6P+ng+iE9koifP5I87wExUBVrQDi/W8TJwnJ+DFjZQNF1ZagityNT+8aldVFc0BE8Uh0m6Tfqi4kxTDWgHED/yhjBuyuhTO6CGWAFx/YzhIW+AnEzju0prwuuguoDdlHpmsFF+QpRfqgN7vdwrHP+10/FBtZv8ul3GQB6G7lTIxvwNjrofQTm2vhV/JUjPPRXbxqOxR0wA1sbjESzMXE7tXcovFg83MgfgBQ5K/xSAKM8YyQ28hNSn5bocrUS4OR0gDgizVSwG6RxDs+SlUrAyLvIiVKQk4/upU6SGMFYGPlxpTybpp4qY5+hX1aiQK5z8pUVRcBY4f++BSIfLYEmW0TZgQ7eXiQXtMMDooX1VqcfJY1Rf+sFm0qwab8Mrl+DsU=
   file_glob: true
-  file: ${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.*
-  # don't delete the artifacts from previous phases
+  file: dcm2niix*.zip
   skip_cleanup: true
-  # deploy when a new tag is pushed
   on:
     tags: true

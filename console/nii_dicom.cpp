@@ -50,7 +50,7 @@
     #include <jasper/jasper.h>
 #endif
 #ifndef myDisableOpenJPEG
-    #include <openjpeg-2.1/openjpeg.h>//"openjpeg.h"
+    #include <openjpeg.h>
 
 #ifdef myEnableJasper
 ERROR: YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY

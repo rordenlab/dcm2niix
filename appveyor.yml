@@ -14,25 +14,21 @@ clone_folder: c:\projects\dcm2niix
 
 init:
 - ps: >-
-    $version = Get-Date -Format "d-MMM-yyyy"
+    $env:DATE = $(Get-Date -Format d-MMM-yyyy)
 
     $githash = $env:APPVEYOR_REPO_COMMIT.Substring(0, 7)
 
-    Update-AppveyorBuild -Version "$version-$githash"
+    Update-AppveyorBuild -Version "$($env:DATE)_g${githash}"
 
 before_build:
 - cmd: >-
-    echo "Clone yaml-cpp"
-
-    git clone -q --depth=1 --branch=master https://github.com/jbeder/yaml-cpp.git c:\projects\dcm2niix\yaml-cpp
-
     echo "Running cmake"
 
     mkdir c:\projects\dcm2niix\build
 
     cd c:\projects\dcm2niix\build
 
-    cmake -G "Visual Studio 14 2015 Win64" -DBATCH_VERSION=ON -Wno-dev ..\
+    cmake -G "Visual Studio 14 2015 Win64" -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON ..\
 
 build:
   project: c:\projects\dcm2niix\build\dcm2niix.sln
@@ -43,8 +39,22 @@ after_build:
 - ps: >-
     cd c:\projects\dcm2niix
 
-    7z a dcm2niix-$version-win.zip c:\projects\dcm2niix\bin\Release\* >$null
+    7z a dcm2niix_$($env:DATE)_win.zip c:\projects\dcm2niix\build\bin\* >$null
 
 artifacts:
-  - path: 'dcm2niix-*.zip'
+  - path: dcm2niix*.zip
     name: dcm2niix
+
+deploy:
+  - provider: GitHub
+    tag: $(appveyor_repo_tag_name)
+    release: version $(date) ($(appveyor_repo_tag_name))
+    description: ""
+    auth_token:
+      secure: k+sHhWGYpSAInN3H6TJltthRopDsvB1nIa1aPulvIMYM07t5nw9rJallMUND1tLP
+    artifact: dcm2niix
+    draft: false
+    prerelease: false
+    on:
+      branch: master
+      appveyor_repo_tag: true
