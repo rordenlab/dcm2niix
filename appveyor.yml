@@ -53,7 +53,7 @@ deploy:
     release: version $(release_version) ($(appveyor_repo_tag_name))
     description: ""
     auth_token:
-      secure: k+sHhWGYpSAInN3H6TJltthRopDsvB1nIa1aPulvIMYM07t5nw9rJallMUND1tLP
+      secure: gCltVLQEWsjSTRlsi8qw7FGP54ujBq60apjXkWTV954b65bOHl95hXMxxkQ734L4
     artifact: dcm2niix
     draft: false
     prerelease: false
