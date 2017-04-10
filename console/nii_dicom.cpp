@@ -3285,7 +3285,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		acquisitionDateTxt[kYYYYMMDDlen] = '\0'; // IMPORTANT!
         d.acquisitionDate = atof(acquisitionDateTxt);
         char acquisitionTimeTxt[kDICOMStr];
-		int timeLen = strlen(acquisitionDateTimeTxt) - kYYYYMMDDlen;
+		int timeLen = (int)strlen(acquisitionDateTimeTxt) - kYYYYMMDDlen;
         strncpy(acquisitionTimeTxt, &acquisitionDateTimeTxt[kYYYYMMDDlen], timeLen);
 		acquisitionTimeTxt[timeLen] = '\0'; // IMPORTANT!
 		d.acquisitionTime = atof(acquisitionTimeTxt);

@@ -397,7 +397,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	 char acqDateTimeBuf[64];
 	 //snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
 	 snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+013.5f", acquisitionDate, acquisitionTime); //CR 20170404 add zero pad so 1:23am appears as +012300.00000 not +12300.00000
-	 printMessage("acquisitionDateTime %s\n",acqDateTimeBuf);
+	 //printMessage("acquisitionDateTime %s\n",acqDateTimeBuf);
 	 int ayear,amonth,aday,ahour,amin;
 	 double asec;
 	 int count = 0;
@@ -1546,7 +1546,11 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     if (opts.isIgnoreDerivedAnd2D && isDerived(dcmList[indx])) {
-    	printMessage("Ignoring DERIVED image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
+    	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
+    	return EXIT_SUCCESS;
+    }
+    if ((opts.isIgnoreDerivedAnd2D) && (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) {
+    	printMessage("Ignoring localizer (sequence %s) of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
     if ((opts.isIgnoreDerivedAnd2D) && (nConvert < 2) && (dcmList[indx].xyzDim[3] < 2)) {
