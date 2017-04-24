@@ -16,7 +16,6 @@
 #endif
 
 #if defined(__APPLE__) && defined(__MACH__)
-//#include "nii_foreign.h"
 #endif
 #ifndef myDisableZLib
     #ifdef MiniZ
@@ -32,6 +31,7 @@
 #include "nifti1.h"
 #endif
 #include "nii_dicom_batch.h"
+#include "nii_foreign.h"
 #include "nii_dicom.h"
 #include <ctype.h> //toupper
 #include <float.h>
@@ -361,6 +361,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
+	//CR 4/2017: are seriesInstanceUID and studyInstanceUID personal details?
+	//if (strlen(d.seriesInstanceUID) > 0)
+	//	fprintf(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID );
+	//if (strlen(d.studyInstanceUID) > 0)
+	//	fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
 	if (strlen(d.procedureStepDescription) > 0)
 		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
 	if (strlen(d.scanningSequence) > 0)
@@ -784,6 +789,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,opts.indirParent);
             if (f == 'I')
                 strcat (outname,dcm.patientID);
+            if (f == 'J')
+                strcat (outname,dcm.seriesInstanceUID);
+            if (f == 'K')
+                strcat (outname,dcm.studyInstanceUID);
             if (f == 'L') //"L"ocal Institution-generated description or classification of the Procedure Step that was performed.
                 strcat (outname,dcm.procedureStepDescription);
             if (f == 'M') {
@@ -2095,6 +2104,11 @@ int nii_loadDir(struct TDCMopts* opts) {
         return convert_foreign(*opts);
     }*/
     getFileName(opts->indirParent, opts->indir);
+    if (isFile && ( (isExt(indir, ".v"))) ) {
+    	//open_foreign(opts->indir);
+    	return open_foreign (indir);
+
+    }
     if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         char pname[512], rname[512];
         strcpy(pname,indir);
@@ -2336,7 +2350,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->gzLevel = -1;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;
-    opts->isCreateBIDS =  false;
+    opts->isCreateBIDS =  true;
     opts->isCreateText = false;
 #ifdef myDebug
         opts->isVerbose =   true;

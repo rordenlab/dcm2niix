@@ -18,6 +18,7 @@ This software is open source. The bulk of the code is covered by the BSD license
  - Options -1..-9 to control [gz compression level](https://github.com/rordenlab/dcm2niix/issues/90).
  - Includes some [PET details in the BIDS JSON sidecar](https://github.com/rordenlab/dcm2niix/issues/87).
  - Better detection of image order for Philips 4D DICOM (reported by Jason McMorrow and Stephen Wilson).
+ - [Include StudyInstanceUID and SeriesInstanceUID in filename](https://github.com/rordenlab/dcm2niix/issues/94)
 
 7-Feb-2017
  - Can be compiled to use either Philips [Float or Display](http://www.nitrc.org/forum/message.php?msg_id=20213) intensity intercept and slope values.

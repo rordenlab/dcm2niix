@@ -72,11 +72,14 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
     printf("  -1..-9 : gz compression level (1=fastest, 9=smallest)\n");
-    printf("  -b : BIDS sidecar (y/n, default n)\n");
+    char bidsCh = 'n';
+    if (opts.isCreateBIDS) bidsCh = 'y';
+    printf("  -b : BIDS sidecar (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
-    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%q=sequence number, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
+
+    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%q=sequence number, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
     #else
-    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
+    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
     #endif
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");

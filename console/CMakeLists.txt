@@ -44,6 +44,7 @@ add_executable(dcm2niix
     jpg_0XC3.cpp
     ujpeg.cpp
     nifti1_io_core.cpp
+    nii_foreign.cpp
     nii_ortho.cpp
     nii_dicom_batch.cpp)
 

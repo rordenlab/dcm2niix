@@ -630,6 +630,8 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.studyTime, "11:11:11");
     strcpy(d.manufacturersModelName, "N/A");
     strcpy(d.procedureStepDescription, "");
+    strcpy(d.seriesInstanceUID, "");
+    strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
     d.dateTime = (double)19770703150928.0;
     d.acquisitionTime = 0.0f;
@@ -2566,6 +2568,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
+#define  kStudyInstanceUID 0x0020+(0x000D << 16 )
+#define  kSeriesInstanceUID 0x0020+(0x000E << 16 )
 #define  kPatientPosition 0x0020+(0x0032 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
@@ -2877,6 +2881,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     d.CSA.dtiV[3] =  dcmStrFloat(lLength, &buffer[lPos]);
                     d.CSA.numDti = 1;
                 }
+                break;
+            case kStudyInstanceUID :
+                dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
+                break;
+
+            case kSeriesInstanceUID :
+            	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
                 break;
             case 	kPatientPosition :
                 if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (is2005140FSQ)) {
