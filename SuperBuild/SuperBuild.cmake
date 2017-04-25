@@ -44,6 +44,7 @@ if(USE_OPENJPEG)
     else()
         include(${CMAKE_SOURCE_DIR}/SuperBuild/External-OPENJPEG.cmake)
         list(APPEND DEPENDENCIES openjpeg)
+        set(BUILD_OPENJPEG TRUE)
         message("--     Will build OpenJPEG from github")
     endif()
 endif()
@@ -62,6 +63,7 @@ if(BATCH_VERSION)
     else()
         include(${CMAKE_SOURCE_DIR}/SuperBuild/External-YAML-CPP.cmake)
         list(APPEND DEPENDENCIES yaml-cpp)
+        set(BUILD_YAML-CPP TRUE)
         message("--     Will build yaml-cpp from github")
     endif()
 endif()
@@ -85,8 +87,22 @@ ExternalProject_Add(console
         # yaml-cpp
         -DBATCH_VERSION:BOOL=${BATCH_VERSION}
         -DYAML-CPP_DIR:PATH=${YAML-CPP_DIR}
-        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/bin
+        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}
 )
+
+install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin
+        USE_SOURCE_PERMISSIONS)
+
+# Install dependent libraries for future use
+if(BUILD_OPENJPEG OR BUILD_YAML-CPP)
+    option(INSTALL_DEPENDENCIES "Optionally install dependent libraries (OpenJPEG and yaml-cpp) for future use." OFF)
+    if(INSTALL_DEPENDENCIES)
+        install(DIRECTORY ${CMAKE_BINARY_DIR}/include/ DESTINATION include
+                USE_SOURCE_PERMISSIONS)
+        install(DIRECTORY ${CMAKE_BINARY_DIR}/lib/ DESTINATION lib
+                USE_SOURCE_PERMISSIONS)
+    endif()
+endif()
 
 option(BUILD_DOCS "Build documentation (manpages)" OFF)
 if(BUILD_DOCS)
