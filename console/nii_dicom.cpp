@@ -138,7 +138,6 @@ static void my_stream_free (void * p_user_data) { //do nothing
 
 static OPJ_UINT32 opj_read_from_buffer(void * p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo* p_file) {
     OPJ_UINT32 l_nb_read;
-
     if(p_file->cur + p_nb_bytes < p_file->buf + p_file->len )
     {
         l_nb_read = p_nb_bytes;
