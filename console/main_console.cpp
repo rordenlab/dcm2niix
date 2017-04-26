@@ -75,8 +75,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     char bidsCh = 'n';
     if (opts.isCreateBIDS) bidsCh = 'y';
     printf("  -b : BIDS sidecar (y/n, default %c)\n", bidsCh);
+    if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
+    printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
-
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%q=sequence number, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
     #else
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
@@ -118,6 +119,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf(" Examples :\n");
     printf("  %s /Users/chris/dir\n", cstr);
     printf("  %s -o /users/cr/outdir/ -z y ~/dicomdir\n", cstr);
+    printf("  %s -f %%pp_%%s -b y -ba n ~/dicomdir\n", cstr);
     printf("  %s -f mystudy%%s ~/dicomdir\n", cstr);
     printf("  %s -o \"~/dir with spaces/dir\" ~/dicomdir\n", cstr);
 #endif
@@ -158,11 +160,21 @@ int main(int argc, const char * argv[])
             	if (opts.gzLevel > 11)
         	 		opts.gzLevel = 11;
             } else if ((argv[i][1] == 'b') && ((i+1) < argc)) {
-                i++;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isCreateBIDS = false;
-                else
-                    opts.isCreateBIDS = true;
+                if (strlen(argv[i]) < 3) { //"-b y"
+                	i++;
+                	if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    	opts.isCreateBIDS = false;
+                	else
+                    	opts.isCreateBIDS = true;
+                } else if (argv[i][2] == 'a') {//"-ba y"
+                	i++;
+                	if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    	opts.isAnonymizeBIDS = false;
+                	else
+                    	opts.isAnonymizeBIDS = true;
+
+                } else
+                	printf("Error: Unknown command line argument: '%s'\n", argv[i]);
             } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
                 i++;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))

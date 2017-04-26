@@ -361,11 +361,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
-	//CR 4/2017: are seriesInstanceUID and studyInstanceUID personal details?
-	//if (strlen(d.seriesInstanceUID) > 0)
-	//	fprintf(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID );
-	//if (strlen(d.studyInstanceUID) > 0)
-	//	fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
+	if (!opts.isAnonymizeBIDS) {
+		if (strlen(d.seriesInstanceUID) > 0)
+			fprintf(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID );
+		if (strlen(d.studyInstanceUID) > 0)
+			fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
+	}
 	if (strlen(d.procedureStepDescription) > 0)
 		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
 	if (strlen(d.scanningSequence) > 0)
@@ -397,24 +398,29 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
 	//Lines below directly save DICOM values
 	if (d.acquisitionTime > 0.0 && d.acquisitionDate > 0.0){
-	 long acquisitionDate = d.acquisitionDate;
-	 double acquisitionTime = d.acquisitionTime;
-	 char acqDateTimeBuf[64];
-	 //snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
-	 snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+013.5f", acquisitionDate, acquisitionTime); //CR 20170404 add zero pad so 1:23am appears as +012300.00000 not +12300.00000
-	 //printMessage("acquisitionDateTime %s\n",acqDateTimeBuf);
-	 int ayear,amonth,aday,ahour,amin;
-	 double asec;
-	 int count = 0;
-	 sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%lf%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);  //CR 20170404 %lf not %f for double precision
-	 //printf("-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
-	 if (count) {
-		// ISO 8601 specifies a sign must exist for distant years.
-		fprintf(fp, "\t\"AcquisitionDateTime\": ");
-		fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
-		fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
-		}
-	}
+		long acquisitionDate = d.acquisitionDate;
+		double acquisitionTime = d.acquisitionTime;
+		char acqDateTimeBuf[64];
+		//snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+08f", acquisitionDate, acquisitionTime);
+		snprintf(acqDateTimeBuf, sizeof acqDateTimeBuf, "%+08ld%+013.5f", acquisitionDate, acquisitionTime); //CR 20170404 add zero pad so 1:23am appears as +012300.00000 not +12300.00000
+		//printMessage("acquisitionDateTime %s\n",acqDateTimeBuf);
+		int ayear,amonth,aday,ahour,amin;
+		double asec;
+		int count = 0;
+		sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%lf%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count);  //CR 20170404 %lf not %f for double precision
+		//printf("-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
+		if (count) { // ISO 8601 specifies a sign must exist for distant years.
+			//report time of the day only format, https://www.cs.tut.fi/~jkorpela/iso8601.html
+			fprintf(fp, "\t\"AcquisitionTime\": %02d:%02d:%02.6f\",\n",ahour, amin, asec);
+			//report date and time together
+			if (!opts.isAnonymizeBIDS) {
+				fprintf(fp, "\t\"AcquisitionDateTime\": ");
+				fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
+				fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
+
+			}
+		} //if (count)
+	} //if acquisitionTime and acquisitionDate recorded
 	// if (d.acquisitionTime > 0.0) fprintf(fp, "\t\"AcquisitionTime\": %f,\n", d.acquisitionTime );
 	// if (d.acquisitionDate > 0.0) fprintf(fp, "\t\"AcquisitionDate\": %8.0f,\n", d.acquisitionDate );
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
@@ -2351,6 +2357,11 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;
     opts->isCreateBIDS =  true;
+    #ifdef isAnonymizeBIDS
+    opts->isAnonymizeBIDS = true;
+    #else
+    opts->isAnonymizeBIDS = false;
+    #endif
     opts->isCreateText = false;
 #ifdef myDebug
         opts->isVerbose =   true;

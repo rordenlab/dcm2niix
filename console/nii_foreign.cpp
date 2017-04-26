@@ -8,6 +8,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "print.h"
+#ifdef _MSC_VER
+	#include <direct.h>
+	#define getcwd _getcwd
+	#define chdir _chrdir
+	#include "io.h"
+	#include <math.h>
+	//#define snprintf _snprintf
+	//#define vsnprintf _vsnprintf
+	#define strcasecmp _stricmp
+	#define strncasecmp _strnicmp
+#else
+	#include <unistd.h>
+#endif
 
 #ifndef Float32
 	#define Float32 float
@@ -29,7 +42,7 @@
 //TO DO:
 // currently only reads first 3D volume: for multiple volumes we need to handle num_frames num_bed_pos
 // SForm and QForm copy SPM and do not account for slice angulation or orientation
-int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEndian) {
+int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEndian, unsigned char **img) {
 //data type
 #define	ECAT7_BYTE 1
 #define	ECAT7_VAXI2 2
@@ -109,11 +122,11 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
         int16_t scatter_type, recon_type, recon_views, fill_cti[87], fill_user[49];
     } ecat_img_hdr;
     typedef struct __attribute__((packed)) {
-        int32_t hdr[4],
-        r01[4],r02[4],r03[4],r04[4],r05[4],r06[4],r07[4],r08[4],r09[4],r10[4],
-        r11[4],r12[4],r13[4],r14[4],r15[4],r16[4],r17[4],r18[4],r19[4],r20[4],
-        r21[4],r22[4],r23[4],r24[4],r25[4],r26[4],r27[4],r28[4],r29[4],r30[4],
-        r31[4];
+        int32_t hdr[4], r[31][4];
+        //r01[4],r02[4],r03[4],r04[4],r05[4],r06[4],r07[4],r08[4],r09[4],r10[4],
+        //r11[4],r12[4],r13[4],r14[4],r15[4],r16[4],r17[4],r18[4],r19[4],r20[4],
+        //r21[4],r22[4],r23[4],r24[4],r25[4],r26[4],r27[4],r28[4],r29[4],r30[4],
+        //r31[4];
     } ecat_list_hdr;
     * swapEndian = false;
     size_t n;
@@ -145,19 +158,21 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
         fclose(f);
         return EXIT_FAILURE;
     }
-    if ((mhdr.num_frames > 1) || (mhdr.num_bed_pos > 1)) //to do: multi-volume files
+    if (mhdr.num_frames < 1) mhdr.num_frames = 1;
+    if (mhdr.num_bed_pos < 1) mhdr.num_bed_pos = 1;
+    /*int num_vol = mhdr.num_frames * mhdr.num_bed_pos; //unfortunately, frames and bed positions not reliable
+    if (num_vol > 1) //to do: multi-volume files
         printf("Only reading first volume from ECAT file with %d frames and %d bed positions\n", mhdr.num_frames, mhdr.num_bed_pos);
+    */
     //read list matrix
-    fseek(f, 512, SEEK_SET);
     ecat_list_hdr lhdr;
+    fseek(f, 512, SEEK_SET);
     fread(&lhdr, sizeof(lhdr), 1, f);
-    if (*swapEndian) {
-        nifti_swap_4bytes(128, &lhdr.hdr[0]);
-    }
+    if (*swapEndian) nifti_swap_4bytes(128, &lhdr.hdr[0]);
     //offset to first image
-    int img1_StartBytes = lhdr.r01[1] * 512;
+    int img_StartBytes = lhdr.r[0][1] * 512;
     //load image header for first image
-    fseek(f, img1_StartBytes - 512, SEEK_SET); //image header is block immediately before image
+    fseek(f, img_StartBytes - 512, SEEK_SET); //image header is block immediately before image
     ecat_img_hdr ihdr;
     fread(&ihdr, sizeof(ihdr), 1, f);
     if (*swapEndian) {
@@ -174,7 +189,6 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
     ihdr.x_pixel_size *= 10.0;
     ihdr.y_pixel_size *= 10.0;
     ihdr.z_pixel_size *= 10.0;
-    fclose(f);
     nhdr->dim[0]=3;//3D
     nhdr->dim[1]=ihdr.x_dimension;
     nhdr->dim[2]=ihdr.y_dimension;
@@ -186,7 +200,7 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
     nhdr->datatype = DT_INT16;
     if (ihdr.data_type == ECAT7_BYTE) nhdr->datatype = DT_UINT8;
     if (ihdr.data_type == ECAT7_SUNI4) nhdr->datatype = DT_INT32;
-    nhdr->vox_offset = img1_StartBytes;
+    nhdr->vox_offset = img_StartBytes;
     nhdr->sform_code = NIFTI_XFORM_UNKNOWN; //NIFTI_XFORM_SCANNER_ANAT;
     nhdr->scl_slope = ihdr.scale_factor * mhdr.ecat_calibration_factor;
     //direct clone of spm_ecat2nifti: seems off by one (indexed from zero)
@@ -194,6 +208,53 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
     nhdr->srow_x[0]=-nhdr->pixdim[1];nhdr->srow_x[1]=0.0f;nhdr->srow_x[2]=0.0f;nhdr->srow_x[3]=start.v[0];
     nhdr->srow_y[0]=0.0f;nhdr->srow_y[1]=-nhdr->pixdim[2];nhdr->srow_y[2]=0.0f;nhdr->srow_y[3]=start.v[1];
     nhdr->srow_z[0]=0.0f;nhdr->srow_z[1]=0.0f;nhdr->srow_z[2]=-nhdr->pixdim[3];nhdr->srow_z[3]=start.v[2];
+    //next: read offsets for each volume: data not saved sequentially (each volume preceded by its own ecat_img_hdr)
+    int num_vol = 0;
+    bool isAbort = false;
+    #define kMaxVols 16000
+	size_t * imgOffsets = (size_t *)malloc(sizeof(size_t) * (kMaxVols));
+    while ((lhdr.hdr[0]+lhdr.hdr[3]) == 31) { //while valid list
+    	if (num_vol > 0) { //read the next list
+    		fseek(f, 512 * (lhdr.hdr[1] -1), SEEK_SET);
+    		fread(&lhdr, 512, 1, f);
+    		if (*swapEndian) nifti_swap_4bytes(128, &lhdr.hdr[0]);
+    	}
+		if ((lhdr.hdr[0]+lhdr.hdr[3]) != 31) break; //if valid list
+		if (lhdr.hdr[3] < 1) break;
+    	for (int k = 0; k < lhdr.hdr[3]; k++) {
+    		//printf("%d --> %d \n", num_vol,lhdr.r[k][1]);
+
+    		//check images' ecat_img_hdr matches first
+    		fseek(f, (lhdr.r[k][1]-1) * 512, SEEK_SET); //image header is block immediately before image
+    		ecat_img_hdr ihdrN;
+    		fread(&ihdrN, sizeof(ihdrN), 1, f);
+    		if (*swapEndian) {
+        		nifti_swap_2bytes(5, &ihdrN.data_type);
+        		nifti_swap_4bytes(7, &ihdrN.x_resolution);
+    			nifti_swap_4bytes(3, &ihdrN.x_pixel_size);
+    		}
+    		if ((ihdr.data_type != ihdrN.data_type) || (ihdr.x_dimension != ihdrN.x_dimension) || (ihdr.y_dimension != ihdrN.y_dimension) || (ihdr.z_dimension != ihdrN.z_dimension)) {
+    			printf("Error: ECAT volumes have varying image dimensions\n");
+    			isAbort = true;
+    		}
+    		if (num_vol < kMaxVols)
+    			imgOffsets[num_vol]	= lhdr.r[k][1];
+    		num_vol ++;
+    	}
+    	if ((lhdr.hdr[0] > 0) || (isAbort)) break; //this list contains empty volumes: all lists have been read
+    } //while (lhdr.hdr[3] == 31);
+    printf("%d >>> \n", num_vol);
+    if ((num_vol < 1) || (isAbort) || (num_vol >= kMaxVols)) {
+        printf("Failure to extract ECAT7 images\n");
+        if (num_vol >= kMaxVols) printf("Increase kMaxVols");
+        fclose(f);
+        free (imgOffsets);
+        return EXIT_FAILURE;
+    }
+	for (int v = 0; v < num_vol; v++) {
+		printf("%d --> %d \n", v, imgOffsets[v]);
+	}
+    free (imgOffsets);
     fclose(f);
     //convertForeignToNifti(nhdr);
     return EXIT_SUCCESS;
@@ -202,13 +263,13 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
 
 
 int  open_foreign (const char *fn){
-	printf("--> %s\n", fn);
 	struct nifti_1_header nhdr;
 	bool swapEndian;
-	int ret = nii_readEcat7(fn, &nhdr, &swapEndian);
+	unsigned char * img = NULL;
+	int ret = nii_readEcat7(fn, &nhdr, &swapEndian, &img);
     if (ret == EXIT_SUCCESS)
     	printf("!\n");
-
+	free(img);
     return ret;
 }// open_foreign()
 
