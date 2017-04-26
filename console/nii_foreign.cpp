@@ -175,11 +175,11 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
         fclose(f);
         return EXIT_FAILURE;
     }
+    fclose(f);
     //cm -> mm
     ihdr.x_pixel_size *= 10.0;
     ihdr.y_pixel_size *= 10.0;
     ihdr.z_pixel_size *= 10.0;
-    fclose(f);
     nhdr->dim[0]=3;//3D
     nhdr->dim[1]=ihdr.x_dimension;
     nhdr->dim[2]=ihdr.y_dimension;
@@ -199,12 +199,9 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
     nhdr->srow_x[0]=-nhdr->pixdim[1];nhdr->srow_x[1]=0.0f;nhdr->srow_x[2]=0.0f;nhdr->srow_x[3]=start.v[0];
     nhdr->srow_y[0]=0.0f;nhdr->srow_y[1]=-nhdr->pixdim[2];nhdr->srow_y[2]=0.0f;nhdr->srow_y[3]=start.v[1];
     nhdr->srow_z[0]=0.0f;nhdr->srow_z[1]=0.0f;nhdr->srow_z[2]=-nhdr->pixdim[3];nhdr->srow_z[3]=start.v[2];
-    fclose(f);
     //convertForeignToNifti(nhdr);
     return EXIT_SUCCESS;
 }
-
-
 
 int  open_foreign (const char *fn){
 	printf("--> %s\n", fn);
@@ -216,4 +213,3 @@ int  open_foreign (const char *fn){
 
     return ret;
 }// open_foreign()
-
