@@ -1,7 +1,6 @@
 #include "nii_foreign.h"
 #include "nifti1.h"
 #include "nifti1_io_core.h"
-
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +28,11 @@
 	#define uint32 uint32_t
 #endif
 
+#ifdef __GNUC__
+    #define PACK(...) __VA_ARGS__ __attribute__((__packed__))
+#else
+    #define PACK(...) __pragma(pack(push, 1)) __VA_ARGS__ __pragma(pack(pop))
+#endif
 
 
 /*nii_readEcat7 2017 by Chris Rorden, BSD license
@@ -67,7 +71,7 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
 #define ECAT7_3DSCAN8 12
 #define ECAT7_3DNORM 13
 #define ECAT7_3DSCANFIT 14
-    typedef struct __attribute__((packed)) {
+    PACK( typedef struct  {
         char magic[14],original_filename[32];
         uint16_t sw_version, system_type, file_type;
         char serial_number[10];
@@ -100,8 +104,8 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
         char data_units[32];
         uint16_t septa_state;
         char fill[12];
-    } ecat_main_hdr;
-    typedef struct __attribute__((packed)) {
+    }) ecat_main_hdr;
+    PACK( typedef struct {
         int16_t data_type, num_dimensions, x_dimension, y_dimension, z_dimension;
         Float32 x_offset, y_offset, z_offset, recon_zoom, scale_factor;
         int16_t image_min, image_max;
@@ -120,14 +124,14 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
         int16_t zfilter_code, zfilter_order;
         Float32 mtx_1_4, mtx_2_4, mtx_3_4;
         int16_t scatter_type, recon_type, recon_views, fill_cti[87], fill_user[49];
-    } ecat_img_hdr;
-    typedef struct __attribute__((packed)) {
+    }) ecat_img_hdr;
+    PACK( typedef struct  {
         int32_t hdr[4], r[31][4];
         //r01[4],r02[4],r03[4],r04[4],r05[4],r06[4],r07[4],r08[4],r09[4],r10[4],
         //r11[4],r12[4],r13[4],r14[4],r15[4],r16[4],r17[4],r18[4],r19[4],r20[4],
         //r21[4],r22[4],r23[4],r24[4],r25[4],r26[4],r27[4],r28[4],r29[4],r30[4],
         //r31[4];
-    } ecat_list_hdr;
+    }) ecat_list_hdr;
     * swapEndian = false;
     size_t n;
     FILE *f;
@@ -252,8 +256,10 @@ int nii_readEcat7(const char * fname, struct nifti_1_header *nhdr, bool * swapEn
         return EXIT_FAILURE;
     }
 	for (int v = 0; v < num_vol; v++) {
-		printf("%d --> %d \n", v, imgOffsets[v]);
+		printf("%d --> %lu\n", v, imgOffsets[v]);
 	}
+	printf("ECAT not (yet) supported\n");
+
     free (imgOffsets);
     fclose(f);
     //convertForeignToNifti(nhdr);
@@ -272,4 +278,3 @@ int  open_foreign (const char *fn){
 	free(img);
     return ret;
 }// open_foreign()
-
