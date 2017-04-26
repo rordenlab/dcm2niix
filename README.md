@@ -129,8 +129,15 @@ You can add as many files as you want to convert as long as this structure stays
 
 ## Build
 
-### Build command line version with cmake (Linux, Windows, MacOS)
+### Build command line version with cmake (Linux, MacOS, Windows)
 
+`cmake` and `pkg-config` (optional) can be installed as follows:
+
+Ubuntu: `sudo apt-get install cmake pkg-config`
+
+MacOS: `brew install cmake pkg-config`
+
+**To build:**
 ```bash
 mkdir build && cd build
 cmake ..
@@ -138,25 +145,15 @@ make
 ```
 `dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install`.
 
+**optional building with OpenJPEG:**
+
+Support for JPEG2000 using OpenJPEG is optional. To build with OpenJPEG change the cmake command to `cmake -DUSE_OPENJPEG=ON ..`
+
 **optional batch processing version:**
 
 The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` as well change the cmake command to `cmake -DBATCH_VERSION=ON ..`
 
-This requires the following libraries:
-- pkg-config
-- yaml-cpp
-- a compiler that supports c++11
-
-e.g. the dependencies can be installed as follows:
-
-Ubuntu 14.04
-```
-sudo apt-get install pkg-config libyaml-cpp-dev libyaml-cpp0.5 cmake libboost-dev
-```
-MacOS
-```
-brew install pkg-config yaml-cpp cmake
-```
+This requires a compiler that supports c++11.
 
 
 ### Building the command line version without cmake
