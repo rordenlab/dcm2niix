@@ -411,7 +411,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//printf("-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
 		if (count) { // ISO 8601 specifies a sign must exist for distant years.
 			//report time of the day only format, https://www.cs.tut.fi/~jkorpela/iso8601.html
-			fprintf(fp, "\t\"AcquisitionTime\": %02d:%02d:%02.6f\",\n",ahour, amin, asec);
+			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%02.6f\",\n",ahour, amin, asec);
 			//report date and time together
 			if (!opts.isAnonymizeBIDS) {
 				fprintf(fp, "\t\"AcquisitionDateTime\": ");
@@ -722,7 +722,7 @@ bool intensityScaleVaries(int nConvert, struct TDCMsort dcmSort[],struct TDICOMd
  sliceOffsetR += sliceBytes8;
  } //for each slice
  return bImg;
- } //nii_ImgBytes()*/
+ } */
 
 bool niiExists(const char*pathoutname) {
     char niiname[2048] = {""};
@@ -1092,6 +1092,10 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
+    if (imgsz < 1) {
+    	printMessage("Error: Image size is zero bytes %s\n", niiFilename);
+    	return EXIT_FAILURE;
+    }
     #ifndef myDisableZLib
     if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
         writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
@@ -2111,8 +2115,8 @@ int nii_loadDir(struct TDCMopts* opts) {
     }*/
     getFileName(opts->indirParent, opts->indir);
     if (isFile && ( (isExt(indir, ".v"))) ) {
-    	//open_foreign(opts->indir);
-    	return open_foreign (indir);
+    	//return open_foreign (indir);
+		return open_foreign (indir, *opts);
 
     }
     if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {

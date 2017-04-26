@@ -7,7 +7,10 @@
 extern "C" {
 #endif
 
-int  open_foreign (const char *fn);
+#include "nii_dicom_batch.h"
+
+//int  open_foreign (const char *fn);
+int  open_foreign (const char *fn, struct TDCMopts opts);
 
 #ifdef  __cplusplus
 }

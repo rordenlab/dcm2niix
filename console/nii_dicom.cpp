@@ -1612,7 +1612,7 @@ size_t nii_SliceBytes(struct nifti_1_header hdr) {
         if (hdr.dim[i]  > 1)
             imgsz = imgsz * hdr.dim[i];
     return imgsz;
-} //nii_ImgBytes()
+} //nii_SliceBytes()
 
 size_t nii_ImgBytes(struct nifti_1_header hdr) {
     size_t imgsz = hdr.bitpix/8;
