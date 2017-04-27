@@ -57,21 +57,6 @@ void strClean(char * cString) {
 	}
 }
 
-float deFuzz(float v) {
-    if (fabs(v) < 0.00001)
-        return 0;
-    else
-        return v;
-
-}
-
-void reportMat33(char *str, mat33 A) {
-    printMessage("%s = [%g %g %g ; %g %g %g; %g %g %g ]\n",str,
-           deFuzz(A.m[0][0]),deFuzz(A.m[0][1]),deFuzz(A.m[0][2]),
-           deFuzz(A.m[1][0]),deFuzz(A.m[1][1]),deFuzz(A.m[1][2]),
-           deFuzz(A.m[2][0]),deFuzz(A.m[2][1]),deFuzz(A.m[2][2]));
-}
-
 unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti_1_header *hdr, struct TDCMopts opts) {
 //data type
 #define	ECAT7_BYTE 1
@@ -317,8 +302,7 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
 	dcm->xyzMM[1] = ihdr.x_pixel_size * 10.0; //cm -> mm
 	dcm->xyzMM[2] = ihdr.y_pixel_size * 10.0; //cm -> mm
 	dcm->xyzMM[3] = ihdr.z_pixel_size * 10.0; //cm -> mm
-	dcm->TR = timeBetweenVolumes; // ms -> sec
-	dcm->xyzMM[4] = timeBetweenVolumes; //ms -> sec
+	dcm->TR = timeBetweenVolumes;
 	dcm->xyzDim[1] = ihdr.x_dimension;
 	dcm->xyzDim[2] = ihdr.y_dimension;
 	dcm->xyzDim[3] = ihdr.z_dimension;
