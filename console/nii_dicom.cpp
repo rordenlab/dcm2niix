@@ -495,6 +495,14 @@ mat44 set_nii_header(struct TDICOMdata d) {
 }
 #endif
 
+float deFuzz(float v) {
+    if (fabs(v) < 0.00001)
+        return 0;
+    else
+        return v;
+
+}
+
 // This code predates  Xiangrui Li's set_nii_header function
 mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir) {
     *sliceDir = 0;
@@ -503,6 +511,7 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
         double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
         double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
         double lFactorY = (d.xyzDim[2] -(d.xyzDim[2]/nRowCol)   )/2.0;
+        //printf("%g %g\n", lFactorX, lFactorY);
         Q44.m[0][3] =(float)((Q44.m[0][0]*lFactorX)+(Q44.m[0][1]*lFactorY)+Q44.m[0][3]);
 		Q44.m[1][3] = (float)((Q44.m[1][0] * lFactorX) + (Q44.m[1][1] * lFactorY) + Q44.m[1][3]);
 		Q44.m[2][3] = (float)((Q44.m[2][0] * lFactorX) + (Q44.m[2][1] * lFactorY) + Q44.m[2][3]);
@@ -1150,7 +1159,7 @@ float dcmStrFloat (int lByteLength, unsigned char lBuffer[]) { //read float stor
 
 int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     //printMessage("bytes %dx%dx%d %d, %d\n",d.XYZdim[1],d.XYZdim[2],d.XYZdim[3], d.Allocbits_per_pixel, d.samplesPerPixel);
-    memset(h, 0, sizeof(nifti_1_header)); //zero-fill structure so unused items are consistent
+	memset(h, 0, sizeof(nifti_1_header)); //zero-fill structure so unused items are consistent
     for (int i = 0; i < 80; i++) h->descrip[i] = 0;
     for (int i = 0; i < 24; i++) h->aux_file[i] = 0;
     for (int i = 0; i < 18; i++) h->db_name[i] = 0;

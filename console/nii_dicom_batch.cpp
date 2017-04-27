@@ -343,7 +343,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	char txtname[2048] = {""};
 	strcpy (txtname,pathoutname);
 	strcat (txtname,".json");
-	//printMessage("Saving DTI %s\n",txtname);
 	FILE *fp = fopen(txtname, "w");
 	fprintf(fp, "{\n");
 	switch (d.manufacturer) {
@@ -442,7 +441,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
     if (d.TR > 0.0) fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     if (d.TI > 0.0) fprintf(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
-	if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
+    if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0.0f;
 		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
 			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
@@ -456,7 +455,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
-		for (int i = 0; i < kMaxDTI4D; i++) {
+   		for (int i = 0; i < kMaxDTI4D; i++) {
 			if (dti4D->S[i].sliceTiming >= 0.0){
 			  if (!first)
 				  fprintf(fp, ",\n");
