@@ -57,7 +57,7 @@ void strClean(char * cString) {
 	}
 }
 
-unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti_1_header *hdr, struct TDCMopts opts) {
+unsigned char * readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti_1_header *hdr, struct TDCMopts opts, bool isWarnIfNotEcat) {
 //data type
 #define	ECAT7_BYTE 1
 #define	ECAT7_VAXI2 2
@@ -116,26 +116,26 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
         uint16_t septa_state;
         char fill[12];
     }) ecat_main_hdr;
-    PACK( typedef struct {
-        int16_t data_type, num_dimensions, x_dimension, y_dimension, z_dimension;
-        Float32 x_offset, y_offset, z_offset, recon_zoom, scale_factor;
-        int16_t image_min, image_max;
-        Float32 x_pixel_size, y_pixel_size, z_pixel_size;
-        int32_t frame_duration, frame_start_time;
-        int16_t filter_code;
-        Float32 x_resolution, y_resolution, z_resolution, num_r_elements, num_angles, z_rotation_angle, decay_corr_fctr;
-        int32_t processing_code, gate_duration, r_wave_offset, num_accepted_beats;
-        Float32 filter_cutoff_frequenc, filter_resolution, filter_ramp_slope;
-        int16_t filter_order;
-        Float32 filter_scatter_fraction, filter_scatter_slope;
-        char annotation[40];
-        Float32 mtx[9], rfilter_cutoff, rfilter_resolution;
-        int16_t rfilter_code, rfilter_order;
-        Float32 zfilter_cutoff, zfilter_resolution;
-        int16_t zfilter_code, zfilter_order;
-        Float32 mtx_1_4, mtx_2_4, mtx_3_4;
-        int16_t scatter_type, recon_type, recon_views, fill_cti[87], fill_user[49];
-    }) ecat_img_hdr;
+PACK( typedef struct {
+	int16_t data_type, num_dimensions, x_dimension, y_dimension, z_dimension;
+	Float32 x_offset, y_offset, z_offset, recon_zoom, scale_factor;
+	int16_t image_min, image_max;
+	Float32 x_pixel_size, y_pixel_size, z_pixel_size;
+	int32_t frame_duration, frame_start_time;
+	int16_t filter_code;
+	Float32 x_resolution, y_resolution, z_resolution, num_r_elements, num_angles, z_rotation_angle, decay_corr_fctr;
+	int32_t processing_code, gate_duration, r_wave_offset, num_accepted_beats;
+	Float32 filter_cutoff_frequenc, filter_resolution, filter_ramp_slope;
+	int16_t filter_order;
+	Float32 filter_scatter_fraction, filter_scatter_slope;
+	char annotation[40];
+	Float32 mtx[9], rfilter_cutoff, rfilter_resolution;
+	int16_t rfilter_code, rfilter_order;
+	Float32 zfilter_cutoff, zfilter_resolution;
+	int16_t zfilter_code, zfilter_order;
+	Float32 mtx_1_4, mtx_2_4, mtx_3_4;
+	int16_t scatter_type, recon_type, recon_views, fill_cti[87], fill_user[49];
+}) ecat_img_hdr;
     PACK( typedef struct  {
         int32_t hdr[4], r[31][4];
     }) ecat_list_hdr;
@@ -153,7 +153,8 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
     }
     if ((mhdr.magic[0] != 'M') || (mhdr.magic[1] != 'A') || (mhdr.magic[2] != 'T')
         || (mhdr.magic[3] != 'R') || (mhdr.magic[4] != 'I') || (mhdr.magic[5] != 'X') ) {
-        printMessage("Signature not 'MATRIX' (ECAT7)\n");
+        if (isWarnIfNotEcat)
+        	printMessage("Signature not 'MATRIX' (ECAT7): '%s'\n", fname);
         fclose(f);
         return NULL;
     }
@@ -164,6 +165,7 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
         //nifti_swap_2bytes(1, &mhdr.num_frames);
         nifti_swap_4bytes(1, &mhdr.ecat_calibration_factor);
         nifti_swap_4bytes(1, &mhdr.isotope_halflife);
+        nifti_swap_4bytes(2, &mhdr.dosage);
     }
     if ((mhdr.file_type < ECAT7_2DSCAN) || (mhdr.file_type > ECAT7_3DSCANFIT)) {
         printMessage("Unknown ECAT file type %d\n", mhdr.file_type);
@@ -182,12 +184,20 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
     ecat_img_hdr ihdr;
     fread(&ihdr, sizeof(ihdr), 1, f);
     if (swapEndian) {
-        nifti_swap_2bytes(5, &ihdr.data_type);
-        nifti_swap_4bytes(7, &ihdr.x_resolution);
+    	nifti_swap_2bytes(5, &ihdr.data_type);
         nifti_swap_4bytes(5, &ihdr.x_offset);
+        nifti_swap_2bytes(2, &ihdr.image_min);
         nifti_swap_4bytes(5, &ihdr.x_pixel_size);
-    	nifti_swap_4bytes(9, &ihdr.mtx);
-    	nifti_swap_4bytes(3, &ihdr.mtx_1_4);
+        nifti_swap_2bytes(1, &ihdr.filter_code);
+        nifti_swap_4bytes(14, &ihdr.x_resolution);
+        nifti_swap_2bytes(1, &ihdr.filter_order);
+        nifti_swap_4bytes(2, &ihdr.filter_scatter_fraction);
+        nifti_swap_4bytes(11, &ihdr.mtx);
+        nifti_swap_2bytes(2, &ihdr.rfilter_code);
+        nifti_swap_4bytes(2, &ihdr.zfilter_cutoff);
+        nifti_swap_2bytes(2, &ihdr.zfilter_code);
+        nifti_swap_4bytes(3, &ihdr.mtx_1_4);
+        nifti_swap_2bytes(3, &ihdr.scatter_type);
     }
     if ((ihdr.data_type != ECAT7_BYTE) && (ihdr.data_type != ECAT7_SUNI2) && (ihdr.data_type != ECAT7_SUNI4)) {
         printMessage("Unknown or unsupported ECAT data type %d\n", ihdr.data_type);
@@ -215,20 +225,27 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
 		for (int k = 0; k < lhdr.hdr[3]; k++) {
     		//check images' ecat_img_hdr matches first
     		fseek(f, (lhdr.r[k][1]-1) * 512, SEEK_SET); //image header is block immediately before image
-
     		fread(&ihdrN, sizeof(ihdrN), 1, f);
     		if (swapEndian) {
-        		nifti_swap_2bytes(5, &ihdrN.data_type);
-        		nifti_swap_4bytes(7, &ihdrN.x_resolution);
-        		nifti_swap_4bytes(5, &ihdrN.x_offset);
-        		nifti_swap_4bytes(5, &ihdrN.x_pixel_size);
-    			nifti_swap_4bytes(9, &ihdrN.mtx);
-    			nifti_swap_4bytes(3, &ihdrN.mtx_1_4);
-    		}
+				nifti_swap_2bytes(5, &ihdrN.data_type);
+				nifti_swap_4bytes(5, &ihdrN.x_offset);
+				nifti_swap_2bytes(2, &ihdrN.image_min);
+				nifti_swap_4bytes(5, &ihdrN.x_pixel_size);
+				nifti_swap_2bytes(1, &ihdrN.filter_code);
+				nifti_swap_4bytes(14, &ihdrN.x_resolution);
+				nifti_swap_2bytes(1, &ihdrN.filter_order);
+				nifti_swap_4bytes(2, &ihdrN.filter_scatter_fraction);
+				nifti_swap_4bytes(11, &ihdrN.mtx);
+				nifti_swap_2bytes(2, &ihdrN.rfilter_code);
+				nifti_swap_4bytes(2, &ihdrN.zfilter_cutoff);
+				nifti_swap_2bytes(2, &ihdrN.zfilter_code);
+				nifti_swap_4bytes(3, &ihdrN.mtx_1_4);
+				nifti_swap_2bytes(3, &ihdrN.scatter_type);
+			}
     		if (ihdr.scale_factor != ihdrN.scale_factor)
     			isScaleFactorVaries = true;
     		if ((ihdr.data_type != ihdrN.data_type) || (ihdr.x_dimension != ihdrN.x_dimension) || (ihdr.y_dimension != ihdrN.y_dimension) || (ihdr.z_dimension != ihdrN.z_dimension)) {
-    			printMessage("Error: ECAT volumes have varying image dimensions\n");
+    			printError("Error: ECAT volumes have varying image dimensions\n");
     			isAbort = true;
     		}
     		if (num_vol < kMaxVols)
@@ -246,7 +263,7 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
         return NULL;
     }
     if (isScaleFactorVaries)
-    	printWarning("Serious ECAT problem: scale factor varies between volumes (please check for updates)\n");
+    	printError("ECAT scale factor varies between volumes (please check for updates) '%s'\n", fname);
 	//load image data
 	size_t bytesPerVolume = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * bytesPerVoxel;
 	unsigned char * img = (unsigned char*)malloc(bytesPerVolume * num_vol);
@@ -278,6 +295,8 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
 	strClean(dcm->protocolName);
 	strClean(dcm->imageComments);
 	strClean(dcm->procedureStepDescription);
+	dcm->ecat_dosage = mhdr.dosage;
+	dcm->ecat_isotope_halflife = mhdr.isotope_halflife;
     if (opts.isVerbose) {
     	printMessage("ECAT7 details for '%s'\n", fname);
     	printMessage(" Software version %d\n", mhdr.sw_version);
@@ -291,11 +310,14 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
     	printMessage(" Isotope name '%s'\n", dcm->imageComments);
     	printMessage(" Isotope halflife %gs\n", mhdr.isotope_halflife);
     	printMessage(" Radiopharmaceutical '%s'\n", dcm->procedureStepDescription);
+    	printMessage(" Dosage %gbequerels/cc\n", mhdr.dosage);
     	printMessage(" Scale factor %12.12g\n", ihdr.scale_factor);
-    	printMessage(" Ecat calibration factor %8.12g\n", mhdr.ecat_calibration_factor);
+    	printMessage(" ECAT calibration factor %8.12g\n", mhdr.ecat_calibration_factor);
     	printMessage(" NIfTI scale slope %12.12g\n",ihdr.scale_factor * mhdr.ecat_calibration_factor);
     }
-
+	dcm->manufacturer = kMANUFACTURER_SIEMENS;
+	//dcm->manufacturersModelName = itoa(mhdr.system_type);
+	sprintf(dcm->manufacturersModelName, "%d", mhdr.system_type);
     dcm->bitsAllocated = bytesPerVoxel * 8;
     dcm->bitsStored = 15; //ensures 16-bit images saved as INT16 not UINT16
 	dcm->samplesPerPixel = 1;
@@ -327,19 +349,19 @@ unsigned char * nii_readEcat7(const char *fname, struct TDICOMdata *dcm, struct 
 	for (int i = 0; i < 9; i++)
 		if (ihdr.mtx[i] != 0.0) isMatrix = true;
 	if (isMatrix)
-		printWarning("Serious ECAT problem: image appears to store spatial transformation matrix (please check for updates)\n");
+		printWarning("ECAT volume appears to store spatial transformation matrix (please check for updates)\n");
 	hdr->scl_slope = ihdr.scale_factor * mhdr.ecat_calibration_factor;
     if (mhdr.gantry_tilt != 0.0) printMessage("Warning: ECAT gantry tilt not supported %g\n", mhdr.gantry_tilt);
     return img;
 }
 
-int  open_foreign (const char *fn, struct TDCMopts opts){
+int  convert_foreign (const char *fn, struct TDCMopts opts){
 	struct nifti_1_header hdr;
 	struct TDICOMdata dcm = clear_dicom_data();
 	unsigned char * img = NULL;
-	char niiFilename[1024];
-	img = nii_readEcat7(fn, &dcm, &hdr, opts);
+	img = readEcat7(fn, &dcm, &hdr, opts, true); //false: silent, do not report if file is not ECAT format
 	if (!img) return EXIT_FAILURE;
+	char niiFilename[1024];
 	int ret = nii_createFilename(dcm, niiFilename, opts);
 	printMessage("Saving ECAT as '%s'\n", niiFilename);
 	if (ret != EXIT_SUCCESS) return ret;

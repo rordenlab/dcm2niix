@@ -441,6 +441,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
     if (d.TR > 0.0) fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     if (d.TI > 0.0) fprintf(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
+    if (d.ecat_isotope_halflife > 0.0) fprintf(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
+    if (d.ecat_dosage > 0.0) fprintf(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0.0f;
 		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
@@ -489,7 +491,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	//fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
     fprintf(fp, "}\n");
     fclose(fp);
-}// nii_SaveBIDS()
+}// nii_SaveBIDS() step
 
 int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
     //reports non-zero if last volumes should be excluded (e.g. philip stores an ADC maps)
@@ -903,10 +905,26 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 
 void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
     //generate string that illustrating sample of filename
-    struct TDICOMdata dcm = clear_dicom_data();
+    struct TDICOMdata d = clear_dicom_data();
+    strcpy(d.patientName, "John_Doe");
+    strcpy(d.patientID, "ID123");
+    strcpy(d.imageType,"ORIGINAL");
+    strcpy(d.imageComments, "imgComments");
+    strcpy(d.studyDate, "1/1/1977");
+    strcpy(d.studyTime, "11:11:11");
+    strcpy(d.protocolName, "MPRAGE");
+    strcpy(d.seriesDescription, "T1_mprage");
+    strcpy(d.sequenceName, "T1");
+    strcpy(d.scanningSequence, "tfl3d1_ns");
+    strcpy(d.sequenceVariant, "tfl3d1_ns");
+    strcpy(d.manufacturersModelName, "N/A");
+    strcpy(d.procedureStepDescription, "");
+    strcpy(d.seriesInstanceUID, "");
+    strcpy(d.studyInstanceUID, "");
+    strcpy(d.bodyPartExamined,"");
     strcpy(opts.indirParent,"myFolder");
     char niiFilenameBase[1024] = {"/usr/myFolder/dicom.dcm"};
-    nii_createFilename(dcm, niiFilenameBase, opts) ;
+    nii_createFilename(d, niiFilenameBase, opts) ;
     strcpy(niiFilename,"Example output filename: '");
     strcat(niiFilename,niiFilenameBase);
     if (opts.isGz)
@@ -1889,44 +1907,6 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
     return true;
 }// isSameSet()
 
-/*
-#if defined(__APPLE__) && defined(__MACH__)
-void  convertForeign2Nii(char * fname, struct TDCMopts* opts) {//, struct TDCMopts opts) {
-
-    struct nifti_1_header niiHdr;
-    unsigned char * img =  nii_readForeignC(fname, &niiHdr, 0, 65535);
-    if (img == NULL) return;
-    char pth[1024] = {""};
-    if (strlen(opts->outdir) > 0) {
-        strcpy(pth, opts->outdir);
-        int w =access(pth,W_OK);
-        if (w != 0) {
-            if (getcwd(pth, sizeof(pth)) != NULL) {
-                w =access(pth,W_OK);
-                if (w != 0) {
-                    printError("You do not have write permissions for the directory %s\n",opts->outdir);
-                    return;
-                }
-                printWarning("%s write permission denied. Saving to working directory %s \n", opts->outdir, pth);
-
-            }
-        }
-        char appendChar[2] = {"a"};
-        appendChar[0] = kPathSeparator;
-        if (pth[strlen(pth)-1] != kPathSeparator)
-            strcat (pth,appendChar);
-        char fn[1024] = {""};
-        getFileName(fn, fname);
-        strcat(pth,fn);
-    } else {
-        strcat(pth, fname);
-    }
-    printMessage("Converted foreign image '%s'\n",fname);
-    nii_saveNII(pth, niiHdr, img, *opts);
-    free(img);
-} //convertForeign2Nii()
-#endif */
-
 int singleDICOM(struct TDCMopts* opts, char *fname) {
     char filename[768] ="";
     strcat(filename, fname);
@@ -1951,7 +1931,16 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     return saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
 }// singleDICOM()
 
-void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth) {
+size_t fileBytes(const char * fname) {
+    FILE *fp = fopen(fname, "rb");
+	if (!fp)  return 0;
+	fseek(fp, 0, SEEK_END);
+	size_t fileLen = ftell(fp);
+    fclose(fp);
+    return fileLen;
+} //fileBytes()
+
+void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth, struct TDCMopts* opts ) {
     tinydir_dir dir;
     tinydir_open(&dir, path);
     while (dir.has_next) {
@@ -1964,9 +1953,11 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         strcat(filename,kFileSep);
         strcat(filename, file.name);
         if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.'))
-            searchDirForDICOM(filename, nameList, maxDepth, depth+1);
-        else if (!file.is_reg) //ignore hidden files...
+            searchDirForDICOM(filename, nameList, maxDepth, depth+1, opts);
+        else if (!file.is_reg) //ignore files "." and ".."
             ;
+        else if ((strlen(file.name) < 1) || (file.name[0]=='.'))
+        	; //printf("skipping hidden file %s\n", file.name);
         else if (isDICOMfile(filename) > 0) {
             if (nameList->numItems < nameList->maxItems) {
                 nameList->str[nameList->numItems]  = (char *)malloc(strlen(filename)+1);
@@ -1976,12 +1967,11 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
             nameList->numItems++;
             //printMessage("dcm %lu %s \n",nameList->numItems, filename);
         } else {
-            #if defined(__APPLE__) && defined(__MACH__)
-            //convertForeign2Nii(filename, opts);
-            #endif
-        #ifdef MY_DEBUG
-            printMessage("Not a dicom:\t%s\n", filename);
-        #endif
+        	if (fileBytes(filename) > 2048)
+            	convert_foreign (filename, *opts);
+        	#ifdef MY_DEBUG
+            	printMessage("Not a dicom:\t%s\n", filename);
+        	#endif
         }
         tinydir_next(&dir);
     }
@@ -2108,16 +2098,9 @@ int nii_loadDir(struct TDCMopts* opts) {
          #endif
         #endif
     }*/
-    /*if (isFile && ((isExt(indir, ".mha")) || (isExt(indir, ".mhd"))) ) {
-        strcpy(opts->indir, indir); //set to original file name, not path
-        return convert_foreign(*opts);
-    }*/
     getFileName(opts->indirParent, opts->indir);
-    if (isFile && ( (isExt(indir, ".v"))) ) {
-    	//return open_foreign (indir);
-		return open_foreign (indir, *opts);
-
-    }
+    if (isFile && ( (isExt(indir, ".v"))) )
+		return convert_foreign (indir, *opts);
     if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         char pname[512], rname[512];
         strcpy(pname,indir);
@@ -2141,7 +2124,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
         nameList.numItems = 0;
-        searchDirForDICOM(opts->indir, &nameList,  5,1);
+        searchDirForDICOM(opts->indir, &nameList,  5, 1, opts);
         if (nameList.numItems <= nameList.maxItems)
             break;
         freeNameList(nameList);
