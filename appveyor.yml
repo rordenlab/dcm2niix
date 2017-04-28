@@ -18,7 +18,9 @@ init:
 
     $githash = $env:APPVEYOR_REPO_COMMIT.Substring(0, 7)
 
-    Update-AppveyorBuild -Version "$($env:DATE)_g${githash}"
+    $gittag = if ($env:APPVEYOR_REPO_TAG -eq $True) {"_$($env:APPVEYOR_REPO_TAG_NAME)"} else {""}
+
+    Update-AppveyorBuild -Version "$($env:DATE)_g${githash}${gittag}"
 
     $env:release_version = $(Get-Date -Format d-MMMM-yyyy)
 
