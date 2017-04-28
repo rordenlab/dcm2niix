@@ -11,14 +11,15 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-11-April-2017
+28-April-2017
+- Experimental [ECAT support](https://github.com/rordenlab/dcm2niix/issues/95).
  - Updated cmake to make JPEG2000 support easier with improved Travis and AppVeyor support [Ningfei Li](https://github.com/ningfei).
  - Supports Data/Time for images that report Data/Time (0008,002A) but not separate Date and Time (0008,0022 and 0008,0032).
  - [BIDS reports morning times correctly](http://www.nitrc.org/forum/message.php?msg_id=20852).
  - Options -1..-9 to control [gz compression level](https://github.com/rordenlab/dcm2niix/issues/90).
  - Includes some [PET details in the BIDS JSON sidecar](https://github.com/rordenlab/dcm2niix/issues/87).
  - Better detection of image order for Philips 4D DICOM (reported by Jason McMorrow and Stephen Wilson).
- - [Include StudyInstanceUID and SeriesInstanceUID in filename](https://github.com/rordenlab/dcm2niix/issues/94)
+ - [Include StudyInstanceUID and SeriesInstanceUID in filename](https://github.com/rordenlab/dcm2niix/issues/94).
 
 7-Feb-2017
  - Can be compiled to use either Philips [Float or Display](http://www.nitrc.org/forum/message.php?msg_id=20213) intensity intercept and slope values.
