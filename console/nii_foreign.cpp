@@ -213,6 +213,7 @@ PACK( typedef struct {
     bool isScaleFactorVaries = false;
     #define kMaxVols 16000
 	size_t * imgOffsets = (size_t *)malloc(sizeof(size_t) * (kMaxVols));
+    float * imgSlopes = (float *)malloc(sizeof(float) * (kMaxVols));
     ecat_img_hdr ihdrN;
     while ((lhdr.hdr[0]+lhdr.hdr[3]) == 31) { //while valid list
     	if (num_vol > 0) { //read the next list
@@ -248,8 +249,10 @@ PACK( typedef struct {
     			printError("Error: ECAT volumes have varying image dimensions\n");
     			isAbort = true;
     		}
-    		if (num_vol < kMaxVols)
+    		if (num_vol < kMaxVols) {
     			imgOffsets[num_vol]	= lhdr.r[k][1];
+    			imgSlopes[num_vol] = ihdrN.scale_factor;
+    		}
     		num_vol ++;
     	}
     	if ((lhdr.hdr[0] > 0) || (isAbort)) break; //this list contains empty volumes: all lists have been read
@@ -260,25 +263,56 @@ PACK( typedef struct {
         if (num_vol >= kMaxVols) printMessage("Increase kMaxVols");
         fclose(f);
         free (imgOffsets);
+        free(imgSlopes);
         return NULL;
     }
-    if (isScaleFactorVaries)
-    	printError("ECAT scale factor varies between volumes (please check for updates) '%s'\n", fname);
-	//load image data
-	size_t bytesPerVolume = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * bytesPerVoxel;
-	unsigned char * img = (unsigned char*)malloc(bytesPerVolume * num_vol);
-	for (int v = 0; v < num_vol; v++) {
-		//printMessage("%d --> %lu\n", v, imgOffsets[v]);
-		fseek(f, imgOffsets[v] * 512, SEEK_SET);
-		size_t  sz = fread( &img[v * bytesPerVolume], 1, bytesPerVolume, f);
+    if ((isScaleFactorVaries) && (bytesPerVoxel != 2)) {
+    	printError("ECAT scale factor varies between volumes (check for updates) '%s'\n", fname);
+        fclose(f);
+        free (imgOffsets);
+        free(imgSlopes);
+        return NULL;
 	}
-	if ((swapEndian) && (bytesPerVoxel == 2)) nifti_swap_2bytes(ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * num_vol, img);
-	if ((swapEndian) && (bytesPerVoxel == 4)) nifti_swap_4bytes(ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * num_vol, img);
+	//load image data
+	unsigned char * img = NULL;
+	if ((isScaleFactorVaries) && (bytesPerVoxel == 2)) { //we need to convert volumes from 16-bit to 32-bit to preserve scaling factors
+		int num_vox = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension;
+		size_t bytesPerVolumeIn = num_vox * bytesPerVoxel; //bytesPerVoxel == 2
+		unsigned char * imgIn = (unsigned char*)malloc(bytesPerVolumeIn);
+		int16_t * img16i = (int16_t*) imgIn;
+		bytesPerVoxel = 4;
+		size_t bytesPerVolume = num_vox * bytesPerVoxel;
+		img = (unsigned char*)malloc(bytesPerVolume * num_vol);
+		float * img32 = (float*) img;
+		for (int v = 0; v < num_vol; v++) {
+			fseek(f, imgOffsets[v] * 512, SEEK_SET);
+			fread( &imgIn[0], 1, bytesPerVolumeIn, f);
+			if (swapEndian)
+				nifti_swap_2bytes(num_vox, imgIn);
+			int volOffset = v * num_vox;
+			float scale = imgSlopes[v] * mhdr.ecat_calibration_factor;
+			for (int i = 0; i < num_vox; i++)
+				img32[i+volOffset] = (img16i[i] * scale);
+		}
+		//we have applied the scale factors to the data, so eliminate them
+		ihdr.scale_factor = 1.0;
+		mhdr.ecat_calibration_factor = 1.0;
+
+	} else { //if isScaleFactorVaries else simple conversion
+		size_t bytesPerVolume = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * bytesPerVoxel;
+		img = (unsigned char*)malloc(bytesPerVolume * num_vol);
+		for (int v = 0; v < num_vol; v++) {
+			fseek(f, imgOffsets[v] * 512, SEEK_SET);
+			size_t  sz = fread( &img[v * bytesPerVolume], 1, bytesPerVolume, f);
+		}
+		if ((swapEndian) && (bytesPerVoxel == 2)) nifti_swap_2bytes(ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * num_vol, img);
+		if ((swapEndian) && (bytesPerVoxel == 4)) nifti_swap_4bytes(ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * num_vol, img);
+	}
 	printWarning("ECAT support VERY experimental (Spatial transforms unknown)\n");
     free (imgOffsets);
+    free(imgSlopes);
     fclose(f);
     //fill DICOM header
-    //printMessage("%d\n", mhdr.scan_start_time);
     float timeBetweenVolumes = ihdr.frame_duration;
     if (num_vol > 1)
     	timeBetweenVolumes = (float)(ihdrN.frame_start_time- ihdr.frame_start_time)/(float)(num_vol-1);
@@ -311,14 +345,17 @@ PACK( typedef struct {
     	printMessage(" Isotope halflife %gs\n", mhdr.isotope_halflife);
     	printMessage(" Radiopharmaceutical '%s'\n", dcm->procedureStepDescription);
     	printMessage(" Dosage %gbequerels/cc\n", mhdr.dosage);
-    	printMessage(" Scale factor %12.12g\n", ihdr.scale_factor);
-    	printMessage(" ECAT calibration factor %8.12g\n", mhdr.ecat_calibration_factor);
+    	if (!isScaleFactorVaries) {
+    		printMessage(" Scale factor %12.12g\n", ihdr.scale_factor);
+    		printMessage(" ECAT calibration factor %8.12g\n", mhdr.ecat_calibration_factor);
+    	}
     	printMessage(" NIfTI scale slope %12.12g\n",ihdr.scale_factor * mhdr.ecat_calibration_factor);
     }
 	dcm->manufacturer = kMANUFACTURER_SIEMENS;
 	//dcm->manufacturersModelName = itoa(mhdr.system_type);
 	sprintf(dcm->manufacturersModelName, "%d", mhdr.system_type);
     dcm->bitsAllocated = bytesPerVoxel * 8;
+    if (isScaleFactorVaries) dcm->isFloat = true;
     dcm->bitsStored = 15; //ensures 16-bit images saved as INT16 not UINT16
 	dcm->samplesPerPixel = 1;
 	dcm->xyzMM[1] = ihdr.x_pixel_size * 10.0; //cm -> mm
@@ -329,22 +366,15 @@ PACK( typedef struct {
 	dcm->xyzDim[2] = ihdr.y_dimension;
 	dcm->xyzDim[3] = ihdr.z_dimension;
     dcm->xyzDim[4] = num_vol;
-    //these next lines prevent headerDcm2Nii from generating warnings
-    dcm->orient[1] = 1.0;
-    dcm->orient[5] = 1.0;
-    dcm->CSA.sliceNormV[3] = -1.0;
-    dcm->CSA.mosaicSlices = 4;
-    for (int i = 0; i < 4; i++)
-    	dcm->patientPosition[i] = 0.0;
-    //now we can create a NIfTI header
-	headerDcm2Nii(*dcm, hdr);
-	//here we mimic SPM
-    hdr->srow_x[0]=-hdr->pixdim[1];hdr->srow_x[1]=0.0f;hdr->srow_x[2]=0.0f;
-    hdr->srow_x[3]=((float)dcm->xyzDim[1]-2.0)/2.0*dcm->xyzMM[1];
-    hdr->srow_y[0]=0.0f;hdr->srow_y[1]=-hdr->pixdim[2];hdr->srow_y[2]=0.0f;
-    hdr->srow_y[3]=((float)dcm->xyzDim[2]-2.0)/2.0*dcm->xyzMM[2];
-    hdr->srow_z[0]=0.0f;hdr->srow_z[1]=0.0f;hdr->srow_z[2]=-hdr->pixdim[3];
-    hdr->srow_z[3]=((float)dcm->xyzDim[3]-2.0)/2.0*dcm->xyzMM[3];
+    //create a NIfTI header
+	headerDcm2Nii(*dcm, hdr, false);
+	//here we mimic SPM's spatial starting estimate SForm
+	mat44 m44;
+	LOAD_MAT44(m44, -hdr->pixdim[1], 0.0f, 0.0f, ((float)dcm->xyzDim[1]-2.0)/2.0*dcm->xyzMM[1],
+		0.0f, -hdr->pixdim[2], 0.0f, ((float)dcm->xyzDim[2]-2.0)/2.0*dcm->xyzMM[2],
+		0.0f, 0.0f, -hdr->pixdim[3], ((float)dcm->xyzDim[3]-2.0)/2.0*dcm->xyzMM[3]);
+	setQSForm(hdr, m44, false);
+	//make sure image does not include a spatial matrix
 	bool isMatrix = false;
 	for (int i = 0; i < 9; i++)
 		if (ihdr.mtx[i] != 0.0) isMatrix = true;
@@ -359,7 +389,7 @@ int  convert_foreign (const char *fn, struct TDCMopts opts){
 	struct nifti_1_header hdr;
 	struct TDICOMdata dcm = clear_dicom_data();
 	unsigned char * img = NULL;
-	img = readEcat7(fn, &dcm, &hdr, opts, true); //false: silent, do not report if file is not ECAT format
+	img = readEcat7(fn, &dcm, &hdr, opts, false); //false: silent, do not report if file is not ECAT format
 	if (!img) return EXIT_FAILURE;
 	char niiFilename[1024];
 	int ret = nii_createFilename(dcm, niiFilename, opts);

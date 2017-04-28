@@ -1159,7 +1159,7 @@ float dcmStrFloat (int lByteLength, unsigned char lBuffer[]) { //read float stor
 	return ret;
 } //dcmStrFloat()
 
-int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
+int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeSForm) {
     //printMessage("bytes %dx%dx%d %d, %d\n",d.XYZdim[1],d.XYZdim[2],d.XYZdim[3], d.Allocbits_per_pixel, d.samplesPerPixel);
 	memset(h, 0, sizeof(nifti_1_header)); //zero-fill structure so unused items are consistent
     for (int i = 0; i < 80; i++) h->descrip[i] = 0;
@@ -1252,7 +1252,8 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h) {
     h->pixdim[0] = 1; //QFactor should be 1 or -1
     h->sizeof_hdr = 348; //used to signify header does not need to be byte-swapped
     h->slice_code = d.CSA.sliceOrder;
-    headerDcm2Nii2(d, d, h);
+    if (isComputeSForm)
+    	headerDcm2Nii2(d, d, h);
     return EXIT_SUCCESS;
 } // headerDcm2Nii()
 
@@ -2395,7 +2396,7 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
 
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
-    if (headerDcm2Nii(dcm, hdr) == EXIT_FAILURE) return NULL;
+    if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE) return NULL; //TOFU
     unsigned char * img;
     if (dcm.compressionScheme == kCompress50)  {
     	#ifdef myDisableClassicJPEG
