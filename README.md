@@ -11,8 +11,11 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
+Development
+ - Remove all derived images from [Philips DTI series](http://www.nitrc.org/forum/message.php?msg_id=21025).
+
 28-April-2017
-- Experimental [ECAT support](https://github.com/rordenlab/dcm2niix/issues/95).
+ - Experimental [ECAT support](https://github.com/rordenlab/dcm2niix/issues/95).
  - Updated cmake to make JPEG2000 support easier with improved Travis and AppVeyor support [Ningfei Li](https://github.com/ningfei).
  - Supports Data/Time for images that report Data/Time (0008,002A) but not separate Date and Time (0008,0022 and 0008,0032).
  - [BIDS reports morning times correctly](http://www.nitrc.org/forum/message.php?msg_id=20852).

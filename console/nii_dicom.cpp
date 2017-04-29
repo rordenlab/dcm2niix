@@ -2651,7 +2651,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     	lPos = 128+4; //4-byte signature starts at 128
     	groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
     	if (groupElement != kStart)
-        	printMessage("DICOM appears corrupt: first group:element should be 0x0002:0x0000\n");
+        	printMessage("DICOM appears corrupt: first group:element should be 0x0002:0x0000 '%s'\n",  fname);
     }
     char vr[2];
     //float intenScalePhilips = 0.0;

@@ -37,7 +37,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
- #define kDCMvers "v1.0.20170428" kDCMsuf kCCsuf
+ #define kDCMvers "v1.0.20170429" kDCMsuf kCCsuf
 
 static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
 #define kDICOMStr 64

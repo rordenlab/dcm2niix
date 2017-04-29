@@ -493,14 +493,43 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }// nii_SaveBIDS() step
 
-int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
-    //reports non-zero if last volumes should be excluded (e.g. philip stores an ADC maps)
+bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
+	return ((!isSameFloat(bvec.V[0],0.0f)) && //not a B-0 image
+    	((isSameFloat(bvec.V[1],0.0f)) && (isSameFloat(bvec.V[2],0.0f)) && (isSameFloat(bvec.V[3],0.0f)) ) );
+}
+
+unsigned char * removeADC(struct nifti_1_header *hdr, unsigned char *inImg, bool * isADC) {
+	int numVolOut = 0;
+	int numVolIn = hdr->dim[4];
+	int numVolBytes = hdr->dim[1]*hdr->dim[2]*hdr->dim[3]*(hdr->bitpix/8);
+	if ((!isADC) || (numVolIn < 1) || (numVolBytes < 1)) return inImg;
+	for (int i = 0; i < numVolIn; i++)
+		if (!isADC[i])
+			numVolOut++;
+	if (numVolOut < 1) return inImg;
+	//printMessage("Removing ADC maps, %d volumes reduced to %d\n", numVolIn, numVolOut);
+	unsigned char *outImg = (unsigned char *)malloc(numVolBytes * numVolOut);
+	int outPos = 0;
+	for (int i = 0; i < numVolIn; i++) {
+		if (!isADC[i]) {
+			memcpy(&outImg[outPos], &inImg[i * numVolBytes], numVolBytes); // dest, src, bytes
+            outPos += numVolBytes;
+		}
+	} //for each volume
+	free(isADC);
+	free(inImg);
+	hdr->dim[4] = numVolOut;
+	return outImg;
+} //removeADC()
+
+
+bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
+    //reports non-zero if any volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
-
-    if (numDti < 1) return false;
-    if ((numDti < 3) && (nConvert < 3)) return false;
+    if (numDti < 1) return NULL;
+    if ((numDti < 3) && (nConvert < 3)) return NULL;
     TDTI * vx = NULL;
     if (numDti > 2) {
         vx = (TDTI *)malloc(numDti * sizeof(TDTI));
@@ -516,10 +545,9 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
                 for (int v = 0; v < 4; v++) //for each vector+B-value
                     vx[numDti].V[v] = dcmList[dcmSort[i].indx].CSA.dtiV[v];  //dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
                 numDti++;
-
             } //for slices with repeats
         }//for each file
-        dcmList[indx0].CSA.numDti = numDti;
+        dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
     }
     bool bValueVaries = false;
     for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
@@ -533,13 +561,13 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         }
         if (!bVecVaries) {
                 free(vx);
-                return false;
+                return NULL;
         }
         for (int i = 1; i < numDti; i++)
                 printMessage("bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
         printWarning("No bvec/bval files created. Only one B-value reported for all volumes: %g\n",vx[0].V[0]);
         free(vx);
-        return false;
+        return NULL;
     }
     int firstB0 = -1;
     for (int i = 0; i < numDti; i++) //check if all bvalues match first volume
@@ -549,28 +577,37 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         }
     if (firstB0 < 0) printWarning("This diffusion series does not have a B0 (reference) volume\n");
     if (firstB0 > 0) printMessage("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", firstB0);
-	int numFinalADC = 0;
+	int numADC = 0;
+    bool * isADC = NULL;
     if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS) {
-        int i = numDti - 1;
-        while ((i > 0) && (!isSameFloat(vx[i].V[0],0.0f)) && //not a B-0 image
-                   ((isSameFloat(vx[i].V[1],0.0f)) &&
-                   (isSameFloat(vx[i].V[2],0.0f)) &&
-                   (isSameFloat(vx[i].V[3],0.0f)) ) ){//yet all vectors are zero!!!! must be ADC
-                numFinalADC++; //final volume is ADC map
-                numDti --; //remove final volume - it is a computed ADC map!
-                dcmList[indx0].CSA.numDti = numDti;
-                i --;
+    	isADC = (bool *)malloc(numDti * sizeof(bool));
+    	int o = 0; //output index
+        for (int i = 0; i < numDti; i++) {//check if all bvalues match first volume
+        	if (isADCnotDTI(vx[i])) {
+        	    isADC[i] = true;
+            	numADC++;
+            	printMessage("Volume %d is not a normal DTI image (ADC?)\n", i+1);
+            } else { //save output
+            	vx[o] = vx[i];
+            	isADC[i] = false;
+            	o++;
+            }
         } //
-        if (numFinalADC > 0)
-            printMessage("Note: final %d volumes appear to be ADC images that will be removed to allow processing\n", numFinalADC);
-        /*for (int i = 0; i < (numDti); i++) {
-            if ((!isSameFloat(vx[i].V[0],0.0f)) && //not a B-0 image
-                ((isSameFloat(vx[i].V[1],0.0f)) &&
-                 (isSameFloat(vx[i].V[2],0.0f)) &&
-                 (isSameFloat(vx[i].V[3],0.0f)) ) )
-                printWarning("Volume %d appears to be an ADC volume %g %g %g\n", i+1, vx[i].V[1], vx[i].V[2], vx[i].V[3]);
-
-        }*/
+        numDti = numDti - numADC;
+        dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
+        if (numADC > 0) {
+            printMessage("Note: %d volumes appear to be ADC images that will be removed to allow processing\n", numADC);
+        	if (numDti == 0) {
+        		printWarning("No bvec/bval files created: no volumes with bvecs applied \n");
+        		free(isADC);
+        		free(vx);
+        		return NULL;
+        	}
+        }
+        if (numADC == 0) { //no ADC images
+        	free(isADC);
+        	isADC = NULL;
+        }
     }
     // philipsCorrectBvecs(&dcmList[indx0]); //<- replaced by unified siemensPhilips solution
     geCorrectBvecs(&dcmList[indx0],sliceDir, vx);
@@ -598,7 +635,6 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
         for (int j = 0; j < 3; j++)
             bVectors[i+j*numDti] = vx[i].V[j+1];
     }
-
     // The image hasn't been created yet, so the attributes must be deferred
     ImageList *images = (ImageList *) opts.imageList;
     images->addDeferredAttribute("bValues", bValues);
@@ -611,7 +647,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     FILE *fp = fopen(txtname, "w");
     if (fp == NULL) {
         free(vx);
-        return numFinalADC;
+        return isADC;
     }
     for (int i = 0; i < (numDti-1); i++) {
         if (opts.isCreateBIDS) {
@@ -628,7 +664,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     fp = fopen(txtname, "w");
     if (fp == NULL) {
         free(vx);
-        return numFinalADC;
+        return isADC;
     }
     for (int v = 1; v < 4; v++) {
         for (int i = 0; i < (numDti-1); i++) {
@@ -643,7 +679,7 @@ int nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struc
     fclose(fp);
 #endif
     free(vx);
-    return numFinalADC;
+    return isADC;
 }// nii_SaveDTI()
 
 float sqr(float v){
@@ -1735,8 +1771,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0);
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
-    int numFinalADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
-    numFinalADC = numFinalADC; //simply to silence compiler warning when myNoSave defined
+    bool * isADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0);
@@ -1764,14 +1799,15 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if ((hdr0.dim[4] > 1) && (saveAs3D))
         returnCode = nii_saveNII3D(pathoutname, hdr0, imgM,opts);
     else {
-        if ((numFinalADC > 0) && (hdr0.dim[4] > (numFinalADC+1))) { //ADC maps can disrupt analysis: save a copy with the ADC map, and another without
+        if (isADC) { //ADC maps can disrupt analysis: save a copy with the ADC map, and another without
 #ifndef HAVE_R
             char pathoutnameADC[2048] = {""};
             strcat(pathoutnameADC,pathoutname);
             strcat(pathoutnameADC,"_ADC");
             nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
 #endif
-            hdr0.dim[4] = hdr0.dim[4]-numFinalADC;
+			imgM = removeADC(&hdr0, imgM, isADC);
+            //hdr0.dim[4] = hdr0.dim[4]-numFinalADC;
         };
 #ifndef HAVE_R
         returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts);
@@ -1940,6 +1976,15 @@ size_t fileBytes(const char * fname) {
     return fileLen;
 } //fileBytes()
 
+int strcicmp(char const *a, char const *b) //case insensitive compare
+{
+    for (;; a++, b++) {
+        int d = tolower(*a) - tolower(*b);
+        if (d != 0 || !*a)
+            return d;
+    }
+}// strcicmp()
+
 void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth, struct TDCMopts* opts ) {
     tinydir_dir dir;
     tinydir_open(&dir, path);
@@ -1957,7 +2002,9 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         else if (!file.is_reg) //ignore files "." and ".."
             ;
         else if ((strlen(file.name) < 1) || (file.name[0]=='.'))
-        	; //printf("skipping hidden file %s\n", file.name);
+        	; //printMessage("skipping hidden file %s\n", file.name);
+        else if ((strlen(file.name) == 8) && (strcicmp(file.name, "DICOMDIR") == 0))
+        	; //printMessage("skipping DICOMDIR\n");
         else if (isDICOMfile(filename) > 0) {
             if (nameList->numItems < nameList->maxItems) {
                 nameList->str[nameList->numItems]  = (char *)malloc(strlen(filename)+1);
@@ -2012,15 +2059,6 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
         printMessage("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
     return nConvert - nDuplicates;
 }// removeDuplicates()
-
-int strcicmp(char const *a, char const *b) //case insensitive compare
-{
-    for (;; a++, b++) {
-        int d = tolower(*a) - tolower(*b);
-        if (d != 0 || !*a)
-            return d;
-    }
-}// strcicmp()
 
 bool isExt (char *file_name, const char* ext) {
     char *p_extension;
