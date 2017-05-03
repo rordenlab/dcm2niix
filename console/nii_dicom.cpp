@@ -639,6 +639,10 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.sequenceVariant, "");
     strcpy(d.manufacturersModelName, "N/A");
     strcpy(d.procedureStepDescription, "");
+    strcpy(d.institutionName, "");
+    strcpy(d.institutionAddress, "");
+    strcpy(d.deviceSerialNumber, "");
+    strcpy(d.softwareVersions, "");
     strcpy(d.seriesInstanceUID, "");
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
@@ -2546,6 +2550,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 )
 #define  kManufacturer 0x0008+(0x0070 << 16 )
+#define  kInstitutionName 0x0008+(0x0080 << 16 )
+#define  kInstitutionAddress 0x0008+(0x0081 << 16 )
 #define  kSeriesDescription 0x0008+(0x103E << 16 ) // '0008' '103E' 'LO' 'SeriesDescription'
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
@@ -2565,6 +2571,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kMagneticFieldStrength  0x0018+(0x0087 << 16 ) //DS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
+#define  kDeviceSerialNumber  0x0018+(0x1000 << 16 ) //LO
+#define  kSoftwareVersions  0x0018+(0x1020 << 16 ) //LO
 #define  kProtocolName  0x0018+(0x1030<< 16 )
 #define  kRadionuclideTotalDose  0x0018+(0x1074<< 16 )
 #define  kRadionuclideHalfLife  0x0018+(0x1075<< 16 )
@@ -2834,6 +2842,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kManufacturer:
                 d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
                 break;
+            case kInstitutionName:
+            	dcmStr(lLength, &buffer[lPos], d.institutionName);
+            	break;
+            case kInstitutionAddress:
+            	dcmStr(lLength, &buffer[lPos], d.institutionAddress);
+            	break;
             case 	kComplexImageComponent:
                 d.isHasPhase = (buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H');
                 d.isHasMagnitude = (buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A');
@@ -2865,6 +2879,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 dcmStr (lLength, &buffer[lPos], derivationDescription);//strcasecmp, strcmp
                 if (strcasecmp(derivationDescription, "MEDCOM_RESAMPLED") == 0) d.isResampled = true;
                 break;
+            }
+            case kDeviceSerialNumber : {
+            	dcmStr (lLength, &buffer[lPos], d.deviceSerialNumber);
+            	break;
+            }
+            case kSoftwareVersions : {
+            	dcmStr (lLength, &buffer[lPos], d.softwareVersions);
+            	break;
             }
             case kProtocolName : {
                 //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE

@@ -366,6 +366,14 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		if (strlen(d.studyInstanceUID) > 0)
 			fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
 	}
+	if (strlen(d.institutionName) > 0)
+		fprintf(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName );
+	if (strlen(d.institutionAddress) > 0)
+		fprintf(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionAddress );
+	if (strlen(d.deviceSerialNumber) > 0)
+		fprintf(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber );
+	if (strlen(d.softwareVersions) > 0)
+		fprintf(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions );
 	if (strlen(d.procedureStepDescription) > 0)
 		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
 	if (strlen(d.scanningSequence) > 0)
@@ -443,6 +451,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (d.TI > 0.0) fprintf(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
     if (d.ecat_isotope_halflife > 0.0) fprintf(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
     if (d.ecat_dosage > 0.0) fprintf(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
+    //fprintf(fp, "\t\"XXXX\": %g,\n", d.CSA.bandwidthPerPixelPhaseEncode );
     if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		float dwellTime = 0.0f;
 		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter

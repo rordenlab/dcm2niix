@@ -401,4 +401,4 @@ int  convert_foreign (const char *fn, struct TDCMopts opts){
 	ret = nii_saveNII(niiFilename, hdr, img, opts);
 	free(img);
     return ret;
-}// open_foreign()
+}// convert_foreign()
