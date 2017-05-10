@@ -48,7 +48,7 @@
 */
 
 void strClean(char * cString) {
-	int len = strlen(cString);
+	int len = (int)strlen(cString);
 	if (len < 1) return;
 	for (int i = 0; i < len; i++) {
 		char c = cString[i];
@@ -304,6 +304,10 @@ PACK( typedef struct {
 		for (int v = 0; v < num_vol; v++) {
 			fseek(f, imgOffsets[v] * 512, SEEK_SET);
 			size_t  sz = fread( &img[v * bytesPerVolume], 1, bytesPerVolume, f);
+            if (sz != bytesPerVolume) {
+                free(img);
+                return NULL;
+            }
 		}
 		if ((swapEndian) && (bytesPerVoxel == 2)) nifti_swap_2bytes(ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * num_vol, img);
 		if ((swapEndian) && (bytesPerVoxel == 4)) nifti_swap_4bytes(ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * num_vol, img);

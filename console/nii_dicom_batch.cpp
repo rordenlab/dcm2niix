@@ -366,6 +366,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		if (strlen(d.studyInstanceUID) > 0)
 			fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
 	}
+	if (d.isNonImage) //DICOM is derived image or non-spatial file (sounds, etc)
+		fprintf(fp, "\t\"RawImage\": false,\n");
+	if (d.acquNum > 0)
+		fprintf(fp, "\t\"AcquisitionNumber\": %d,\n", d.acquNum);
 	if (strlen(d.institutionName) > 0)
 		fprintf(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName );
 	if (strlen(d.institutionAddress) > 0)
@@ -878,7 +882,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 				sprintf(newstr, "%d", dcm.acquNum);
 				strcat (outname,newstr);
 				#else
-    			printWarning("Ignoring '%%f' in output filename (recompile to segment by acquisition)\n");
+    			printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
     			#endif
 			}
             if (f == 'Z')
