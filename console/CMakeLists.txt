@@ -111,6 +111,11 @@ if(BATCH_VERSION)
         target_link_libraries(dcm2niibatch z)
     endif()
 
+    if(TurboJPEG_FOUND)
+        target_include_directories(dcm2niibatch PRIVATE ${TurboJPEG_INCLUDE_DIRS})
+        target_link_libraries(dcm2niibatch ${TurboJPEG_LIBRARIES})
+    endif()
+
     if(JASPER_FOUND)
         target_link_libraries(dcm2niibatch ${JASPER_LIBRARIES})
     else()
