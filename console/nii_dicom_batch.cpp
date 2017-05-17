@@ -817,6 +817,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     int pos = 0;
     bool isCoilReported = false;
     bool isEchoReported = false;
+    bool isSeriesReported = false;
     while (pos < strlen(inname)) {
         if (inname[pos] == '%') {
             if (pos > start) {
@@ -872,6 +873,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'S') {
                 sprintf(newstr, "%ld", dcm.seriesNum);
                 strcat (outname,newstr);
+                isSeriesReported = true;
             }
             if (f == 'T') {
                 sprintf(newstr, "%0.0f", dcm.dateTime);
@@ -905,11 +907,12 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         sprintf(newstr, "_c%d", dcm.coilNum);
         strcat (outname,newstr);
     }
-    if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum == 1)) {
+    if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
+        isEchoReported = true;
     }
-    if ((!isEchoReported) && (dcm.echoNum > 1)) {
+    if ((!isSeriesReported) && (!isEchoReported) && (dcm.echoNum > 1)) { //last resort: user provided no method to disambiguate echo number in filename
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
     }
@@ -1901,8 +1904,9 @@ TWarnings setWarnings() {
 	return r;
 }
 
-bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSameSeries,struct TWarnings* warnings) {
+bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSameSeries, struct TWarnings* warnings, bool *isMultiEcho) {
     //returns true if d1 and d2 should be stacked together as a single output
+    *isMultiEcho = false;
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
 	if (d1.seriesNum != d2.seriesNum) return false;
@@ -1921,7 +1925,11 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
         warnings->bitDepthVaries = true;
         return false;
     }
-    if (isForceStackSameSeries) return true; //we will stack these images, even if they differ in the following attributes
+    if (isForceStackSameSeries) {
+    	if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum))
+    		*isMultiEcho = true;
+    	return true; //we will stack these images, even if they differ in the following attributes
+    }
     if (!isSameFloatDouble(d1.dateTime, d2.dateTime)) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
     		printMessage("slices not stacked: Study Data/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
@@ -1934,6 +1942,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
         if ((!warnings->echoVaries) && (!d1.isXRay)) //for MRI
         	printMessage("slices not stacked: echo varies (TE %g, %g; echo %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         warnings->echoVaries = true;
+        *isMultiEcho = true;
         return false;
     }
     if (d1.coilNum != d2.coilNum) {
@@ -2221,20 +2230,18 @@ int nii_loadDir(struct TDCMopts* opts) {
         firstSeries.representativeData = dcmList[0];
         firstSeries.files.push_back(nameList.str[0]);
         opts->series.push_back(firstSeries);
-
         // Iterate over the remaining files
         for (size_t i = 1; i < nDcm; i++) {
             bool matched = false;
-
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
-                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts->isForceStackSameSeries, &warnings)) {
+                bool isMultiEchoUnused;
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts->isForceStackSameSeries, &warnings, &isMultiEchoUnused)) {
                     opts->series[j].files.push_back(nameList.str[i]);
                     matched = true;
                     break;
                 }
             }
-
             // If not, create a new series object
             if (!matched) {
                 TDicomSeries nextSeries;
@@ -2253,18 +2260,22 @@ int nii_loadDir(struct TDCMopts* opts) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
 			struct TWarnings warnings = setWarnings();
+			bool isMultiEcho;
 			for (int j = i; j < nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings) )
+				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings, &isMultiEcho ) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
 			for (int j = i; j < nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings)) {
+				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings, &isMultiEcho)) {
 					dcmSort[nConvert].indx = j;
 					dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32) + dcmList[j].imageNum;
 					dcmList[j].converted2NII = 1;
 					nConvert++;
+				} else {
+					dcmList[i].isMultiEcho = isMultiEcho;
+					dcmList[j].isMultiEcho = isMultiEcho;
 				}
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
 			if (opts->isVerbose)
