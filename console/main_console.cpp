@@ -119,7 +119,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf(" Examples :\n");
     printf("  %s /Users/chris/dir\n", cstr);
     printf("  %s -o /users/cr/outdir/ -z y ~/dicomdir\n", cstr);
-    printf("  %s -f %%pp_%%s -b y -ba n ~/dicomdir\n", cstr);
+    printf("  %s -f %%p_%%s -b y -ba n ~/dicomdir\n", cstr);
     printf("  %s -f mystudy%%s ~/dicomdir\n", cstr);
     printf("  %s -o \"~/dir with spaces/dir\" ~/dicomdir\n", cstr);
 #endif

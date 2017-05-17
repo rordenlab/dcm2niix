@@ -905,7 +905,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         sprintf(newstr, "_c%d", dcm.coilNum);
         strcat (outname,newstr);
     }
-    if (!isEchoReported && (dcm.echoNum > 1)) {
+    if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum == 1)) {
+        sprintf(newstr, "_e%d", dcm.echoNum);
+        strcat (outname,newstr);
+    }
+    if ((!isEchoReported) && (dcm.echoNum > 1)) {
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
     }
@@ -2212,7 +2216,6 @@ int nii_loadDir(struct TDCMopts* opts) {
 #ifdef HAVE_R
     if (opts->isScanOnly) {
         TWarnings warnings = setWarnings();
-
         // Create the first series from the first DICOM file
         TDicomSeries firstSeries;
         firstSeries.representativeData = dcmList[0];
@@ -2254,14 +2257,8 @@ int nii_loadDir(struct TDCMopts* opts) {
 				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
-
-//#ifdef _MSC_VER
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
-//#else
-//			struct TDCMsort dcmSort[nConvert];
-//#endif
 			nConvert = 0;
-			//warnings = setWarnings();
 			for (int j = i; j < nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings)) {
 					dcmSort[nConvert].indx = j;
@@ -2276,9 +2273,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 				nConvert = removeDuplicates(nConvert, dcmSort);
 			nConvertTotal += nConvert;
 			saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
-//#ifdef _MSC_VER
 			free(dcmSort);
-//#endif
 		}//convert all images of this series
     }
 #ifdef HAVE_R

@@ -688,6 +688,7 @@ struct TDICOMdata clear_dicom_data() {
     d.samplesPerPixel = 1;
     d.isValid = false;
     d.isXRay = false;
+    d.isMultiEcho = false;
     d.isSigned = false; //default is unsigned!
     d.isFloat = false; //default is for integers, not single or double precision
     d.isResampled = false; //assume data not resliced to remove gantry tilt problems
