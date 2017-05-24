@@ -2400,10 +2400,10 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false;
     opts->isCreateBIDS =  true;
-    #ifdef isAnonymizeBIDS
-    opts->isAnonymizeBIDS = true;
-    #else
+    #ifdef myNoAnonymizeBIDS
     opts->isAnonymizeBIDS = false;
+    #else
+    opts->isAnonymizeBIDS = true;
     #endif
     opts->isCreateText = false;
 #ifdef myDebug
