@@ -404,6 +404,36 @@ int readKey(const char * key,  char * buffer, int remLength) { //look for text k
 	return ret;
 } //readKey()
 
+int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
+    //returns offset to ASCII Phoenix data
+    if (lLength < 36) return 0;
+    if ((buff[0] != 'S') || (buff[1] != 'V') || (buff[2] != '1') || (buff[3] != '0') ) return EXIT_FAILURE;
+    int lPos = 8; //skip 8 bytes of data, 'SV10' plus  2 32-bit values unused1 and unused2
+    int lnTag = buff[lPos]+(buff[lPos+1]<<8)+(buff[lPos+2]<<16)+(buff[lPos+3]<<24);
+    if ((buff[lPos+4] != 77) || (lnTag < 1)) return 0;
+    lPos += 8; //skip 8 bytes of data, 32-bit lnTag plus 77 00 00 0
+    TCSAtag tagCSA;
+    TCSAitem itemCSA;
+    for (int lT = 1; lT <= lnTag; lT++) {
+        memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
+        //if (!littleEndianPlatform())
+        //    nifti_swap_4bytes(1, &tagCSA.nitems);
+        //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
+        lPos +=sizeof(tagCSA);
+
+        if (strcmp(tagCSA.name, "MrPhoenixProtocol") == 0)
+        	return lPos;
+        for (int lI = 1; lI <= tagCSA.nitems; lI++) {
+                memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+                lPos +=sizeof(itemCSA);
+                //if (!littleEndianPlatform())
+                //    nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+                lPos += ((itemCSA.xx2_Len +3)/4)*4;
+        }
+    }
+    return 0;
+} // phoenixOffsetCSASeriesHeader()
+
 int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, int* echoSpacing, int* echoTrainDuration) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
@@ -423,18 +453,30 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
 	if(buffer == NULL) return 0;
 	size_t result = fread (buffer,1,csaLength,pFile);
 	if(result != csaLength) return 0;
+	//next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
+	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
+	int csaLengthTrim = csaLength;
+	char * bufferTrim = buffer;
+	if ((startAscii > 0) && (startAscii < csaLengthTrim) ){ //ignore binary data at start
+		bufferTrim += startAscii;
+		csaLengthTrim -= startAscii;
+	}
 	int ret = 0;
 	int EPIfactor = 0;
 	char keyStr[] = "### ASCCONV BEGIN"; //skip to start of ASCII often "### ASCCONV BEGIN ###" but also "### ASCCONV BEGIN object=MrProtDataImpl@MrProtocolData"
-	char *keyPos = (char *)memmem(buffer, csaLength, keyStr, strlen(keyStr));
+	char *keyPos = (char *)memmem(bufferTrim, csaLengthTrim, keyStr, strlen(keyStr));
 	if (keyPos) {
-		int remLength = csaLength - (keyPos-buffer);
+		csaLengthTrim -= (keyPos-bufferTrim);
+		char keyStrEnd[] = "### ASCCONV END";
+		char *keyPosEnd = (char *)memmem(keyPos, csaLengthTrim, keyStrEnd, strlen(keyStrEnd));
+		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
+			csaLengthTrim = keyPosEnd - keyPos;
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
-		*echoSpacing  = readKey(keyStrES, keyPos, remLength);
+		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
-		*echoTrainDuration = readKey(keyStrETD, keyPos, remLength);
+		*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
 		char keyStrEF[] = "sFastImaging.lEPIFactor";
-		ret = readKey(keyStrEF, keyPos, remLength);
+		ret = readKey(keyStrEF, keyPos, csaLengthTrim);
 	}
 	fclose (pFile);
 	free (buffer);

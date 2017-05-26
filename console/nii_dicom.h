@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <string.h>
+#include <stdint.h>
 #include "nifti1_io_core.h"
 #ifndef HAVE_R
 #include "nifti1.h"
@@ -63,7 +64,33 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDTI4D {
         struct TDTI S[kMaxDTI4D];
     };
-
+#ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...
+    #pragma pack(2)
+    typedef struct {
+        char name[64]; //null-terminated
+        int32_t vm;
+        char vr[4]; //  possibly nul-term string
+        int32_t syngodt;//  ??
+        int32_t nitems;// number of items in CSA
+        int32_t xx;// maybe == 77 or 205
+    } TCSAtag; //Siemens csa tag structure
+    typedef struct {
+        int32_t xx1, xx2_Len, xx3_77, xx4;
+    } TCSAitem; //Siemens csa item structure
+    #pragma pack()
+#else
+    typedef struct __attribute__((packed)) {
+        char name[64]; //null-terminated
+        int32_t vm;
+        char vr[4]; //  possibly nul-term string
+        int32_t syngodt;//  ??
+        int32_t nitems;// number of items in CSA
+        int32_t xx;// maybe == 77 or 205
+    } TCSAtag; //Siemens csa tag structure
+    typedef struct __attribute__((packed)) {
+        int32_t xx1, xx2_Len, xx3_77, xx4;
+    } TCSAitem; //Siemens csa item structure
+#endif
     struct TCSAdata {
     	bool isPhaseMap;
         float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;

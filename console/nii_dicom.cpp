@@ -886,34 +886,6 @@ int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float 
 	return ret;
 } //dcmStrManufacturer
 
-#ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...
-    #pragma pack(2)
-    typedef struct {
-        char name[64]; //null-terminated
-        int32_t vm;
-        char vr[4]; //  possibly nul-term string
-        int32_t syngodt;//  ??
-        int32_t nitems;// number of items in CSA
-        int32_t xx;// maybe == 77 or 205
-    } TCSAtag; //Siemens csa tag structure
-    typedef struct {
-        int32_t xx1, xx2_Len, xx3_77, xx4;
-    } TCSAitem; //Siemens csa item structure
-    #pragma pack()
-#else
-    typedef struct __attribute__((packed)) {
-        char name[64]; //null-terminated
-        int32_t vm;
-        char vr[4]; //  possibly nul-term string
-        int32_t syngodt;//  ??
-        int32_t nitems;// number of items in CSA
-        int32_t xx;// maybe == 77 or 205
-    } TCSAtag; //Siemens csa tag structure
-    typedef struct __attribute__((packed)) {
-        int32_t xx1, xx2_Len, xx3_77, xx4;
-    } TCSAitem; //Siemens csa item structure
-#endif
-
 float csaMultiFloat (unsigned char buff[], int nItems, float Floats[], int *ItemsOK) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
     //if lnItems == 1, returns first item, if lnItems > 1 returns index of final successful conversion
