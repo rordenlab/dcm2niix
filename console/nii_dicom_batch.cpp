@@ -332,7 +332,58 @@ bool isDerived(struct TDICOMdata d) {
 		return true;
 }
 
-void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h) {
+int readKey(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
+	int ret = 0;
+	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
+	if (!keyPos) return 0;
+	int remLength2 = remLength - (keyPos-buffer);
+	int i = strlen(key);
+	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
+		if( keyPos[i] >= '0' && keyPos[i] <= '9' )
+			ret = (10 * ret) + keyPos[i] - '0';
+		i++;
+	}
+	return ret;
+} //readKey()
+
+int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, int* echoSpacing, int* echoTrainDuration) {
+ //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
+ // returns 0 if no value found
+ 	*echoSpacing = 0;
+ 	*echoTrainDuration = 0;
+ 	if ((csaOffset < 0) || (csaLength < 8)) return 0;
+	FILE * pFile = fopen ( filename, "rb" );
+	if(pFile==NULL) return 0;
+	fseek (pFile , 0 , SEEK_END);
+	long lSize = ftell (pFile);
+	if (lSize < (csaOffset+csaLength)) {
+		fclose (pFile);
+		return 0;
+	}
+	fseek(pFile, csaOffset, SEEK_SET);
+	char * buffer = (char*) malloc (csaLength);
+	if(buffer == NULL) return 0;
+	size_t result = fread (buffer,1,csaLength,pFile);
+	if(result != csaLength) return 0;
+	int ret = 0;
+	int EPIfactor = 0;
+	char keyStr[] = "### ASCCONV BEGIN"; //skip to start of ASCII often "### ASCCONV BEGIN ###" but also "### ASCCONV BEGIN object=MrProtDataImpl@MrProtocolData"
+	char *keyPos = (char *)memmem(buffer, csaLength, keyStr, strlen(keyStr));
+	if (keyPos) {
+		int remLength = csaLength - (keyPos-buffer);
+		char keyStrES[] = "sFastImaging.lEchoSpacing";
+		*echoSpacing  = readKey(keyStrES, keyPos, remLength);
+		char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
+		*echoTrainDuration = readKey(keyStrETD, keyPos, remLength);
+		char keyStrEF[] = "sFastImaging.lEPIFactor";
+		ret = readKey(keyStrEF, keyPos, remLength);
+	}
+	fclose (pFile);
+	free (buffer);
+	return ret;
+}
+
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
 // sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
@@ -365,6 +416,19 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID );
 		if (strlen(d.studyInstanceUID) > 0)
 			fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
+	}
+	//printMessage("%d %d %s\n", d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, filename);
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0) &&
+	    (strlen(d.scanningSequence) > 1) && (d.scanningSequence[0] == 'E') && (d.scanningSequence[1] == 'P')) { //for EPI scans only
+		int echoSpacing, echoTrainDuration, epiFactor;
+		epiFactor = siemensEchoEPIFactor(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration);
+		//printMessage("ES %d ETD %d EPI %d\n", echoSpacing, echoTrainDuration, epiFactor);
+		if (echoSpacing > 0)
+			 fprintf(fp, "\t\"EchoSpacing\": %d,\n", echoSpacing);
+		if (echoTrainDuration > 0)
+			 fprintf(fp, "\t\"EchoTrainDuration\": %d,\n", echoTrainDuration);
+		if (epiFactor > 0)
+			 fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 	}
 	if (d.isNonImage) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
@@ -504,7 +568,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	//fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
     fprintf(fp, "}\n");
     fclose(fp);
-}// nii_SaveBIDS() step
+}// nii_SaveBIDS()
 
 bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
 	return ((!isSameFloat(bvec.V[0],0.0f)) && //not a B-0 image
@@ -903,6 +967,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         } //found a % character
         pos++;
     } //for each character in input
+    if (pos > start) { //append any trailing characters
+        strncpy(&newstr[0], &inname[0] + start, pos - start);
+        newstr[pos - start] = '\0';
+        strcat (outname,newstr);
+    }
     if (!isCoilReported && (dcm.coilNum > 1)) {
         sprintf(newstr, "_c%d", dcm.coilNum);
         strcat (outname,newstr);
@@ -918,11 +987,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     }
     if (dcm.isHasPhase)
     	strcat (outname,"_ph"); //manufacturer name not available
-    if (pos > start) { //append any trailing characters
-        strncpy(&newstr[0], &inname[0] + start, pos - start);
-        newstr[pos - start] = '\0';
-        strcat (outname,newstr);
-    }
+
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
@@ -1675,7 +1740,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
                 nConvert = siemensCtKludge(nConvert, dcmSort,dcmList);
             }
             if ((nAcq == 1 ) && (dcmList[indx0].locationsInAcquisition > 0)) nAcq = nConvert/dcmList[indx0].locationsInAcquisition;
-
             if (nAcq < 2 ) {
                 nAcq = 0;
                 for (int i = 0; i < nConvert; i++)
@@ -1789,7 +1853,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
-    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0);
+    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
     bool * isADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);

@@ -401,7 +401,7 @@ int  convert_foreign (const char *fn, struct TDCMopts opts){
 	if (ret != EXIT_SUCCESS) return ret;
 	struct TDTI4D dti4D;
 	dti4D.S[0].sliceTiming = -1.0;
-	nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr);
+	nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
 	ret = nii_saveNII(niiFilename, hdr, img, opts);
 	free(img);
     return ret;

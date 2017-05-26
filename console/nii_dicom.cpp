@@ -709,6 +709,8 @@ struct TDICOMdata clear_dicom_data() {
     d.CSA.phaseEncodingDirectionPositive = -1; //unknown
     d.CSA.isPhaseMap = false;
     d.CSA.multiBandFactor = 1;
+    d.CSA.SeriesHeader_offset = 0;
+    d.CSA.SeriesHeader_length = 0;
     return d;
 } //clear_dicom_data()
 
@@ -2572,6 +2574,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kMagneticFieldStrength  0x0018+(0x0087 << 16 ) //DS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
+//#define  kEchoTrainLength  0x0018+(0x0091 << 16 ) //IS
 #define  kDeviceSerialNumber  0x0018+(0x1000 << 16 ) //LO
 #define  kSoftwareVersions  0x0018+(0x1020 << 16 ) //LO
 #define  kProtocolName  0x0018+(0x1030<< 16 )
@@ -2612,6 +2615,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kSlope 0x0028+(0x1053 << 16 )
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
+#define  kCSASeriesHeaderInfo 0x0029+(0x1020 << 16 )
     //#define  kObjectGraphics  0x0029+(0x1210 << 16 )    //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
 #define  kProcedureStepDescription 0x0040+(0x0254 << 16 )
 #define  kRealWorldIntercept  0x0040+uint32_t(0x9224 << 16 ) //IS dicm2nii's SlopInt_6_9
@@ -3024,6 +3028,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kPhaseEncodingSteps :
                 phaseEncodingSteps =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
+            //case kEchoTrainLength :
+            //	d.echoTrainLength  =  dcmStrInt(lLength, &buffer[lPos]);
+            //	printf(">>>>>>>>>>>>>>>> %d", d.echoTrainLength);
+            //	break;
             case kFlipAngle :
             	d.flipAngle = dcmStrFloat(lLength, &buffer[lPos]);
             	break;
@@ -3229,12 +3237,18 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
                 break;
             case 	kCSAImageHeaderInfo:
-                readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, dti4D);
+            	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, dti4D);
                 d.isHasPhase = d.CSA.isPhaseMap;
                 break;
                 //case kObjectGraphics:
                 //    printMessage("---->%d,",lLength);
                 //    break;
+            case kCSASeriesHeaderInfo:
+            	//printMessage("Series %d %d\n", lPos, lLength);
+            	if ((lPos + lLength) > fileLen) break;
+            	d.CSA.SeriesHeader_offset = lPos;
+            	d.CSA.SeriesHeader_length = lLength;
+            	break;
             case 	kRealWorldIntercept:
                 if (isSameFloat(0.0, d.intenIntercept)) //give precedence to standard value
                     d.intenIntercept = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);

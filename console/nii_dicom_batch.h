@@ -38,7 +38,7 @@ extern "C" {
     int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts);
     //void readIniFile (struct TDCMopts *opts);
     int nii_loadDir (struct TDCMopts *opts);
-    void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h);
+    void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename);
     int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts);
     void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts);
     //void findExe(char name[512], const char * argv[]);

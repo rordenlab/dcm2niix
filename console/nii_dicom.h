@@ -67,7 +67,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TCSAdata {
     	bool isPhaseMap;
         float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
-        int numDti, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
+        int numDti, SeriesHeader_offset, SeriesHeader_length, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
     };
     struct TDICOMdata {
         long seriesNum;
