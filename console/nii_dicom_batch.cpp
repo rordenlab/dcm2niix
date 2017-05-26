@@ -361,7 +361,7 @@ bool isDerived(struct TDICOMdata d) {
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
+const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
 	register char *cur, *last;
 	const char *cl = (const char *)l;
 	const char *cs = (const char *)s;
