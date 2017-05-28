@@ -381,14 +381,14 @@ const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
 			return cur;
 	return NULL;
 }
+//n.b. memchr returns "const void *" not "void *" for Windows C++ https://msdn.microsoft.com/en-us/library/d7zdhf37.aspx
 #endif //for systems without memmem
 
 int readKey(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
 	int ret = 0;
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
 	if (!keyPos) return 0;
-	int remLength2 = remLength - (keyPos-buffer);
-	int i = strlen(key);
+	int i = (int)strlen(key);
 	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
 		if( keyPos[i] >= '0' && keyPos[i] <= '9' )
 			ret = (10 * ret) + keyPos[i] - '0';
@@ -455,7 +455,6 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
 		csaLengthTrim -= startAscii;
 	}
 	int ret = 0;
-	int EPIfactor = 0;
 	char keyStr[] = "### ASCCONV BEGIN"; //skip to start of ASCII often "### ASCCONV BEGIN ###" but also "### ASCCONV BEGIN object=MrProtDataImpl@MrProtocolData"
 	char *keyPos = (char *)memmem(bufferTrim, csaLengthTrim, keyStr, strlen(keyStr));
 	if (keyPos) {
@@ -463,7 +462,7 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
 		char keyStrEnd[] = "### ASCCONV END";
 		char *keyPosEnd = (char *)memmem(keyPos, csaLengthTrim, keyStrEnd, strlen(keyStrEnd));
 		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
-			csaLengthTrim = keyPosEnd - keyPos;
+			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
@@ -523,6 +522,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		if (epiFactor > 0)
 			 fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 	}
+	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
+		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength);
 	if (d.isNonImage) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	if (d.acquNum > 0)
