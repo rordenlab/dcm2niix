@@ -640,10 +640,12 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.manufacturersModelName, "N/A");
     strcpy(d.procedureStepDescription, "");
     strcpy(d.institutionName, "");
+    strcpy(d.referringPhysicianName, "");
     strcpy(d.institutionAddress, "");
     strcpy(d.deviceSerialNumber, "");
     strcpy(d.softwareVersions, "");
     strcpy(d.seriesInstanceUID, "");
+    strcpy(d.studyID, "");
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
     d.patientPositionSequentialRepeats = 0;
@@ -2528,6 +2530,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kManufacturer 0x0008+(0x0070 << 16 )
 #define  kInstitutionName 0x0008+(0x0080 << 16 )
 #define  kInstitutionAddress 0x0008+(0x0081 << 16 )
+#define  kReferringPhysicianName 0x0008+(0x0090 << 16 )
 #define  kSeriesDescription 0x0008+(0x103E << 16 ) // '0008' '103E' 'LO' 'SeriesDescription'
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
@@ -2564,12 +2567,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
-#define  kStudyInstanceUID 0x0020+(0x000D << 16 )
-#define  kSeriesInstanceUID 0x0020+(0x000E << 16 )
-#define  kPatientPosition 0x0020+(0x0032 << 16 )
+#define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
 #define  kImageNum 0x0020+(0x0013 << 16 )
+#define  kStudyInstanceUID 0x0020+(0x000D << 16 )
+#define  kSeriesInstanceUID 0x0020+(0x000E << 16 )
+#define  kPatientPosition 0x0020+(0x0032 << 16 )
 #define  kOrientationACR 0x0020+(0x0035 << 16 )
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
@@ -2826,6 +2830,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kInstitutionAddress:
             	dcmStr(lLength, &buffer[lPos], d.institutionAddress);
             	break;
+            case kReferringPhysicianName:
+            	dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
+            	break;
             case 	kComplexImageComponent:
                 d.isHasPhase = (buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H');
                 d.isHasMagnitude = (buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A');
@@ -2933,6 +2940,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kInPlanePhaseEncodingDirection:
                 d.phaseEncodingRC = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
                 break;
+            case kStudyID:
+            	dcmStr (lLength, &buffer[lPos], d.studyID);
+            	break;
             case 	kSeriesNum:
                 d.seriesNum =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
@@ -2960,7 +2970,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 break;
             case 	kXYSpacing:
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
-
                 break;
             case 	kImageComments:
                 dcmStr (lLength, &buffer[lPos], d.imageComments);

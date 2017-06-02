@@ -78,10 +78,11 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
-    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%q=sequence number, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
+     #define kQstr " %%q=sequence number,"
     #else
-    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol, %%s=series number, %%t=time, %%u=acquisition number, %%z sequence name; default '%s')\n",opts.filename);
+     #define kQstr ""
     #endif
+    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%x study ID; %%z sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");

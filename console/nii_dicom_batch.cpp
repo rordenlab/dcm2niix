@@ -508,6 +508,15 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID );
 		if (strlen(d.studyInstanceUID) > 0)
 			fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
+		if (strlen(d.referringPhysicianName) > 0)
+			fprintf(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName );
+		if (strlen(d.studyID) > 0)
+			fprintf(fp, "\t\"StudyID\": \"%s\",\n", d.studyID );
+		//Next lines directly reveal patient identity
+		//if (strlen(d.patientName) > 0)
+		//	fprintf(fp, "\t\"PatientName\": \"%s\",\n", d.patientName );
+		//if (strlen(d.patientID) > 0)
+		//	fprintf(fp, "\t\"PatientID\": \"%s\",\n", d.patientID );
 	}
 	//printMessage("-->%d %d %s\n", d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, filename);
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0) &&
@@ -524,6 +533,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength);
+	if (d.echoNum > 1)
+		fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if (d.isNonImage) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	if (d.acquNum > 0)
@@ -1045,6 +1056,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     			printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
     			#endif
 			}
+			if (f == 'X')
+				strcat (outname,dcm.studyID);
             if (f == 'Z')
                 strcat (outname,dcm.sequenceName);
             if ((f >= '0') && (f <= '9')) {
