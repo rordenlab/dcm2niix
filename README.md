@@ -11,6 +11,11 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
+9-June-2017
+ -Report [TotalReadoutTime](https://github.com/rordenlab/dcm2niix/issues/98).
+ -Fix JPEG2000 support in [Superbuild](https://github.com/rordenlab/dcm2niix/issues/105).
+
+
 28-May-2017
  - Remove all derived images from [Philips DTI series](http://www.nitrc.org/forum/message.php?msg_id=21025).
  - Provide some [Siemens EPI sequence details](https://github.com/rordenlab/dcm2niix/issues).
