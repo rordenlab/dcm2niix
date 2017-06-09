@@ -637,7 +637,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.sequenceName, "");
     strcpy(d.scanningSequence, "");
     strcpy(d.sequenceVariant, "");
-    strcpy(d.manufacturersModelName, "N/A");
+    strcpy(d.manufacturersModelName, "");
     strcpy(d.procedureStepDescription, "");
     strcpy(d.institutionName, "");
     strcpy(d.referringPhysicianName, "");
@@ -648,6 +648,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.studyID, "");
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
+    d.phaseEncodingLines = 0;
     d.patientPositionSequentialRepeats = 0;
     d.isHasPhase = false;
     d.isHasMagnitude = false;
@@ -662,11 +663,14 @@ struct TDICOMdata clear_dicom_data() {
     d.TE = 0.0;
     d.TI = 0.0;
     d.flipAngle = 0.0;
+    d.bandwidthPerPixelPhaseEncode = 0.0;
     d.fieldStrength = 0.0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.echoTrainLength = 0;
+    d.phaseEncodingSteps = 0;
     d.coilNum = 1;
+    d.accelFactPE = 0.0;
     d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
     d.intenScale = 1;
@@ -724,7 +728,6 @@ void dcmStrDigitsOnly(char* lStr) {
     for (int i = 0; i < (int) len; i++)
         if (!isdigit(lStr[i]) )
             lStr[i] = ' ';
-
 }
 
 void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
@@ -966,11 +969,9 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
         lPos +=sizeof(tagCSA);
-
         // Storage order is always little-endian, so byte-swap required values if necessary
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &tagCSA.nitems);
-
         if (isVerbose > 1) //extreme verbosity: show every CSA tag
         	printMessage("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         if (tagCSA.nitems > 0) {
@@ -1091,6 +1092,15 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     }// for lT 1..lnTag
     return EXIT_SUCCESS;
 } // readCSAImageHeader()
+
+void dcmMultiShorts (int lByteLength, unsigned char lBuffer[], int lnShorts, uint16_t *lShorts, bool littleEndian) {
+//read array of unsigned shorts US http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
+    if ((lnShorts < 1) || (lByteLength != (lnShorts * 2))) return;
+    memcpy(&lShorts[0], (uint16_t *)&lBuffer[0], lByteLength);
+    bool swap = (littleEndian != littleEndianPlatform());
+    if (swap)
+    	nifti_swap_2bytes(lnShorts, &lShorts[0]);
+} //dcmMultiShorts()
 
 void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
@@ -2559,6 +2569,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kRadionuclidePositronFraction  0x0018+(0x1076<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kXRayExposure  0x0018+(0x1152  << 16 )
+#define  kAcquisitionMatrix  0x0018+(0x1310  << 16 ) //US
 #define  kFlipAngle  0x0018+(0x1314  << 16 )
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
@@ -2567,6 +2578,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
+#define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
@@ -2599,6 +2611,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
+#define  kImaPATModeText  0x0051+(0x1011 << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
 #define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
@@ -2656,7 +2669,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     bool is2005140FSQwarned = false; //for buggy Philips
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     bool isMosaic = false;
-    int phaseEncodingSteps = 0;
     int patientPositionNum = 0;
     int sqDepth = 0;
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
@@ -2753,7 +2765,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], transferSyntax);
-                //printMessage("transfer syntax '%s'\n", transferSyntax);
+                //printMessage("%d transfer syntax>>> '%s'\n", compressFlag, transferSyntax);
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
                 else if  (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
@@ -2900,6 +2912,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     d.CSA.numDti = 1;
                 }
                 break;
+        	case kBandwidthPerPixelPhaseEncode:
+        		d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+        		break;
             case kStudyInstanceUID :
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
@@ -3008,11 +3023,21 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kPhaseEncodingSteps :
-                phaseEncodingSteps =  dcmStrInt(lLength, &buffer[lPos]);
+                d.phaseEncodingSteps =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case kEchoTrainLength :
             	d.echoTrainLength  =  dcmStrInt(lLength, &buffer[lPos]);
-            //	printf(">>>>>>>>>>>>>>>> %d", d.echoTrainLength);
+            	break;
+        	case kAcquisitionMatrix :
+				if (lLength == 8) {
+                	uint16_t acquisitionMatrix[4];
+                	dcmMultiShorts(lLength, &buffer[lPos], 4, &acquisitionMatrix[0],d.isLittleEndian); //slice position
+            		//phaseEncodingLines stored in either image columns or rows
+            		if (acquisitionMatrix[3] > 0)
+            			d.phaseEncodingLines = acquisitionMatrix[3];
+            		if (acquisitionMatrix[2] > 0)
+            			d.phaseEncodingLines = acquisitionMatrix[2];
+            	}
             	break;
             case kFlipAngle :
             	d.flipAngle = dcmStrFloat(lLength, &buffer[lPos]);
@@ -3062,6 +3087,15 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                         d.coilNum = 0;
                 }
                 break; }
+            case kImaPATModeText : { //e.g. Siemens iPAT x2 listed as "p2"
+            	char accelStr[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], accelStr);
+                char *ptr;
+                dcmStrDigitsOnly(accelStr);
+                d.accelFactPE = (float)strtof(accelStr, &ptr);
+                if (*ptr != '\0')
+                	d.accelFactPE = 0.0;
+				break; }
             case 	kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
@@ -3292,7 +3326,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 
         } //switch/case for groupElement
         } //if nest
-        //#ifdef MY_DEBUG
         if (isVerbose > 1) {
         	if ((lLength > 12) && (lLength < 128)) { //if length is greater than 8 bytes (+4 hdr) the data must be a string [or image data]
         		char tagStr[kDICOMStr];
@@ -3311,7 +3344,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             } else
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
-        //#endif
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
     } //while d.imageStart == 0
@@ -3376,8 +3408,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
         d.isValid = false;
     }
-    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (isMosaic) && (d.CSA.mosaicSlices < 1) && (phaseEncodingSteps > 0) && ((d.xyzDim[1] % phaseEncodingSteps) == 0) && ((d.xyzDim[2] % phaseEncodingSteps) == 0) ) {
-    	d.CSA.mosaicSlices = (d.xyzDim[1] / phaseEncodingSteps) * (d.xyzDim[2] / phaseEncodingSteps);
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (isMosaic) && (d.CSA.mosaicSlices < 1) && (d.phaseEncodingSteps > 0) && ((d.xyzDim[1] % d.phaseEncodingSteps) == 0) && ((d.xyzDim[2] % d.phaseEncodingSteps) == 0) ) {
+    	d.CSA.mosaicSlices = (d.xyzDim[1] / d.phaseEncodingSteps) * (d.xyzDim[2] / d.phaseEncodingSteps);
     	printWarning("Mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
     }
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))

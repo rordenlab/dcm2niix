@@ -332,6 +332,11 @@ bool isDerived(struct TDICOMdata d) {
 		return true;
 }
 
+#ifdef myReadAsciiCsa
+//read from the ASCII portion of the Siemens CSA series header
+//  this is not recommended: poorly documented
+//  it is better to stick to the binary portion of the Siemens CSA image header
+
 #if defined(_WIN64) || defined(_WIN32)
 //https://opensource.apple.com/source/Libc/Libc-1044.1.2/string/FreeBSD/memmem.c
 /*-
@@ -475,6 +480,8 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
 	return ret;
 }
 
+#endif //myReadAsciiCsa
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
@@ -518,19 +525,20 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//if (strlen(d.patientID) > 0)
 		//	fprintf(fp, "\t\"PatientID\": \"%s\",\n", d.patientID );
 	}
-	//printMessage("-->%d %d %s\n", d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, filename);
+	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0) &&
 	    (strlen(d.scanningSequence) > 1) && (d.scanningSequence[0] == 'E') && (d.scanningSequence[1] == 'P')) { //for EPI scans only
 		int echoSpacing, echoTrainDuration, epiFactor;
 		epiFactor = siemensEchoEPIFactor(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration);
 		//printMessage("ES %d ETD %d EPI %d\n", echoSpacing, echoTrainDuration, epiFactor);
 		if (echoSpacing > 0)
-			 fprintf(fp, "\t\"EchoSpacing\": %d,\n", echoSpacing);
+			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
 		if (echoTrainDuration > 0)
-			 fprintf(fp, "\t\"EchoTrainDuration\": %d,\n", echoTrainDuration);
+			 fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		if (epiFactor > 0)
 			 fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 	}
+	#endif
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength);
 	if (d.echoNum > 1)
@@ -624,18 +632,38 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (d.TI > 0.0) fprintf(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
     if (d.ecat_isotope_halflife > 0.0) fprintf(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
     if (d.ecat_dosage > 0.0) fprintf(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
-    //fprintf(fp, "\t\"XXXX\": %g,\n", d.CSA.bandwidthPerPixelPhaseEncode );
-    if ((d.CSA.bandwidthPerPixelPhaseEncode > 0.0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
-		float dwellTime = 0.0f;
+    double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
+    int phaseEncodingLines = d.phaseEncodingLines;
+    if ((phaseEncodingLines == 0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
-			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
+			phaseEncodingLines = h->dim[2];
 		else if (d.phaseEncodingRC =='R')
-			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
+			phaseEncodingLines = h->dim[2];
 		else if (d.phaseEncodingRC =='C')
-			dwellTime =  1.0/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[1];
-		if (dwellTime != 0.0f) //as long as phase encoding = R or C or does not matter
-			fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", dwellTime );
+			phaseEncodingLines = h->dim[1];
     }
+    if (bandwidthPerPixelPhaseEncode == 0.0)
+    	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
+    if (phaseEncodingLines > 0.0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", phaseEncodingLines );
+    if (bandwidthPerPixelPhaseEncode > 0.0)
+    	fprintf(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
+    double effectiveEchoSpacing = 0.0;
+    if ((phaseEncodingLines > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+    	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * phaseEncodingLines) ;
+    if (effectiveEchoSpacing > 0.0)
+    		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
+    //FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
+    // to check: partial Fourier, iPAT, etc.
+	int fencePost = 1;
+    if (d.accelFactPE > 1.0)
+    	fencePost = (int)round(d.accelFactPE); //e.g. if 64 lines with iPAT=2, we want time from start of first until start of 62nd effective line
+    if ((d.phaseEncodingSteps > 1) && (effectiveEchoSpacing > 0.0))
+		fprintf(fp, "\t\"TotalReadoutDuration\": %g,\n", effectiveEchoSpacing * ((float)d.phaseEncodingSteps - fencePost));
+    if (d.accelFactPE > 1.0) {
+    		fprintf(fp, "\t\"AccelFactPE\": %g,\n", d.accelFactPE);
+    		if (effectiveEchoSpacing > 0.0)
+    			fprintf(fp, "\t\"TrueEchoSpacing\": %g,\n", effectiveEchoSpacing * d.accelFactPE);
+	}
 	bool first = 1;
 	if (dti4D->S[0].sliceTiming >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
