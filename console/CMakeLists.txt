@@ -80,6 +80,15 @@ if(USE_OPENJPEG)
     option(OpenJPEG_DIR "Path to OpenJPEG configuration file" "")
 
     find_package(OpenJPEG)
+
+    if(WIN32)
+        if(BUILD_SHARED_LIBS)
+            add_definitions(-DOPJ_EXPORTS)
+        else()
+            add_definitions(-DOPJ_STATIC)
+        endif()
+    endif()
+
     target_include_directories(dcm2niix PRIVATE ${OPENJPEG_INCLUDE_DIRS})
     target_link_libraries(dcm2niix ${OPENJPEG_LIBRARIES})
 else ()

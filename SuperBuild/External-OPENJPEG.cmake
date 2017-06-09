@@ -1,4 +1,4 @@
-set(OPENJPEG_TAG 151e322) # version openjepg-2.1
+set(OPENJPEG_TAG  v2.1-static) # version v2.1-static
 
 ExternalProject_Add(openjpeg
     GIT_REPOSITORY "${git_protocol}://github.com/ningfei/openjpeg.git"
