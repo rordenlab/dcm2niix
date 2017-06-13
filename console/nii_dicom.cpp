@@ -2467,14 +2467,12 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
 } //isDICOMfile()
 
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
-//struct TDICOMdata readDICOMv(char * fname, bool isVerbose, int compressFlag) {
 	struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //erase dummy with empty
     strcpy(d.protocolName, ""); //erase dummy with empty
     strcpy(d.seriesDescription, ""); //erase dummy with empty
     strcpy(d.sequenceName, ""); //erase dummy with empty
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
-
     struct stat s;
     if( stat(fname,&s) == 0 ) {
         if( !(s.st_mode & S_IFREG) ){
@@ -2501,31 +2499,40 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         printMessage( "File too small to be a DICOM image %s\n", fname);
 		return d;
 	}
+	//Since size of DICOM header is unknown, we will load it in 1mb segments
+	//This uses less RAM and makes is faster for computers with slow disk access
+	//Benefit is largest for 4D images.
+	//To disable caching and load entire file to RAM, compile with "-dmyLoadWholeFileToReadHeader"
+	//To implement the segments, we define these variables:
+	// fileLen = size of file in bytes
+	// MaxBufferSz = maximum size of buffer in bytes
+	// Buffer = array with n elements, where n is smaller of fileLen or MaxBufferSz
+	// lPos = position in Buffer (indexed from 0), 0..(n-1)
+	// lFileOffset = offset of Buffer in file: true file position is lOffset+lPos (initially 0)
+	#ifdef myLoadWholeFileToReadHeader
+	int MaxBufferSz = fileLen;
+	#else
+	int MaxBufferSz = 1000000; //ideally size of DICOM header, but this varies from 2D to 4D files
+	#endif
+	long lFileOffset = 0;
 	fseek(file, 0, SEEK_SET);
 	//Allocate memory
-	unsigned char *buffer=(unsigned char *)malloc(fileLen+1);
+	unsigned char *buffer=(unsigned char *)malloc(MaxBufferSz+1);
 	if (!buffer) {
 		printError( "Memory exhausted!");
         fclose(file);
 		return d;
 	}
 	//Read file contents into buffer
-	size_t sz = fread(buffer, 1, fileLen, file);
-	fclose(file);
-	if (sz < fileLen) {
-         printError("Only loaded %zu of %ld bytes for %s\n", sz, fileLen, fname);
+	size_t sz = fread(buffer, 1, MaxBufferSz, file);
+	if (sz < MaxBufferSz) {
+         printError("Only loaded %zu of %ld bytes for %s\n", sz, MaxBufferSz, fname);
+         fclose(file);
          return d;
     }
-	//bool isPart10prefix = true; //assume 132 byte header http://nipy.bic.berkeley.edu/nightly/nibabel/doc/dicom/dicom_intro.html
-    //if ((buffer[128] != 'D') || (buffer[129] != 'I')  || (buffer[130] != 'C') || (buffer[131] != 'M')) {
-    //    if ((buffer[0] != 8) || (buffer[1] != 0)  || (buffer[2] != 5) || (buffer[3] != 0)){
-    //		free (buffer);
-    //    	return d;
-    //	}
-    //	isPart10prefix = false; //no 132 byte header, not a valid part 10 file http://fileformats.archiveteam.org/wiki/DICOM
-    //	d.isExplicitVR = false;
-    //	//printWarning("Not a valid part 10 DICOM (missing 'DICM' signature): %s\n", fname);
-    //}
+	#ifdef myLoadWholeFileToReadHeader
+	fclose(file);
+	#endif
     //DEFINE DICOM TAGS
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
@@ -2674,7 +2681,17 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
-    while ((d.imageStart == 0) && ((lPos+8) <  fileLen)) {
+    while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
+    	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
+    	if ((lPos + 128) > MaxBufferSz) { //avoid overreading the file
+    		lFileOffset = lFileOffset + lPos;
+    		if ((lFileOffset+MaxBufferSz) > fileLen)
+    			MaxBufferSz = fileLen - lFileOffset;
+			fseek(file, lFileOffset, SEEK_SET);
+			size_t sz = fread(buffer, 1, MaxBufferSz, file);
+			lPos = 0;
+    	}
+    	#endif
         if (d.isLittleEndian)
             groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
         else
@@ -2695,8 +2712,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             vr[0] = 'N';
             vr[1] = 'A';
             if (groupElement == kUnnest2) sqDepth--;
-            //if (groupElement == kUnnest2) printMessage("SQend %d\n", sqDepth);
-
             //if (groupElement == kUnnest) geiisBug = false; //don't exit if there is a proprietary thumbnail
             lLength = 4;
         } else if (d.isExplicitVR) {
@@ -2754,7 +2769,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
             //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
             if (d.imageBytes > 128) {
-                d.imageStart = (int)lPos;
+                d.imageStart = (int)lPos + lFileOffset;
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
@@ -3300,7 +3315,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
-                    d.imageStart = (int)lPos;
+                    d.imageStart = (int)lPos + lFileOffset;
                 //geiisBug = false;
                 //http://www.dclunie.com/medical-image-faq/html/part6.html
                 //unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
@@ -3313,14 +3328,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kImageStartFloat:
                 d.isFloat = true;
                 if (!isIconImageSequence) //do not exit for proprietary thumbnails
-                    d.imageStart = (int)lPos;
+                    d.imageStart = (int)lPos + lFileOffset;
                 isIconImageSequence = false;
                 break;
             case 	kImageStartDouble:
                 printWarning("Double-precision DICOM conversion untested: please provide samples to developer\n");
                 d.isFloat = true;
                 if (!isIconImageSequence) //do not exit for proprietary thumbnails
-                    d.imageStart = (int)lPos;
+                    d.imageStart = (int)lPos + lFileOffset;
                 isIconImageSequence = false;
                 break;
 
@@ -3339,10 +3354,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
            					|| (tagStr[pos] == '*') || (tagStr[pos] == '|') || (tagStr[pos] == '?'))
             					tagStr[pos] = 'x';
 				}
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, tagStr);
+            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, tagStr);
             	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
             } else
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest);
+            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, nest);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
@@ -3451,6 +3466,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         d.CSA.numDti = 0;
     }
     //d.isValid = false; //debug only - will not create output!
+    #ifndef myLoadWholeFileToReadHeader
+	fclose(file);
+	#endif
+    //printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
     return d;
 } // readDICOM()
 
@@ -3458,6 +3477,4 @@ struct TDICOMdata readDICOM(char * fname) {
     TDTI4D unused;
     return readDICOMv(fname, false, 0, &unused);
 } // readDICOM()
-
-
 
