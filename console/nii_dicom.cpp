@@ -2510,9 +2510,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	// lPos = position in Buffer (indexed from 0), 0..(n-1)
 	// lFileOffset = offset of Buffer in file: true file position is lOffset+lPos (initially 0)
 	#ifdef myLoadWholeFileToReadHeader
-	int MaxBufferSz = fileLen;
+	size_t MaxBufferSz = fileLen;
 	#else
-	int MaxBufferSz = 1000000; //ideally size of DICOM header, but this varies from 2D to 4D files
+	size_t MaxBufferSz = 1000000; //ideally size of DICOM header, but this varies from 2D to 4D files
 	#endif
 	long lFileOffset = 0;
 	fseek(file, 0, SEEK_SET);
@@ -2526,7 +2526,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	//Read file contents into buffer
 	size_t sz = fread(buffer, 1, MaxBufferSz, file);
 	if (sz < MaxBufferSz) {
-         printError("Only loaded %zu of %ld bytes for %s\n", sz, MaxBufferSz, fname);
+         printError("Only loaded %zu of %zu bytes for %s\n", sz, MaxBufferSz, fname);
          fclose(file);
          return d;
     }
@@ -2689,6 +2689,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     			MaxBufferSz = fileLen - lFileOffset;
 			fseek(file, lFileOffset, SEEK_SET);
 			size_t sz = fread(buffer, 1, MaxBufferSz, file);
+			if (sz < MaxBufferSz) {
+         		printError("Only loaded %zu of %zu bytes for %s\n", sz, MaxBufferSz, fname);
+         		fclose(file);
+         		return d;
+    		}
 			lPos = 0;
     	}
     	#endif
@@ -2769,7 +2774,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
             //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
             if (d.imageBytes > 128) {
-                d.imageStart = (int)lPos + lFileOffset;
+                d.imageStart = (int)lPos + (int)lFileOffset;
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
@@ -3315,7 +3320,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
-                    d.imageStart = (int)lPos + lFileOffset;
+                    d.imageStart = (int)lPos + (int)lFileOffset;
                 //geiisBug = false;
                 //http://www.dclunie.com/medical-image-faq/html/part6.html
                 //unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
@@ -3328,14 +3333,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case 	kImageStartFloat:
                 d.isFloat = true;
                 if (!isIconImageSequence) //do not exit for proprietary thumbnails
-                    d.imageStart = (int)lPos + lFileOffset;
+                    d.imageStart = (int)lPos + (int)lFileOffset;
                 isIconImageSequence = false;
                 break;
             case 	kImageStartDouble:
                 printWarning("Double-precision DICOM conversion untested: please provide samples to developer\n");
                 d.isFloat = true;
                 if (!isIconImageSequence) //do not exit for proprietary thumbnails
-                    d.imageStart = (int)lPos + lFileOffset;
+                    d.imageStart = (int)lPos + (int)lFileOffset;
                 isIconImageSequence = false;
                 break;
 
