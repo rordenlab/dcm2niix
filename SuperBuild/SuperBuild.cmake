@@ -31,6 +31,14 @@ include(ExternalProject)
 
 set(DEPENDENCIES)
 
+option(INSTALL_DEPENDENCIES "Optionally install built dependent libraries (OpenJPEG and yaml-cpp) for future use." OFF)
+
+if(INSTALL_DEPENDENCIES)
+    set(DEP_INSTALL_DIR ${CMAKE_INSTALL_PREFIX})
+else()
+    set(DEP_INSTALL_DIR ${CMAKE_BINARY_DIR})
+endif()
+
 if(USE_OPENJPEG)
     message("-- Build with OpenJPEG: ${USE_OPENJPEG}")
 
@@ -78,6 +86,7 @@ ExternalProject_Add(console
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}
         -DUSE_STATIC_RUNTIME:BOOL=${USE_STATIC_RUNTIME}
         -DUSE_SYSTEM_ZLIB:BOOL=${USE_SYSTEM_ZLIB}
         -DUSE_SYSTEM_TURBOJPEG:BOOL=${USE_SYSTEM_TURBOJPEG}
@@ -88,22 +97,10 @@ ExternalProject_Add(console
         # yaml-cpp
         -DBATCH_VERSION:BOOL=${BATCH_VERSION}
         -DYAML-CPP_DIR:PATH=${YAML-CPP_DIR}
-        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}
 )
 
 install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin
         USE_SOURCE_PERMISSIONS)
-
-# Install dependent libraries for future use
-if(BUILD_OPENJPEG OR BUILD_YAML-CPP)
-    option(INSTALL_DEPENDENCIES "Optionally install dependent libraries (OpenJPEG and yaml-cpp) for future use." OFF)
-    if(INSTALL_DEPENDENCIES)
-        install(DIRECTORY ${CMAKE_BINARY_DIR}/include/ DESTINATION include
-                USE_SOURCE_PERMISSIONS)
-        install(DIRECTORY ${CMAKE_BINARY_DIR}/lib/ DESTINATION lib
-                USE_SOURCE_PERMISSIONS)
-    endif()
-endif()
 
 option(BUILD_DOCS "Build documentation (manpages)" OFF)
 if(BUILD_DOCS)

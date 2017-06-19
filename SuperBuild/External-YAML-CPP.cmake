@@ -9,7 +9,7 @@ ExternalProject_Add(yaml-cpp
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}
+        -DCMAKE_INSTALL_PREFIX=${DEP_INSTALL_DIR}
 )
 
-set(YAML-CPP_DIR ${CMAKE_BINARY_DIR}/lib/cmake/yaml-cpp)
+set(YAML-CPP_DIR ${DEP_INSTALL_DIR}/lib/cmake/yaml-cpp)
