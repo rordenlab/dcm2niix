@@ -2514,6 +2514,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	#else
 	size_t MaxBufferSz = 1000000; //ideally size of DICOM header, but this varies from 2D to 4D files
 	#endif
+	if (MaxBufferSz > fileLen)
+		MaxBufferSz = fileLen;
 	long lFileOffset = 0;
 	fseek(file, 0, SEEK_SET);
 	//Allocate memory
