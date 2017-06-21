@@ -11,10 +11,8 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Versions
 
-13-June-2017
+21-June-2017
  - Read DICOM header in 1Mb segments rather than loading whole file : reduces ram usage and [faster for systems with slow io](https://github.com/rordenlab/dcm2niix/issues/104).
-
-9-June-2017
  -Report [TotalReadoutTime](https://github.com/rordenlab/dcm2niix/issues/98).
  -Fix JPEG2000 support in [Superbuild](https://github.com/rordenlab/dcm2niix/issues/105).
 

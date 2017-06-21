@@ -658,7 +658,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (d.accelFactPE > 1.0)
     	fencePost = (int)round(d.accelFactPE); //e.g. if 64 lines with iPAT=2, we want time from start of first until start of 62nd effective line
     if ((d.phaseEncodingSteps > 1) && (effectiveEchoSpacing > 0.0))
-		fprintf(fp, "\t\"TotalReadoutDuration\": %g,\n", effectiveEchoSpacing * ((float)d.phaseEncodingSteps - fencePost));
+		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * ((float)d.phaseEncodingSteps - fencePost));
     if (d.accelFactPE > 1.0) {
     		fprintf(fp, "\t\"AccelFactPE\": %g,\n", d.accelFactPE);
     		if (effectiveEchoSpacing > 0.0)
