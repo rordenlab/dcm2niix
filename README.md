@@ -160,7 +160,13 @@ make
 
 **optional building with OpenJPEG:**
 
-Support for JPEG2000 using OpenJPEG is optional. To build with OpenJPEG change the cmake command to `cmake -DUSE_OPENJPEG=ON ..`
+Support for JPEG2000 using OpenJPEG is optional. To build with OpenJPEG change the cmake command to `cmake -DUSE_OPENJPEG=ON ..`:
+
+```bash
+mkdir build && cd build
+cmake -DUSE_OPENJPEG=ON ..
+make
+```
 
 **optional batch processing version:**
 
