@@ -38,8 +38,9 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
- #define kDCMvers "v1.0.20170621" kDCMsuf kCCsuf
+ #define kDCMvers "v1.0.20170623" kDCMsuf kCCsuf
 
+static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
 #define kDICOMStr 64
 #define kMANUFACTURER_UNKNOWN  0
@@ -58,7 +59,6 @@ static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDTI {
         float V[4];
-        float sliceTiming;
         int sliceNumberMrPhilips;
     };
     struct TDTI4D {
@@ -93,7 +93,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
 #endif
     struct TCSAdata {
     	bool isPhaseMap;
-        float dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
+        float sliceTiming[kMaxEPI3D], dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int numDti, SeriesHeader_offset, SeriesHeader_length, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices,protocolSliceNumber1,phaseEncodingDirectionPositive;
     };
     struct TDICOMdata {

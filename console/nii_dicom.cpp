@@ -621,6 +621,7 @@ struct TDICOMdata clear_dicom_data() {
         d.angulation[i] = 0.0f;
         d.xyzMM[i] = 1;
     }
+    d.CSA.sliceTiming[0] = -1.0f; //impossible value denotes not known
     d.CSA.numDti = 0;
     for (int i=0; i < 5; i++)
         d.xyzDim[i] = 1;
@@ -1004,19 +1005,16 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
-//#ifdef _MSC_VER
 				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
-//#else
-//				float sliceTimes[tagCSA.nitems + 1];
-//#endif
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
                 float maxTimeValue, minTimeValue, timeValue1;
-                for (int z = 0; z < kMaxDTI4D; z++)
-        			dti4D->S[z].sliceTiming = -1.0;
-
-                if (itemsOK <= kMaxDTI4D)
+                for (int z = 0; z < kMaxEPI3D; z++)
+        			CSA->sliceTiming[z] = -1.0;
+        		if (itemsOK <= kMaxEPI3D) {
                 	for (int z = 1; z <= itemsOK; z++)
-                		dti4D->S[z-1].sliceTiming = sliceTimes[z];
+                		CSA->sliceTiming[z-1] = sliceTimes[z];
+                } else
+                	printError("Please increase kMaxEPI3D and recompile\n");
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
                 int nTimeZero = 0;
@@ -1328,10 +1326,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     char *p = fgets (buff, LINESZ, fp);
     bool isIntenScaleVaries = false;
     bool isIndexSequential = true;
-    for (int i = 0; i < kMaxDTI4D; i++) {
+    for (int i = 0; i < kMaxDTI4D; i++)
         dti4D->S[i].V[0] = -1.0;
-        dti4D->S[i].sliceTiming = -1.0;
-    }
     //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
     while (p) {
         if (strlen(buff) < 1)
@@ -2650,7 +2646,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
 #define  kUnnest 0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 #define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
-    dti4D->S[0].sliceTiming = -1.0;
     int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
     int locationsInAcquisitionGE = 0;

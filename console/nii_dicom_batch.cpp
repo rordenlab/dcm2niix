@@ -664,17 +664,13 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     		if (effectiveEchoSpacing > 0.0)
     			fprintf(fp, "\t\"TrueEchoSpacing\": %g,\n", effectiveEchoSpacing * d.accelFactPE);
 	}
-	bool first = 1;
-	if (dti4D->S[0].sliceTiming >= 0.0) {
+	if (d.CSA.sliceTiming[0] >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
-   		for (int i = 0; i < kMaxDTI4D; i++) {
-			if (dti4D->S[i].sliceTiming >= 0.0){
-			  if (!first)
-				  fprintf(fp, ",\n");
-				else
-				  first = 0;
-				fprintf(fp, "\t\t%g", dti4D->S[i].sliceTiming / 1000.0 );
-			}
+   		for (int i = 0; i < kMaxEPI3D; i++) {
+   			if (d.CSA.sliceTiming[i] < 0.0) break;
+			if (i != 0)
+				fprintf(fp, ",\n");
+			fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
 		}
 		fprintf(fp, "\t],\n");
 	}
