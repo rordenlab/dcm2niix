@@ -1,0 +1,3 @@
+[submodule "dcm_qa"]
+	path = dcm_qa
+	url = http://github.com/neurolabusc/dcm_qa
