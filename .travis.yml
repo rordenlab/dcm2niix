@@ -17,7 +17,7 @@ before_install:
 script:
   - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON .. && make && cd -
   - export PATH=$PWD/build/bin:$PATH
-  - cd dcm_qa; ./batch.sh
+  - cd dcm_qa && ./batch.sh && cd -
 
 before_deploy:
   - export DATE=`date +%-d-%b-%Y`
