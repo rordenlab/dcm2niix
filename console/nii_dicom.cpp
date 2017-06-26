@@ -214,6 +214,11 @@ unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr
     //DICOM JPEG2k is SUPPOSED to start with codestream, but some vendors include a header
     if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51) format = OPJ_CODEC_J2K;
     opj_set_default_decoder_parameters(&params);
+    #if OPJ_VERSION_MAJOR == 2
+     #if OPJ_VERSION_MINOR >= 2
+    	params->m_specific_param.m_decoder.m_nb_tile_parts_correction_checked = 0;
+     #endif
+    #endif
     BufInfo dx;
     dx.buf = data;
     dx.cur = data;
@@ -2664,6 +2669,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //float intenScalePhilips = 0.0;
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
+    int encapsulatedDataImageStart = 0;
     bool isOrient = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
@@ -3324,6 +3330,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 if ((d.compressionScheme != kCompressNone) && (!isIconImageSequence)) {
                     lLength = 0;
                     isEncapsulatedData = true;
+                    encapsulatedDataImageStart = (int)lPos + (int)lFileOffset;
+                    //printWarning("Encapsulated\n");
                 }
 				isIconImageSequence = false;
                 break;
@@ -3365,6 +3373,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         //printMessage("%d\n",d.imageStart);
     } //while d.imageStart == 0
     free (buffer);
+    if ((isEncapsulatedData) && (d.imageStart < 128)) {
+    	printWarning(" DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010\n");
+    	d.imageStart = encapsulatedDataImageStart;
+    }
+
     //Recent Philips images include DateTime (0008,002A) but not separate date and time (0008,0022 and 0008,0032)
     #define kYYYYMMDDlen 8 //how many characters to encode year,month,day in "YYYYDDMM" format
     if ((strlen(acquisitionDateTimeTxt) > (kYYYYMMDDlen+5)) && (!isFloatDiff(d.acquisitionTime, 0.0f)) && (!isFloatDiff(d.acquisitionDate, 0.0f)) ) {
