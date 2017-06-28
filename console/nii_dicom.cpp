@@ -215,8 +215,11 @@ unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr
     if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51) format = OPJ_CODEC_J2K;
     opj_set_default_decoder_parameters(&params);
     #if OPJ_VERSION_MAJOR == 2
-     #if OPJ_VERSION_MINOR >= 2
-    	params->m_specific_param.m_decoder.m_nb_tile_parts_correction_checked = 0;
+     #if OPJ_VERSION_MINOR >= 1
+      #if OPJ_VERSION_BUILD > 0
+        warning: please make sure you custom compile your OpenJPEG library with the following:
+    	  m_nb_tile_parts_correction_checked = 0;
+      #endif
      #endif
     #endif
     BufInfo dx;
@@ -2649,7 +2652,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
 #define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
-#define  kUnnest 0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
+#define  kUnnest  0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 #define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
     int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
@@ -2669,7 +2672,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //float intenScalePhilips = 0.0;
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
-    int encapsulatedDataImageStart = 0;
+    int encapsulatedDataFragments = 0;
+    int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
+    int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
     bool isOrient = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
@@ -2771,13 +2776,18 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             //printMessage("SQstart %d\n", sqDepth);
         }
         if ((groupElement == kNest) || ((vr[0] == 'S') && (vr[1] == 'Q'))) nest++;
-        if (groupElement == kUnnest) nest--;
+        //if ((groupElement == kUnnest) || (groupElement == kUnnest2)) { // <- ?
+        if (groupElement == kUnnest) {
+        	nest--;
+        }
         //next: look for required tags
         if ((groupElement == kNest)  && (isEncapsulatedData)) {
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
             //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
             if (d.imageBytes > 128) {
-                d.imageStart = (int)lPos + (int)lFileOffset;
+            	encapsulatedDataFragments++;
+   				if (encapsulatedDataFragmentStart == 0)
+                	encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
@@ -3373,7 +3383,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         //printMessage("%d\n",d.imageStart);
     } //while d.imageStart == 0
     free (buffer);
-    if ((isEncapsulatedData) && (d.imageStart < 128)) {
+    if (encapsulatedDataFragmentStart > 0) {
+        if (encapsulatedDataFragments > 1)
+        	printError(" Compressed image stored as %d fragments: decompress with Osirix, dcmdjpeg or dcmjp2k\n", encapsulatedDataFragments);
+    	else
+    		d.imageStart = encapsulatedDataFragmentStart;
+    } else if ((isEncapsulatedData) && (d.imageStart < 128)) {
     	printWarning(" DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010\n");
     	d.imageStart = encapsulatedDataImageStart;
     }
