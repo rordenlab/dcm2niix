@@ -16,10 +16,14 @@ set(PROGRAMS dcm2niix)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # using Clang
     add_definitions(-Wno-deprecated-register)
+    add_definitions(-fno-caret-diagnostics)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # using GCC
     add_definitions(-Wno-unused-result)
+    if (${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 4.7)
+        add_definitions(-fno-diagnostics-show-caret)
+    endif()
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
     # using Intel C++
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")

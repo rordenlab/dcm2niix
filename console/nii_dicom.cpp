@@ -217,8 +217,7 @@ unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr
     #if OPJ_VERSION_MAJOR == 2
      #if OPJ_VERSION_MINOR >= 1
       #if OPJ_VERSION_BUILD > 0
-        warning: please make sure you custom compile your OpenJPEG library with the following:
-    	  m_nb_tile_parts_correction_checked = 0;
+        #pragma message "\n\nYour OpenJPEG library version > 2.1.0, please make sure it's custom compiled with: -DOPJ_DISABLE_TPSOT_FIX=ON.\n"
       #endif
      #endif
     #endif
