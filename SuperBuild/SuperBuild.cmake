@@ -21,10 +21,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(USE_STATIC_RUNTIME "Use static runtime" ON)
 
 option(USE_SYSTEM_ZLIB "Use the system zlib" OFF)
-option(USE_SYSTEM_TURBOJPEG "Use the system TurboJPEG" OFF)
-option(USE_JASPER "Compile with Jasper support" OFF)
+option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
+option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 
-option(USE_OPENJPEG "Build with OpenJPEG support" OFF)
+option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
 
 include(ExternalProject)
@@ -42,38 +42,48 @@ endif()
 if(USE_OPENJPEG)
     message("-- Build with OpenJPEG: ${USE_OPENJPEG}")
 
-    find_package(PkgConfig)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(OPENJPEG libopenjp2)
-    endif()
-
-    if(OPENJPEG_FOUND)
-        set(OPENJPEG_DIR ${OPENJPEG_LIBDIR}/openjepg-2.1)
-        message("--     Using the system OpenJPEG")
+    if(OpenJPEG_DIR OR OPENJPEG_DIR)
+        set(OpenJPEG_DIR "${OpenJPEG_DIR}${OPENJPEG_DIR}" CACHE PATH "Path to OpenJPEG configuration file"  FORCE)
+        message("--     Using OpenJPEG library from ${OpenJPEG_DIR}")
     else()
-        include(${CMAKE_SOURCE_DIR}/SuperBuild/External-OPENJPEG.cmake)
-        list(APPEND DEPENDENCIES openjpeg)
-        set(BUILD_OPENJPEG TRUE)
-        message("--     Will build OpenJPEG from github")
+        find_package(PkgConfig)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(OPENJPEG libopenjp2)
+        endif()
+
+        if(OPENJPEG_FOUND)
+            set(OpenJPEG_DIR ${OPENJPEG_LIBDIR}/openjepg-2.1 CACHE PATH "Path to OpenJPEG configuration file" FORCE)
+            message("--     Using OpenJPEG library from ${OpenJPEG_DIR}")
+        else()
+            include(${CMAKE_SOURCE_DIR}/SuperBuild/External-OPENJPEG.cmake)
+            list(APPEND DEPENDENCIES openjpeg)
+            set(BUILD_OPENJPEG TRUE)
+            message("--     Will build OpenJPEG library from github")
+        endif()
     endif()
 endif()
 
 if(BATCH_VERSION)
     message("-- Build dcm2niibatch: ${BATCH_VERSION}")
 
-    find_package(PkgConfig)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(YAML-CPP yaml-cpp)
-    endif()
-
-    if(YAML-CPP_FOUND)
-        set(YAML-CPP_DIR ${YAML-CPP_LIBDIR}/cmake/yaml-cpp)
-        message("--     Using the system yaml-cpp")
+    if(YAML-CPP_DIR)
+        set(YAML-CPP_DIR ${YAML-CPP_DIR} CACHE PATH "Path to yaml-cpp configuration file"  FORCE)
+        message("--     Using yaml-cpp library from ${YAML-CPP_DIR}")
     else()
-        include(${CMAKE_SOURCE_DIR}/SuperBuild/External-YAML-CPP.cmake)
-        list(APPEND DEPENDENCIES yaml-cpp)
-        set(BUILD_YAML-CPP TRUE)
-        message("--     Will build yaml-cpp from github")
+        find_package(PkgConfig)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(YAML-CPP yaml-cpp)
+        endif()
+
+        if(YAML-CPP_FOUND)
+            set(YAML-CPP_DIR ${YAML-CPP_LIBDIR}/cmake/yaml-cpp CACHE PATH "Path to yaml-cpp configuration file"  FORCE)
+            message("--     Using yaml-cpp library from ${YAML-CPP_DIR}")
+        else()
+            include(${CMAKE_SOURCE_DIR}/SuperBuild/External-YAML-CPP.cmake)
+            list(APPEND DEPENDENCIES yaml-cpp)
+            set(BUILD_YAML-CPP TRUE)
+            message("--     Will build yaml-cpp library from github")
+        endif()
     endif()
 endif()
 
@@ -89,11 +99,11 @@ ExternalProject_Add(console
         -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}
         -DUSE_STATIC_RUNTIME:BOOL=${USE_STATIC_RUNTIME}
         -DUSE_SYSTEM_ZLIB:BOOL=${USE_SYSTEM_ZLIB}
-        -DUSE_SYSTEM_TURBOJPEG:BOOL=${USE_SYSTEM_TURBOJPEG}
-        -DUSE_SYSTEM_JASPER:BOOL=${USE_SYSTEM_JASPER}
+        -DUSE_TURBOJPEG:BOOL=${USE_TURBOJPEG}
+        -DUSE_JASPER:BOOL=${USE_JASPER}
          # OpenJPEG
         -DUSE_OPENJPEG:BOOL=${USE_OPENJPEG}
-        -DOpenJPEG_DIR:PATH=${OPENJPEG_DIR}
+        -DOpenJPEG_DIR:PATH=${OpenJPEG_DIR}
         # yaml-cpp
         -DBATCH_VERSION:BOOL=${BATCH_VERSION}
         -DYAML-CPP_DIR:PATH=${YAML-CPP_DIR}

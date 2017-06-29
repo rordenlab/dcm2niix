@@ -12,4 +12,4 @@ ExternalProject_Add(openjpeg
         -DCMAKE_INSTALL_PREFIX=${DEP_INSTALL_DIR}
 )
 
-set(OPENJPEG_DIR ${DEP_INSTALL_DIR}/lib/openjpeg-2.1)
+set(OpenJPEG_DIR ${DEP_INSTALL_DIR}/lib/openjpeg-2.1)
