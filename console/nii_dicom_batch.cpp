@@ -207,7 +207,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
 		printMessage("Impossible GE slice orientation!");
 	if (sliceDir < 0)
     	flp.v[2] = 1 - flp.v[2];
-    printMessage("Reorienting %s : %d GE DTI vectors: please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->protocolName, d->CSA.numDti, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
+    printMessage("Saving %d DTI gradients. GE Reorienting %s : please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->CSA.numDti, d->protocolName, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
 	if (!col)
 		printMessage(" reorienting for ROW phase-encoding untested.\n");
     for (int i = 0; i < d->CSA.numDti; i++) {
@@ -286,11 +286,11 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
             if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
     } //for each direction
     if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
-       printWarning("Please validate DTI vectors (matrix had a negative determinant, perhaps Siemens sagittal).\n");
+       printWarning("Saving %d DTI gradients. Validate vectors (matrix had a negative determinant).\n", d->CSA.numDti); //perhaps Siemens sagittal
     } else if ( d->sliceOrient == kSliceOrientTra) {
-        printMessage("Saving %d DTI gradients. Please validate if you are conducting DTI analyses.\n", d->CSA.numDti);
+        printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
     } else {
-        printWarning("DTI gradient directions only tested for axial (transverse) acquisitions. Please validate bvec files.\n");
+        printWarning("Saving %d DTI gradients. Validate vectors (images are not axial slices).\n", d->CSA.numDti);
     }
 }// siemensPhilipsCorrectBvecs()
 
@@ -1079,6 +1079,18 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 				#else
     			printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
     			#endif
+			}
+			if (f == 'V') {
+				if (dcm.manufacturer == kMANUFACTURER_GE)
+					strcat (outname,"GE");
+				else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
+					strcat (outname,"Philips");
+				else if (dcm.manufacturer == kMANUFACTURER_SIEMENS)
+					strcat (outname,"Siemens");
+				else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
+					strcat (outname,"Toshiba");
+				else
+					strcat (outname,"NA");
 			}
 			if (f == 'X')
 				strcat (outname,dcm.studyID);
