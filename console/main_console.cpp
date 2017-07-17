@@ -85,7 +85,6 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
-    printf("  -t : text notes includes private patient details (y/n, default n)\n");
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
