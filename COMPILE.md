@@ -64,14 +64,19 @@ You should then be able to run then run:
 g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -lopenjp2
 ```
 
-But in my experience this works best if you explicitly tell the software how to find the libraries, so your compile will probably look like one of these two options:
+But in my experience this works best if you explicitly tell the software how to find the libraries, so your compile will probably look like one of these options:
 
 ```
+#for MacOS
 g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/include/openjpeg-2.1 /usr/local/lib/libopenjp2.a
 ```
-
 ```
-g++ -O3 -dead_strip -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/lib /usr/local/lib/libopenjp2.a
+#For older Linux
+g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/lib /usr/local/lib/libopenjp2.a
+```
+```
+#For modern Linux
+g++ -O3 -s -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -lpthread -o dcm2niix -I/usr/local/include/openjpeg-2.2 ~/openjpeg-master/build/bin/libopenjp2.a
 ```
 
  If you want to build this with JPEG2000 decompression support using Jasper: You will need to have the Jasper (http://www.ece.uvic.ca/~frodo/jasper/) and libjpeg (http://www.ijg.org) libraries installed which for Linux users may be as easy as running 'sudo apt-get install libjasper-dev' (otherwise, see http://www.ece.uvic.ca/~frodo/jasper/#doc). You can then run:
