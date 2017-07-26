@@ -1902,42 +1902,34 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
 } //nii_loadImg()
 
 unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
-                        //DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
-    if (bImg == NULL) return NULL;
-                        if (hdr->datatype != DT_RGB24) return bImg;
-                        if (isPlanar == 0) return bImg;//return nii_bgr2rgb(bImg,hdr);
-                        int dim3to7 = 1;
-                        for (int i = 3; i < 8; i++)
-                            if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
-                        //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
-                        int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
-                        int sliceBytes24 = sliceBytes8 * 3;
-//#ifdef _MSC_VER
-                        unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
-//#else
-//                        unsigned char  slice24[ sliceBytes24 ];
-//#endif
-    int sliceOffsetRGB = 0;
-                        int sliceOffsetR = 0;
-                        int sliceOffsetG = sliceOffsetR + sliceBytes8;
-                        int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
-                        for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
-                            memcpy(slice24, &bImg[sliceOffsetRGB], sliceBytes24);
-                            //int sliceOffsetG = sliceOffsetR + sliceBytes8;
-                            //int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
-                            int i = 0;
-                            for (int rgb = 0; rgb < sliceBytes8; rgb++) {
-                                bImg[i++] =slice24[sliceOffsetR+rgb];
-                                bImg[i++] =slice24[sliceOffsetG+rgb];
-                                bImg[i++] =slice24[sliceOffsetB+rgb];
-                            }
-                            sliceOffsetRGB += sliceBytes24;
-                        } //for each slice
-//#ifdef _MSC_VER
-                        free(slice24);
-//#endif
-                        return bImg;
-} //nii_rgb2Planar()
+	//DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
+	if (bImg == NULL) return NULL;
+	if (hdr->datatype != DT_RGB24) return bImg;
+	if (isPlanar == 0) return bImg;
+	int dim3to7 = 1;
+	for (int i = 3; i < 8; i++)
+		if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
+	int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
+	int sliceBytes24 = sliceBytes8 * 3;
+	unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
+	int sliceOffsetRGB = 0;
+	int sliceOffsetR = 0;
+	int sliceOffsetG = sliceOffsetR + sliceBytes8;
+	int sliceOffsetB = sliceOffsetR + 2*sliceBytes8;
+	//printMessage("planar->rgb %dx%dx%d\n", hdr->dim[1],hdr->dim[2], dim3to7);
+    int i = 0;
+	for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
+		memcpy(slice24, &bImg[sliceOffsetRGB], sliceBytes24);
+		for (int rgb = 0; rgb < sliceBytes8; rgb++) {
+			bImg[i++] =slice24[sliceOffsetR+rgb];
+			bImg[i++] =slice24[sliceOffsetG+rgb];
+			bImg[i++] =slice24[sliceOffsetB+rgb];
+		}
+		sliceOffsetRGB += sliceBytes24;
+	} //for each slice
+	free(slice24);
+	return bImg;
+} //nii_planar2rgb()
 
 unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
     //DICOM data saved in triples RGBRGBRGB, Analyze RGB saved in planes RRR..RGGG..GBBBB..B
@@ -1947,14 +1939,9 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
     int dim3to7 = 1;
     for (int i = 3; i < 8; i++)
         if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
-    //int sliceBytes24 = hdr->dim[1]*hdr->dim[2] * hdr->bitpix/8;
     int sliceBytes8 = hdr->dim[1]*hdr->dim[2];
     int sliceBytes24 = sliceBytes8 * 3;
-//#ifdef _MSC_VER
 	unsigned char * slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
-//#else
-//	unsigned char  slice24[ sliceBytes24 ];
-//#endif
     //printMessage("rgb->planar %dx%dx%d\n", hdr->dim[1],hdr->dim[2], dim3to7);
     int sliceOffsetR = 0;
     for (int sl = 0; sl < dim3to7; sl++) { //for each 2D slice
@@ -1971,9 +1958,7 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
         }
         sliceOffsetR += sliceBytes24;
     } //for each slice
-//#ifdef _MSC_VER
 	free(slice24);
-//#endif
     return bImg;
 } //nii_rgb2Planar()
 
@@ -2429,7 +2414,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     if ((dcm.isLittleEndian != littleEndianPlatform()) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
     }
-    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24)) //img = nii_planar2rgb(img, hdr, dcm.isPlanarRGB); //
+    if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype ==DT_RGB24))
         img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     dcm.isPlanarRGB = true;
     if (dcm.CSA.mosaicSlices > 1) {
