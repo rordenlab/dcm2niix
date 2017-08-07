@@ -31,15 +31,22 @@
 			  std::cout << buf;
 			  delete[] buf;
 			}
+			#define printError(...) do { printMessage("Error: "); printMessage(__VA_ARGS__);} while(0)
 		#else
 			#include<stdio.h>
 			#define printMessage printf
+			//#define printMessageError(...) fprintf (stderr, __VA_ARGS__)
+			#ifdef myErrorStdOut //for XCode MRIcro project, pipe errors to stdout not stderr
+				#define printError(...) do { printMessage("Error: "); printMessage(__VA_ARGS__);} while(0)
+			#else
+				#define printError(...) do { fprintf (stderr,"Error: "); fprintf (stderr, __VA_ARGS__);} while(0)
+			#endif
 		#endif //myUseCOut
 		//n.b. use ({}) for multi-line macros http://www.geeksforgeeks.org/multiline-macros-in-c/
 		//these next lines work on GCC but not _MSC_VER
 		// #define printWarning(...) ({printMessage("Warning: "); printMessage(__VA_ARGS__);})
 		// #define printError(...) ({ printMessage("Error: "); printMessage(__VA_ARGS__);})
 		#define printWarning(...) do {printMessage("Warning: "); printMessage(__VA_ARGS__);} while(0)
-		#define printError(...) do { printMessage("Error: "); printMessage(__VA_ARGS__);} while(0)
+
 	#endif //HAVE_R
 #endif //_R_PRINT_H_

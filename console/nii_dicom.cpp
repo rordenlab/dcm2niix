@@ -172,7 +172,7 @@ static OPJ_SIZE_T opj_skip_from_buffer(OPJ_SIZE_T p_nb_bytes, BufInfo * p_file) 
 //fix for https://github.com/neurolabusc/dcm_qa/issues/5
 static OPJ_BOOL opj_seek_from_buffer(OPJ_SIZE_T p_nb_bytes, BufInfo * p_file) {
     //printf("opj_seek_from_buffer %d + %d -> %d + %d\n", p_file->cur , p_nb_bytes, p_file->buf, p_file->len);
-    if ((p_file->buf + p_nb_bytes < p_file->buf + p_file->len ) && (p_nb_bytes >= 0)){
+    if (p_nb_bytes < p_file->len ) {
         p_file->cur = p_file->buf + p_nb_bytes;
         return OPJ_TRUE;
     }
