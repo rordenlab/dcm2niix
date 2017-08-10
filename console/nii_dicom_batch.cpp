@@ -1377,8 +1377,13 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	printMessage("Error: Image size is zero bytes %s\n", niiFilename);
     	return EXIT_FAILURE;
     }
+    #define  kMaxPigz 3758096384
     #ifndef myDisableZLib
-    if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
+    if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) >=  2147483647) ) { //use internal compressor
+		printWarning("Saving uncompressed data: internal compressor limited to 2Gb images.\n");
+		if ((imgsz+hdr.vox_offset) <  3758096384)
+			printWarning(" Hint: using external compressor (pigz) should help.\n");
+    } else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
         writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
         return EXIT_SUCCESS;
     }
@@ -1394,6 +1399,10 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     fwrite(&im[0], imgsz, 1, fp);
     fclose(fp);
     if ((opts.isGz) &&  (strlen(opts.pigzname)  > 0) ) {
+    	if ((imgsz+hdr.vox_offset) >  kMaxPigz) {
+        	printWarning("Saving uncompressed data: image too large for pigz.\n");
+    		return EXIT_SUCCESS;
+    	}
     	char command[768];
     	strcpy(command, "\"" );
         strcat(command, opts.pigzname );
