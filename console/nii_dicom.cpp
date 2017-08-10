@@ -2507,6 +2507,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	#endif
 	if (MaxBufferSz > fileLen)
 		MaxBufferSz = fileLen;
+	//printf("%d -> %d\n", MaxBufferSz, fileLen);
 	long lFileOffset = 0;
 	fseek(file, 0, SEEK_SET);
 	//Allocate memory

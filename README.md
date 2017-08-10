@@ -183,3 +183,14 @@ This requires a compiler that supports c++11.
 ### Building the command line version without cmake
 
 [See the COMPILE.md file for details on manual compilation](./COMPILE.md).
+
+## Links
+
+ - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
+  - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
+  - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
+  - [dcm2niir](https://github.com/muschellij2/dcm2niir) R wrapper for dcm2niix/dcm2nii.
+  - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
+  - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) docker.
+  - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix.
+  - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix.

@@ -257,7 +257,8 @@ int main(int argc, const char * argv[])
                 i++;
                 //isCustomOutDir = true;
                 strcpy(opts.outdir,argv[i]);
-            }
+            } else
+             printf(" Error: invalid option '%s %s'\n", argv[i], argv[i+1]);;
             lastCommandArg = i;
         } //if parameter is a command
         i ++; //read next parameter
