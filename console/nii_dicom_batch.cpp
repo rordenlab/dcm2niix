@@ -2425,7 +2425,8 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (nameList.numItems < 1) {
         printError("Unable to find any DICOM images in %s\n", opts->indir);
         free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
-        return EXIT_FAILURE;
+        #define kEXIT_NOFILESFOUND  2
+        return kEXIT_NOFILESFOUND;
     }
     size_t nDcm = nameList.numItems;
     printMessage( "Found %lu DICOM image(s)\n", nameList.numItems);

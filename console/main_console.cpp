@@ -288,8 +288,9 @@ int main(int argc, const char * argv[])
     clock_t start = clock();
     for (i = (lastCommandArg+1); i < argc; i++) {
     	strcpy(opts.indir,argv[i]); // [argc-1]
-    	if (nii_loadDir(&opts) != EXIT_SUCCESS)
-    		return EXIT_FAILURE;
+    	int ret = nii_loadDir(&opts);
+    	if (ret != EXIT_SUCCESS)
+    		return ret;
     }
     #if !defined(_WIN64) && !defined(_WIN32)
 		printf ("Conversion required %f seconds (%f for core code).\n",get_wall_time() - startWall, ((float)(clock()-start))/CLOCKS_PER_SEC);
