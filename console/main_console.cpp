@@ -71,10 +71,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     const char *cstr = removePath(argv[0]);
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
-    printf("  -1..-9 : gz compression level (1=fastest, 9=smallest)\n");
+    printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
     char bidsCh = 'n';
     if (opts.isCreateBIDS) bidsCh = 'y';
-    printf("  -b : BIDS sidecar (y/n, default %c)\n", bidsCh);
+    printf("  -b : BIDS sidecar (y/n/o(o=only: no NIfTI), default %c)\n", bidsCh);
     if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
@@ -128,6 +128,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 int invalidParam(int i, const char * argv[]) {
 	if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')
 		|| (argv[i][0] == 'n') || (argv[i][0] == 'N')
+		|| (argv[i][0] == 'o') || (argv[i][0] == 'O')
 		|| (argv[i][0] == 'h') || (argv[i][0] == 'H')
 		|| (argv[i][0] == 'i') || (argv[i][0] == 'I')
 		|| (argv[i][0] == '0') || (argv[i][0] == '1'))
@@ -177,8 +178,11 @@ int main(int argc, const char * argv[])
                 	if (invalidParam(i, argv)) return 0;
                 	if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     	opts.isCreateBIDS = false;
-                	else
+                	else {
                     	opts.isCreateBIDS = true;
+                    	if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                    		opts.isOnlyBIDS = true;
+                    }
                 } else if (argv[i][2] == 'a') {//"-ba y"
                 	i++;
                 	if (invalidParam(i, argv)) return 0;

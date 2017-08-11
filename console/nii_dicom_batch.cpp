@@ -732,6 +732,7 @@ unsigned char * removeADC(struct nifti_1_header *hdr, unsigned char *inImg, bool
 bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
     //reports non-zero if any volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
+    if (opts.isOnlyBIDS) return NULL;
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
     if (numDti < 1) return NULL;
@@ -1371,6 +1372,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 #else
 
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+    if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
     if (imgsz < 1) {
@@ -1506,6 +1508,7 @@ int isSameFloatT (float a, float b, float tolerance) {
 
 unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
+    if (opts.isOnlyBIDS) return im;
     if (gantryTiltDeg == 0.0) return im;
     struct nifti_1_header hdrIn = *hdr;
     int nVox2DIn = hdrIn.dim[1]*hdrIn.dim[2];
@@ -1584,6 +1587,7 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
 int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
     //convert image with unequal slice distances to equal slice distances
     //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
+    if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
     if ((nVox2D < 1) || (hdr.dim[0] != 3) ) return EXIT_FAILURE;
     if ((hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
@@ -1733,6 +1737,7 @@ void smooth1D(int num, double * im) {
 
 int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
     //remove excess neck slices - assumes output of nii_setOrtho()
+    if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
     if ((nVox2D < 1) || (fabs(hdr.pixdim[3]) < 0.001) || (hdr.dim[0] != 3) || (hdr.dim[3] < 128)) return EXIT_FAILURE;
     if ((hdr.datatype != DT_INT16) && (hdr.datatype != DT_UINT16)) {
@@ -2006,6 +2011,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
+    if (opts.isOnlyBIDS) {
+    	//note we waste time loading every image, however this ensures hdr0 matches actual output
+        free(imgM);
+        return EXIT_SUCCESS;
+    }
+
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
     bool * isADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
@@ -2616,6 +2627,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;
+    opts->isOnlyBIDS = false;
     #ifdef myNoAnonymizeBIDS
     opts->isAnonymizeBIDS = false;
     #else
