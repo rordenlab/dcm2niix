@@ -160,7 +160,7 @@ int main(int argc, const char * argv[])
         showHelp(argv, opts);
         return 0;
     }
-    //bool isCustomOutDir = false;
+    //for (int i = 1; i < argc; i++) { printf(" argument %d= '%s'\n", i, argv[i]);}
     int i = 1;
     int lastCommandArg = 0;
     while (i < (argc)) { //-1 as final parameter is DICOM directory
@@ -255,7 +255,6 @@ int main(int argc, const char * argv[])
                 strcpy(opts.filename,argv[i]);
             } else if ((argv[i][1] == 'o') && ((i+1) < argc)) {
                 i++;
-                //isCustomOutDir = true;
                 strcpy(opts.outdir,argv[i]);
             } else
              printf(" Error: invalid option '%s %s'\n", argv[i], argv[i+1]);;
@@ -273,13 +272,18 @@ int main(int argc, const char * argv[])
         return EXIT_SUCCESS;
     }
 #endif
+	#ifndef myEnableMultipleInputs
+	if ((argc-lastCommandArg-1) > 1) {
+		printf("Warning: only processing last of %d input files (recompile with 'myEnableMultipleInputs' to recursively process multiple files)\n", argc-lastCommandArg-1);
+		lastCommandArg = argc - 2;
+	}
+	#endif
 	#if !defined(_WIN64) && !defined(_WIN32)
 	double startWall = get_wall_time();
 	#endif
     clock_t start = clock();
     for (i = (lastCommandArg+1); i < argc; i++) {
     	strcpy(opts.indir,argv[i]); // [argc-1]
-    	//if (!isCustomOutDir) strcpy(opts.outdir,opts.indir);
     	if (nii_loadDir(&opts) != EXIT_SUCCESS)
     		return EXIT_FAILURE;
     }
