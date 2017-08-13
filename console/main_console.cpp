@@ -131,7 +131,7 @@ int invalidParam(int i, const char * argv[]) {
 		|| (argv[i][0] == 'o') || (argv[i][0] == 'O')
 		|| (argv[i][0] == 'h') || (argv[i][0] == 'H')
 		|| (argv[i][0] == 'i') || (argv[i][0] == 'I')
-		|| (argv[i][0] == '0') || (argv[i][0] == '1'))
+		|| (argv[i][0] == '0') || (argv[i][0] == '1') || (argv[i][0] == '2'))
 		return 0;
 
 	//if (argv[i][0] != '-') return 0;

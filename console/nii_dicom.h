@@ -48,6 +48,15 @@ static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Ph
 #define kMANUFACTURER_GE  2
 #define kMANUFACTURER_PHILIPS  3
 #define kMANUFACTURER_TOSHIBA  4
+//note: note a complete modality list, e.g. XA,PX, etc
+#define kMODALITY_UNKNOWN  0
+#define kMODALITY_CR  1
+#define kMODALITY_CT  2
+#define kMODALITY_MR  3
+#define kMODALITY_PT  4
+#define kMODALITY_US  5
+
+
 #define kEXIT_NO_VALID_FILES_FOUND  2
 static const int kSliceOrientUnknown = 0;
 static const int kSliceOrientTra = 1;
@@ -58,6 +67,8 @@ static const int kCompressNone = 0;
 static const int kCompressYes = 1;
 static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
+static const int kCompressRLE = 4; //run length encoding
+
     struct TDTI {
         float V[4];
         int sliceNumberMrPhilips;
@@ -100,7 +111,7 @@ static const int kCompress50 = 3; //obsolete JPEG lossy
     struct TDICOMdata {
         long seriesNum;
         int xyzDim[5];
-        int phaseEncodingLines, phaseEncodingSteps, echoTrainLength, patientPositionNumPhilips, coilNum, echoNum, sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme;
+        int modality, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, patientPositionNumPhilips, coilNum, echoNum, sliceOrient,numberOfDynamicScans, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,patientPositionSequentialRepeats,locationsInAcquisition, compressionScheme;
         float accelFactPE, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)

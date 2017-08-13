@@ -495,6 +495,23 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	strcat (txtname,".json");
 	FILE *fp = fopen(txtname, "w");
 	fprintf(fp, "{\n");
+	switch (d.modality) {
+		case kMODALITY_CR:
+			fprintf(fp, "\t\"Modality\": \"CR\",\n" );
+			break;
+		case kMODALITY_CT:
+			fprintf(fp, "\t\"Modality\": \"CT\",\n" );
+			break;
+		case kMODALITY_MR:
+			fprintf(fp, "\t\"Modality\": \"MR\",\n" );
+			break;
+		case kMODALITY_PT:
+			fprintf(fp, "\t\"Modality\": \"PT\",\n" );
+			break;
+		case kMODALITY_US:
+			fprintf(fp, "\t\"Modality\": \"US\",\n" );
+			break;
+	};
 	switch (d.manufacturer) {
 		case kMANUFACTURER_SIEMENS:
 			fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
@@ -650,6 +667,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     double effectiveEchoSpacing = 0.0;
     if ((phaseEncodingLines > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
     	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * phaseEncodingLines) ;
+    if (d.effectiveEchoSpacingGE > 0.0)
+    	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     if (effectiveEchoSpacing > 0.0)
     		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
     //FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
