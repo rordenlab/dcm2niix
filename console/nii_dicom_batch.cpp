@@ -43,9 +43,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#ifdef myEnableOtsu
-	#include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
-#endif
+//#ifdef myEnableOtsu
+//	#include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
+//#endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
@@ -1766,13 +1766,16 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	short * im16 = ( short*) im;
 	unsigned short * imu16 = (unsigned short*) im;
 	float kThresh = 0.09; //more than 9% of max brightness
-	#ifdef myEnableOtsu
+	/*#ifdef myEnableOtsu
+	// This code removes noise "haze" yielding better volume rendering and smaller gz compressed files
+	// However, it may disrupt "differennce of gaussian" segmentation estimates
+	// Therefore feature was removed from dcm2niix, which aims for lossless conversion
 	kThresh = 0.0001;
 	if (hdr.datatype == DT_UINT16)
 		maskBackgroundU16 (imu16, hdr.dim[1],hdr.dim[2],hdr.dim[3], 5,2, true);
 	else
 		maskBackground16 (im16, hdr.dim[1],hdr.dim[2],hdr.dim[3], 5,2, true);
-	#endif
+	#endif*/
     int ventralCrop = 0;
     //find max value for each slice
     int slices = hdr.dim[3];
@@ -2569,6 +2572,46 @@ int nii_loadDir(struct TDCMopts* opts) {
     strcpy(name,""); //not found!
 }*/
 
+#if defined(_WIN64) || defined(_WIN32)
+#else //UNIX
+
+#define PATH_MAX 1024
+int findpathof(char *pth, const char *exe) {
+//Find executable by searching the PATH environment variable.
+// http://www.linuxquestions.org/questions/programming-9/get-full-path-of-a-command-in-c-117965/
+     char *searchpath;
+     char *beg, *end;
+     int stop, found;
+     int len;
+     if (strchr(exe, '/') != NULL) {
+	  if (realpath(exe, pth) == NULL) return 0;
+	  return  is_exe(pth);
+     }
+     searchpath = getenv("PATH");
+     if (searchpath == NULL) return 0;
+     if (strlen(searchpath) <= 0) return 0;
+     beg = searchpath;
+     stop = 0; found = 0;
+     do {
+	  end = strchr(beg, ':');
+	  if (end == NULL) {
+	       stop = 1;
+	       strncpy(pth, beg, PATH_MAX);
+	       len = strlen(pth);
+	  } else {
+	       strncpy(pth, beg, end - beg);
+	       pth[end - beg] = '\0';
+	       len = end - beg;
+	  }
+	  if (pth[len - 1] != '/') strncat(pth, "/", 1);
+	  strncat(pth, exe, PATH_MAX - len);
+	  found = is_exe(pth);
+	  if (!stop) beg = end + 1;
+     } while (!stop && !found);
+     return found;
+}
+#endif
+
 void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     #if defined(_WIN64) || defined(_WIN32)
     strcpy(opts->pigzname,"pigz.exe");
@@ -2582,39 +2625,59 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     } else
     	strcpy(opts->pigzname,".\\pigz"); //drop
     #else
-    strcpy(opts->pigzname,"/usr/local/bin/pigz");
-    char pigz[1024];
-    strcpy(pigz, opts->pigzname);
-    if (!is_exe(opts->pigzname)) {
-        strcpy(opts->pigzname,"/usr/bin/pigz");
-        if (!is_exe(opts->pigzname)) {
-        strcpy(opts->pigzname,"/usr/local/bin/pigz_mricron");
-        if (argv == NULL) { //no exectuable path provided
-			if (!is_exe(opts->pigzname))
-				strcpy(opts->pigzname,"");
-        	return;
-        }
-        if (!is_exe(opts->pigzname))  {
-            strcpy(opts->pigzname,argv[0]);
-            dropFilenameFromPath(opts->pigzname);//, opts.pigzname);
-            char appendChar[2] = {"a"};
-            appendChar[0] = kPathSeparator;
-            if (opts->pigzname[strlen(opts->pigzname)-1] != kPathSeparator) strcat (opts->pigzname,appendChar);
-            strcat(opts->pigzname,"pigz_mricron");
-            #if defined(_WIN64) || defined(_WIN32)
-            strcat(opts->pigzname,".exe");
-            #endif
-            if (!is_exe(opts->pigzname)) {
-             	#ifdef myDisableZLib
-                printMessage("Compression requires %s\n",pigz);
-            	#else //myUseZLib
-                printMessage("Compression will be faster with %s\n",pigz);
-            	#endif
-            	strcpy(opts->pigzname,"");
-            } //no pigz_mricron in exe's folder
-        } //no /usr/local/pigz_mricron
-       }//no /usr/bin/pigz
-    } //no /usr/local/pigz
+    char str[1024];
+    //possible pigz names
+    const char * nams[] = {
+    "pigz",
+    "pigz_mricron",
+    "pigz_afni",
+	};
+	#define n_nam (sizeof (nams) / sizeof (const char *))
+	for (int n = 0; n < n_nam; n++) {
+		if (findpathof(str, nams[n])) {
+			strcpy(opts->pigzname,str);
+			//printMessage("Found pigz: %s\n", str);
+			return;
+		 }
+    }
+	//possible pigz paths
+    const char * pths[] = {
+    "/usr/local/bin/",
+    "/usr/bin/",
+	};
+	#define n_pth (sizeof (pths) / sizeof (const char *))
+    char exepth[1024];
+    strcpy(exepth,argv[0]);
+    dropFilenameFromPath(exepth);//, opts.pigzname);
+    char appendChar[2] = {"a"};
+    appendChar[0] = kPathSeparator;
+    if (exepth[strlen(exepth)-1] != kPathSeparator) strcat (exepth,appendChar);
+	//see if pigz in any path
+    for (int n = 0; n < n_nam; n++) {
+        //printf ("%d: %s\n", i, nams[n]);
+    	for (int p = 0; p < n_pth; p++) {
+			strcpy(str, pths[p]);
+			strcat(str, nams[n]);
+			//printf (">>>%s\n", str);
+			if (is_exe(str))
+				goto pigzFound;
+    	} //p
+    	//check exepth
+    	strcpy(str, exepth);
+		strcat(str, nams[n]);
+		if (is_exe(str))
+			goto pigzFound;
+    } //n
+    //Failure:
+	#ifdef myDisableZLib
+    	printMessage("Compression requires 'pigz' to be installed\n");
+    #else //myUseZLib
+    	printMessage("Compression will be faster with 'pigz' installed\n");
+    #endif
+	return;
+  	pigzFound: //Success
+  	strcpy(opts->pigzname,str);
+	//printMessage("Found pigz: %s\n", str);
     #endif
 } //readFindPigz()
 

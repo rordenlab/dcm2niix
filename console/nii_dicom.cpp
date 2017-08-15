@@ -2229,7 +2229,7 @@ TJPEG *  decode_JPEG_SOF_0XC3_stack (const char *fn, int skipBytes, bool isVerbo
     }
     free(lRawRA);
     if (frame < frames) {
-        printMessage("Only found %d of %d JPEG fragments. Please use dcmdjpeg to uncompress data.\n", frame, frames);
+        printMessage("Only found %d of %d JPEG fragments. Please use dcmdjpeg or gdcmconv to uncompress data.\n", frame, frames);
         abortGoto();
     }
     return lOffsetRA;
@@ -2699,6 +2699,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
+#define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
 #define  kPlanarRGB 0x0028+(0x0006 << 16 )
 #define  kDim3 0x0028+(0x0008 << 16 ) //number of frames - for Philips this is Dim3*Dim4
 #define  kDim2 0x0028+(0x0010 << 16 )
@@ -2890,7 +2891,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
         //verbose reporting :
         // printMessage("Pos %ld GroupElement %#08x,%#08x Length %d isLittle %d\n", lPos, (groupElement & 0xFFFF), (groupElement >> 16), lLength, d.isLittleEndian);
         switch ( groupElement ) {
-            case 	kTransferSyntax: {
+            case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], transferSyntax);
                 //printMessage("%d transfer syntax>>> '%s'\n", compressFlag, transferSyntax);
@@ -2915,7 +2916,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0) {
                     d.compressionScheme = kCompressC3;
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.80") == 0) {
-                    printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls, http://support.dcmtk.org/docs/dcmdjpls.html)\n",transferSyntax);
+                    printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls or gdcmconv)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
                     d.compressionScheme = kCompressYes;
@@ -2961,7 +2962,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kStudyDate:
                 dcmStr (lLength, &buffer[lPos], d.studyDate);
                 break;
-            case 	kModality:
+            case kModality:
                 if (lLength < 2) break;
                 if ((buffer[lPos]=='C') && (toupper(buffer[lPos+1]) == 'R'))
                 	d.modality = kMODALITY_CR;
@@ -2986,21 +2987,21 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kReferringPhysicianName:
             	dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
             	break;
-            case 	kComplexImageComponent:
+            case kComplexImageComponent:
                 if (lLength < 2) break;
                 d.isHasPhase = (buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H');
                 d.isHasMagnitude = (buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A');
                 break;
-            case 	kAcquisitionTime :
+            case kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
                 //printMessage("%s\n",acquisitionTimeTxt);
                 break;
-            case 	kStudyTime :
+            case kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
                 break;
-            case 	kPatientName :
+            case kPatientName :
                 dcmStr (lLength, &buffer[lPos], d.patientName);
                 break;
             case kPatientID :
@@ -3031,7 +3032,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
                 dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
-            case 	kPatientOrient :
+            case kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
             case kLastScanLoc :
@@ -3060,11 +3061,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kStudyInstanceUID :
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
-
             case kSeriesInstanceUID :
             	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
                 break;
-            case 	kPatientPosition :
+            case kPatientPosition :
                 if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (is2005140FSQ)) {
                     if (!is2005140FSQwarned)
                         printWarning("Philips R3.2.2 can report different positions for the same slice. Attempting patch.\n");
@@ -3094,65 +3094,72 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 
                 } //not after 2005,140F
                 break;
-            case 	kInPlanePhaseEncodingDirection:
+            case kInPlanePhaseEncodingDirection:
                 d.phaseEncodingRC = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
                 break;
             case kStudyID:
             	dcmStr (lLength, &buffer[lPos], d.studyID);
             	break;
-            case 	kSeriesNum:
+            case kSeriesNum:
                 d.seriesNum =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
-            case 	kAcquNum:
+            case kAcquNum:
                 d.acquNum = dcmStrInt(lLength, &buffer[lPos]);
                 break;
-            case 	kImageNum:
+            case kImageNum:
                 //int dx = 3;
                 if (d.imageNum <= 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image as image1 in 2001,9000
                 break;
-            case 	kPlanarRGB:
+            case kPhotometricInterpretation:
+ 				char interp[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], interp);
+                if (strcmp(interp, "PALETTE_COLOR") == 0)
+                	printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
+
+            	break;
+            case kPlanarRGB:
                 d.isPlanarRGB = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kDim3:
+            case kDim3:
                 d.xyzDim[3] = dcmStrInt(lLength, &buffer[lPos]);
                 break;
-            case 	kSamplesPerPixel:
+            case kSamplesPerPixel:
                 d.samplesPerPixel = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kDim2:
+            case kDim2:
                 d.xyzDim[2] = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kDim1:
+            case kDim1:
                 d.xyzDim[1] = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kXYSpacing:
+            case kXYSpacing:
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
                 break;
-            case 	kImageComments:
+            case kImageComments:
                 dcmStr (lLength, &buffer[lPos], d.imageComments);
                 break;
-            case 	kLocationsInAcquisitionGE:
+            case kLocationsInAcquisitionGE:
                 locationsInAcquisitionGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kDoseCalibrationFactor :
                 d.doseCalibrationFactor = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case 	kBitsAllocated :
+            case kBitsAllocated :
                 d.bitsAllocated = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kBitsStored :
+            case kBitsStored :
                 d.bitsStored = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kIsSigned : //http://dicomiseasy.blogspot.com/2012/08/chapter-12-pixel-data.html
+            case kIsSigned : //http://dicomiseasy.blogspot.com/2012/08/chapter-12-pixel-data.html
                 d.isSigned = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kTR :
+            case kTR :
                 d.TR = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case 	kTE :
+            case kTE :
             	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case 	kTI :
+            case kTI :
                 d.TI = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kEchoNum :
@@ -3161,7 +3168,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kMagneticFieldStrength :
                 d.fieldStrength =  dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case 	kZSpacing :
+            case kZSpacing :
                 zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kPhaseEncodingSteps :
@@ -3202,7 +3209,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             		d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 }
             	break;
-            case 	kSlope :
+            case kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kPhilipsSlope :
@@ -3210,13 +3217,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     d.intenScalePhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
 
-            case 	kIntercept :
+            case kIntercept :
                 d.intenIntercept = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case 	kZThick :
+            case kZThick :
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case 	kCoilSiemens : {
+            case kCoilSiemens : {
                 if (d.manufacturer == kMANUFACTURER_SIEMENS) {
                     //see if image from single coil "H12" or an array "HEA;HEP"
                     char coilStr[kDICOMStr];
@@ -3238,7 +3245,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 if (*ptr != '\0')
                 	d.accelFactPE = 0.0;
 				break; }
-            case 	kLocationsInAcquisition :
+            case kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kIconImageSequence:
@@ -3249,7 +3256,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	printMessage("StackSliceNumber %d\n",stackSliceNumber);
             	break;
 			}*/
-            case 	kNumberOfDynamicScans:
+            case kNumberOfDynamicScans:
                 d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case	kMRAcquisitionType: //detect 3D acquisition: we can reorient these without worrying about slice time correct or BVEC/BVAL orientation
@@ -3390,11 +3397,11 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                     d.CSA.dtiV[d.CSA.numDti-1][3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 //http://www.na-mic.org/Wiki/index.php/NAMIC_Wiki:DTI:DICOM_for_DWI_and_DTI
                 break;
-            case 	kWaveformSq:
+            case kWaveformSq:
                 d.imageStart = 1; //abort!!!
                 printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
                 break;
-            case 	kCSAImageHeaderInfo:
+            case kCSAImageHeaderInfo:
             	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, dti4D);
                 d.isHasPhase = d.CSA.isPhaseMap;
                 break;
@@ -3407,15 +3414,15 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	d.CSA.SeriesHeader_offset = (int)lPos;
             	d.CSA.SeriesHeader_length = lLength;
             	break;
-            case 	kRealWorldIntercept:
+            case kRealWorldIntercept:
                 if (isSameFloat(0.0, d.intenIntercept)) //give precedence to standard value
                     d.intenIntercept = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kRealWorldSlope:
+            case kRealWorldSlope:
                 if (isSameFloat(1.0, d.intenScale))  //give precedence to standard value
                     d.intenScale = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-            case 	kEffectiveEchoSpacingGE:
+            case kEffectiveEchoSpacingGE:
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kDiffusionBFactorGE :
@@ -3432,17 +3439,17 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kProcedureStepDescription:
                 dcmStr (lLength, &buffer[lPos], d.procedureStepDescription);
                 break;
-            case 	kOrientationACR : //use in emergency if kOrientation is not present!
+            case kOrientationACR : //use in emergency if kOrientation is not present!
                 if (!isOrient) dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 break;
-            case 	kOrientation :
+            case kOrientation :
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 isOrient = true;
                 break;
             case kImagesInAcquisition :
                 imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
-            case 	kImageStart:
+            case kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos + (int)lFileOffset;
@@ -3457,13 +3464,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 }
 				isIconImageSequence = false;
                 break;
-            case 	kImageStartFloat:
+            case kImageStartFloat:
                 d.isFloat = true;
                 if (!isIconImageSequence) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos + (int)lFileOffset;
                 isIconImageSequence = false;
                 break;
-            case 	kImageStartDouble:
+            case kImageStartDouble:
                 printWarning("Double-precision DICOM conversion untested: please provide samples to developer\n");
                 d.isFloat = true;
                 if (!isIconImageSequence) //do not exit for proprietary thumbnails
@@ -3497,7 +3504,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     free (buffer);
     if (encapsulatedDataFragmentStart > 0) {
         if (encapsulatedDataFragments > 1)
-        	printError(" Compressed image stored as %d fragments: decompress with Osirix, dcmdjpeg or dcmjp2k\n", encapsulatedDataFragments);
+        	printError(" Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k\n", encapsulatedDataFragments);
     	else
     		d.imageStart = encapsulatedDataFragmentStart;
     } else if ((isEncapsulatedData) && (d.imageStart < 128)) {
@@ -3561,7 +3568,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //    d.seriesNum = d.seriesNum + (kEchoMult*d.echoNum);
     if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
         //dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
-        printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg\n", d.bitsAllocated);
+        printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
         d.isValid = false;
     }
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (isMosaic) && (d.CSA.mosaicSlices < 1) && (d.phaseEncodingSteps > 0) && ((d.xyzDim[1] % d.phaseEncodingSteps) == 0) && ((d.xyzDim[2] % d.phaseEncodingSteps) == 0) ) {
