@@ -259,7 +259,6 @@ cleanup2:
 #define M_PI           3.14159265358979323846
 #endif
 
-#ifdef MY_DEBUG
 float deFuzz(float v) {
     if (fabs(v) < 0.00001)
         return 0;
@@ -268,6 +267,7 @@ float deFuzz(float v) {
 
 }
 
+#ifdef MY_DEBUG
 void reportMat33(char *str, mat33 A) {
     printMessage("%s = [%g %g %g ; %g %g %g; %g %g %g ]\n",str,
            deFuzz(A.m[0][0]),deFuzz(A.m[0][1]),deFuzz(A.m[0][2]),
@@ -284,7 +284,7 @@ void reportMat44(char *str, mat44 A) {
 }
 #endif
 
-int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, mat44 *R){
+int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, mat44 *R, int isVerbose){
     //returns slice direction: 1=sag,2=coronal,3=axial, -= flipped
     if (h->dim[3] < 2) return 0; //don't care direction for single slice
     int iSL = 1; //find Z-slice direction: row with highest magnitude of 3rd column
@@ -311,6 +311,7 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
         pos = d.stackOffcentre[iSL];
     if (isnan(pos) && ( !isnan(d.lastScanLoc)) )
         pos = d.lastScanLoc;
+    //if (isnan(pos))
     vec4 x;
     x.v[0] = 0.0; x.v[1] = 0.0; x.v[2]=(float)(h->dim[3]-1.0); x.v[3] = 1.0;
     vec4 pos1v = nifti_vect44mat44_mul(x, *R);
@@ -319,8 +320,19 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     if (!isnan(pos)) // we have real SliceLocation for last slice or volume center
         flip = (pos > R->m[iSL-1][3]) != (pos1 > R->m[iSL-1][3]); // same direction?, note C indices from 0
     else {// we do some guess work and warn user
-    	if (!d.isNonImage) //do not warn user if image is derived
-        	printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
+		vec3 readV = setVec3(d.orient[1],d.orient[2],d.orient[3]);
+		vec3 phaseV = setVec3(d.orient[4],d.orient[5],d.orient[6]);
+		//printMessage("rd %g %g %g\n",readV.v[0],readV.v[1],readV.v[2]);
+		//printMessage("ph %g %g %g\n",phaseV.v[0],phaseV.v[1],phaseV.v[2]);
+    	vec3 sliceV = crossProduct(readV, phaseV); //order important: this is our hail mary
+    	flip = ((sliceV.v[0]+sliceV.v[1]+sliceV.v[2]) < 0);
+    	//printMessage("verify slice dir %g %g %g\n",sliceV.v[0],sliceV.v[1],sliceV.v[2]);
+    	if (isVerbose) { //1st pass only
+			if (!d.isNonImage) //do not warn user if image is derived
+				printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
+			else
+				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image, use raw image instead)\n");
+    	}
     }
     if (flip) {
         for (int i = 0; i < 4; i++)
@@ -506,16 +518,8 @@ mat44 set_nii_header(struct TDICOMdata d) {
 }
 #endif
 
-float deFuzz(float v) {
-    if (fabs(v) < 0.00001)
-        return 0;
-    else
-        return v;
-
-}
-
 // This code predates  Xiangrui Li's set_nii_header function
-mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir) {
+mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir, int isVerbose) {
     *sliceDir = 0;
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
     if (d.CSA.mosaicSlices > 1) {
@@ -540,7 +544,7 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
             Q44 = nifti_mat44_mul(Q44,det);
         }
     } else { //not a mosaic
-        *sliceDir = verify_slice_dir(d, d2, h, &Q44);
+        *sliceDir = verify_slice_dir(d, d2, h, &Q44, isVerbose);
         for (int c=0; c<4; c++)// LPS to nifti RAS, xform matrix before reorient
             for (int r=0; r<2; r++) //swap rows 1 & 2
                 Q44.m[r][c] = - Q44.m[r][c];
@@ -556,7 +560,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
     //returns sliceDir: 0=unknown,1=sag,2=coro,3=axial,-=reversed slices
     int sliceDir = 0;
     if (h->dim[3] < 2) {
-    	mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
+    	mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir, isVerbose);
     	setQSForm(h,Q44, isVerbose);
     	return sliceDir; //don't care direction for single slice
     }
@@ -575,12 +579,12 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
             printMessage("Unable to determine spatial orientation: 0020,0037 missing!\n");
         }
     }
-    mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir);
+    mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir, isVerbose);
     setQSForm(h,Q44, isVerbose);
     return sliceDir;
 } //headerDcm2NiiSForm()
 
-int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h) { //final pass after de-mosaic
+int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int isVerbose) { //final pass after de-mosaic
     char txt[1024] = {""};
     if (h->slice_code == NIFTI_SLICE_UNKNOWN) h->slice_code = d.CSA.sliceOrder;
     if (h->slice_code == NIFTI_SLICE_UNKNOWN) h->slice_code = d2.CSA.sliceOrder; //sometimes the first slice order is screwed up https://github.com/eauerbach/CMRR-MB/issues/29
@@ -608,7 +612,7 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     snprintf(h->descrip,80, "%s",txt);
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%s",d.imageComments);
-    return headerDcm2NiiSForm(d,d2, h, true);
+    return headerDcm2NiiSForm(d,d2, h, isVerbose);
 } //headerDcm2Nii2()
 
 int dcmStrLen (int len) {
@@ -1255,7 +1259,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
     h->sizeof_hdr = 348; //used to signify header does not need to be byte-swapped
     h->slice_code = d.CSA.sliceOrder;
     if (isComputeSForm)
-    	headerDcm2Nii2(d, d, h);
+    	headerDcm2Nii2(d, d, h, false);
     return EXIT_SUCCESS;
 } // headerDcm2Nii()
 
@@ -1358,7 +1362,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 } else if (parVers < 41)
                     nCols = 32; //e.g PAR 4.0
                 else if (parVers < 42)
-                    nCols = 47; //e.g. PAR 4.1
+                    nCols = kv1; //e.g. PAR 4.1 - last column is final diffusion b-value
                 else
                     nCols = kMaxCols; //e.g. PAR 4.2
             }
@@ -1425,7 +1429,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             free (cols);
             return d;
         }
-        for (int i = 0; i < nCols; i++)
+        for (int i = 0; i <= nCols; i++)
             cols[i] = strtof(p, &p); // p+1 skip comma, read a float
         if ((cols[kIndex]) != slice) isIndexSequential = false; //slices 0,1,2.. should have indices 0,1,2,3...
         slice ++;
@@ -1505,7 +1509,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 					if (cols[kbval] > maxBValue)
 						maxBValue = cols[kbval];
                 } //save DTI direction
-
             }
         } //if DTI directions
         //printMessage("%f %f %lu\n",cols[9],cols[kGradientNumber], strlen(buff))
@@ -1613,6 +1616,19 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	if (fabs(TRms - d.TR) > 0.005f)
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
+    }
+    //check DTI makes sense
+    if (d.CSA.numDti > 1) {
+    	bool v1varies = false;
+    	bool v2varies = false;
+    	bool v3varies = false;
+    	for (int i = 1; i < d.CSA.numDti; i++) {
+    		if (dti4D->S[0].V[1] != dti4D->S[i].V[1]) v1varies = true;
+    		if (dti4D->S[0].V[2] != dti4D->S[i].V[2]) v2varies = true;
+    		if (dti4D->S[0].V[3] != dti4D->S[i].V[3]) v3varies = true;
+    	}
+    	if ((!v1varies) || (!v2varies) || (!v3varies))
+    		 printError("Bizarre b-vectors %s\n", parname);
     }
     return d;
 } //nii_readParRec()
@@ -3600,7 +3616,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 		printMessage("Slices not spatially contiguous: please check output [new feature]\n");
     }
     if (isVerbose) {
-        printMessage("%s\n patient position\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printMessage("%s\n patient position (0020,0032)\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+        printMessage("%s\n orient (0020,0037)\t%g\t%g\t%g\t%g\t%g\t%g\n",fname, d.orient[1],d.orient[2],d.orient[3], d.orient[4],d.orient[5],d.orient[6]);
         printMessage(" acq %d img %d ser %ld dim %dx%dx%d mm %gx%gx%g offset %d dyn %d loc %d valid %d ph %d mag %d posReps %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.numberOfDynamicScans, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude,d.patientPositionSequentialRepeats, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum, d.TE, d.TR);
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
