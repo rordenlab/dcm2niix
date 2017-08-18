@@ -2359,7 +2359,7 @@ int convert_parRec(struct TDCMopts opts) {
     dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D);
     struct TDCMsort dcmSort[1];
     dcmSort[0].indx = 0;
-    saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, &dti4D);
+    int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, &dti4D);
     free(dcmList);//if (nConvertTotal == 0)
     if (nameList.numItems < 1)
     	printMessage("No valid PAR/REC files were found\n");
@@ -2367,8 +2367,7 @@ int convert_parRec(struct TDCMopts opts) {
         for (int i = 0; i < nameList.numItems; i++)
             free(nameList.str[i]);
     free(nameList.str);
-
-    return EXIT_SUCCESS;
+    return ret;
 }// convert_parRec()
 
 void freeNameList(struct TSearchList nameList) {
@@ -2459,6 +2458,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     struct TDTI4D dti4D;
     int nConvertTotal = 0;
     bool compressionWarning = false;
+    bool convertError = false;
     for (int i = 0; i < nDcm; i++ ) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
         if ((dcmList[i].isValid) &&((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
@@ -2466,8 +2466,11 @@ int nii_loadDir(struct TDCMopts* opts) {
             dcmSort[0].indx = i;
             dcmSort[0].img = ((uint64_t)dcmList[i].seriesNum << 32) + dcmList[i].imageNum;
             dcmList[i].converted2NII = 1;
-            saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
-            nConvertTotal++;
+            int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+            if (ret == EXIT_SUCCESS)
+            	nConvertTotal++;
+            else
+            	convertError = true;
         }
     	if ((dcmList[i].compressionScheme != kCompressNone) && (!compressionWarning) && (opts->compressFlag != kCompressNone)) {
     		compressionWarning = true; //generate once per conversion rather than once per image
@@ -2502,7 +2505,6 @@ int nii_loadDir(struct TDCMopts* opts) {
                 opts->series.push_back(nextSeries);
             }
         }
-
         // To avoid a spurious warning below
         nConvertTotal = nDcm;
     } else {
@@ -2534,8 +2536,11 @@ int nii_loadDir(struct TDCMopts* opts) {
 				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 			else
 				nConvert = removeDuplicates(nConvert, dcmSort);
-			nConvertTotal += nConvert;
-			saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+			int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+            if (ret == EXIT_SUCCESS)
+            	nConvertTotal += nConvert;
+            else
+            	convertError = true;
 			free(dcmSort);
 		}//convert all images of this series
     }
@@ -2544,6 +2549,8 @@ int nii_loadDir(struct TDCMopts* opts) {
 #endif
     free(dcmList);
     freeNameList(nameList);
+    if (convertError)
+        return EXIT_FAILURE; //at least one image failed to convert
     if (nConvertTotal == 0) {
         printMessage("No valid DICOM files were found\n");
         return kEXIT_NO_VALID_FILES_FOUND;
