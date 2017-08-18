@@ -525,6 +525,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		case kMANUFACTURER_TOSHIBA:
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 			break;
+		case kMANUFACTURER_SEGAMI:
+			fprintf(fp, "\t\"Manufacturer\": \"Segami\",\n" );
+			break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
 	if (!opts.isAnonymizeBIDS) {

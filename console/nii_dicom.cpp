@@ -331,13 +331,23 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
 			if (!d.isNonImage) //do not warn user if image is derived
 				printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
 			else
-				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image, use raw image instead)\n");
+				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image)\n");
     	}
     }
     if (flip) {
         for (int i = 0; i < 4; i++)
             R->m[i][2] = -R->m[i][2];
     }
+    /*if (d.manufacturer == kMANUFACTURER_SEGAMI) { //set origin as center of volume
+    	for (int i = 0; i < 3; i++)
+            R->m[i][3] = 0; //remove old offset
+    	vec4 originVx = setVec4( (h->dim[1]+1.0f)/2.0f, (h->dim[2]+1.0f)/2.0f, (h->dim[3]+1.0f)/2.0f);
+    	printMessage("origin (vx) %g %g %g\n",originVx.v[0],originVx.v[1],originVx.v[2]);
+    	vec4 originMm = nifti_vect44mat44_mul(originVx, *R);
+    	printMessage("origin (mm) %g %g %g\n",originMm.v[0],originMm.v[1],originMm.v[2]);
+    	for (int i = 0; i < 3; i++)
+            R->m[i][3] = originMm.v[i]; //remove old offset
+    }*/
     if (flip)
         iSL = -iSL;
 	#ifdef MY_DEBUG
@@ -522,6 +532,25 @@ mat44 set_nii_header(struct TDICOMdata d) {
 mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir, int isVerbose) {
     *sliceDir = 0;
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
+	if (d.manufacturer == kMANUFACTURER_SEGAMI) {
+		//Segami reconstructions appear to disregard DICOM spatial parameters: assume center of volume is isocenter and no table tilt
+		// Consider sample image with d.orient (0020,0037) = -1 0 0; 0 1 0: this suggests image RAI (L->R, P->A, S->I) but the vendors viewing software suggests LPS
+		//Perhaps we should ignore 0020,0037 and 0020,0032 as they are hidden in sequence 0054,0022, but in this case no positioning is provided
+		// http://www.cs.ucl.ac.uk/fileadmin/cmic/Documents/DavidAtkinson/DICOM.pdf
+		// https://www.slicer.org/wiki/Coordinate_systems
+    	LOAD_MAT44(Q44, -h->pixdim[1],0,0,0, 0,-h->pixdim[2],0,0, 0,0,h->pixdim[3],0); //X and Y dimensions flipped in NIfTI (RAS) vs DICOM (LPS)
+    	vec4 originVx = setVec4( (h->dim[1]+1.0f)/2.0f, (h->dim[2]+1.0f)/2.0f, (h->dim[3]+1.0f)/2.0f);
+    	vec4 originMm = nifti_vect44mat44_mul(originVx, Q44);
+    	for (int i = 0; i < 3; i++)
+            Q44.m[i][3] = -originMm.v[i]; //set origin to center voxel
+        if (isVerbose) {
+        	//printMessage("origin (vx) %g %g %g\n",originVx.v[0],originVx.v[1],originVx.v[2]);
+    		//printMessage("origin (mm) %g %g %g\n",originMm.v[0],originMm.v[1],originMm.v[2]);
+    		printWarning("Segami coordinates defy DICOM convention, please check orientation\n");
+    	}
+    	return Q44;
+
+    }
     if (d.CSA.mosaicSlices > 1) {
         double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
         double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
@@ -903,6 +932,8 @@ int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float 
         ret = kMANUFACTURER_PHILIPS;
     if ((toupper(cString[0])== 'T') && (toupper(cString[1])== 'O'))
         ret = kMANUFACTURER_TOSHIBA;
+    if ((toupper(cString[0])== 'S') && (toupper(cString[1])== 'E'))
+        ret = kMANUFACTURER_SEGAMI;
 //#ifdef _MSC_VER
 	free(cString);
 //#endif

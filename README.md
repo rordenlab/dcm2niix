@@ -15,6 +15,10 @@ This software should run on macOS, Linux and Windows without requiring any other
 
 ## Versions
 
+18-Aug-2017
+ - Better BVec extraction for  [PAR/REC 4.1](https://www.nitrc.org/forum/forum.php?thread_id=8387&forum_id=4703).
+ - Support for [Segami Cerescan volumes](https://www.nitrc.org/forum/forum.php?thread_id=8076&forum_id=4703).
+
 24-July-2017
  - Compiles with recent releases of [OpenJPEG](https://github.com/neurolabusc/dcm_qa/issues/5#issuecomment-317443179) for JPEG2000 support.
 
