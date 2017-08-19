@@ -238,12 +238,12 @@ unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr
     if(! opj_read_header( stream, codec, &jpx)){
         printError( "OpenJPEG failed to read the header %s (offset %d)\n", imgname, dcm.imageStart);
         //comment these next lines to abort: include these to create zero-padded slice
-        {#ifdef MY_ZEROFILLBROKENJPGS}
+        #ifdef MY_ZEROFILLBROKENJPGS
         //fix broken slices https://github.com/scitran-apps/dcm2niix/issues/4
         printError( "Zero-filled slice created\n");
         int imgbytes = (hdr.bitpix/8)*hdr.dim[1]*hdr.dim[2];
         ret = (unsigned char*) calloc(imgbytes,1);
-        {#endif}
+        #endif
         goto cleanup2;
     }
     // Get the decoded image
