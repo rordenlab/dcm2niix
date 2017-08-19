@@ -236,7 +236,14 @@ unsigned char * nii_loadImgCoreOpenJPEG(char* imgname, struct nifti_1_header hdr
     if ( !opj_setup_decoder(codec, &params) ) goto cleanup2;
     // Read the main header of the codestream and if necessary the JP2 boxes
     if(! opj_read_header( stream, codec, &jpx)){
-        printError( "OpenJPEG failed to read the header %s\n", imgname);
+        printError( "OpenJPEG failed to read the header %s (offset %d)\n", imgname, dcm.imageStart);
+        //comment these next lines to abort: include these to create zero-padded slice
+        {#ifdef MY_ZEROFILLBROKENJPGS}
+        //fix broken slices https://github.com/scitran-apps/dcm2niix/issues/4
+        printError( "Zero-filled slice created\n");
+        int imgbytes = (hdr.bitpix/8)*hdr.dim[1]*hdr.dim[2];
+        ret = (unsigned char*) calloc(imgbytes,1);
+        {#endif}
         goto cleanup2;
     }
     // Get the decoded image
@@ -549,7 +556,6 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
     		printWarning("Segami coordinates defy DICOM convention, please check orientation\n");
     	}
     	return Q44;
-
     }
     if (d.CSA.mosaicSlices > 1) {
         double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
@@ -3551,11 +3557,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     free (buffer);
     if (encapsulatedDataFragmentStart > 0) {
         if (encapsulatedDataFragments > 1)
-        	printError(" Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k\n", encapsulatedDataFragments);
+        	printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k\n", encapsulatedDataFragments);
     	else
     		d.imageStart = encapsulatedDataFragmentStart;
     } else if ((isEncapsulatedData) && (d.imageStart < 128)) {
-    	printWarning(" DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010\n");
+    	//http://www.dclunie.com/medical-image-faq/html/part6.html
+		//Uncompressed data (unencapsulated) is sent in DICOM as a series of raw bytes or words (little or big endian) in the Value field of the Pixel Data element (7FE0,0010). Encapsulated data on the other hand is sent not as raw bytes or words but as Fragments contained in Items that are the Value field of Pixel Data
+    	printWarning("DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010: %s\n", fname);
     	d.imageStart = encapsulatedDataImageStart;
     }
     //Recent Philips images include DateTime (0008,002A) but not separate date and time (0008,0022 and 0008,0032)
