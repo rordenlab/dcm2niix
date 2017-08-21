@@ -869,8 +869,8 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
 	}
 	if (*numADC > 0) {
-		if (numDti == 0) {
-			printWarning("No bvec/bval files created: no volumes with bvecs applied \n");
+		if ((numDti - *numADC) < 2) {
+			printWarning("No bvec/bval files created: requires multiple DWI volumes\n");
 			free(bvals);
 			free(vx);
 			return NULL;
@@ -1237,7 +1237,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
     for (int pos = 0; pos<strlen(outname); pos ++)
         if ((outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
-            || (outname[pos] == '"') || (outname[pos] == '\\') || (outname[pos] == '/')
+            || (outname[pos] == '"')  //|| (outname[pos] == '\\') || (outname[pos] == '/')
             || (outname[pos] == '^')
             || (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
             outname[pos] = '_';
@@ -1246,8 +1246,27 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     strcat (baseoutname,pth);
     char appendChar[2] = {"a"};
     appendChar[0] = kPathSeparator;
-    if (pth[strlen(pth)-1] != kPathSeparator)
+    if ((pth[strlen(pth)-1] != kPathSeparator) && (outname[0] != kPathSeparator))
         strcat (baseoutname,appendChar);
+	//Allow user to specify new folders, e.g. "-f dir/%p" or "-f %s/%p/%m"
+	// These folders are created if they do not exist
+    char *sep = strchr(outname, kPathSeparator);
+    if (sep) {
+    	char newdir[2048] = {""};
+    	strcat (newdir,baseoutname);
+    	struct stat st = {0};
+    	for (int pos = 0; pos<strlen(outname); pos ++) {
+    		if (outname[pos] == kPathSeparator) {
+    			if (stat(newdir, &st) == -1)
+    				mkdir(newdir, 0700);
+    		}
+			char ch[12] = {""};
+            sprintf(ch,"%c",outname[pos]);
+    		strcat (newdir,ch);
+    	}
+    }
+    //printMessage("path='%s' name='%s'\n", pathoutname, outname);
+    //make sure outname is unique
     strcat (baseoutname,outname);
     char pathoutname[2048] = {""};
     strcat (pathoutname,baseoutname);
@@ -2235,7 +2254,7 @@ TWarnings setWarnings() {
 	return r;
 }
 
-bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSameSeries, struct TWarnings* warnings, bool *isMultiEcho) {
+bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho) {
     //returns true if d1 and d2 should be stacked together as a single output
     *isMultiEcho = false;
     if (!d1.isValid) return false;
@@ -2256,7 +2275,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, bool isForceStackSam
         warnings->bitDepthVaries = true;
         return false;
     }
-    if (isForceStackSameSeries) {
+    if (opts->isForceStackSameSeries) {
     	if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum))
     		*isMultiEcho = true;
     	return true; //we will stack these images, even if they differ in the following attributes
@@ -2570,7 +2589,7 @@ int nii_loadDir(struct TDCMopts* opts) {
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
                 bool isMultiEchoUnused;
-                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts->isForceStackSameSeries, &warnings, &isMultiEchoUnused)) {
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused)) {
                     opts->series[j].files.push_back(nameList.str[i]);
                     matched = true;
                     break;
@@ -2595,13 +2614,13 @@ int nii_loadDir(struct TDCMopts* opts) {
 			struct TWarnings warnings = setWarnings();
 			bool isMultiEcho;
 			for (int j = i; j < nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings, &isMultiEcho ) )
+				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho ) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
 			for (int j = i; j < nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts->isForceStackSameSeries, &warnings, &isMultiEcho)) {
+				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
 					dcmSort[nConvert].indx = j;
 					dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32) + dcmList[j].imageNum;
 					dcmList[j].converted2NII = 1;
@@ -2671,7 +2690,7 @@ int findpathof(char *pth, const char *exe) {
      char *searchpath;
      char *beg, *end;
      int stop, found;
-     int len;
+     size_t len; //int
      if (strchr(exe, '/') != NULL) {
 	  if (realpath(exe, pth) == NULL) return 0;
 	  return  is_exe(pth);
@@ -2747,7 +2766,6 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     	for (int p = 0; p < n_pth; p++) {
 			strcpy(str, pths[p]);
 			strcat(str, nams[n]);
-			//printf (">>>%s\n", str);
 			if (is_exe(str))
 				goto pigzFound;
     	} //p
