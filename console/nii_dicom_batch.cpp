@@ -1254,11 +1254,16 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (sep) {
     	char newdir[2048] = {""};
     	strcat (newdir,baseoutname);
-    	struct stat st = {0};
+    	//struct stat st = {0};
     	for (int pos = 0; pos<strlen(outname); pos ++) {
     		if (outname[pos] == kPathSeparator) {
-    			if (stat(newdir, &st) == -1)
-    				mkdir(newdir, 0700);
+    			//if (stat(newdir, &st) == -1)
+    			if (!is_dir(newdir,true))
+    			#if defined(_WIN64) || defined(_WIN32)
+					mkdir(newdir);
+    			#else
+					mkdir(newdir, 0700);
+    			#endif
     		}
 			char ch[12] = {""};
             sprintf(ch,"%c",outname[pos]);
