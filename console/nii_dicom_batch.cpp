@@ -726,34 +726,76 @@ bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Phil
     	((isSameFloat(bvec.V[1],0.0f)) && (isSameFloat(bvec.V[2],0.0f)) && (isSameFloat(bvec.V[3],0.0f)) ) );
 }
 
-unsigned char * removeADC(struct nifti_1_header *hdr, unsigned char *inImg, bool * isADC) {
-	int numVolOut = 0;
-	int numVolIn = hdr->dim[4];
-	int numVolBytes = hdr->dim[1]*hdr->dim[2]*hdr->dim[3]*(hdr->bitpix/8);
-	if ((!isADC) || (numVolIn < 1) || (numVolBytes < 1)) return inImg;
-	for (int i = 0; i < numVolIn; i++)
-		if (!isADC[i])
-			numVolOut++;
-	if (numVolOut < 1) return inImg;
-	//printMessage("Removing ADC maps, %d volumes reduced to %d\n", numVolIn, numVolOut);
-	unsigned char *outImg = (unsigned char *)malloc(numVolBytes * numVolOut);
-	int outPos = 0;
-	for (int i = 0; i < numVolIn; i++) {
-		if (!isADC[i]) {
-			memcpy(&outImg[outPos], &inImg[i * numVolBytes], numVolBytes); // dest, src, bytes
-            outPos += numVolBytes;
-		}
-	} //for each volume
-	free(isADC);
-	free(inImg);
-	hdr->dim[4] = numVolOut;
-	return outImg;
+unsigned char * removeADC(struct nifti_1_header *hdr, unsigned char *inImg, int numADC) {
+//for speed we just clip the number of volumes, the realloc routine would be nice
+// we do not want to copy input to a new smaller array since 4D DTI datasets can be huge
+// and that would require almost twice as much RAM
+	if (numADC < 1) return inImg;
+	hdr->dim[4] = hdr->dim[4] - numADC;
+	return inImg;
 } //removeADC()
 
+//#define naive_reorder_vols //for simple, fast re-ordering that consumes a lot of RAM
+#ifdef naive_reorder_vols
+unsigned char * reorderVolumes(struct nifti_1_header *hdr, unsigned char *inImg, int * volOrderIndex) {
+//reorder volumes to place ADC at end and (optionally) B=0 at start
+// volOrderIndex[0] reports location of desired first volume
+//  naive solution creates an output buffer that doubles RAM usage (2 *numVol)
+	int numVol = hdr->dim[4];
+	int numVolBytes = hdr->dim[1]*hdr->dim[2]*hdr->dim[3]*(hdr->bitpix/8);
+	if ((!volOrderIndex) || (numVol < 1) || (numVolBytes < 1)) return inImg;
+	unsigned char *outImg = (unsigned char *)malloc(numVolBytes * numVol);
+	int outPos = 0;
+	for (int i = 0; i < numVol; i++) {
+		memcpy(&outImg[outPos], &inImg[volOrderIndex[i] * numVolBytes], numVolBytes); // dest, src, bytes
+        outPos += numVolBytes;
+	} //for each volume
+	free(volOrderIndex);
+	free(inImg);
+	return outImg;
+} //reorderVolumes()
+#else // naive_reorder_vols
+unsigned char * reorderVolumes(struct nifti_1_header *hdr, unsigned char *inImg, int * volOrderIndex) {
+//reorder volumes to place ADC at end and (optionally) B=0 at start
+// volOrderIndex[0] reports location of desired first volume
+// complicated by fact that 4D DTI data is often huge
+//  simple solutions would create an output buffer that would double RAM usage (2 *numVol)
+//  here we bubble-sort volumes in place to use numVols+1 memory
+	int numVol = hdr->dim[4];
+	int numVolBytes = hdr->dim[1]*hdr->dim[2]*hdr->dim[3]*(hdr->bitpix/8);
+	int * inPos = (int *) malloc(numVol * sizeof(int));
+	for (int i = 0; i < numVol; i++)
+        inPos[i] = i;
+	unsigned char *tempVol = (unsigned char *)malloc(numVolBytes);
+	int outPos = 0;
+	for (int o = 0; o < numVol; o++) {
+		int i = inPos[volOrderIndex[o]]; //input volume
+		if (i == o) continue; //volume in correct order
+		memcpy(&tempVol[0], &inImg[o * numVolBytes], numVolBytes); //make temp
+        memcpy(&inImg[o * numVolBytes], &inImg[i * numVolBytes], numVolBytes); //copy volume to desire location dest, src, bytes
+        memcpy(&inImg[i * numVolBytes], &tempVol[0], numVolBytes); //copy unsorted volume
+        inPos[o] = i;
+        outPos += numVolBytes;
+	} //for each volume
+	free(inPos);
+	free(volOrderIndex);
+	free(tempVol);
+	return inImg;
+} //reorderVolumes()
+#endif // naive_reorder_vols
 
-bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D) {
+float * bvals; //global variable for cmp_bvals
+int cmp_bvals(const void *a, const void *b){
+    int ia = *(int *)a;
+    int ib = *(int *)b;
+    //return bvals[ia] > bvals[ib] ? -1 : bvals[ia] < bvals[ib];
+    return bvals[ia] < bvals[ib] ? -1 : bvals[ia] > bvals[ib];
+} // cmp_bvals()
+
+int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, int * numADC) {
     //reports non-zero if any volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
+    *numADC = 0;
     if (opts.isOnlyBIDS) return NULL;
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
@@ -798,47 +840,83 @@ bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],st
         free(vx);
         return NULL;
     }
-    int firstB0 = -1;
-    for (int i = 0; i < numDti; i++) //check if all bvalues match first volume
-        if (isSameFloat(vx[i].V[0],0) ) {
-            firstB0 = i;
-            break;
+	int minB0idx = 0;
+    float minB0 = vx[0].V[0];
+    for (int i = 0; i < numDti; i++)
+        if (vx[i].V[0] < minB0) {
+            minB0 = vx[i].V[0];
+            minB0idx = i;
         }
-    if (firstB0 < 0) printWarning("This diffusion series does not have a B0 (reference) volume\n");
-    if (firstB0 > 0) printMessage("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", firstB0);
-	int numADC = 0;
-    bool * isADC = NULL;
-    if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS) {
-    	isADC = (bool *)malloc(numDti * sizeof(bool));
-    	int o = 0; //output index
-        for (int i = 0; i < numDti; i++) {//check if all bvalues match first volume
-        	if (isADCnotDTI(vx[i])) {
-        	    isADC[i] = true;
-            	numADC++;
-            	printMessage("Volume %d is not a normal DTI image (ADC?)\n", i+1);
-            } else { //save output
-            	vx[o] = vx[i];
-            	isADC[i] = false;
-            	o++;
-            }
-        } //
-        numDti = numDti - numADC;
-        dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
-        if (numADC > 0) {
-            printMessage("Note: %d volumes appear to be ADC images that will be removed to allow processing\n", numADC);
-        	if (numDti == 0) {
-        		printWarning("No bvec/bval files created: no volumes with bvecs applied \n");
-        		free(isADC);
-        		free(vx);
-        		return NULL;
-        	}
+    float maxB0 = vx[0].V[0];
+    for (int i = 0; i < numDti; i++)
+        if (vx[i].V[0] > maxB0)
+            maxB0 = vx[i].V[0];
+    //for CMRR sequences unweighted volumes are not actually B=0 but they have B near zero
+    if (minB0 > 50) printWarning("This diffusion series does not have a B0 (reference) volume\n");
+	if ((!opts.isSortDTIbyBVal) && (minB0idx > 0))
+		printMessage("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", minB0idx);
+
+	float kADCval = maxB0 + 1; //mark as unusual
+    *numADC = 0;
+	bvals = (float *) malloc(numDti * sizeof(float));
+	for (int i = 0; i < numDti; i++) {
+		bvals[i] = vx[i].V[0];
+		if (isADCnotDTI(vx[i])) {
+            *numADC = *numADC + 1;
+            //printMessage("Volume %d is not a normal DTI image (ADC?)\n", i+1);
+            bvals[i] = kADCval;
         }
-        if (numADC == 0) { //no ADC images
-        	free(isADC);
-        	isADC = NULL;
-        }
-    }
-    // philipsCorrectBvecs(&dcmList[indx0]); //<- replaced by unified siemensPhilips solution
+        bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
+	}
+	if (*numADC > 0) {
+		if (numDti == 0) {
+			printWarning("No bvec/bval files created: no volumes with bvecs applied \n");
+			free(bvals);
+			free(vx);
+			return NULL;
+		}
+		printMessage("Note: %d volumes appear to be ADC images that will be removed to allow processing\n", *numADC);
+	}
+	//sort ALL including ADC
+	int * volOrderIndex = (int *) malloc(numDti * sizeof(int));
+	for (int i = 0; i < numDti; i++)
+        volOrderIndex[i] = i;
+	if (opts.isSortDTIbyBVal)
+		qsort(volOrderIndex, numDti, sizeof(*volOrderIndex), cmp_bvals);
+	else if (*numADC > 0) {
+		int o = 0;
+		for (int i = 0; i < numDti; i++) {
+			if (bvals[i] < kADCval) {
+        		volOrderIndex[o] = i;
+        		o++;
+        	} //if not ADC
+        } //for each volume
+	} //if sort else if has ADC
+	free(bvals);
+	//save VX as sorted
+	TDTI * vxOrig = (TDTI *)malloc(numDti * sizeof(TDTI));
+	for (int i = 0; i < numDti; i++)
+    	vxOrig[i] = vx[i];
+    //remove ADC
+	numDti = numDti - *numADC;
+	free(vx);
+	vx = (TDTI *)malloc(numDti * sizeof(TDTI));
+    for (int i = 0; i < numDti; i++)
+    	vx[i] = vxOrig[volOrderIndex[i]];
+    free(vxOrig);
+    //if no ADC or sequential, the is no need to re-order volumes
+	bool isSequential = true;
+	for (int i = 1; i < (numDti + *numADC); i++)
+		if (volOrderIndex[i] <= volOrderIndex[i-1])
+			isSequential = false;
+	if (isSequential) {
+		free(volOrderIndex);
+		volOrderIndex = NULL;
+	}
+	if (!isSequential)
+	  printMessage("DTI volumes re-ordered by ascending b-value\n");
+	dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
+
     geCorrectBvecs(&dcmList[indx0],sliceDir, vx);
     siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx);
     if (!opts.isFlipY ) { //!FLIP_Y&& (dcmList[indx0].CSA.mosaicSlices < 2) mosaics are always flipped in the Y direction
@@ -876,7 +954,7 @@ bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],st
     FILE *fp = fopen(txtname, "w");
     if (fp == NULL) {
         free(vx);
-        return isADC;
+        return volOrderIndex;
     }
     for (int i = 0; i < (numDti-1); i++) {
         if (opts.isCreateBIDS) {
@@ -893,7 +971,7 @@ bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],st
     fp = fopen(txtname, "w");
     if (fp == NULL) {
         free(vx);
-        return isADC;
+        return volOrderIndex;
     }
     for (int v = 1; v < 4; v++) {
         for (int i = 0; i < (numDti-1); i++) {
@@ -908,7 +986,7 @@ bool * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],st
     fclose(fp);
 #endif
     free(vx);
-    return isADC;
+    return volOrderIndex;
 }// nii_SaveDTI()
 
 float sqr(float v){
@@ -2043,11 +2121,11 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
 
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
-    bool * isADC = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D);
+	int numADC;
+    int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0);
-
     if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
@@ -2071,16 +2149,17 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if ((hdr0.dim[4] > 1) && (saveAs3D))
         returnCode = nii_saveNII3D(pathoutname, hdr0, imgM,opts);
     else {
-        if (isADC) { //ADC maps can disrupt analysis: save a copy with the ADC map, and another without
+        if (volOrderIndex) //reorder volumes
+        	imgM = reorderVolumes(&hdr0, imgM, volOrderIndex);
 #ifndef HAVE_R
-            char pathoutnameADC[2048] = {""};
-            strcat(pathoutnameADC,pathoutname);
-            strcat(pathoutnameADC,"_ADC");
-            nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
+		if (numADC > 0) {//ADC maps can disrupt analysis: save a copy with the ADC map, and another without
+			char pathoutnameADC[2048] = {""};
+			strcat(pathoutnameADC,pathoutname);
+			strcat(pathoutnameADC,"_ADC");
+			nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
+		}
 #endif
-			imgM = removeADC(&hdr0, imgM, isADC);
-            //hdr0.dim[4] = hdr0.dim[4]-numFinalADC;
-        };
+		imgM = removeADC(&hdr0, imgM, numADC);
 #ifndef HAVE_R
         returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts);
 #endif
@@ -2717,6 +2796,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;
     opts->isOnlyBIDS = false;
+    opts->isSortDTIbyBVal = true;
     #ifdef myNoAnonymizeBIDS
     opts->isAnonymizeBIDS = false;
     #else

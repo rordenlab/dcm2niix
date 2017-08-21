@@ -15,6 +15,9 @@ This software should run on macOS, Linux and Windows without requiring any other
 
 ## Versions
 
+21-Aug-2017
+ - Sort diffusion volumes by [B-value amplitude](https://www.nitrc.org/forum/forum.php?thread_id=8396&forum_id=4703) (use "-d n"/"-d y" to turn the feature off/on).
+
 18-Aug-2017
  - Better BVec extraction for  [PAR/REC 4.1](https://www.nitrc.org/forum/forum.php?thread_id=8387&forum_id=4703).
  - Support for [Segami Cerescan volumes](https://www.nitrc.org/forum/forum.php?thread_id=8076&forum_id=4703).

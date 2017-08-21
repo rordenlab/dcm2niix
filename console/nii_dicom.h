@@ -38,7 +38,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
- #define kDCMvers "v1.0.20170818" kDCMsuf kCCsuf
+#define kDCMvers "v1.0.20170821" kDCMsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
@@ -57,7 +57,6 @@ static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Ph
 #define kMODALITY_MR  3
 #define kMODALITY_PT  4
 #define kMODALITY_US  5
-
 
 #define kEXIT_NO_VALID_FILES_FOUND  2
 static const int kSliceOrientUnknown = 0;
@@ -139,9 +138,7 @@ static const int kCompressRLE = 4; //run length encoding
     void setQSForm(struct nifti_1_header *h, mat44 Q44i, bool isVerbose);
     int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int isVerbose);
     int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeSForm) ;
-    //unsigned char * nii_loadImgX(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries);
     unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose);
-    //int foo (float vx);
 #ifdef  __cplusplus
 }
 #endif

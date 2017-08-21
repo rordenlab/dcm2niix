@@ -77,6 +77,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -b : BIDS sidecar (y/n/o(o=only: no NIfTI), default %c)\n", bidsCh);
     if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
+    if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
+    printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
      #define kQstr " %%q=sequence number,"
     #else
@@ -192,6 +194,13 @@ int main(int argc, const char * argv[])
                     	opts.isAnonymizeBIDS = true;
                 } else
                 	printf("Error: Unknown command line argument: '%s'\n", argv[i]);
+            } else if ((argv[i][1] == 'd') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isSortDTIbyBVal = false;
+                else
+                    opts.isSortDTIbyBVal = true;
             } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

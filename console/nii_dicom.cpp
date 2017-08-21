@@ -35,8 +35,8 @@
 #include "nifti1_io_core.h"
 
 #ifdef HAVE_R
-#undef isnan
-#define isnan ISNAN
+  #undef isnan
+  #define isnan ISNAN
 #endif
 
 #ifndef myDisableClassicJPEG
@@ -53,7 +53,7 @@
     #include "openjpeg.h"
 
 #ifdef myEnableJasper
-ERROR: YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY
+  ERROR: YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY
 #endif
 
 unsigned char * imagetoimg(opj_image_t * image)
