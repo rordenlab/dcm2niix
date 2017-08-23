@@ -732,6 +732,8 @@ unsigned char * removeADC(struct nifti_1_header *hdr, unsigned char *inImg, int 
 // and that would require almost twice as much RAM
 	if (numADC < 1) return inImg;
 	hdr->dim[4] = hdr->dim[4] - numADC;
+	if (hdr->dim[4] < 2)
+		hdr->dim[0] = 3; //e.g. 4D 2-volume DWI+ADC becomes 3D DWI if ADC is removed
 	return inImg;
 } //removeADC()
 
@@ -870,7 +872,9 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	}
 	if (*numADC > 0) {
 		if ((numDti - *numADC) < 2) {
-			printWarning("No bvec/bval files created: requires multiple DWI volumes\n");
+			if (!isDerived(dcmList[indx0])) //no need to warn if images are derived Trace/ND pair
+				printWarning("No bvec/bval files created: only single value after ADC excluded\n");
+			*numADC = 0;
 			free(bvals);
 			free(vx);
 			return NULL;
@@ -1235,13 +1239,21 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
+    #if defined(_WIN64) || defined(_WIN32) //https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
     for (int pos = 0; pos<strlen(outname); pos ++)
         if ((outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
-            || (outname[pos] == '"')  //|| (outname[pos] == '\\') || (outname[pos] == '/')
+            || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
             || (outname[pos] == '^')
             || (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
             outname[pos] = '_';
-    //printMessage("outname=*%s* %d %d\n", outname, pos,start);
+    for (int pos = 0; pos<strlen(outname); pos ++)
+        if (outname[pos] == '/')
+        	outname[pos] = kPathSeparator; //for Windows, convert "/" to "\"
+    #else
+    for (int pos = 0; pos<strlen(outname); pos ++)
+        if (outname[pos] == ':') //not allowed by MacOS
+        	outname[pos] = '_';
+    #endif
     char baseoutname[2048] = {""};
     strcat (baseoutname,pth);
     char appendChar[2] = {"a"};
@@ -2145,7 +2157,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
 
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
-	int numADC;
+	int numADC = 0;
     int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
@@ -2264,6 +2276,8 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     *isMultiEcho = false;
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
+    if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
+    if (d1.manufacturer != d2.manufacturer) return false; //do not stack data from different vendors
 	if (d1.seriesNum != d2.seriesNum) return false;
 	#ifdef mySegmentByAcq
     if (d1.acquNum != d2.acquNum) return false;
@@ -2293,9 +2307,9 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
         if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
-        	printMessage("slices not stacked: X-Ray Exposure varies (%g, %g; number %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        	printMessage("slices not stacked: X-Ray Exposure varies (exposure %g, %g; number %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         if ((!warnings->echoVaries) && (!d1.isXRay)) //for MRI
-        	printMessage("slices not stacked: echo varies (TE %g, %g; echo %d, %d)\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        	printMessage("slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         warnings->echoVaries = true;
         *isMultiEcho = true;
         return false;
