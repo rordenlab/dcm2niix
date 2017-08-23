@@ -200,6 +200,7 @@ This requires a compiler that supports c++11.
  - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
+  - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
   - [dcm2niir](https://github.com/muschellij2/dcm2niir) R wrapper for dcm2niix/dcm2nii.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) docker.

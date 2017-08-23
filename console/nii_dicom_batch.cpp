@@ -1342,6 +1342,10 @@ unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_l
  #define MZ_UBER_COMPRESSION 9
 #endif
 
+#ifndef MZ_DEFAULT_LEVEL
+ #define MZ_DEFAULT_LEVEL 6
+#endif
+
 void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len, int gzLevel) {
     //create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
     // in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
@@ -1359,7 +1363,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     strm.opaque = Z_NULL;
     strm.next_out = pCmp; // output char array
     strm.avail_out = (unsigned int)cmp_len; // size of output
-    int zLevel = Z_DEFAULT_COMPRESSION;
+    int zLevel = MZ_DEFAULT_LEVEL;//Z_DEFAULT_COMPRESSION;
     if ((gzLevel > 0) && (gzLevel < 11))
     	zLevel = gzLevel;
     if (zLevel > MZ_UBER_COMPRESSION)
@@ -2184,12 +2188,18 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 			char pathoutnameADC[2048] = {""};
 			strcat(pathoutnameADC,pathoutname);
 			strcat(pathoutnameADC,"_ADC");
-			nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
+			if (opts.isSave3D)
+				nii_saveNII3D(pathoutnameADC, hdr0, imgM, opts);
+			else
+				nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
 		}
 #endif
 		imgM = removeADC(&hdr0, imgM, numADC);
 #ifndef HAVE_R
-        returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts);
+		if (opts.isSave3D)
+			returnCode = nii_saveNII3D(pathoutname, hdr0, imgM, opts);
+		else
+        	returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts);
 #endif
     }
 #endif
@@ -2821,7 +2831,9 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isGz = false;
-    opts->gzLevel = -1;
+    opts->isSave3D = false;
+    opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
+    printMessage(">>>>> %d\n",Z_DEFAULT_COMPRESSION);
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;

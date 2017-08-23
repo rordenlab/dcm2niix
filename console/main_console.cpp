@@ -98,14 +98,14 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     if (opts.isGz) gzCh = 'y';
     #ifdef myDisableZLib
 		if (strlen(opts.pigzname) > 0)
-			printf("  -z : gz compress images (y/n, default %c)\n", gzCh);
+			printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, n=no, 3=no,3D]\n", gzCh);
 		else
-			printf("  -z : gz compress images (y/n, default %c) [REQUIRES pigz]\n", gzCh);
+			printf("  -z : gz compress images (y/n/3, default %c)  [y=pigz(MISSING!), n=no, 3=no,3D]\n", gzCh);
     #else
     	#ifdef myDisableMiniZ
-    	printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal:zlib, n=no]\n", gzCh);
+    	printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
 		#else
-		printf("  -z : gz compress images (y/i/n, default %c) [y=pigz, i=internal, n=no]\n", gzCh);
+		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
 
@@ -133,7 +133,8 @@ int invalidParam(int i, const char * argv[]) {
 		|| (argv[i][0] == 'o') || (argv[i][0] == 'O')
 		|| (argv[i][0] == 'h') || (argv[i][0] == 'H')
 		|| (argv[i][0] == 'i') || (argv[i][0] == 'I')
-		|| (argv[i][0] == '0') || (argv[i][0] == '1') || (argv[i][0] == '2'))
+		|| (argv[i][0] == '0') || (argv[i][0] == '1')
+		|| (argv[i][0] == '2') || (argv[i][0] == '3') )
 		return 0;
 
 	//if (argv[i][0] != '-') return 0;
@@ -256,7 +257,10 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
-                if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {
+                if ((argv[i][0] == '3') ) {
+                    opts.isGz = false; //uncompressed 3D
+                	opts.isSave3D = true;
+                } else if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {
                     opts.isGz = true; //force use of internal compression instead of pigz
                 	strcpy(opts.pigzname,"");
                 } else if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
