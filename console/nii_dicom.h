@@ -118,7 +118,7 @@ static const int kCompressRLE = 4; //run length encoding
         float radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 		float ecat_isotope_halflife, ecat_dosage;
         double dateTime, acquisitionTime, acquisitionDate, bandwidthPerPixelPhaseEncode;
-        bool isXRay, isMultiEcho, isSlicesSpatiallySequentialPhilips, isNonImage, isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
+        bool isDerived, isXRay, isMultiEcho, isSlicesSpatiallySequentialPhilips, isValid, is3DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC;
         char softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionAddress[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageType[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], birthDate[kDICOMStr], gender[kDICOMStr], age[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], imageComments[kDICOMStr];
         struct TCSAdata CSA;

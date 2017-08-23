@@ -335,7 +335,7 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     	flip = ((sliceV.v[0]+sliceV.v[1]+sliceV.v[2]) < 0);
     	//printMessage("verify slice dir %g %g %g\n",sliceV.v[0],sliceV.v[1],sliceV.v[2]);
     	if (isVerbose) { //1st pass only
-			if (!d.isNonImage) //do not warn user if image is derived
+			if (!d.isDerived) //do not warn user if image is derived
 				printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
 			else
 				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image)\n");
@@ -608,7 +608,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
         //we will have to guess, assume axial acquisition saved in standard Siemens style?
         d.orient[1] = 1.0f; d.orient[2] = 0.0f;  d.orient[3] = 0.0f;
         d.orient[1] = 0.0f; d.orient[2] = 1.0f;  d.orient[3] = 0.0f;
-        if ((d.isNonImage) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
+        if ((d.isDerived) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
            printMessage("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
         } else {
             printMessage("Unable to determine spatial orientation: 0020,0037 missing!\n");
@@ -741,7 +741,7 @@ struct TDICOMdata clear_dicom_data() {
     d.imageStart = 0;
     d.is3DAcq = false; //e.g. MP-RAGE, SPACE, TFE
     d.isSlicesSpatiallySequentialPhilips = true; //Philips can save slices in random order, e.g. 4,5,6,1,2,3
-    d.isNonImage = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
+    d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
     d.samplesPerPixel = 1;
@@ -2998,7 +2998,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
                 if((slen > 6) && (strstr(d.imageType, "DERIVED") != NULL) )
-                	d.isNonImage = true;
+                	d.isDerived = true;
                 //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )
                 //	d.isNonImage = true;
             	break;

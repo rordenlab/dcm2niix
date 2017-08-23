@@ -324,14 +324,6 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }// nii_SaveText()
 
-bool isDerived(struct TDICOMdata d) {
-	#define kDerivedStr "DERIVED"
-	if ((strlen(d.imageType) < strlen(kDerivedStr)) || (strstr(d.imageType, kDerivedStr) == NULL))
-		return false;
-	else
-		return true;
-}
-
 #ifdef myReadAsciiCsa
 //read from the ASCII portion of the Siemens CSA series header
 //  this is not recommended: poorly documented
@@ -563,7 +555,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength);
 	if (d.echoNum > 1)
 		fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
-	if (d.isNonImage) //DICOM is derived image or non-spatial file (sounds, etc)
+	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	if (d.acquNum > 0)
 		fprintf(fp, "\t\"AcquisitionNumber\": %d,\n", d.acquNum);
@@ -872,7 +864,7 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	}
 	if (*numADC > 0) {
 		if ((numDti - *numADC) < 2) {
-			if (!isDerived(dcmList[indx0])) //no need to warn if images are derived Trace/ND pair
+			if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
 				printWarning("No bvec/bval files created: only single value after ADC excluded\n");
 			*numADC = 0;
 			free(bvals);
@@ -1998,7 +1990,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
-    if (opts.isIgnoreDerivedAnd2D && isDerived(dcmList[indx])) {
+    if (opts.isIgnoreDerivedAnd2D && dcmList[indx].isDerived) {
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
@@ -2277,6 +2269,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
     if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
+    if (d1.isDerived != d2.isDerived) return false; //do not stack raw and derived image types
     if (d1.manufacturer != d2.manufacturer) return false; //do not stack data from different vendors
 	if (d1.seriesNum != d2.seriesNum) return false;
 	#ifdef mySegmentByAcq
