@@ -517,9 +517,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		case kMANUFACTURER_TOSHIBA:
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 			break;
-		case kMANUFACTURER_SEGAMI:
-			fprintf(fp, "\t\"Manufacturer\": \"Segami\",\n" );
-			break;
 	};
 	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
 	if (!opts.isAnonymizeBIDS) {
@@ -2833,7 +2830,6 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isGz = false;
     opts->isSave3D = false;
     opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
-    printMessage(">>>>> %d\n",Z_DEFAULT_COMPRESSION);
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;
