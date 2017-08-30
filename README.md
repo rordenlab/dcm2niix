@@ -16,6 +16,7 @@ This software should run on macOS, Linux and Windows without requiring any other
 ## Versions
 
 21-Aug-2017
+ - Swap [phase-encoding direction polarity](https://github.com/rordenlab/dcm2niix/issues/125) for Siemens images where PE is in the Column direction.
  - Sort diffusion volumes by [B-value amplitude](https://www.nitrc.org/forum/forum.php?thread_id=8396&forum_id=4703) (use "-d n"/"-d y" to turn the feature off/on).
 
 18-Aug-2017

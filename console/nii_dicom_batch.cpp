@@ -1508,24 +1508,26 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	printMessage("Error: Image size is zero bytes %s\n", niiFilename);
     	return EXIT_FAILURE;
     }
-    #define  kMaxPigz 4294967264
-    //https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
-    #if UINTPTR_MAX == 0xffffffff
-	#define  kMaxGz 2147483647
-	#elif UINTPTR_MAX == 0xffffffffffffffff
-	#define  kMaxGz kMaxPigz
-	#else
-	compiler error: unable to determine is 32 or 64 bit
-	#endif
-    #ifndef myDisableZLib
-    if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) >=  kMaxGz) ) { //use internal compressor
-		printWarning("Saving uncompressed data: internal compressor limited to %d bytes images.\n", kMaxGz);
-		if ((imgsz+hdr.vox_offset) <  kMaxPigz)
-			printWarning(" Hint: using external compressor (pigz) should help.\n");
-    } else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
-        writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
-        return EXIT_SUCCESS;
-    }
+    #ifndef myDisableGzSizeLimits
+		#define  kMaxPigz 4294967264
+		//https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
+		#if UINTPTR_MAX == 0xffffffff
+		#define  kMaxGz 2147483647
+		#elif UINTPTR_MAX == 0xffffffffffffffff
+		#define  kMaxGz kMaxPigz
+		#else
+		compiler error: unable to determine is 32 or 64 bit
+		#endif
+		#ifndef myDisableZLib
+		if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) >=  kMaxGz) ) { //use internal compressor
+			printWarning("Saving uncompressed data: internal compressor limited to %d bytes images.\n", kMaxGz);
+			if ((imgsz+hdr.vox_offset) <  kMaxPigz)
+				printWarning(" Hint: using external compressor (pigz) should help.\n");
+		} else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
+			writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
+			return EXIT_SUCCESS;
+		}
+		#endif
     #endif
     char fname[2048] = {""};
     strcpy (fname,niiFilename);
