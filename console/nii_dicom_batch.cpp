@@ -697,9 +697,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
 		if (d.CSA.phaseEncodingDirectionPositive == -1)
 			fprintf(fp, "?"); //unknown
-		else if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((opts.isFlipY)))
+		else if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((!opts.isFlipY)))
 			fprintf(fp, "-");
-		else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((!opts.isFlipY)))
+		else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((opts.isFlipY)))
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
@@ -1508,7 +1508,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	printMessage("Error: Image size is zero bytes %s\n", niiFilename);
     	return EXIT_FAILURE;
     }
-    #define  kMaxPigz 3758096384
+    #define  kMaxPigz 4294967264
     //https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
     #if UINTPTR_MAX == 0xffffffff
 	#define  kMaxGz 2147483647
