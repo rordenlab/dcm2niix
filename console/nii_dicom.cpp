@@ -2697,6 +2697,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kAnatomicalOrientationType 0x0010+(0x2210 << 16 )
 #define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kSequenceVariant 0x0018+(0x0021 << 16)
@@ -2765,6 +2766,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kImaPATModeText  0x0051+(0x1011 << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
+//ftp://dicom.nema.org/MEDICAL/dicom/2014c/output/chtml/part03/sect_C.8.9.4.html
+//If ImageType is REPROJECTION we slice direction is reversed - need example to test
+// #define  kSeriesType  0x0054+(0x1000 << 16 )
 #define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
@@ -3054,6 +3058,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kPatientName :
                 dcmStr (lLength, &buffer[lPos], d.patientName);
                 break;
+            case kAnatomicalOrientationType: {
+            	char aotTxt[kDICOMStr]; //ftp://dicom.nema.org/MEDICAL/dicom/2015b/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
+                dcmStr (lLength, &buffer[lPos], aotTxt);
+                int slen = (int) strlen(aotTxt);
+				if((slen < 9) || (strstr(aotTxt, "QUADRUPED") == NULL) ) break;
+                printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly");
+            	break; }
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;

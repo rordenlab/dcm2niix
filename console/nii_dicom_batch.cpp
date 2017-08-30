@@ -1509,10 +1509,18 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	return EXIT_FAILURE;
     }
     #define  kMaxPigz 3758096384
+    //https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
+    #if UINTPTR_MAX == 0xffffffff
+	#define  kMaxGz 2147483647
+	#elif UINTPTR_MAX == 0xffffffffffffffff
+	#define  kMaxGz kMaxPigz
+	#else
+	compiler error: unable to determine is 32 or 64 bit
+	#endif
     #ifndef myDisableZLib
-    if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) >=  2147483647) ) { //use internal compressor
-		printWarning("Saving uncompressed data: internal compressor limited to 2Gb images.\n");
-		if ((imgsz+hdr.vox_offset) <  3758096384)
+    if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) >=  kMaxGz) ) { //use internal compressor
+		printWarning("Saving uncompressed data: internal compressor limited to %d bytes images.\n", kMaxGz);
+		if ((imgsz+hdr.vox_offset) <  kMaxPigz)
 			printWarning(" Hint: using external compressor (pigz) should help.\n");
     } else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
         writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
