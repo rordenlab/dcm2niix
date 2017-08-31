@@ -686,6 +686,8 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.institutionAddress, "");
     strcpy(d.deviceSerialNumber, "");
     strcpy(d.softwareVersions, "");
+    strcpy(d.stationName, "");
+    strcpy(d.scanOptions, "");
     strcpy(d.seriesInstanceUID, "");
     strcpy(d.studyID, "");
     strcpy(d.studyInstanceUID, "");
@@ -2691,6 +2693,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInstitutionName 0x0008+(0x0080 << 16 )
 #define  kInstitutionAddress 0x0008+(0x0081 << 16 )
 #define  kReferringPhysicianName 0x0008+(0x0090 << 16 )
+#define  kStationName 0x0008+(0x1010 << 16 )
 #define  kSeriesDescription 0x0008+(0x103E << 16 ) // '0008' '103E' 'LO' 'SeriesDescription'
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
@@ -2701,6 +2704,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kSequenceVariant 0x0018+(0x0021 << 16)
+#define  kScanOptions 0x0018+(0x0022 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
 #define  kSequenceName 0x0018+(0x0024 << 16)
 #define  kZThick  0x0018+(0x0050 << 16 )
@@ -3068,6 +3072,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
+            case kStationName :
+                dcmStr (lLength, &buffer[lPos], d.stationName);
+                break;
             case kSeriesDescription: {
                 dcmStr (lLength, &buffer[lPos], d.seriesDescription);
                 break; }
@@ -3337,6 +3344,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 dcmStr (lLength, &buffer[lPos], d.sequenceVariant);
                 break;
             }
+            case kScanOptions:
+            	dcmStr (lLength, &buffer[lPos], d.scanOptions);
+            	break;
             case kSequenceName : {
                 //if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
                 dcmStr (lLength, &buffer[lPos], d.sequenceName);

@@ -562,6 +562,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"InstitutionAddress\": \"%s\",\n", d.institutionAddress );
 	if (strlen(d.deviceSerialNumber) > 0)
 		fprintf(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber );
+	if (strlen(d.stationName) > 0)
+		fprintf(fp, "\t\"StationName\": \"%s\",\n", d.stationName );
+	if (strlen(d.scanOptions) > 0)
+		fprintf(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions );
 	if (strlen(d.softwareVersions) > 0)
 		fprintf(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions );
 	if (strlen(d.procedureStepDescription) > 0)
@@ -1513,21 +1517,21 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     }
     #ifndef myDisableGzSizeLimits
 		//see https://github.com/rordenlab/dcm2niix/issues/124
-		#define  kMaxPigz 4294967264
+		uint64_t  kMaxPigz  = 4294967264;
 		//https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
 		#if UINTPTR_MAX == 0xffffffff
-		#define  kMaxGz 2147483647
+		uint64_t  kMaxGz = 2147483647;
 		#elif UINTPTR_MAX == 0xffffffffffffffff
-		#define  kMaxGz kMaxPigz
+		uint64_t  kMaxGz = kMaxPigz;
 		#else
 		compiler error: unable to determine is 32 or 64 bit
 		#endif
 		#ifndef myDisableZLib
 		if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) >=  kMaxGz) ) { //use internal compressor
-			printWarning("Saving uncompressed data: internal compressor limited to %d bytes images.\n", kMaxGz);
+			printWarning("Saving uncompressed data: internal compressor unable to process such large files.\n");
 			if ((imgsz+hdr.vox_offset) <  kMaxPigz)
 				printWarning(" Hint: using external compressor (pigz) should help.\n");
-		} else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  2147483647) ) { //use internal compressor
+		} else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  kMaxGz) ) { //use internal compressor
 			writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
 			return EXIT_SUCCESS;
 		}
@@ -1544,10 +1548,12 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     fwrite(&im[0], imgsz, 1, fp);
     fclose(fp);
     if ((opts.isGz) &&  (strlen(opts.pigzname)  > 0) ) {
+    	#ifndef myDisableGzSizeLimits
     	if ((imgsz+hdr.vox_offset) >  kMaxPigz) {
         	printWarning("Saving uncompressed data: image too large for pigz.\n");
     		return EXIT_SUCCESS;
     	}
+    	#endif
     	char command[768];
     	strcpy(command, "\"" );
         strcat(command, opts.pigzname );
@@ -2000,11 +2006,45 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return returnCode;
 }// nii_saveCrop()
 
+void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
+//detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
+//xxxx
+	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
+	float minT = d->CSA.sliceTiming[0];
+	float maxT = minT;
+	for (int i = 0; i < kMaxEPI3D; i++) {
+		if (d->CSA.sliceTiming[i] < 0.0) break;
+		if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
+		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
+	}
+	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
+	//check if 2nd image has valud slice timing
+	float minT1 = d1->CSA.sliceTiming[0];
+	float maxT1 = minT1;
+	for (int i = 0; i < kMaxEPI3D; i++) {
+		if (d1->CSA.sliceTiming[i] < 0.0) break;
+		if (d1->CSA.sliceTiming[i] < minT1) minT1 = d1->CSA.sliceTiming[i];
+		if (d1->CSA.sliceTiming[i] > maxT1) maxT1 = d1->CSA.sliceTiming[i];
+	}
+	if ((minT1 == maxT1) || (maxT1 >= d->TR)) { //both first and second image corrupted
+		printWarning("CSA slice timing appears corrupted (range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
+		return;
+	}
+	//1st image corrupted, but 2nd looks ok - substitute values from 2nd image
+	for (int i = 0; i < kMaxEPI3D; i++) {
+		d->CSA.sliceTiming[i] = d1->CSA.sliceTiming[i];
+		if (d1->CSA.sliceTiming[i] < 0.0) break;
+	}
+	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
+}//checkSliceTiming
+
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
+    uint64_t indx1 = indx0;
+    if (nConvert > 1) indx1 = dcmSort[1].indx;
     if (opts.isIgnoreDerivedAnd2D && dcmList[indx].isDerived) {
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
@@ -2156,6 +2196,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
+    checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output
