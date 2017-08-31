@@ -695,11 +695,14 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 		//However, DICOM and NIfTI are reversed in the j (ROW) direction
 		//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
+		//for samples see https://github.com/rordenlab/dcm2niix/issues/125
 		if (d.CSA.phaseEncodingDirectionPositive == -1)
 			fprintf(fp, "?"); //unknown
-		else if ((d.CSA.phaseEncodingDirectionPositive == 1) && ((!opts.isFlipY)))
+		else if ((d.CSA.phaseEncodingDirectionPositive == 0) && (d.phaseEncodingRC != 'C'))
 			fprintf(fp, "-");
-		else if ((d.CSA.phaseEncodingDirectionPositive == 0) && ((opts.isFlipY)))
+		else if ((d.phaseEncodingRC == 'C') && (d.CSA.phaseEncodingDirectionPositive == 1) && (opts.isFlipY))
+			fprintf(fp, "-");
+		else if ((d.phaseEncodingRC == 'C') && (d.CSA.phaseEncodingDirectionPositive == 0) && (!opts.isFlipY))
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
@@ -1509,6 +1512,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	return EXIT_FAILURE;
     }
     #ifndef myDisableGzSizeLimits
+		//see https://github.com/rordenlab/dcm2niix/issues/124
 		#define  kMaxPigz 4294967264
 		//https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
 		#if UINTPTR_MAX == 0xffffffff
