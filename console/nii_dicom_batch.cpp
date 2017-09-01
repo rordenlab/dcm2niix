@@ -723,6 +723,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     		if (effectiveEchoSpacing > 0.0)
     			fprintf(fp, "\t\"TrueEchoSpacing\": %g,\n", effectiveEchoSpacing * d.accelFactPE);
 	}
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
+		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	if (d.CSA.sliceTiming[0] >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < kMaxEPI3D; i++) {

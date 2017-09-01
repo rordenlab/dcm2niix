@@ -712,6 +712,7 @@ struct TDICOMdata clear_dicom_data() {
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.echoTrainLength = 0;
+    d.dwellTime = 0;
     d.phaseEncodingSteps = 0;
     d.coilNum = 1;
     d.accelFactPE = 0.0;
@@ -2729,6 +2730,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
+#define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
@@ -3103,6 +3105,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
+            case kDwellTime :
+            	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
+            	break;
             case kLastScanLoc :
                 d.lastScanLoc = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
