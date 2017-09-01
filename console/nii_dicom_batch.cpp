@@ -450,13 +450,14 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, int* echoSpacing, int* echoTrainDuration, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo) {
+int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, int* echoSpacing, int* echoTrainDuration, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*echoSpacing = 0;
  	*echoTrainDuration = 0;
  	strcpy(coilID, "");
  	strcpy(consistencyInfo, "");
+ 	strcpy(coilElements, "");
  	if ((csaOffset < 0) || (csaLength < 8)) return 0;
 	FILE * pFile = fopen ( filename, "rb" );
 	if(pFile==NULL) return 0;
@@ -496,18 +497,18 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
 		*parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		char keyStrEF[] = "sFastImaging.lEPIFactor";
 		ret = readKey(keyStrEF, keyPos, csaLengthTrim);
-
 		char keyStrCoil[] = "sCoilElementID.tCoilID";
 		readKeyStr(keyStrCoil,  keyPos, csaLengthTrim, coilID);
 		char keyStrCI[] = "sProtConsistencyInfo.tMeasuredBaselineString";
 		readKeyStr(keyStrCI,  keyPos, csaLengthTrim, consistencyInfo);
+		char keyStrCS[] = "sCoilSelectMeas.sCoilStringForConversion";
+		readKeyStr(keyStrCS,  keyPos, csaLengthTrim, coilElements);
 	}
 	fclose (pFile);
 	free (buffer);
 	return ret;
 }
 #endif //myReadAsciiCsa()
-
 
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
@@ -573,8 +574,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0) &&
 	    (strlen(d.scanningSequence) > 1) && (d.scanningSequence[0] == 'E') && (d.scanningSequence[1] == 'P')) { //for EPI scans only
 		int echoSpacing, echoTrainDuration, epiFactor, parallelReductionFactorInPlane;
-		char coilID[kDICOMStr], consistencyInfo[kDICOMStr];
-		epiFactor = siemensEchoEPIFactor(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration, &parallelReductionFactorInPlane, coilID, consistencyInfo);
+		char coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr];
+		epiFactor = siemensEchoEPIFactor(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements);
 		//printMessage("ES %d ETD %d EPI %d\n", echoSpacing, echoTrainDuration, epiFactor);
 		if (echoSpacing > 0)
 			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
@@ -582,14 +583,18 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			 fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		if (epiFactor > 0)
 			 fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
-		if (parallelReductionFactorInPlane > 0)
-			 fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %d,\n", parallelReductionFactorInPlane);
 		if (strlen(coilID) > 0)
-			fprintf(fp, "\t\"CoilID\": \"%s\",\n", coilID);
+			fprintf(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		if (strlen(coilElements) > 0)
+			fprintf(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		if (strlen(consistencyInfo) > 0)
 			fprintf(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
+		if (parallelReductionFactorInPlane > 0)
+			 fprintf(fp, "\t\"AccelFactorPE\": %d,\n", parallelReductionFactorInPlane);
 	}
 	#endif
+	if (d.CSA.multiBandFactor > 1)
+		fprintf(fp, "\t\"AccelFactorSlice\": %d,\n", d.CSA.multiBandFactor);
 	if (strlen(d.imageComments) > 0)
 		fprintf(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
@@ -2063,6 +2068,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
 	}
 	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
+	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
 	//check if 2nd image has valud slice timing
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
@@ -2080,6 +2086,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		d->CSA.sliceTiming[i] = d1->CSA.sliceTiming[i];
 		if (d1->CSA.sliceTiming[i] < 0.0) break;
 	}
+	d->CSA.multiBandFactor = d1->CSA.multiBandFactor;
 	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
 }//checkSliceTiming
 
