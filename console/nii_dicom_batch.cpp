@@ -450,7 +450,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, int* echoSpacing, int* echoTrainDuration, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements) {
+int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* echoSpacing, int* echoTrainDuration, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*echoSpacing = 0;
@@ -458,6 +458,7 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
  	strcpy(coilID, "");
  	strcpy(consistencyInfo, "");
  	strcpy(coilElements, "");
+ 	strcpy(pulseSequenceDetails, "");
  	if ((csaOffset < 0) || (csaLength < 8)) return 0;
 	FILE * pFile = fopen ( filename, "rb" );
 	if(pFile==NULL) return 0;
@@ -503,6 +504,11 @@ int siemensEchoEPIFactor(const char * filename,  int csaOffset, int csaLength, i
 		readKeyStr(keyStrCI,  keyPos, csaLengthTrim, consistencyInfo);
 		char keyStrCS[] = "sCoilSelectMeas.sCoilStringForConversion";
 		readKeyStr(keyStrCS,  keyPos, csaLengthTrim, coilElements);
+		char keyStrSeq[] = "tProtocolName";
+		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
+		char keyStrExt[] = "FmriExternalInfo";
+		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
+		printMessage(">>>>>%s\n", fmriExternalInfo);
 	}
 	fclose (pFile);
 	free (buffer);
@@ -574,8 +580,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0) &&
 	    (strlen(d.scanningSequence) > 1) && (d.scanningSequence[0] == 'E') && (d.scanningSequence[1] == 'P')) { //for EPI scans only
 		int echoSpacing, echoTrainDuration, epiFactor, parallelReductionFactorInPlane;
-		char coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr];
-		epiFactor = siemensEchoEPIFactor(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements);
+		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
+		epiFactor = siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
 		//printMessage("ES %d ETD %d EPI %d\n", echoSpacing, echoTrainDuration, epiFactor);
 		if (echoSpacing > 0)
 			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
@@ -587,6 +593,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
 		if (strlen(coilElements) > 0)
 			fprintf(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		if (strlen(pulseSequenceDetails) > 0)
+			fprintf(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
+		if (strlen(fmriExternalInfo) > 0)
+			fprintf(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
 		if (strlen(consistencyInfo) > 0)
 			fprintf(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (parallelReductionFactorInPlane > 0)
