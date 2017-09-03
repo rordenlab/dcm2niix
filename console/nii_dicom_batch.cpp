@@ -508,7 +508,6 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* e
 		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
 		char keyStrExt[] = "FmriExternalInfo";
 		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
-		printMessage(">>>>>%s\n", fmriExternalInfo);
 	}
 	fclose (pFile);
 	free (buffer);
@@ -599,12 +598,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
 		if (strlen(consistencyInfo) > 0)
 			fprintf(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
-		if (parallelReductionFactorInPlane > 0)
-			 fprintf(fp, "\t\"AccelFactorPE\": %d,\n", parallelReductionFactorInPlane);
+		if (parallelReductionFactorInPlane > 0)  //AccelFactorPE -> phase encoding
+			 fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %d,\n", parallelReductionFactorInPlane);
 	}
 	#endif
-	if (d.CSA.multiBandFactor > 1)
-		fprintf(fp, "\t\"AccelFactorSlice\": %d,\n", d.CSA.multiBandFactor);
+	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
+		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	if (strlen(d.imageComments) > 0)
 		fprintf(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
