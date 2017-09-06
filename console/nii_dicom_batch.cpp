@@ -2098,6 +2098,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	}
 	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
+	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))  return; //fine: single-band calibration data, the slice timing WILL exceed the TR
 	//check if 2nd image has valud slice timing
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
