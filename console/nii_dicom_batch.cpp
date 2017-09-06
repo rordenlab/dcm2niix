@@ -2818,6 +2818,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 #if defined(_WIN64) || defined(_WIN32)
 #else //UNIX
 
+#undef PATH_MAX
 #define PATH_MAX 1024
 int findpathof(char *pth, const char *exe) {
 //Find executable by searching the PATH environment variable.
