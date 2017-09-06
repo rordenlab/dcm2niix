@@ -28,8 +28,8 @@ elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if (${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 4.4.7)
         add_definitions(-Wno-unused-result)    # available since GCC 4.5
     endif()
-    if (${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 4.7)
-        add_definitions(-fno-diagnostics-show-caret)
+    if (${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 4.7.4)
+        add_definitions(-fno-diagnostics-show-caret)    # available since GCC 4.8
     endif()
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
     # using Intel C++
