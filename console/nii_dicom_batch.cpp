@@ -2140,8 +2140,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
-    //unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
-    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.isVerbose);
+    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
     if (strlen(opts.imageComments) > 0) {
     	for (int i = 0; i < 24; i++) hdr0.aux_file[i] = 0; //remove dcm.imageComments
         snprintf(hdr0.aux_file,24,"%s",opts.imageComments);
@@ -2249,8 +2248,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         for (int i = 1; i < nConvert; i++) { //stack additional images
             indx = dcmSort[i].indx;
             //if (headerDcm2Nii(dcmList[indx], &hdrI) == EXIT_FAILURE) return EXIT_FAILURE;
-            //img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose);
-            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.isVerbose);
+            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose);
             if (img == NULL) return EXIT_FAILURE;
             if ((hdr0.dim[1] != hdrI.dim[1]) || (hdr0.dim[2] != hdrI.dim[2]) || (hdr0.bitpix != hdrI.bitpix)) {
                 printError("Image dimensions differ %s %s",nameList->str[dcmSort[0].indx], nameList->str[indx]);

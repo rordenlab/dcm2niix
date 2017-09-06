@@ -2528,8 +2528,7 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
     return bImg;
 } // nii_loadImgRLE()
 
-//unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
-unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int isVerbose) {
+unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE) return NULL; //TOFU
     unsigned char * img;
