@@ -2123,6 +2123,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
+    if (strlen(opts.imageComments) > 0) {
+    	for (int i = 0; i < 24; i++) hdr0.aux_file[i] = 0; //remove dcm.imageComments
+        snprintf(hdr0.aux_file,24,"%s",opts.imageComments);
+    }
     if (opts.isVerbose)
         printMessage("Converting %s\n",nameList->str[indx]);
     if (img == NULL) return EXIT_FAILURE;
@@ -2821,7 +2825,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 #else //UNIX
 
 #ifndef PATH_MAX
-	#define PATH_MAX 1024
+	#define PATH_MAX 4096
 #endif
 
 int findpathof(char *pth, const char *exe) {
@@ -2943,6 +2947,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     //printMessage("%d %s\n",opts->compressFlag, opts->compressname);
     strcpy(opts->indir,"");
     strcpy(opts->outdir,"");
+    strcpy(opts->imageComments,"");
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isForceStackSameSeries = false;
     opts->isIgnoreDerivedAnd2D = false;

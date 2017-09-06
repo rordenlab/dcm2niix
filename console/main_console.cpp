@@ -77,6 +77,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -b : BIDS sidecar (y/n/o(o=only: no NIfTI), default %c)\n", bidsCh);
     if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
+    printf("  -c : comment stored as NIfTI aux_file (up to 24 characters)\n");
     if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
     printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
@@ -113,6 +114,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
     printf("  %s c:\\DICOM\\dir\n", cstr);
+    printf("  %s -c \"my comment\" c:\\DICOM\\dir\n", cstr);
     printf("  %s -o c:\\out\\dir c:\\DICOM\\dir\n", cstr);
     printf("  %s -f mystudy%%s c:\\DICOM\\dir\n", cstr);
     printf("  %s -o \"c:\\dir with spaces\\dir\" c:\\dicomdir\n", cstr);
@@ -120,6 +122,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf(" Defaults file : %s\n", opts.optsname);
     printf(" Examples :\n");
     printf("  %s /Users/chris/dir\n", cstr);
+    printf("  %s -c \"my comment\" /Users/chris/dir\n", cstr);
     printf("  %s -o /users/cr/outdir/ -z y ~/dicomdir\n", cstr);
     printf("  %s -f %%p_%%s -b y -ba n ~/dicomdir\n", cstr);
     printf("  %s -f mystudy%%s ~/dicomdir\n", cstr);
@@ -195,6 +198,9 @@ int main(int argc, const char * argv[])
                     	opts.isAnonymizeBIDS = true;
                 } else
                 	printf("Error: Unknown command line argument: '%s'\n", argv[i]);
+            } else if ((argv[i][1] == 'c') && ((i+1) < argc)) {
+                i++;
+                snprintf(opts.imageComments,24,"%s",argv[i]);
             } else if ((argv[i][1] == 'd') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
