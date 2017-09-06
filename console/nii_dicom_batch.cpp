@@ -1579,7 +1579,9 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
 		//see https://github.com/rordenlab/dcm2niix/issues/124
 		uint64_t  kMaxPigz  = 4294967264;
 		//https://stackoverflow.com/questions/5272825/detecting-64bit-compile-in-c
-		#if UINTPTR_MAX == 0xffffffff
+		#ifndef UINTPTR_MAX
+		uint64_t  kMaxGz = 2147483647;
+		#elif UINTPTR_MAX == 0xffffffff
 		uint64_t  kMaxGz = 2147483647;
 		#elif UINTPTR_MAX == 0xffffffffffffffff
 		uint64_t  kMaxGz = kMaxPigz;
@@ -2818,8 +2820,10 @@ int nii_loadDir(struct TDCMopts* opts) {
 #if defined(_WIN64) || defined(_WIN32)
 #else //UNIX
 
-#undef PATH_MAX
-#define PATH_MAX 1024
+#ifndef PATH_MAX
+	#define PATH_MAX 1024
+#endif
+
 int findpathof(char *pth, const char *exe) {
 //Find executable by searching the PATH environment variable.
 // http://www.linuxquestions.org/questions/programming-9/get-full-path-of-a-command-in-c-117965/
