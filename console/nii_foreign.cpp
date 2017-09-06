@@ -399,8 +399,9 @@ int  convert_foreign (const char *fn, struct TDCMopts opts){
 	int ret = nii_createFilename(dcm, niiFilename, opts);
 	printMessage("Saving ECAT as '%s'\n", niiFilename);
 	if (ret != EXIT_SUCCESS) return ret;
-	struct TDTI4D dti4D;
-	nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
+	//struct TDTI4D dti4D;
+	//nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
+	nii_SaveBIDS(niiFilename, dcm, opts, &hdr, fn);
 	ret = nii_saveNII(niiFilename, hdr, img, opts);
 	free(img);
     return ret;

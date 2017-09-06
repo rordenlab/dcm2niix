@@ -999,7 +999,8 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
     return false;
 } //csaIsPhaseMap()
 
-int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
+//int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
+int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printMessage("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
     if (lLength < 36) return EXIT_FAILURE;
@@ -1679,7 +1680,8 @@ size_t nii_ImgBytes(struct nifti_1_header hdr) {
     return imgsz;
 } //nii_ImgBytes()
 
-unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, int nMosaicSlices, int ProtocolSliceNumber1) {
+//unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, int nMosaicSlices, int ProtocolSliceNumber1) {
+unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, int nMosaicSlices) {
     //demosaic http://nipy.org/nibabel/dicom/dicom_mosaic.html
     if (nMosaicSlices < 2) return inImg;
     //Byte inImg[ [img length] ];
@@ -2338,7 +2340,8 @@ unsigned char * nii_loadImgJPEGC3(char* imgname, struct nifti_1_header hdr, stru
 
 #ifdef myTurboJPEG //if turboJPEG instead of nanoJPEG for classic JPEG decompression
 
-unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+//unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+unsigned char * nii_loadImgJPEG50(char* imgname, struct TDICOMdata dcm) {
 //decode classic JPEG using nanoJPEG
     //printMessage("50 offset %d\n", dcm.imageStart);
     if ((dcm.samplesPerPixel != 1) && (dcm.samplesPerPixel != 3)) {
@@ -2388,7 +2391,8 @@ unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, stru
 
 #else //if turboJPEG else use nanojpeg...
 
-unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+//unsigned char * nii_loadImgJPEG50(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+unsigned char * nii_loadImgJPEG50(char* imgname, struct TDICOMdata dcm) {
 //decode classic JPEG using nanoJPEG
     //printMessage("50 offset %d\n", dcm.imageStart);
     if( access(imgname, F_OK ) == -1 ) {
@@ -2524,7 +2528,8 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
     return bImg;
 } // nii_loadImgRLE()
 
-unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
+//unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
+unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int isVerbose) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE) return NULL; //TOFU
     unsigned char * img;
@@ -2533,7 +2538,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         	printMessage("Software not compiled to decompress classic JPEG DICOM images\n");
         	return NULL;
     	#else
-        	img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+        	//img = nii_loadImgJPEG50(imgname, *hdr, dcm);
+    		img = nii_loadImgJPEG50(imgname, dcm);
     		if (hdr->datatype ==DT_RGB24) //convert to planar
         		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
         #endif
@@ -2568,7 +2574,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     dcm.isPlanarRGB = true;
     if (dcm.CSA.mosaicSlices > 1) {
-        img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, dcm.CSA.protocolSliceNumber1);
+        img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices); //, dcm.CSA.protocolSliceNumber1);
         /* we will do this in nii_dicom_batch #ifdef obsolete_mosaic_flip
          img = nii_flipImgY(img, hdr);
          #endif*/
@@ -3478,7 +3484,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
                 printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
                 break;
             case kCSAImageHeaderInfo:
-            	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, dti4D);
+            	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose); //, dti4D);
                 d.isHasPhase = d.CSA.isPhaseMap;
                 break;
                 //case kObjectGraphics:

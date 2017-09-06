@@ -151,20 +151,35 @@ bool is_exe(const char* path) { //requires #include <sys/stat.h>
     //return (S_ISREG(buf.st_mode) && (buf.st_mode & 0111) );
 } //is_exe()
 
-int is_dir(const char *pathname, int follow_link) {
+//to do: old version ignored follow_link - new version below poorly tested
+//to do: if you use macOS finder to "make Alias", it does not look like a symbolic link
+/*int is_dir(const char *pathname, int follow_link) {
     struct stat s;
     if ((NULL == pathname) || (0 == strlen(pathname)))
         return 0;
     int err = stat(pathname, &s);
     if(-1 == err)
-        return 0; /* does not exist */
+        return 0; // does not exist
     else {
         if(S_ISDIR(s.st_mode)) {
-           return 1; /* it's a dir */
+           return 1; // it's a dir
         } else {
-            return 0;/* exists but is no dir */
+            return 0;// exists but is no dir
         }
     }
+}// is_dir()*/
+
+
+int is_dir(const char *pathname, int follow_link)
+{
+	struct stat s;
+	int retval;
+	if ((NULL == pathname) || (0 == strlen(pathname)))
+		return 0; // does not exist
+	retval = follow_link ? stat(pathname, &s) : lstat(pathname, &s);
+	if ((-1 != retval) && (S_ISDIR(s.st_mode)))
+		return 1; // it's a dir
+	return 0; // exists but is no dir
 }// is_dir()
 
 void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
@@ -515,7 +530,8 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* e
 }
 #endif //myReadAsciiCsa()
 
-void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename) {
+//void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename) {
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
 // sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
@@ -2124,7 +2140,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
-    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
+    //unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
+    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.isVerbose);
     if (strlen(opts.imageComments) > 0) {
     	for (int i = 0; i < 24; i++) hdr0.aux_file[i] = 0; //remove dcm.imageComments
         snprintf(hdr0.aux_file,24,"%s",opts.imageComments);
@@ -2232,7 +2249,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         for (int i = 1; i < nConvert; i++) { //stack additional images
             indx = dcmSort[i].indx;
             //if (headerDcm2Nii(dcmList[indx], &hdrI) == EXIT_FAILURE) return EXIT_FAILURE;
-            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose);
+            //img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose);
+            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.isVerbose);
             if (img == NULL) return EXIT_FAILURE;
             if ((hdr0.dim[1] != hdrI.dim[1]) || (hdr0.dim[2] != hdrI.dim[2]) || (hdr0.bitpix != hdrI.bitpix)) {
                 printError("Image dimensions differ %s %s",nameList->str[dcmSort[0].indx], nameList->str[indx]);
@@ -2266,7 +2284,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
     checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
-    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
+    //nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
+    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output
         free(imgM);
