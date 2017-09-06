@@ -151,36 +151,36 @@ bool is_exe(const char* path) { //requires #include <sys/stat.h>
     //return (S_ISREG(buf.st_mode) && (buf.st_mode & 0111) );
 } //is_exe()
 
-//to do: old version ignored follow_link - new version below poorly tested
-//to do: if you use macOS finder to "make Alias", it does not look like a symbolic link
-/*int is_dir(const char *pathname, int follow_link) {
-    struct stat s;
-    if ((NULL == pathname) || (0 == strlen(pathname)))
-        return 0;
-    int err = stat(pathname, &s);
-    if(-1 == err)
-        return 0; // does not exist
-    else {
-        if(S_ISDIR(s.st_mode)) {
-           return 1; // it's a dir
-        } else {
-            return 0;// exists but is no dir
-        }
-    }
-}// is_dir()*/
-
-
-int is_dir(const char *pathname, int follow_link)
-{
-	struct stat s;
-	int retval;
-	if ((NULL == pathname) || (0 == strlen(pathname)))
-		return 0; // does not exist
-	retval = follow_link ? stat(pathname, &s) : lstat(pathname, &s);
-	if ((-1 != retval) && (S_ISDIR(s.st_mode)))
-		return 1; // it's a dir
-	return 0; // exists but is no dir
-}// is_dir()
+#if defined(_WIN64) || defined(_WIN32)
+	//Windows does not support lstat
+	int is_dir(const char *pathname, int follow_link) {
+		struct stat s;
+		if ((NULL == pathname) || (0 == strlen(pathname)))
+			return 0;
+		int err = stat(pathname, &s);
+		if(-1 == err)
+			return 0; // does not exist
+		else {
+			if(S_ISDIR(s.st_mode)) {
+			   return 1; // it's a dir
+			} else {
+				return 0;// exists but is no dir
+			}
+		}
+	}// is_dir()
+#else //if windows else Unix
+	int is_dir(const char *pathname, int follow_link)
+	{
+		struct stat s;
+		int retval;
+		if ((NULL == pathname) || (0 == strlen(pathname)))
+			return 0; // does not exist
+		retval = follow_link ? stat(pathname, &s) : lstat(pathname, &s);
+		if ((-1 != retval) && (S_ISDIR(s.st_mode)))
+			return 1; // it's a dir
+		return 0; // exists but is no dir
+	}// is_dir()
+#endif
 
 void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //0018,1312 phase encoding is either in row or column direction

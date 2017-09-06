@@ -2528,6 +2528,13 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
     return bImg;
 } // nii_loadImgRLE()
 
+#ifdef myDisableOpenJPEG
+ #ifndef myEnableJasper
+  //avoid compiler warning, see https://stackoverflow.com/questions/3599160/unused-parameter-warnings-in-c
+  #define UNUSED(x) (void)(x)
+ #endif
+#endif
+
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE) return NULL; //TOFU
@@ -2559,6 +2566,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
             img = nii_loadImgCoreJasper(imgname, *hdr, dcm, compressFlag);
         else
+        #else
+        UNUSED(compressFlag); //avoid compiler -Wunused-parameter warning: compressFlag required when  myEnableJasper or not myDisableOpenJPEG
         #endif
     #endif
     if (dcm.compressionScheme == kCompressYes) {
