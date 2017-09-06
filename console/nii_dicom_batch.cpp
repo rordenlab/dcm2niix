@@ -606,6 +606,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	if (strlen(d.imageComments) > 0)
 		fprintf(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
+	if (strlen(opts.imageComments) > 0)
+		fprintf(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength);
 	if (d.echoNum > 1)
