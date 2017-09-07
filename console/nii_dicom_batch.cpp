@@ -2980,7 +2980,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;
     opts->isOnlyBIDS = false;
-    opts->isSortDTIbyBVal = true;
+    opts->isSortDTIbyBVal = false;
     #ifdef myNoAnonymizeBIDS
     opts->isAnonymizeBIDS = false;
     #else
