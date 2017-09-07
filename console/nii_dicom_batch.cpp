@@ -702,8 +702,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (d.accelFactPE < 1.0) d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
-			if (parallelReductionFactorInPlane != round(d.accelFactPE))
-				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%g) does not match CSA series value %g\n", round(d.accelFactPE), parallelReductionFactorInPlane);
+			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
+				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
 		}
 	}
 	#endif
