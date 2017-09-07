@@ -465,30 +465,29 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* partialFourier, int* echoSpacing, int* echoTrainDuration, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*partialFourier = 0;
  	*echoSpacing = 0;
- 	*echoTrainDuration = 0;
  	strcpy(coilID, "");
  	strcpy(consistencyInfo, "");
  	strcpy(coilElements, "");
  	strcpy(pulseSequenceDetails, "");
- 	if ((csaOffset < 0) || (csaLength < 8)) return 0;
+ 	if ((csaOffset < 0) || (csaLength < 8)) return;
 	FILE * pFile = fopen ( filename, "rb" );
-	if(pFile==NULL) return 0;
+	if(pFile==NULL) return;
 	fseek (pFile , 0 , SEEK_END);
 	long lSize = ftell (pFile);
 	if (lSize < (csaOffset+csaLength)) {
 		fclose (pFile);
-		return 0;
+		return;
 	}
 	fseek(pFile, csaOffset, SEEK_SET);
 	char * buffer = (char*) malloc (csaLength);
-	if(buffer == NULL) return 0;
+	if(buffer == NULL) return;
 	size_t result = fread (buffer,1,csaLength,pFile);
-	if(result != csaLength) return 0;
+	if(result != csaLength) return;
 	//next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
 	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
 	int csaLengthTrim = csaLength;
@@ -497,7 +496,6 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* p
 		bufferTrim += startAscii;
 		csaLengthTrim -= startAscii;
 	}
-	int ret = 0;
 	char keyStr[] = "### ASCCONV BEGIN"; //skip to start of ASCII often "### ASCCONV BEGIN ###" but also "### ASCCONV BEGIN object=MrProtDataImpl@MrProtocolData"
 	char *keyPos = (char *)memmem(bufferTrim, csaLengthTrim, keyStr, strlen(keyStr));
 	if (keyPos) {
@@ -510,12 +508,12 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* p
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrPF[] = "sKSpace.ucPhasePartialFourier";
 		*partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
-		char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
-		*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
+		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
+		//*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
 		char keyStrAF[] = "sPat.lAccelFactPE";
 		*parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
-		char keyStrEF[] = "sFastImaging.lEPIFactor";
-		ret = readKey(keyStrEF, keyPos, csaLengthTrim);
+		//char keyStrEF[] = "sFastImaging.lEPIFactor";
+		//ret = readKey(keyStrEF, keyPos, csaLengthTrim);
 		char keyStrCoil[] = "sCoilElementID.tCoilID";
 		readKeyStr(keyStrCoil,  keyPos, csaLengthTrim, coilID);
 		char keyStrCI[] = "sProtConsistencyInfo.tMeasuredBaselineString";
@@ -529,7 +527,7 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* p
 	}
 	fclose (pFile);
 	free (buffer);
-	return ret;
+	return;
 }
 #endif //myReadAsciiCsa()
 
@@ -681,10 +679,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int partialFourier, echoSpacing, echoTrainDuration, epiFactor, parallelReductionFactorInPlane;
+		int partialFourier, echoSpacing, parallelReductionFactorInPlane;
 		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		epiFactor = siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &partialFourier, &echoSpacing, &echoTrainDuration, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
-		//printMessage("ES %d ETD %d EPI %d\n", echoSpacing, echoTrainDuration, epiFactor);
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			float pf = 1.0f;
@@ -695,10 +692,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		if (echoSpacing > 0)
 			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
-		if (echoTrainDuration > 0)
-			 fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
-		if (epiFactor > 0)
-			 fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
+		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
+		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
+		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
