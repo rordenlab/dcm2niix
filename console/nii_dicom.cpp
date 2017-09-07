@@ -767,6 +767,21 @@ struct TDICOMdata clear_dicom_data() {
     return d;
 } //clear_dicom_data()
 
+void dcmStrDigitsOnlyKey(char key, char* lStr) {
+    //e.g. string "p2s3" returns 2 if key=="p" and 3 if key=="s"
+    size_t len = strlen(lStr);
+    if (len < 1) return;
+    bool isKey = false;
+    for (int i = 0; i < (int) len; i++) {
+        if (!isdigit(lStr[i]) ) {
+            isKey =  (lStr[i] == key);
+            lStr[i] = ' ';
+
+        } else if (!isKey)
+        	lStr[i] = ' ';
+    }
+} //dcmStrDigitsOnlyKey()
+
 void dcmStrDigitsOnly(char* lStr) {
     //e.g. change "H11" to " 11"
     size_t len = strlen(lStr);
@@ -3327,7 +3342,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	char accelStr[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], accelStr);
                 char *ptr;
-                dcmStrDigitsOnly(accelStr);
+                dcmStrDigitsOnlyKey('p', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
                 d.accelFactPE = (float)strtof(accelStr, &ptr);
                 if (*ptr != '\0')
                 	d.accelFactPE = 0.0;

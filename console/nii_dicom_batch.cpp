@@ -614,8 +614,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
 		if (strlen(consistencyInfo) > 0)
 			fprintf(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
-		if (parallelReductionFactorInPlane > 0)  //AccelFactorPE -> phase encoding
-			 fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %d,\n", parallelReductionFactorInPlane);
+		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
+			if (d.accelFactPE < 1.0) d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
+			if (parallelReductionFactorInPlane != round(d.accelFactPE))
+				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%g) does not match CSA series value %g\n", round(d.accelFactPE), parallelReductionFactorInPlane);
+		}
+		//	 fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %d,\n", parallelReductionFactorInPlane);
 	}
 	#endif
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
@@ -751,7 +755,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if ((d.phaseEncodingSteps > 1) && (effectiveEchoSpacing > 0.0))
 		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * ((float)d.phaseEncodingSteps - fencePost));
     if (d.accelFactPE > 1.0) {
-    		fprintf(fp, "\t\"AccelFactPE\": %g,\n", d.accelFactPE);
+    		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
     		if (effectiveEchoSpacing > 0.0)
     			fprintf(fp, "\t\"TrueEchoSpacing\": %g,\n", effectiveEchoSpacing * d.accelFactPE);
 	}
