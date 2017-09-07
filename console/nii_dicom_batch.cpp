@@ -533,6 +533,16 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* p
 }
 #endif //myReadAsciiCsa()
 
+void json_Str(FILE *fp, const char *sLabel, char *sVal) {
+	if (strlen(sVal) < 1) return;
+	fprintf(fp, sLabel, sVal );
+} //json_Str
+
+void json_Float(FILE *fp, const char *sLabel, float sVal) {
+	if (sVal <= 0.0) return;
+	fprintf(fp, sLabel, sVal );
+} //json_Float
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
@@ -578,48 +588,29 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 			break;
 	};
-	fprintf(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName );
-	if (strlen(d.institutionName) > 0)
-		fprintf(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName );
-	if (strlen(d.institutionAddress) > 0)
-		fprintf(fp, "\t\"InstitutionAddress\": \"%s\",\n", d.institutionAddress );
-	if (strlen(d.deviceSerialNumber) > 0)
-		fprintf(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber );
-	if (strlen(d.stationName) > 0)
-		fprintf(fp, "\t\"StationName\": \"%s\",\n", d.stationName );
+	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
+	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
+	json_Str(fp, "\t\"InstitutionAddress\": \"%s\",\n", d.institutionAddress);
+	json_Str(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber );
+	json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName );
 	if (!opts.isAnonymizeBIDS) {
-		if (strlen(d.seriesInstanceUID) > 0)
-			fprintf(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID );
-		if (strlen(d.studyInstanceUID) > 0)
-			fprintf(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID );
-		if (strlen(d.referringPhysicianName) > 0)
-			fprintf(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName );
-		if (strlen(d.studyID) > 0)
-			fprintf(fp, "\t\"StudyID\": \"%s\",\n", d.studyID );
+		json_Str(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID);
+		json_Str(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID);
+		json_Str(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName);
+		json_Str(fp, "\t\"StudyID\": \"%s\",\n", d.studyID);
 		//Next lines directly reveal patient identity
-		//if (strlen(d.patientName) > 0)
-		//	fprintf(fp, "\t\"PatientName\": \"%s\",\n", d.patientName );
-		//if (strlen(d.patientID) > 0)
-		//	fprintf(fp, "\t\"PatientID\": \"%s\",\n", d.patientID );
+		// json_Str(fp, "\t\"PatientName\": \"%s\",\n", d.patientName);
+		// json_Str(fp, "\t\"PatientID\": \"%s\",\n", d.patientID);
 	}
-	if (strlen(d.bodyPartExamined) > 0)
-		fprintf(fp, "\t\"BodyPartExamined\": \"%s\",\n", d.bodyPartExamined );
-	if (strlen(d.procedureStepDescription) > 0)
-		fprintf(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription );
-	if (strlen(d.softwareVersions) > 0)
-		fprintf(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions );
-	if (strlen(d.seriesDescription) > 0)
-		fprintf(fp, "\t\"SeriesDescription\": \"%s\",\n", d.seriesDescription );
-	if (strlen(d.protocolName) > 0)
-		fprintf(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName );
-	if (strlen(d.scanningSequence) > 0)
-		fprintf(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence );
-	if (strlen(d.sequenceVariant) > 0)
-		fprintf(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant );
-	if (strlen(d.scanOptions) > 0)
-		fprintf(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions );
-	if (strlen(d.sequenceName) > 0)
-		fprintf(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName );
+	json_Str(fp, "\t\"BodyPartExamined\": \"%s\",\n", d.bodyPartExamined);
+	json_Str(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription);
+	json_Str(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions);
+	json_Str(fp, "\t\"SeriesDescription\": \"%s\",\n", d.seriesDescription);
+	json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName);
+	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
+	json_Str(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant);
+	json_Str(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions);
+	json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName);
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
@@ -665,10 +656,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// if (d.acquisitionDate > 0.0) fprintf(fp, "\t\"AcquisitionDate\": %8.0f,\n", d.acquisitionDate );
 	if (d.acquNum > 0)
 		fprintf(fp, "\t\"AcquisitionNumber\": %d,\n", d.acquNum);
-	if (strlen(d.imageComments) > 0)
-		fprintf(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
-	if (strlen(opts.imageComments) > 0)
-		fprintf(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
+	json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
+	json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
 	if ((d.intenScalePhilips != 0) || (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
 		fprintf(fp, "\t\"PhilipsRescaleSlope\": %g,\n", d.intenScale );
@@ -677,19 +666,19 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"UsePhilipsFloatNotDisplayScaling\": %d,\n", opts.isPhilipsFloatNotDisplayScaling);
 	}
 	//PET ISOTOPE MODULE ATTRIBUTES
-	if (d.radionuclidePositronFraction > 0.0) fprintf(fp, "\t\"RadionuclidePositronFraction\": %g,\n", d.radionuclidePositronFraction );
-	if (d.radionuclideTotalDose > 0.0) fprintf(fp, "\t\"RadionuclideTotalDose\": %g,\n", d.radionuclideTotalDose );
-	if (d.radionuclideHalfLife > 0.0) fprintf(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife );
-	if (d.doseCalibrationFactor > 0.0) fprintf(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor );
-    if (d.ecat_isotope_halflife > 0.0) fprintf(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
-    if (d.ecat_dosage > 0.0) fprintf(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
+	json_Float(fp, "\t\"RadionuclidePositronFraction\": %g,\n", d.radionuclidePositronFraction );
+	json_Float(fp, "\t\"RadionuclideTotalDose\": %g,\n", d.radionuclideTotalDose );
+	json_Float(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife );
+	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor );
+    json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
+    json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
 	//MRI parameters
 	if (d.echoNum > 1) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
     if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
-    if (d.TR > 0.0) fprintf(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-    if (d.TI > 0.0) fprintf(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
-	if (d.flipAngle > 0.0) fprintf(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
+    json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
+    json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
+	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		int partialFourier, echoSpacing, echoTrainDuration, epiFactor, parallelReductionFactorInPlane;
@@ -710,16 +699,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			 fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		if (epiFactor > 0)
 			 fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
-		if (strlen(coilID) > 0)
-			fprintf(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
-		if (strlen(coilElements) > 0)
-			fprintf(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
-		if (strlen(pulseSequenceDetails) > 0)
-			fprintf(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
-		if (strlen(fmriExternalInfo) > 0)
-			fprintf(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
-		if (strlen(consistencyInfo) > 0)
-			fprintf(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
+		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
+		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
+		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (d.accelFactPE < 1.0) d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
 			if (parallelReductionFactorInPlane != round(d.accelFactPE))
@@ -743,16 +727,14 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     }
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
-    if (phaseEncodingLines > 0.0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", phaseEncodingLines );
-    if (bandwidthPerPixelPhaseEncode > 0.0)
-    	fprintf(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
+    if (phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", phaseEncodingLines );
+    json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
     double effectiveEchoSpacing = 0.0;
     if ((phaseEncodingLines > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
     	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * phaseEncodingLines) ;
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
-    if (effectiveEchoSpacing > 0.0)
-    		fprintf(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
+    json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
     //FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
     // to check: partial Fourier, iPAT, etc.
 	int fencePost = 1;
