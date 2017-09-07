@@ -519,7 +519,7 @@ int siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* e
 		readKeyStr(keyStrCI,  keyPos, csaLengthTrim, consistencyInfo);
 		char keyStrCS[] = "sCoilSelectMeas.sCoilStringForConversion";
 		readKeyStr(keyStrCS,  keyPos, csaLengthTrim, coilElements);
-		char keyStrSeq[] = "tProtocolName";
+		char keyStrSeq[] = "tSequenceFileName";
 		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
 		char keyStrExt[] = "FmriExternalInfo";
 		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
@@ -592,8 +592,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//	fprintf(fp, "\t\"PatientID\": \"%s\",\n", d.patientID );
 	}
 	#ifdef myReadAsciiCsa
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0) &&
-	    (strlen(d.scanningSequence) > 1) && (d.scanningSequence[0] == 'E') && (d.scanningSequence[1] == 'P')) { //for EPI scans only
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
+		//&& (strlen(d.scanningSequence) > 1) && (d.scanningSequence[0] == 'E') && (d.scanningSequence[1] == 'P')) { //for EPI scans only
 		int echoSpacing, echoTrainDuration, epiFactor, parallelReductionFactorInPlane;
 		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
 		epiFactor = siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &echoSpacing, &echoTrainDuration, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
