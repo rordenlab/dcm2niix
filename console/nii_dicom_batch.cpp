@@ -677,36 +677,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
-	#ifdef myReadAsciiCsa
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int partialFourier, echoSpacing, parallelReductionFactorInPlane;
-		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
-		if (partialFourier > 0) {
-			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
-			float pf = 1.0f;
-			if (partialFourier == 1) pf = 0.5;
-			if (partialFourier == 2) pf = 0.75;
-			if (partialFourier == 4) pf = 0.875;
-			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
-		}
-		if (echoSpacing > 0)
-			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
-		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
-		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
-		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
-		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
-		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
-		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
-		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
-		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
-		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
-			if (d.accelFactPE < 1.0) d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
-			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
-				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
-		}
-	}
-	#endif
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
@@ -780,6 +750,39 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		fprintf(fp, "\t],\n");
 	}
+	#ifdef myReadAsciiCsa
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
+		int partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
+		if (partialFourier > 0) {
+			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
+			float pf = 1.0f;
+			if (partialFourier == 1) pf = 0.5;
+			if (partialFourier == 2) pf = 0.75;
+			if (partialFourier == 4) pf = 0.875;
+			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+		}
+		if (echoSpacing > 0)
+			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
+		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
+		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
+		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
+		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
+		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
+		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
+		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
+			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
+				d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
+				fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
+			}
+			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
+				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
+		}
+	}
+	#endif
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
