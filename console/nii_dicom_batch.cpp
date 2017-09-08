@@ -670,17 +670,18 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor );
     json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
     json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
-	//MRI parameters
+	//CT parameters
+	if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
+    //MRI parameters
 	if (d.echoNum > 1) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
-    if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
     json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
-		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength);
+		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
     double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
     int phaseEncodingLines = d.phaseEncodingLines;
     if ((phaseEncodingLines == 0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
@@ -701,20 +702,20 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
-    //FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
-    // to check: partial Fourier, iPAT, etc.
-	int fencePost = 1;
-    if (d.accelFactPE > 1.0) {
-    	fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-    	fencePost = (int)round(d.accelFactPE); //e.g. if 64 lines with iPAT=2, we want time from start of first until start of 62nd effective line
-    }
-    if ((d.phaseEncodingSteps > 1) && (effectiveEchoSpacing > 0.0))
-		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * ((float)d.phaseEncodingSteps - fencePost));
+    //TotalReadOutTime: FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
+    // note partial Fourier does NOT influence distortion, so we DO NOT USE EchoTrainLength but estimate phaseEncodingLinesAccel
+    // see https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide#A--datain
+    // https://github.com/rordenlab/dcm2niix/issues/130
+    int phaseEncodingLinesAccel = phaseEncodingLines;
+    float echoSpacing = effectiveEchoSpacing;
     if (d.accelFactPE > 1.0) {
     		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-    		if (effectiveEchoSpacing > 0.0)
-    			fprintf(fp, "\t\"TrueEchoSpacing\": %g,\n", effectiveEchoSpacing * d.accelFactPE);
+    		echoSpacing = echoSpacing * d.accelFactPE;
+    		json_Float(fp, "\t\"TrueEchoSpacing\": %g,\n", echoSpacing);
+    		phaseEncodingLinesAccel = (int)((float)phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
 	}
+    if ((phaseEncodingLinesAccel > 1) && (echoSpacing > 0.0))
+		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", echoSpacing * ((float)phaseEncodingLinesAccel - 1.0));
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
