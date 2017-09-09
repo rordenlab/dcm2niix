@@ -465,9 +465,10 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
+ 	*interp = 0;
  	*partialFourier = 0;
  	*echoSpacing = 0;
  	strcpy(coilID, "");
@@ -506,6 +507,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* 
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
+		char keyStrInterp[] = "sKSpace.uc2DInterpolation";
+		*interp = readKey(keyStrInterp, keyPos, csaLengthTrim);
 		char keyStrPF[] = "sKSpace.ucPhasePartialFourier";
 		*partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
 		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
@@ -528,7 +531,7 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* 
 	fclose (pFile);
 	free (buffer);
 	return;
-}
+} // siemensCsaAscii()
 #endif //myReadAsciiCsa()
 
 void json_Str(FILE *fp, const char *sLabel, char *sVal) {
@@ -684,6 +687,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
     double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
     int phaseEncodingLines = d.phaseEncodingLines;
+    /* following inaccurate in many cases, e.g. interpolation, pFOV (rectangular FOV)
     if ((phaseEncodingLines == 0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
 		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
 			phaseEncodingLines = h->dim[2];
@@ -691,14 +695,16 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			phaseEncodingLines = h->dim[2];
 		else if (d.phaseEncodingRC =='C')
 			phaseEncodingLines = h->dim[1];
-    }
+    }*/
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
     if (phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", phaseEncodingLines );
+    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
+    json_Float(fp, "\t\"RectangularFOV\": %g,\n", d.phaseFieldofView);
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
     double effectiveEchoSpacing = 0.0;
-    if ((phaseEncodingLines > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
-    	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * phaseEncodingLines) ;
+    if ((d.phaseEncodingSteps > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+    	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * d.phaseEncodingSteps) ;
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
@@ -712,6 +718,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
     		echoSpacing = echoSpacing * d.accelFactPE;
     		json_Float(fp, "\t\"TrueEchoSpacing\": %g,\n", echoSpacing);
+    		//phaseEncodingLinesAccel = (int)((float)phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
     		phaseEncodingLinesAccel = (int)((float)phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
 	}
     if ((phaseEncodingLinesAccel > 1) && (echoSpacing > 0.0))
@@ -753,19 +760,21 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		int interp, partialFourier, echoSpacing, parallelReductionFactorInPlane;
 		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &interp, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			float pf = 1.0f;
-			if (partialFourier == 1) pf = 0.5;
-			if (partialFourier == 2) pf = 0.75;
-			if (partialFourier == 4) pf = 0.875;
+			if (partialFourier == 1) pf = 0.5; // 4/8
+			if (partialFourier == 2) pf = 0.625; // 5/8
+			if (partialFourier == 4) pf = 0.75;
+			if (partialFourier == 8) pf = 0.875;
 			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+			//fprintf(fp, "\t\"PartialFourier\": %d,\n", partialFourier);
 		}
-		if (echoSpacing > 0)
-			 fprintf(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
+		if (interp > 0) fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
+		json_Float(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
 		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);

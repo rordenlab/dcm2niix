@@ -712,6 +712,7 @@ struct TDICOMdata clear_dicom_data() {
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.echoTrainLength = 0;
+    d.phaseFieldofView = 0.0;
     d.dwellTime = 0;
     d.phaseEncodingSteps = 0;
     d.coilNum = 1;
@@ -2746,6 +2747,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kEchoTrainLength  0x0018+(0x0091 << 16 ) //IS
+#define  kPhaseFieldofView  0x0018+(0x0094 << 16 ) //'DS'
 #define  kDeviceSerialNumber  0x0018+(0x1000 << 16 ) //LO
 #define  kSoftwareVersions  0x0018+(0x1020 << 16 ) //LO
 #define  kProtocolName  0x0018+(0x1030<< 16 )
@@ -3279,6 +3281,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             case kEchoTrainLength :
             	d.echoTrainLength  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
+            case kPhaseFieldofView :
+            	d.phaseFieldofView = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
         	case kAcquisitionMatrix :
 				if (lLength == 8) {
                 	uint16_t acquisitionMatrix[4];
