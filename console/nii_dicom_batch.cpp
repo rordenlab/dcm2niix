@@ -705,10 +705,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	float pf = 1.0f; //partial fourier
 	bool interp = false; //2D interpolation
+	float phaseOversampling = 0.0;
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		int interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
-		float phaseOversampling;
 		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
 		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &phaseOversampling, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
 		if (partialFourier > 0) {
@@ -757,11 +757,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (interp) bandwidthPerPixelCorrected *= 2;
 	json_Float(fp, "\t\"BandwidthPerPixelCorrected\": %g,\n", bandwidthPerPixelCorrected );
 	double effectiveEchoSpacing = 0.0;
-	if ((d.phaseFieldofView <= 0.0) || (d.phaseFieldofView >= 1.0))
+	if ((phaseOversampling <= 0.0) || (phaseOversampling >= 1.0))
    		effectiveEchoSpacing = bandwidthPerPixelCorrected * d.phaseEncodingLines;
 	else
    		effectiveEchoSpacing = bandwidthPerPixelCorrected * (d.phaseEncodingSteps / pf);
 	if (effectiveEchoSpacing != 0) effectiveEchoSpacing = 1/effectiveEchoSpacing;
+	// if (d.seriesNum > 1) printMessage("%d\tEffectiveEchoSpacing\t%g\n", d.seriesNum, effectiveEchoSpacing);
 	//end : effectiveEchoSpacing
     //if ((d.phaseEncodingSteps > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
     //	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * d.phaseEncodingSteps) ;
