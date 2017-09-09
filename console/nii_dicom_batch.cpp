@@ -411,6 +411,25 @@ int readKey(const char * key,  char * buffer, int remLength) { //look for text k
 	return ret;
 } //readKey()
 
+float readKeyFloat(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
+	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
+	if (!keyPos) return 0.0;
+	char str[kDICOMStr];
+	strcpy(str, "");
+	char tmpstr[2];
+  	tmpstr[1] = 0;
+	int i = (int)strlen(key);
+	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
+		if( (keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] <= '.') || (keyPos[i] <= '-') ) {
+			tmpstr[0] = keyPos[i];
+			strcat (str, tmpstr);
+		}
+		i++;
+	}
+	if (strlen(str) < 1) return 0.0;
+	return atof(str);
+} //readKeyFloat()
+
 void readKeyStr(const char * key,  char * buffer, int remLength, char* outStr) {
 //if key is CoilElementID.tCoilID the string 'CoilElementID.tCoilID	 = 	""Head_32""' returns 'Head32'
 	strcpy(outStr, "");
@@ -465,12 +484,13 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* phaseOversampling, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*interp = 0;
  	*partialFourier = 0;
  	*echoSpacing = 0;
+ 	*phaseOversampling = 0.0;
  	strcpy(coilID, "");
  	strcpy(consistencyInfo, "");
  	strcpy(coilElements, "");
@@ -527,6 +547,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, int* 
 		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
 		char keyStrExt[] = "FmriExternalInfo";
 		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
+		char keyStrOver[] = "sKSpace.dPhaseOversamplingForDialog";
+		*phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
 	}
 	fclose (pFile);
 	free (buffer);
@@ -681,45 +703,86 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
+	float pf = 1.0f; //partial fourier
+	bool interp = false; //2D interpolation
+	#ifdef myReadAsciiCsa
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
+		int interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		float phaseOversampling;
+		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &phaseOversampling, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
+		if (partialFourier > 0) {
+			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
+			if (partialFourier == 1) pf = 0.5; // 4/8
+			if (partialFourier == 2) pf = 0.625; // 5/8
+			if (partialFourier == 4) pf = 0.75;
+			if (partialFourier == 8) pf = 0.875;
+			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+		}
+		if (interpInt > 0) {
+			interp = true;
+			fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
+		}
+		json_Float(fp, "\t\"PhaseOversampling\": %g,\n", phaseOversampling); //usec -> sec
+		json_Float(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
+		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
+		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
+		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
+		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
+		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
+		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
+		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
+			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
+				d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
+				//fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
+			}
+			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
+				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
+		}
+	}
+	#endif
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
     double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
-    int phaseEncodingLines = d.phaseEncodingLines;
-    /* following inaccurate in many cases, e.g. interpolation, pFOV (rectangular FOV)
-    if ((phaseEncodingLines == 0) &&  (h->dim[2] > 0) && (h->dim[1] > 0)) {
-		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
-			phaseEncodingLines = h->dim[2];
-		else if (d.phaseEncodingRC =='R')
-			phaseEncodingLines = h->dim[2];
-		else if (d.phaseEncodingRC =='C')
-			phaseEncodingLines = h->dim[1];
-    }*/
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
-    if (phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", phaseEncodingLines );
-    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
-    json_Float(fp, "\t\"RectangularFOV\": %g,\n", d.phaseFieldofView);
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
-    double effectiveEchoSpacing = 0.0;
-    if ((d.phaseEncodingSteps > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
-    	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * d.phaseEncodingSteps) ;
+    //start: bandwidthPerPixelCorrected suggested by Dr. Junqian (Gordon) Xu
+    double bandwidthPerPixelCorrected = bandwidthPerPixelPhaseEncode;
+	if (d.accelFactPE > 1.0) bandwidthPerPixelCorrected = bandwidthPerPixelCorrected / d.accelFactPE;
+	if (interp) bandwidthPerPixelCorrected *= 2;
+	json_Float(fp, "\t\"BandwidthPerPixelCorrected\": %g,\n", bandwidthPerPixelCorrected );
+	double effectiveEchoSpacing = 0.0;
+	if ((d.phaseFieldofView <= 0.0) || (d.phaseFieldofView >= 1.0))
+   		effectiveEchoSpacing = bandwidthPerPixelCorrected * d.phaseEncodingLines;
+	else
+   		effectiveEchoSpacing = bandwidthPerPixelCorrected * (d.phaseEncodingSteps / pf);
+	if (effectiveEchoSpacing != 0) effectiveEchoSpacing = 1/effectiveEchoSpacing;
+	//end : effectiveEchoSpacing
+    //if ((d.phaseEncodingSteps > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+    //	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * d.phaseEncodingSteps) ;
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
+    if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", d.phaseEncodingLines );
+    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
+    json_Float(fp, "\t\"RectangularFOV\": %g,\n", d.phaseFieldofView);
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
     //TotalReadOutTime: FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
     // note partial Fourier does NOT influence distortion, so we DO NOT USE EchoTrainLength but estimate phaseEncodingLinesAccel
     // see https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide#A--datain
     // https://github.com/rordenlab/dcm2niix/issues/130
-    int phaseEncodingLinesAccel = phaseEncodingLines;
+    int phaseEncodingLinesAccel = d.phaseEncodingLines;
     float echoSpacing = effectiveEchoSpacing;
     if (d.accelFactPE > 1.0) {
     		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
     		echoSpacing = echoSpacing * d.accelFactPE;
     		json_Float(fp, "\t\"TrueEchoSpacing\": %g,\n", echoSpacing);
     		//phaseEncodingLinesAccel = (int)((float)phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
-    		phaseEncodingLinesAccel = (int)((float)phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
+    		phaseEncodingLinesAccel = (int)((float)d.phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
 	}
     if ((phaseEncodingLinesAccel > 1) && (echoSpacing > 0.0))
 		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", echoSpacing * ((float)phaseEncodingLinesAccel - 1.0));
@@ -758,41 +821,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		fprintf(fp, "\t],\n");
 	}
-	#ifdef myReadAsciiCsa
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int interp, partialFourier, echoSpacing, parallelReductionFactorInPlane;
-		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &interp, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
-		if (partialFourier > 0) {
-			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
-			float pf = 1.0f;
-			if (partialFourier == 1) pf = 0.5; // 4/8
-			if (partialFourier == 2) pf = 0.625; // 5/8
-			if (partialFourier == 4) pf = 0.75;
-			if (partialFourier == 8) pf = 0.875;
-			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
-			//fprintf(fp, "\t\"PartialFourier\": %d,\n", partialFourier);
-		}
-		if (interp > 0) fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
-		json_Float(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
-		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
-		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
-		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
-		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
-		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
-		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
-		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
-		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
-		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
-			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
-				d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
-				fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-			}
-			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
-				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
-		}
-	}
-	#endif
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
