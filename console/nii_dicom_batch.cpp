@@ -78,6 +78,10 @@ struct TSearchList {
     char **str;
 };
 
+#ifndef PATH_MAX
+	#define PATH_MAX 4096
+#endif
+
 void dropFilenameFromPath(char *path) { //
    const char *dirPath = strrchr(path, '/'); //UNIX
    if (dirPath == 0)
@@ -558,7 +562,23 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 
 void json_Str(FILE *fp, const char *sLabel, char *sVal) {
 	if (strlen(sVal) < 1) return;
+	//fprintf(fp, sLabel, sVal );
+	//convert  \ ' " characters to _ see https://github.com/rordenlab/dcm2niix/issues/131
+	for (int pos = 0; pos<strlen(sVal); pos ++) {
+        if ((sVal[pos] == '\'') || (sVal[pos] == '"') || (sVal[pos] == '\\'))
+            sVal[pos] = '_';
+    }
 	fprintf(fp, sLabel, sVal );
+	/*char outname[PATH_MAX] = {""};
+	char appendChar[2] = {"\\"};
+	char passChar[2] = {"\\"};
+	for (int pos = 0; pos<strlen(sVal); pos ++) {
+        if ((sVal[pos] == '\'') || (sVal[pos] == '"') || (sVal[pos] == '\\'))
+            strcpy(outname, appendChar);
+        passChar[0] = sVal[pos];
+        strcpy(outname, passChar);
+    }
+	fprintf(fp, sLabel, outname );*/
 } //json_Str
 
 void json_Float(FILE *fp, const char *sLabel, float sVal) {
@@ -2878,10 +2898,6 @@ int nii_loadDir(struct TDCMopts* opts) {
 
 #if defined(_WIN64) || defined(_WIN32)
 #else //UNIX
-
-#ifndef PATH_MAX
-	#define PATH_MAX 4096
-#endif
 
 int findpathof(char *pth, const char *exe) {
 //Find executable by searching the PATH environment variable.
