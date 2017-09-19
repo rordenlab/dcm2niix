@@ -2902,36 +2902,37 @@ int nii_loadDir(struct TDCMopts* opts) {
 int findpathof(char *pth, const char *exe) {
 //Find executable by searching the PATH environment variable.
 // http://www.linuxquestions.org/questions/programming-9/get-full-path-of-a-command-in-c-117965/
-     char *searchpath;
-     char *beg, *end;
-     int stop, found;
-     size_t len; //int
-     if (strchr(exe, '/') != NULL) {
-	  if (realpath(exe, pth) == NULL) return 0;
-	  return  is_exe(pth);
-     }
-     searchpath = getenv("PATH");
-     if (searchpath == NULL) return 0;
-     if (strlen(searchpath) <= 0) return 0;
-     beg = searchpath;
-     stop = 0; found = 0;
-     do {
-	  end = strchr(beg, ':');
-	  if (end == NULL) {
-	       stop = 1;
-	       strncpy(pth, beg, PATH_MAX);
-	       len = strlen(pth);
-	  } else {
-	       strncpy(pth, beg, end - beg);
-	       pth[end - beg] = '\0';
-	       len = end - beg;
-	  }
-	  if (pth[len - 1] != '/') strncat(pth, "/", 1);
-	  strncat(pth, exe, PATH_MAX - len);
-	  found = is_exe(pth);
-	  if (!stop) beg = end + 1;
-     } while (!stop && !found);
-     return found;
+	char *searchpath;
+	char *beg, *end;
+	int stop, found;
+	size_t len;
+	if (strchr(exe, '/') != NULL) {
+	if (realpath(exe, pth) == NULL) return 0;
+	return  is_exe(pth);
+	}
+	searchpath = getenv("PATH");
+	if (searchpath == NULL) return 0;
+	if (strlen(searchpath) <= 0) return 0;
+	beg = searchpath;
+	stop = 0; found = 0;
+	do {
+	end = strchr(beg, ':');
+	if (end == NULL) {
+		len = strlen(beg);
+		if (len == 0) return 0;
+		strncpy(pth, beg, len);
+		stop = 1;
+	} else {
+	   strncpy(pth, beg, end - beg);
+	   pth[end - beg] = '\0';
+	   len = end - beg;
+	}
+	if (pth[len - 1] != '/') strncat(pth, "/", 1);
+	strncat(pth, exe, PATH_MAX - len);
+	found = is_exe(pth);
+	if (!stop) beg = end + 1;
+	} while (!stop && !found);
+	return found;
 }
 #endif
 
