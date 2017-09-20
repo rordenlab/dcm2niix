@@ -222,8 +222,10 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
 		flp = setiVec3(0, 1, 1); //CORONAL
 	else if (abs(sliceDir) == 3)
 		flp = setiVec3(0, 0, 1); //AXIAL
-	else
+	else {
 		printMessage("Impossible GE slice orientation!");
+		flp = setiVec3(0, 0, 1); //AXIAL???
+	}
 	if (sliceDir < 0)
     	flp.v[2] = 1 - flp.v[2];
     printMessage("Saving %d DTI gradients. GE Reorienting %s : please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->CSA.numDti, d->protocolName, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
@@ -512,7 +514,7 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 	char * buffer = (char*) malloc (csaLength);
 	if(buffer == NULL) return;
 	size_t result = fread (buffer,1,csaLength,pFile);
-	if(result != csaLength) return;
+	if ((int)result != csaLength) return;
 	//next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
 	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
 	int csaLengthTrim = csaLength;
@@ -564,7 +566,7 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) {
 	if (strlen(sVal) < 1) return;
 	//fprintf(fp, sLabel, sVal );
 	//convert  \ ' " characters to _ see https://github.com/rordenlab/dcm2niix/issues/131
-	for (int pos = 0; pos<strlen(sVal); pos ++) {
+	for (size_t pos = 0; pos < strlen(sVal); pos ++) {
         if ((sVal[pos] == '\'') || (sVal[pos] == '"') || (sVal[pos] == '\\'))
             sVal[pos] = '_';
     }
@@ -657,7 +659,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
-		for (int i = 0; i < strlen(d.imageType); i++) {
+		for (size_t i = 0; i < strlen(d.imageType); i++) {
 			if (d.imageType[i] != '_') {
 				if (isSep)
 		  			fprintf(fp, "\", \"");
@@ -771,42 +773,51 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
-    //start: bandwidthPerPixelCorrected suggested by Dr. Junqian (Gordon) Xu
-    double bandwidthPerPixelCorrected = bandwidthPerPixelPhaseEncode;
-	if (d.accelFactPE > 1.0) bandwidthPerPixelCorrected = bandwidthPerPixelCorrected / d.accelFactPE;
-	if (interp) bandwidthPerPixelCorrected *= 2;
-	json_Float(fp, "\t\"BandwidthPerPixelCorrected\": %g,\n", bandwidthPerPixelCorrected );
-	double effectiveEchoSpacing = 0.0;
-	if ((phaseOversampling <= 0.0) || (phaseOversampling >= 1.0))
-   		effectiveEchoSpacing = bandwidthPerPixelCorrected * d.phaseEncodingLines;
-	else
-   		effectiveEchoSpacing = bandwidthPerPixelCorrected * (d.phaseEncodingSteps / pf);
-	if (effectiveEchoSpacing != 0) effectiveEchoSpacing = 1/effectiveEchoSpacing;
-	// if (d.seriesNum > 1) printMessage("%d\tEffectiveEchoSpacing\t%g\n", d.seriesNum, effectiveEchoSpacing);
-	//end : effectiveEchoSpacing
-    //if ((d.phaseEncodingSteps > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
-    //	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * d.phaseEncodingSteps) ;
+
+	if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines );
+	//if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", d.phaseEncodingLines );
+    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
+    //json_Float(fp, "\t\"RectangularFOV\": %g,\n", d.phaseFieldofView);
+	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
+    if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
+
+	//EffectiveEchoSpacing
+	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
+	// interpolation, and (presumably) phase oversampling when you use the size of the reconstructed
+	// image in the phase direction
+	double PEreconMatrix = d.phaseEncodingLines;
+	if (interp) PEreconMatrix *= 2;
+    double effectiveEchoSpacing = 0.0;
+    if ((PEreconMatrix > 0.0) && (bandwidthPerPixelPhaseEncode > 0.0))
+    	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * PEreconMatrix);
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
-    if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", d.phaseEncodingLines );
-    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
-    json_Float(fp, "\t\"RectangularFOV\": %g,\n", d.phaseFieldofView);
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
-    //TotalReadOutTime: FSL definition is start of first line until start of last line, so n-1 unless accelerated in-plane acquisition
-    // note partial Fourier does NOT influence distortion, so we DO NOT USE EchoTrainLength but estimate phaseEncodingLinesAccel
+
+	// Calculate true echo spacing (should match what Siemens reports on the console)
+	// i.e., should match "echoSpacing" extracted from the ASCII CSA header, when that exists
+    double trueESfactor = 1.0;
+	if (d.accelFactPE > 1.0) trueESfactor /= d.accelFactPE;
+	if (interp) trueESfactor *= 2;
+	if ((phaseOversampling > 0.0) && (phaseOversampling < 1.0))
+	  trueESfactor *= (1.0 + phaseOversampling);
+	float trueEchoSpacingCalc = 0.0;
+	trueEchoSpacingCalc = bandwidthPerPixelPhaseEncode * trueESfactor * d.phaseEncodingLines;
+	if (trueEchoSpacingCalc != 0) trueEchoSpacingCalc = 1/trueEchoSpacingCalc;
+	json_Float(fp, "\t\"TrueEchoSpacingCalc\": %g,\n", trueEchoSpacingCalc);
+
+    //TotalReadOutTime: Really should be called "EffectiveReadOutTime", by analogy with "EffectiveEchoSpacing".
+	// But BIDS spec calls it "TotalReadOutTime".
+	// So, we DO NOT USE EchoTrainLength, because not trying to compute the actual (physical) readout time.
+	// Rather, the point of computing "EffectiveEchoSpacing" properly is so that this
+	// "Total(Effective)ReadOutTime" can be computed straightforwardly as the product of the
+	// EffectiveEchoSpacing and the size of the *reconstructed* matrix in the PE direction.
     // see https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide#A--datain
+	// FSL definition is start of first line until start of last line.
     // https://github.com/rordenlab/dcm2niix/issues/130
-    int phaseEncodingLinesAccel = d.phaseEncodingLines;
-    float echoSpacing = effectiveEchoSpacing;
-    if (d.accelFactPE > 1.0) {
-    		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-    		echoSpacing = echoSpacing * d.accelFactPE;
-    		json_Float(fp, "\t\"TrueEchoSpacing\": %g,\n", echoSpacing);
-    		//phaseEncodingLinesAccel = (int)((float)phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
-    		phaseEncodingLinesAccel = (int)((float)d.phaseEncodingLines/d.accelFactPE); //TO DO: not sure about rounding
-	}
-    if ((phaseEncodingLinesAccel > 1) && (echoSpacing > 0.0))
-		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", echoSpacing * ((float)phaseEncodingLinesAccel - 1.0));
+    if (effectiveEchoSpacing > 0.0)
+	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (PEreconMatrix - 1.0));
+
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
@@ -1240,8 +1251,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (strlen(inname) < 1) {
         strcpy(inname, "T%t_N%n_S%s");
     }
-    int start = 0;
-    int pos = 0;
+    size_t start = 0;
+    size_t pos = 0;
     bool isCoilReported = false;
     bool isEchoReported = false;
     bool isSeriesReported = false;
@@ -1260,10 +1271,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 sprintf(newstr, "%02d", dcm.coilNum);
                 strcat (outname,newstr);
             }
-            if (f == 'C')
-                strcat (outname,dcm.imageComments);
-            if (f == 'D')
-                strcat (outname,dcm.seriesDescription);
+            if (f == 'C') strcat (outname,dcm.imageComments);
+            if (f == 'D') strcat (outname,dcm.seriesDescription);
         	if (f == 'E') {
         		isEchoReported = true;
                 sprintf(newstr, "%d", dcm.echoNum);
@@ -1369,7 +1378,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
     #if defined(_WIN64) || defined(_WIN32) //https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
-    for (int pos = 0; pos<strlen(outname); pos ++)
+    for (size_t pos = 0; pos<strlen(outname); pos ++)
         if ((outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
             || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
             || (outname[pos] == '^')
@@ -1379,7 +1388,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         if (outname[pos] == '/')
         	outname[pos] = kPathSeparator; //for Windows, convert "/" to "\"
     #else
-    for (int pos = 0; pos<strlen(outname); pos ++)
+    for (size_t pos = 0; pos<strlen(outname); pos ++)
         if (outname[pos] == ':') //not allowed by MacOS
         	outname[pos] = '_';
     #endif
@@ -1396,7 +1405,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     	char newdir[2048] = {""};
     	strcat (newdir,baseoutname);
     	//struct stat st = {0};
-    	for (int pos = 0; pos<strlen(outname); pos ++) {
+    	for (size_t pos = 0; pos< strlen(outname); pos ++) {
     		if (outname[pos] == kPathSeparator) {
     			//if (stat(newdir, &st) == -1)
     			if (!is_dir(newdir,true))
@@ -2425,7 +2434,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 #endif
 
     free(imgM);
-    return EXIT_SUCCESS;
+    return returnCode;//EXIT_SUCCESS;
 }// saveDcm2Nii()
 
 int compareTDCMsort(void const *item1, void const *item2) {
@@ -2678,7 +2687,7 @@ int convert_parRec(struct TDCMopts opts) {
     if (nameList.numItems < 1)
     	printMessage("No valid PAR/REC files were found\n");
     if (nameList.numItems > 0)
-        for (int i = 0; i < nameList.numItems; i++)
+        for (int i = 0; i < (int)nameList.numItems; i++)
             free(nameList.str[i]);
     free(nameList.str);
     return ret;
@@ -2773,7 +2782,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     int nConvertTotal = 0;
     bool compressionWarning = false;
     bool convertError = false;
-    for (int i = 0; i < nDcm; i++ ) {
+    for (int i = 0; i < (int)nDcm; i++ ) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
         if ((dcmList[i].isValid) &&((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
             struct TDCMsort dcmSort[1];
@@ -2824,18 +2833,18 @@ int nii_loadDir(struct TDCMopts* opts) {
     } else {
 #endif
     //3: stack DICOMs with the same Series
-    for (int i = 0; i < nDcm; i++ ) {
+    for (int i = 0; i < (int)nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
 			struct TWarnings warnings = setWarnings();
 			bool isMultiEcho;
-			for (int j = i; j < nDcm; j++)
+			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho ) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
-			for (int j = i; j < nDcm; j++)
+			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
 					dcmSort[nConvert].indx = j;
 					dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32) + dcmList[j].imageNum;
@@ -2957,7 +2966,7 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     "pigz_afni",
 	};
 	#define n_nam (sizeof (nams) / sizeof (const char *))
-	for (int n = 0; n < n_nam; n++) {
+	for (int n = 0; n < (int)n_nam; n++) {
 		if (findpathof(str, nams[n])) {
 			strcpy(opts->pigzname,str);
 			//printMessage("Found pigz: %s\n", str);
@@ -2977,9 +2986,9 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     appendChar[0] = kPathSeparator;
     if (exepth[strlen(exepth)-1] != kPathSeparator) strcat (exepth,appendChar);
 	//see if pigz in any path
-    for (int n = 0; n < n_nam; n++) {
+    for (int n = 0; n < (int)n_nam; n++) {
         //printf ("%d: %s\n", i, nams[n]);
-    	for (int p = 0; p < n_pth; p++) {
+    	for (int p = 0; p < (int)n_pth; p++) {
 			strcpy(str, pths[p]);
 			strcat(str, nams[n]);
 			if (is_exe(str))

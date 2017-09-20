@@ -125,7 +125,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
     size_t lSz = fread(lRawRA, 1, lRawSz, reader);
     fclose(reader);
-    if ((lSz < lRawSz) || (lRawRA[0] != 0xFF) || (lRawRA[1] != 0xD8) || (lRawRA[2] != 0xFF)) {
+    if ((lSz < (size_t)lRawSz) || (lRawRA[0] != 0xFF) || (lRawRA[1] != 0xD8) || (lRawRA[2] != 0xFF)) {
         abortGoto("JPEG signature 0xFFD8FF not found at offset %d of %s\n", skipBytes, fn);//signature failure http://en.wikipedia.org/wiki/List_of_file_signatures
     }
     if (verbose)
@@ -133,9 +133,13 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     //next: read header
     long lRawPos = 2; //Skip initial 0xFFD8, begin with third byte
     //long lRawPos = 0; //Skip initial 0xFFD8, begin with third byte
-    unsigned char btS1, btS2, SOSss, SOSse, SOSahal, SOSpttrans, btMarkerType, SOSns = 0x00; //tag
-    uint8_t SOFnf, SOFprecision;
-    uint16_t SOFydim, SOFxdim; //, lRestartSegmentSz;
+    unsigned char btS1, btS2, SOSse, SOSahal, btMarkerType, SOSns = 0x00; //tag
+    unsigned char SOSpttrans = 0;
+    unsigned char SOSss = 0;
+    uint8_t SOFnf = 0;
+    uint8_t SOFprecision = 0;
+    uint16_t SOFydim = 0;
+    uint16_t SOFxdim = 0;
     // long SOSarrayPos; //SOFarrayPos
     int lnHufTables = 0;
     const int kmaxFrames = 4;
@@ -186,7 +190,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                     DHTnLi = DHTnLi +  l[lFrameCount].DHTliRA[lInc];
                     if (l[lFrameCount].DHTliRA[lInc] != 0) l[lFrameCount].MaxHufSi = lInc;
                     if (verbose) printMessage("DHT has %d combinations with %d bits\n", l[lFrameCount].DHTliRA[lInc], lInc);
-                    
+
                 }
                 if (DHTnLi > 17) {
                     abortGoto("Huffman table corrupted.\n");

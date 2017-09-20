@@ -2085,8 +2085,7 @@ unsigned char * nii_XYTZ_XYZT(unsigned char* bImg, struct nifti_1_header *hdr, i
     //memcpy(&tempImg[0], &bImg[0], imgSz);
     uint64_t origPos = 0;
     uint64_t Pos = 0; //
-
-    for (int t = 0; t < typeRepeats; t++) { //for each volume
+    for (int t = 0; t < (int)typeRepeats; t++) { //for each volume
         for (int s = 0; s < seqRepeats; s++) {
             origPos = (t*typeBytes) +s*sliceBytes;
             for (int z = 0; z < hdr->dim[3]; z++) { //for each slice
@@ -2266,7 +2265,7 @@ TJPEG *  decode_JPEG_SOF_0XC3_stack (const char *fn, int skipBytes, bool isVerbo
     unsigned char *lRawRA = (unsigned char*) malloc(lRawSz);
     size_t lSz = fread(lRawRA, 1, lRawSz, reader);
     fclose(reader);
-    if (lSz < lRawSz) {
+    if (lSz < (size_t)lRawSz) {
         printError("Unable to read %s\n", fn);
         abortGoto(); //read failure
     }
@@ -2471,7 +2470,7 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
     }
 	fseek(file, 0, SEEK_END);
 	long fileLen=ftell(file);
-    if (fileLen < (dcm.imageBytes+dcm.imageStart)) {
+    if ((fileLen < 1) || (dcm.imageBytes < 1) || (fileLen < (dcm.imageBytes+dcm.imageStart))) {
         printMessage("File not large enough to store image data: %s\n", imgname);
         fclose(file);
         return NULL;
@@ -2481,7 +2480,7 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
     unsigned char *cImg = (unsigned char *)malloc(dcm.imageBytes); //compressed input
     size_t  sz = fread(cImg, 1, dcm.imageBytes, file);
 	fclose(file);
-	if (sz < dcm.imageBytes) {
+	if (sz < (size_t)dcm.imageBytes) {
          printError("Only loaded %zu of %d bytes for %s\n", sz, dcm.imageBytes, imgname);
          free(cImg);
          return NULL;
@@ -2490,17 +2489,17 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
     bool swap = (dcm.isLittleEndian != littleEndianPlatform());
 	int bytesPerSample = dcm.samplesPerPixel * (dcm.bitsAllocated / 8);
 	uint32_t bytesPerSampleRLE = rleInt(0, cImg, swap);
-	if (bytesPerSampleRLE != (bytesPerSample)) {
+	if ((bytesPerSample < 0) || (bytesPerSampleRLE != (uint32_t)bytesPerSample)) {
 		printError("RLE header corrupted %d != %d\n", bytesPerSampleRLE, bytesPerSample);
 		free(cImg);
 		return NULL;
 	}
 	unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
-	for (int i = 0; i < imgsz; i++)
+	for (size_t i = 0; i < imgsz; i++)
 		bImg[i] = 0;
     for (int i = 0; i < bytesPerSample; i++) {
 		uint32_t offset = rleInt(i+1, cImg, swap);
-		if (offset > dcm.imageBytes) {
+		if ((dcm.imageBytes < 0) || (offset > (uint32_t)dcm.imageBytes)) {
 			printError("RLE header error\n");
 			free(cImg);
 			free(bImg);
@@ -2685,7 +2684,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	#else
 	size_t MaxBufferSz = 1000000; //ideally size of DICOM header, but this varies from 2D to 4D files
 	#endif
-	if (MaxBufferSz > fileLen)
+	if (MaxBufferSz > (size_t)fileLen)
 		MaxBufferSz = fileLen;
 	//printf("%d -> %d\n", MaxBufferSz, fileLen);
 	long lFileOffset = 0;
@@ -2831,9 +2830,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
-#define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
-#define  kUnnest  0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
-#define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
+uint32_t kNest = 0xFFFE +(0xE000 << 16 ); //#define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
+uint32_t kUnnest = 0xFFFE +(0xE00D << 16 ); //#define  kUnnest  0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
+uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
     int nest = 0;
     double zSpacing = -1.0l; //includes slice thickness plus gap
     int locationsInAcquisitionGE = 0;
@@ -2871,10 +2870,9 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
     while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
-    	if ((lPos + 128) > MaxBufferSz) { //avoid overreading the file
+    	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
     		lFileOffset = lFileOffset + lPos;
-    		if ((lFileOffset+MaxBufferSz) > fileLen)
-    			MaxBufferSz = fileLen - lFileOffset;
+    		if ((lFileOffset+MaxBufferSz) > (size_t)fileLen) MaxBufferSz = fileLen - lFileOffset;
 			fseek(file, lFileOffset, SEEK_SET);
 			size_t sz = fread(buffer, 1, MaxBufferSz, file);
 			if (sz < MaxBufferSz) {
@@ -3596,7 +3594,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
             	tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
                 dcmStr (lLength, &buffer[lPos], tagStr);
                 if (strlen(tagStr) > 1) {
-                	for (int pos = 0; pos<strlen(tagStr); pos ++)
+                	for (size_t pos = 0; pos<strlen(tagStr); pos ++)
 						if ((tagStr[pos] == '<') || (tagStr[pos] == '>') || (tagStr[pos] == ':')
             				|| (tagStr[pos] == '"') || (tagStr[pos] == '\\') || (tagStr[pos] == '/')
            					|| (tagStr[pos] == '^') || (tagStr[pos] < 33)

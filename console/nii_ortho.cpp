@@ -111,7 +111,7 @@ vec3i setOrientVec(mat33 m)
 // Assumes isOrthoMat NOT computed on INVERSE, hence return INVERSE of solution...
 //e.g. [-1,2,3] means reflect x axis, [2,1,3] means swap x and y dimensions
 {
-    vec3i ret = {0, 0, 0};
+    vec3i ret = {{0, 0, 0}};
     //mat33 m = {-1,0,0, 0,1,0, 0,0,1};
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
@@ -223,8 +223,8 @@ unsigned char *  reOrient(unsigned char* img, struct nifti_1_header *h, vec3i or
 {
     size_t nvox = h->dim[1] * h->dim[2] * h->dim[3];
     if (nvox < 1) return img;
-    vec3i outDim= {0,0,0};
-    vec3i outInc= {0,0,0};
+    vec3i outDim= {{0,0,0}};
+    vec3i outInc= {{0,0,0}};
     for (int i = 0; i < 3; i++) { //set dimension, pixdim and
         outDim.v[i] =  h->dim[abs(orientVec.v[i])];
         if (abs(orientVec.v[i]) == 1) outInc.v[i] = 1;
@@ -239,7 +239,7 @@ unsigned char *  reOrient(unsigned char* img, struct nifti_1_header *h, vec3i or
     }
     reOrientImg(img, outDim, outInc, h->bitpix / 8,  nvol);
     //now change the header....
-    vec3 outPix= {h->pixdim[abs(orientVec.v[0])],h->pixdim[abs(orientVec.v[1])],h->pixdim[abs(orientVec.v[2])]};
+    vec3 outPix= {{h->pixdim[abs(orientVec.v[0])],h->pixdim[abs(orientVec.v[1])],h->pixdim[abs(orientVec.v[2])]}};
     for (int i = 0; i < 3; i++) {
         h->dim[i+1] = outDim.v[i];
         h->pixdim[i+1] = outPix.v[i];

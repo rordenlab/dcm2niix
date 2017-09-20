@@ -86,19 +86,19 @@ int isSameFloat (float a, float b) {
 
 ivec3 setiVec3(int x, int y, int z)
 {
-    ivec3 v = {x, y, z};
+    ivec3 v = {{x, y, z}};
     return v;
 }
 
 vec3 setVec3(float x, float y, float z)
 {
-    vec3 v = {x, y, z};
+    vec3 v = {{x, y, z}};
     return v;
 }
 
 vec4 setVec4(float x, float y, float z)
 {
-    vec4 v= {x, y, z, 1};
+    vec4 v= {{x, y, z, 1}};
     return v;
 }
 
