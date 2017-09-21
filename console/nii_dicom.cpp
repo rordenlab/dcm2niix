@@ -619,16 +619,6 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         sprintf(dtxt, ";phase=%d", d.CSA.phaseEncodingDirectionPositive);
         strcat(txt,dtxt);
     }
-    if ((d.CSA.bandwidthPerPixelPhaseEncode > 0) && ((d.phaseEncodingRC =='C') || (d.phaseEncodingRC =='R'))) {
-        float dwellTime = 0;
-        if (d.phaseEncodingRC =='C')
-            dwellTime =  1000/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[2];
-        else
-            dwellTime =  1000/d.CSA.bandwidthPerPixelPhaseEncode/h->dim[1];
-        char dtxt[1024] = {""};
-        sprintf(dtxt, ";dwell=%.3f", dwellTime);
-        strcat(txt,dtxt);
-    }
     //from dicm2nii 20151117 InPlanePhaseEncodingDirection
     if (d.phaseEncodingRC =='R')
         h->dim_info = (3 << 4) + (1 << 2) + 2;

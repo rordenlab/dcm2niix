@@ -490,13 +490,15 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* phaseOversampling, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* phaseOversampling, float* phaseResolution, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
+ 	*phaseOversampling = 0.0;
+ 	*phaseResolution = 0.0;
+ 	*baseResolution = 0;
  	*interp = 0;
  	*partialFourier = 0;
  	*echoSpacing = 0;
- 	*phaseOversampling = 0.0;
  	strcpy(coilID, "");
  	strcpy(consistencyInfo, "");
  	strcpy(coilElements, "");
@@ -533,6 +535,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
+		char keyStrBase[] = "sKSpace.lBaseResolution";
+		*baseResolution = readKey(keyStrBase, keyPos, csaLengthTrim);
 		char keyStrInterp[] = "sKSpace.uc2DInterpolation";
 		*interp = readKey(keyStrInterp, keyPos, csaLengthTrim);
 		char keyStrPF[] = "sKSpace.ucPhasePartialFourier";
@@ -553,6 +557,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
 		char keyStrExt[] = "FmriExternalInfo";
 		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
+		char keyStrPhase[] = "sKSpace.dPhaseResolution";
+		*phaseResolution = readKeyFloat(keyStrPhase, keyPos, csaLengthTrim);
 		char keyStrOver[] = "sKSpace.dPhaseOversamplingForDialog";
 		*phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
 	}
@@ -730,9 +736,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	float phaseOversampling = 0.0;
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		float phaseResolution;
 		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &phaseOversampling, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &phaseOversampling, &phaseResolution, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (partialFourier == 1) pf = 0.5; // 4/8
@@ -745,8 +752,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			interp = true;
 			fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
 		}
+		if (baseResolution > 0) fprintf(fp, "\t\"BaseResolution\": %d,\n", baseResolution );
+		json_Float(fp, "\t\"PhaseResolution\": %g,\n", phaseResolution);
 		json_Float(fp, "\t\"PhaseOversampling\": %g,\n", phaseOversampling); //usec -> sec
-		json_Float(fp, "\t\"EchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
+		json_Float(fp, "\t\"VendorReportedEchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
 		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
@@ -804,7 +813,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	float trueEchoSpacingCalc = 0.0;
 	trueEchoSpacingCalc = bandwidthPerPixelPhaseEncode * trueESfactor * d.phaseEncodingLines;
 	if (trueEchoSpacingCalc != 0) trueEchoSpacingCalc = 1/trueEchoSpacingCalc;
-	json_Float(fp, "\t\"TrueEchoSpacingCalc\": %g,\n", trueEchoSpacingCalc);
+	json_Float(fp, "\t\"DerivedVendorReportedEchoSpacing\": %g,\n", trueEchoSpacingCalc);
 
     //TotalReadOutTime: Really should be called "EffectiveReadOutTime", by analogy with "EffectiveEchoSpacing".
 	// But BIDS spec calls it "TotalReadOutTime".
