@@ -776,29 +776,41 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	#endif
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
+	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
+    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
+	if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines );
+
+	//Compute ReconMatrixPE
+	// Actual size of the *reconstructed* data in the PE dimension, which does NOT match
+	// phaseEncodingLines in the case of interpolation or phaseResolution < 100%
+	// We'll need this for generating a value for effectiveEchoSpacing that is consistent
+	// with the *reconstructed* data.
+	int reconMatrixPE = d.phaseEncodingLines;
+    if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
+		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
+			reconMatrixPE = h->dim[2];
+		else if (d.phaseEncodingRC =='R')
+			reconMatrixPE = h->dim[2];
+		else if (d.phaseEncodingRC =='C')
+			reconMatrixPE = h->dim[1];
+    }
+	if (reconMatrixPE > 0) fprintf(fp, "\t\"ReconMatrixPE\": %d,\n", reconMatrixPE );
+
     double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
-
-	if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines );
-	//if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"PhaseEncodingLines\": %d,\n", d.phaseEncodingLines );
-    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
-    //json_Float(fp, "\t\"RectangularFOV\": %g,\n", d.phaseFieldofView);
-	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
     if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
 
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
-	// interpolation, and (presumably) phase oversampling when you use the size of the reconstructed
-	// image in the phase direction
-	double PEreconMatrix = d.phaseEncodingLines;
-	if (interp) PEreconMatrix *= 2;
+	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the
+	// *reconstructed* data in the PE dimension
     double effectiveEchoSpacing = 0.0;
-    if ((PEreconMatrix > 0.0) && (bandwidthPerPixelPhaseEncode > 0.0))
-    	effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * PEreconMatrix);
+    if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+	    effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
@@ -807,13 +819,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// i.e., should match "echoSpacing" extracted from the ASCII CSA header, when that exists
     double trueESfactor = 1.0;
 	if (d.accelFactPE > 1.0) trueESfactor /= d.accelFactPE;
-	if (interp) trueESfactor *= 2;
-	if ((phaseOversampling > 0.0) && (phaseOversampling < 1.0))
+	if (phaseOversampling > 0.0)
 	  trueESfactor *= (1.0 + phaseOversampling);
-	float trueEchoSpacingCalc = 0.0;
-	trueEchoSpacingCalc = bandwidthPerPixelPhaseEncode * trueESfactor * d.phaseEncodingLines;
-	if (trueEchoSpacingCalc != 0) trueEchoSpacingCalc = 1/trueEchoSpacingCalc;
-	json_Float(fp, "\t\"DerivedVendorReportedEchoSpacing\": %g,\n", trueEchoSpacingCalc);
+	float derivedEchoSpacing = 0.0;
+	derivedEchoSpacing = bandwidthPerPixelPhaseEncode * trueESfactor * reconMatrixPE;
+	if (derivedEchoSpacing != 0) derivedEchoSpacing = 1/derivedEchoSpacing;
+	json_Float(fp, "\t\"DerivedVendorReportedEchoSpacing\": %g,\n", derivedEchoSpacing);
 
     //TotalReadOutTime: Really should be called "EffectiveReadOutTime", by analogy with "EffectiveEchoSpacing".
 	// But BIDS spec calls it "TotalReadOutTime".
@@ -823,9 +834,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// EffectiveEchoSpacing and the size of the *reconstructed* matrix in the PE direction.
     // see https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide#A--datain
 	// FSL definition is start of first line until start of last line.
+	// Other than the use of (n-1), the value is basically just 1.0/bandwidthPerPixelPhaseEncode.
     // https://github.com/rordenlab/dcm2niix/issues/130
-    if (effectiveEchoSpacing > 0.0)
-	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (PEreconMatrix - 1.0));
+    if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
+	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
 
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
