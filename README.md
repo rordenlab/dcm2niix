@@ -15,9 +15,11 @@ This software should run on macOS, Linux and Windows without requiring any other
 
 ## Versions
 
-21-Aug-2017
+23-Sept-2017
  - Swap [phase-encoding direction polarity](https://github.com/rordenlab/dcm2niix/issues/125) for Siemens images where PE is in the Column direction.
  - Sort diffusion volumes by [B-value amplitude](https://www.nitrc.org/forum/forum.php?thread_id=8396&forum_id=4703) (use "-d n"/"-d y" to turn the feature off/on).
+ - BIDS tag [TotalReadoutTime](https://github.com/rordenlab/dcm2niix/issues/130) handles partial fourier, Phase Resolution, etc (Michael Harms).
+ - Additional [json fields](https://github.com/rordenlab/dcm2niix/issues/127).
 
 18-Aug-2017
  - Better BVec extraction for  [PAR/REC 4.1](https://www.nitrc.org/forum/forum.php?thread_id=8387&forum_id=4703).
