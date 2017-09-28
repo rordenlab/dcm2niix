@@ -705,7 +705,7 @@ struct TDICOMdata clear_dicom_data() {
     d.phaseFieldofView = 0.0;
     d.dwellTime = 0;
     d.phaseEncodingSteps = 0;
-    d.coilNum = 1;
+    d.coilNum = 0;
     d.accelFactPE = 0.0;
     d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
