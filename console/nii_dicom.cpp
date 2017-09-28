@@ -630,11 +630,11 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     return headerDcm2NiiSForm(d,d2, h, isVerbose);
 } //headerDcm2Nii2()
 
-int dcmStrLen (int len) {
-    if (len < kDICOMStr)
+int dcmStrLen (int len, int kMaxLen) {
+    if (len < kMaxLen)
         return len+1;
     else
-        return kDICOMStr;
+        return kMaxLen;
 } //dcmStrLen()
 
 struct TDICOMdata clear_dicom_data() {
@@ -782,7 +782,7 @@ void dcmStrDigitsOnly(char* lStr) {
             lStr[i] = ' ';
 }
 
-void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
+void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false) {
     //char test[] = " 1     2    3    ";
     //lLength = (int)strlen(test);
 
@@ -835,8 +835,10 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut) {
     if (cString[len-1] == '_') len--;
     //while ((len > 0) && (cString[len]=='_')) len--; //remove trailing '_'
     cString[len] = 0; //null-terminate, strlcpy does this anyway
-    len = dcmStrLen(len);
-    if (len == kDICOMStr) { //we need space for null-termination
+    int maxLen = kDICOMStr;
+    if (isStrLarge) maxLen = kDICOMStrLarge;
+    len = dcmStrLen(len, maxLen);
+    if (len == maxLen) { //we need space for null-termination
 		if (cString[len-2] == '_') len = len -2;
 	}
     memcpy(lOut,cString,len-1);
@@ -3229,7 +3231,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
                 break;
             case kImageComments:
-                dcmStr (lLength, &buffer[lPos], d.imageComments);
+                dcmStr (lLength, &buffer[lPos], d.imageComments, true);
                 break;
             case kLocationsInAcquisitionGE:
                 locationsInAcquisitionGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
