@@ -678,6 +678,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.softwareVersions, "");
     strcpy(d.stationName, "");
     strcpy(d.scanOptions, "");
+    //strcpy(d.mrAcquisitionType, "");
     strcpy(d.seriesInstanceUID, "");
     strcpy(d.studyID, "");
     strcpy(d.studyInstanceUID, "");
@@ -3361,6 +3362,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             	#ifndef myDisableReorient3dToOrtho
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
                 #endif
+                //dcmStr (lLength, &buffer[lPos], d.mrAcquisitionType);
                 break;
             case kBodyPartExamined : {
                 dcmStr (lLength, &buffer[lPos], d.bodyPartExamined);

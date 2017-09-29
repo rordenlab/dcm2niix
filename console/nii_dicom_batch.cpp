@@ -656,6 +656,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Str(fp, "\t\"BodyPartExamined\": \"%s\",\n", d.bodyPartExamined);
 	json_Str(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription);
 	json_Str(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions);
+	//json_Str(fp, "\t\"MRAcquisitionType\": \"%s\",\n", d.mrAcquisitionType);
+	if (d.is3DAcq)  fprintf(fp, "\t\"MRAcquisitionType\": \"3D\",\n");
 	json_Str(fp, "\t\"SeriesDescription\": \"%s\",\n", d.seriesDescription);
 	json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName);
 	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
@@ -2182,6 +2184,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
 	}
 	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
+	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))  return; //fine: single-band calibration data, the slice timing WILL exceed the TR
 	//check if 2nd image has valud slice timing
