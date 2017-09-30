@@ -700,6 +700,10 @@ struct TDICOMdata clear_dicom_data() {
     d.flipAngle = 0.0;
     d.bandwidthPerPixelPhaseEncode = 0.0;
     d.fieldStrength = 0.0;
+    d.SAR = 0.0;
+    d.pixelBandwidth = 0.0;
+    d.zSpacing = 0.0;
+    d.zThick = 0.0;
     d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.echoTrainLength = 0;
@@ -725,6 +729,7 @@ struct TDICOMdata clear_dicom_data() {
     d.imageNum = 1;
     d.imageStart = 0;
     d.is3DAcq = false; //e.g. MP-RAGE, SPACE, TFE
+    d.is2DAcq = false; //
     d.isSlicesSpatiallySequentialPhilips = true; //Philips can save slices in random order, e.g. 4,5,6,1,2,3
     d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.isSegamiOasis = false; //these images do not store spatial coordinates
@@ -2740,6 +2745,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kEchoTrainLength  0x0018+(0x0091 << 16 ) //IS
 #define  kPhaseFieldofView  0x0018+(0x0094 << 16 ) //'DS'
+#define  kPixelBandwidth  0x0018+(0x0095 << 16 ) //'DS' 'PixelBandwidth'
 #define  kDeviceSerialNumber  0x0018+(0x1000 << 16 ) //LO
 #define  kSoftwareVersions  0x0018+(0x1020 << 16 ) //LO
 #define  kProtocolName  0x0018+(0x1030<< 16 )
@@ -2751,6 +2757,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kAcquisitionMatrix  0x0018+(0x1310  << 16 ) //US
 #define  kFlipAngle  0x0018+(0x1314  << 16 )
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
+#define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
@@ -2827,7 +2834,7 @@ uint32_t kNest = 0xFFFE +(0xE000 << 16 ); //#define kNest 0xFFFE +(0xE000 << 16 
 uint32_t kUnnest = 0xFFFE +(0xE00D << 16 ); //#define  kUnnest  0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
 uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
     int nest = 0;
-    double zSpacing = -1.0l; //includes slice thickness plus gap
+    //double zSpacing = -1.0l; //includes slice thickness plus gap
     int locationsInAcquisitionGE = 0;
     int locationsInAcquisitionPhilips = 0;
     int imagesInAcquisition = 0;
@@ -3193,6 +3200,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kInPlanePhaseEncodingDirection:
                 d.phaseEncodingRC = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
                 break;
+            case kSAR:
+            	d.SAR = dcmStrFloat(lLength, &buffer[lPos]);
+            	break;
             case kStudyID:
             	dcmStr (lLength, &buffer[lPos], d.studyID);
             	break;
@@ -3265,7 +3275,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 d.fieldStrength =  dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kZSpacing :
-                zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
+                d.zSpacing = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kPhaseEncodingSteps :
                 d.phaseEncodingSteps =  dcmStrInt(lLength, &buffer[lPos]);
@@ -3276,6 +3286,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kPhaseFieldofView :
             	d.phaseFieldofView = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
+            case kPixelBandwidth :
+            	d.pixelBandwidth = dcmStrFloat(lLength, &buffer[lPos]);
+            	break;
         	case kAcquisitionMatrix :
 				if (lLength == 8) {
                 	uint16_t acquisitionMatrix[4];
@@ -3321,6 +3334,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 break;
             case kZThick :
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
+                d.zThick = d.xyzMM[3];
                 break;
             case kCoilSiemens : {
                 if (d.manufacturer == kMANUFACTURER_SIEMENS) {
@@ -3359,9 +3373,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case	kMRAcquisitionType: //detect 3D acquisition: we can reorient these without worrying about slice time correct or BVEC/BVAL orientation
-            	#ifndef myDisableReorient3dToOrtho
+            	if (lLength > 1) d.is2DAcq = (buffer[lPos]=='2') && (toupper(buffer[lPos+1]) == 'D');
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
-                #endif
                 //dcmStr (lLength, &buffer[lPos], d.mrAcquisitionType);
                 break;
             case kBodyPartExamined : {
@@ -3639,8 +3652,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;
-    if (zSpacing > 0)
-    	d.xyzMM[3] = zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
+    if (d.zSpacing > 0)
+    	d.xyzMM[3] = d.zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
     //printMessage("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionNum,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3]))
         printMessage("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionNum, d.xyzDim[3]); //Philips reported different positions for each slice!
