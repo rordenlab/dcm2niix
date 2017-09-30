@@ -583,6 +583,15 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		shimSetting[6] = readKeyFloat(keyStrSh6, keyPos, csaLengthTrim);
 		char keyStrSh7[] = "sGRADSPEC.asGPAData[0].lOffsetZ";
 		shimSetting[7] = readKeyFloat(keyStrSh7, keyPos, csaLengthTrim);
+		//next ones only provided in Siemens sequences
+		char keyStrSh5s[] = "sGRADSPEC.lOffsetX";
+		if (shimSetting[5] == 0.0) shimSetting[5] = readKeyFloat(keyStrSh5s, keyPos, csaLengthTrim);
+		char keyStrSh6s[] = "sGRADSPEC.lOffsetY";
+		if (shimSetting[6] == 0.0) shimSetting[6] = readKeyFloat(keyStrSh6s, keyPos, csaLengthTrim);
+		char keyStrSh7s[] = "sGRADSPEC.lOffsetZ";
+		if (shimSetting[7] == 0.0) shimSetting[7] = readKeyFloat(keyStrSh7s, keyPos, csaLengthTrim);
+
+
 	}
 	fclose (pFile);
 	free (buffer);
