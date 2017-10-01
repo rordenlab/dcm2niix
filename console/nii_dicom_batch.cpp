@@ -566,32 +566,31 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		*phaseResolution = readKeyFloat(keyStrPhase, keyPos, csaLengthTrim);
 		char keyStrAmp[] = "sTXSPEC.asNucleusInfo[0].flReferenceAmplitude";
 		*txRefAmp = readKeyFloat(keyStrAmp, keyPos, csaLengthTrim);
-		char keyStrSh0[] = "sGRADSPEC.alShimCurrent[0]";
+		//lower order shims: newer sequences
+		char keyStrSh0[] = "sGRADSPEC.asGPAData[0].lOffsetX";
 		shimSetting[0] = readKeyFloat(keyStrSh0, keyPos, csaLengthTrim);
-		char keyStrSh1[] = "sGRADSPEC.alShimCurrent[1]";
+		char keyStrSh1[] = "sGRADSPEC.asGPAData[0].lOffsetY";
 		shimSetting[1] = readKeyFloat(keyStrSh1, keyPos, csaLengthTrim);
-		char keyStrSh2[] = "sGRADSPEC.alShimCurrent[2]";
+		char keyStrSh2[] = "sGRADSPEC.asGPAData[0].lOffsetZ";
 		shimSetting[2] = readKeyFloat(keyStrSh2, keyPos, csaLengthTrim);
-		char keyStrSh3[] = "sGRADSPEC.alShimCurrent[3]";
+		//lower order shims: older sequences
+		char keyStrSh0s[] = "sGRADSPEC.lOffsetX";
+		if (shimSetting[0] == 0.0) shimSetting[0] = readKeyFloat(keyStrSh0s, keyPos, csaLengthTrim);
+		char keyStrSh1s[] = "sGRADSPEC.lOffsetY";
+		if (shimSetting[1] == 0.0) shimSetting[1] = readKeyFloat(keyStrSh1s, keyPos, csaLengthTrim);
+		char keyStrSh2s[] = "sGRADSPEC.lOffsetZ";
+		if (shimSetting[2] == 0.0) shimSetting[2] = readKeyFloat(keyStrSh2s, keyPos, csaLengthTrim);
+		//higher order shims: older sequences
+		char keyStrSh3[] = "sGRADSPEC.alShimCurrent[0]";
 		shimSetting[3] = readKeyFloat(keyStrSh3, keyPos, csaLengthTrim);
-		char keyStrSh4[] = "sGRADSPEC.alShimCurrent[4]";
+		char keyStrSh4[] = "sGRADSPEC.alShimCurrent[1]";
 		shimSetting[4] = readKeyFloat(keyStrSh4, keyPos, csaLengthTrim);
-		//next ones only provided by CMRR sequences?
-		char keyStrSh5[] = "sGRADSPEC.asGPAData[0].lOffsetX";
+		char keyStrSh5[] = "sGRADSPEC.alShimCurrent[2]";
 		shimSetting[5] = readKeyFloat(keyStrSh5, keyPos, csaLengthTrim);
-		char keyStrSh6[] = "sGRADSPEC.asGPAData[0].lOffsetY";
+		char keyStrSh6[] = "sGRADSPEC.alShimCurrent[3]";
 		shimSetting[6] = readKeyFloat(keyStrSh6, keyPos, csaLengthTrim);
-		char keyStrSh7[] = "sGRADSPEC.asGPAData[0].lOffsetZ";
+		char keyStrSh7[] = "sGRADSPEC.alShimCurrent[4]";
 		shimSetting[7] = readKeyFloat(keyStrSh7, keyPos, csaLengthTrim);
-		//next ones only provided in Siemens sequences
-		char keyStrSh5s[] = "sGRADSPEC.lOffsetX";
-		if (shimSetting[5] == 0.0) shimSetting[5] = readKeyFloat(keyStrSh5s, keyPos, csaLengthTrim);
-		char keyStrSh6s[] = "sGRADSPEC.lOffsetY";
-		if (shimSetting[6] == 0.0) shimSetting[6] = readKeyFloat(keyStrSh6s, keyPos, csaLengthTrim);
-		char keyStrSh7s[] = "sGRADSPEC.lOffsetZ";
-		if (shimSetting[7] == 0.0) shimSetting[7] = readKeyFloat(keyStrSh7s, keyPos, csaLengthTrim);
-
-
 	}
 	fclose (pFile);
 	free (buffer);
