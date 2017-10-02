@@ -685,7 +685,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		// json_Str(fp, "\t\"PatientID\": \"%s\",\n", d.patientID);
 	}
 	json_Str(fp, "\t\"BodyPartExamined\": \"%s\",\n", d.bodyPartExamined);
-	json_Str(fp, "\t\"PatientOrient\": \"%s\",\n", d.patientOrient);
+	json_Str(fp, "\t\"PatientPosition\": \"%s\",\n", d.patientOrient);  // 0018,5100 = PatientPosition in DICOM
 	json_Str(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription);
 	json_Str(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions);
 	//json_Str(fp, "\t\"MRAcquisitionType\": \"%s\",\n", d.mrAcquisitionType);
@@ -890,7 +890,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
 	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
 
-    json_Float(fp, "\t\"VendorReportedPixelBandwidth\": %g,\n", d.pixelBandwidth );
+    json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth );
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
