@@ -93,8 +93,9 @@ void dropFilenameFromPath(char *path) { //
     if (strlen(path) == 0) { //file name did not specify path, assume relative path and return current working directory
     	//strcat (path,"."); //relative path - use cwd <- not sure if this works on Windows!
     	char cwd[1024];
-   		getcwd(cwd, sizeof(cwd));
-   		strcat (path,cwd);
+   		char* ok = getcwd(cwd, sizeof(cwd));
+   		if (ok !=NULL)
+   			strcat (path,cwd);
     }
 }
 
@@ -712,7 +713,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
-	if (d.seriesNum > 0) fprintf(fp, "\t\"SeriesNumber\": %d,\n", d.seriesNum);
+	if (d.seriesNum > 0) fprintf(fp, "\t\"SeriesNumber\": %ld,\n", d.seriesNum);
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
 	//Lines below directly save DICOM values
 	if (d.acquisitionTime > 0.0 && d.acquisitionDate > 0.0){
@@ -1795,7 +1796,9 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     		} else
     			printMessage("compression failed %s\n",command);
     	#else //if win else linux
-        system(command);
+        int ret = system(command);
+        if (ret == -1)
+        	printWarning("Failed to execute: %s\n",command);
         #endif //else linux
         printMessage("compress: %s\n",command);
     }

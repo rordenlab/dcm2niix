@@ -175,14 +175,24 @@ PACK( typedef struct {
     //read list matrix
     ecat_list_hdr lhdr;
     fseek(f, 512, SEEK_SET);
-    fread(&lhdr, sizeof(lhdr), 1, f);
+    size_t nRead = fread(&lhdr, sizeof(lhdr), 1, f);
+    if (nRead != 1) {
+        printMessage("Error reading ECAT file\n");
+        fclose(f);
+        return NULL;
+    }
     if (swapEndian) nifti_swap_4bytes(128, &lhdr.hdr[0]);
     //offset to first image
     int img_StartBytes = lhdr.r[0][1] * 512;
     //load image header for first image
     fseek(f, img_StartBytes - 512, SEEK_SET); //image header is block immediately before image
     ecat_img_hdr ihdr;
-    fread(&ihdr, sizeof(ihdr), 1, f);
+    nRead = fread(&ihdr, sizeof(ihdr), 1, f);
+    if (nRead != 1) {
+        printMessage("Error reading ECAT file\n");
+        fclose(f);
+        return NULL;
+    }
     if (swapEndian) {
     	nifti_swap_2bytes(5, &ihdr.data_type);
         nifti_swap_4bytes(5, &ihdr.x_offset);
@@ -218,7 +228,12 @@ PACK( typedef struct {
     while ((lhdr.hdr[0]+lhdr.hdr[3]) == 31) { //while valid list
     	if (num_vol > 0) { //read the next list
     		fseek(f, 512 * (lhdr.hdr[1] -1), SEEK_SET);
-    		fread(&lhdr, 512, 1, f);
+    		nRead =fread(&lhdr, 512, 1, f);
+    		if (nRead != 1) {
+        		printMessage("Error reading ECAT file\n");
+        		fclose(f);
+        		return NULL;
+    		}
     		if (swapEndian) nifti_swap_4bytes(128, &lhdr.hdr[0]);
     	}
 		if ((lhdr.hdr[0]+lhdr.hdr[3]) != 31) break; //if valid list
@@ -226,7 +241,12 @@ PACK( typedef struct {
 		for (int k = 0; k < lhdr.hdr[3]; k++) {
     		//check images' ecat_img_hdr matches first
     		fseek(f, (lhdr.r[k][1]-1) * 512, SEEK_SET); //image header is block immediately before image
-    		fread(&ihdrN, sizeof(ihdrN), 1, f);
+    		nRead = fread(&ihdrN, sizeof(ihdrN), 1, f);
+    		if (nRead != 1) {
+        		printMessage("Error reading ECAT file\n");
+        		fclose(f);
+        		return NULL;
+    		}
     		if (swapEndian) {
 				nifti_swap_2bytes(5, &ihdrN.data_type);
 				nifti_swap_4bytes(5, &ihdrN.x_offset);
@@ -286,7 +306,12 @@ PACK( typedef struct {
 		float * img32 = (float*) img;
 		for (int v = 0; v < num_vol; v++) {
 			fseek(f, imgOffsets[v] * 512, SEEK_SET);
-			fread( &imgIn[0], 1, bytesPerVolumeIn, f);
+			nRead = fread( &imgIn[0], 1, bytesPerVolumeIn, f);
+    		if (nRead != 1) {
+        		printMessage("Error reading ECAT file\n");
+        		fclose(f);
+        		return NULL;
+    		}
 			if (swapEndian)
 				nifti_swap_2bytes(num_vox, imgIn);
 			int volOffset = v * num_vox;
