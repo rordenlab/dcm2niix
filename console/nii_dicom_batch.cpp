@@ -491,7 +491,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char * protocolName) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*phaseOversampling = 0.0;
@@ -507,6 +507,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
  	strcpy(consistencyInfo, "");
  	strcpy(coilElements, "");
  	strcpy(pulseSequenceDetails, "");
+ 	strcpy(fmriExternalInfo, "");
+ 	strcpy(protocolName, "");
  	if ((csaOffset < 0) || (csaLength < 8)) return;
 	FILE * pFile = fopen ( filename, "rb" );
 	if(pFile==NULL) return;
@@ -561,6 +563,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
 		char keyStrExt[] = "FmriExternalInfo";
 		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
+		char keyStrPn[] = "tProtocolName";
+		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
 		char keyStrOver[] = "sKSpace.dPhaseOversamplingForDialog";
 		*phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
 		char keyStrPhase[] = "sKSpace.dPhaseResolution";
@@ -780,8 +784,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
 		float phaseResolution, txRefAmp, shimSetting[8];
-		char fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo);
+		char protocolName[kDICOMStr], fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName);
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (partialFourier == 1) pf = 0.5; // 4/8
@@ -815,6 +819,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
 		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
+		if (strlen(d.protocolName) < 1)  //insert protocol name if it exists in CSA but not DICOM header: https://github.com/nipy/heudiconv/issues/80
+			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
