@@ -676,6 +676,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	};
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
+	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
 	json_Str(fp, "\t\"InstitutionAddress\": \"%s\",\n", d.institutionAddress);
 	json_Str(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber );
 	json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName );

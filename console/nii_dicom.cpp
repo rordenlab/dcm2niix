@@ -670,6 +670,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.scanningSequence, "");
     strcpy(d.sequenceVariant, "");
     strcpy(d.manufacturersModelName, "");
+    strcpy(d.institutionalDepartmentName, "");
     strcpy(d.procedureStepDescription, "");
     strcpy(d.institutionName, "");
     strcpy(d.referringPhysicianName, "");
@@ -2723,6 +2724,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kReferringPhysicianName 0x0008+(0x0090 << 16 )
 #define  kStationName 0x0008+(0x1010 << 16 )
 #define  kSeriesDescription 0x0008+(0x103E << 16 ) // '0008' '103E' 'LO' 'SeriesDescription'
+#define  kInstitutionalDepartmentName  0x0008+(0x1040 << 16 )
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
@@ -3110,6 +3112,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kSeriesDescription: {
                 dcmStr (lLength, &buffer[lPos], d.seriesDescription);
                 break; }
+            case kInstitutionalDepartmentName:
+            	dcmStr (lLength, &buffer[lPos], d.institutionalDepartmentName);
+            	break;
             case kManufacturersModelName :
             	dcmStr (lLength, &buffer[lPos], d.manufacturersModelName);
             	break;
