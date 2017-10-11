@@ -11,7 +11,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Dependencies
 
-This software should run on macOS, Linux and Windows without requiring any other software. However, if you use dcm2niix to create gz-compressed images it will be faster if you have [pigz](https://github.com/madler/pigz) installed. You can get a version of both dcm2niix and pigz compiled for your operating system by downloading [MRIcroGL](https://www.nitrc.org/projects/mricrogl/).
+This software should run on macOS, Linux and Windows typically without requiring any other software. However, if you use dcm2niix to create gz-compressed images it will be faster if you have [pigz](https://github.com/madler/pigz) installed. You can get a version of both dcm2niix and pigz compiled for your operating system by downloading [MRIcroGL](https://www.nitrc.org/projects/mricrogl/).
 
 ## Versions
 
@@ -193,10 +193,9 @@ The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` 
 
 This requires a compiler that supports c++11.
 
-
 ### Building the command line version without cmake
 
-[See the COMPILE.md file for details on manual compilation](./COMPILE.md).
+If you have any problems with the cmake build script described above or want to customize the software see the [COMPILE.md file for details on manual compilation](./COMPILE.md).
 
 ## Links
 
