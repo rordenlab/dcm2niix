@@ -940,6 +940,16 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		fprintf(fp, "\t],\n");
 	}
+	//DICOM orientation and phase encoding: useful for 3D undistortion. Original DICOM values: DICOM not NIfTI space, ignores if 3D image re-oriented
+	fprintf(fp, "\t\"ImageOrientationPatientDICOM\": [\n");
+	for (int i = 1; i < 7; i++) {
+		if (i != 1)
+			fprintf(fp, ",\n");
+		fprintf(fp, "\t\t%g", d.orient[i]);
+	}
+	fprintf(fp, "\t],\n");
+	if (d.phaseEncodingRC == 'C') fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"COL\",\n" );
+	if (d.phaseEncodingRC == 'R') fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n" );
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
