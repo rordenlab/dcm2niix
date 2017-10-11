@@ -748,6 +748,10 @@ struct TDICOMdata clear_dicom_data() {
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
     d.phaseEncodingRC = '?';
+    d.patientSex = '?';
+    d.patientWeight = 0.0;
+    strcpy(d.patientBirthDate, "");
+    strcpy(d.patientAge, "");
     d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
     d.CSA.mosaicSlices = 0;
     d.CSA.sliceNormV[1] = 1.0;
@@ -2730,6 +2734,10 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kPatientBirthDate 0x0010+(0x0030 << 16 )
+#define  kPatientSex 0x0010+(0x0040 << 16 )
+#define  kPatientAge 0x0010+(0x1010 << 16 )
+#define  kPatientWeight 0x0010+(0x1030 << 16 )
 #define  kAnatomicalOrientationType 0x0010+(0x2210 << 16 )
 #define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kScanningSequence 0x0018+(0x0020 << 16)
@@ -3105,6 +3113,18 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             	break; }
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
+                break;
+            case kPatientBirthDate :
+              	dcmStr (lLength, &buffer[lPos], d.patientBirthDate);
+              	break;
+            case kPatientSex :
+            	d.patientSex = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
+                break;
+            case kPatientAge :
+                dcmStr (lLength, &buffer[lPos], d.patientAge);
+                break;
+        	case kPatientWeight :
+                d.patientWeight = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kStationName :
                 dcmStr (lLength, &buffer[lPos], d.stationName);
