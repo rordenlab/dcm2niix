@@ -624,6 +624,11 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         h->dim_info = (3 << 4) + (1 << 2) + 2;
     if (d.phaseEncodingRC =='C')
         h->dim_info = (3 << 4) + (2 << 2) + 1;
+    if (d.CSA.multiBandFactor > 1) {
+        char dtxt[1024] = {""};
+        sprintf(dtxt, ";mb=%d", d.CSA.multiBandFactor);
+        strcat(txt,dtxt);
+    }
     snprintf(h->descrip,80, "%s",txt);
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%s",d.imageComments);

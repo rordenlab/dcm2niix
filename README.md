@@ -29,7 +29,7 @@ This software should run on macOS, Linux and Windows typically without requiring
  - Compiles with recent releases of [OpenJPEG](https://github.com/neurolabusc/dcm_qa/issues/5#issuecomment-317443179) for JPEG2000 support.
 
 23-June-2017
- - [Ensure slice timing always encoded for Siemens EPI](https://github.com/neurolabusc/dcm_qa/issues/4#issuecomment-310707906)
+ - [Ensure slice timing always reported for Siemens EPI](https://github.com/neurolabusc/dcm_qa/issues/4#issuecomment-310707906)
  - [Integrates validation](https://github.com/neurolabusc/dcm_qa)
  - JSON fix (InstitutionName -> InstitutionAddress)
 
