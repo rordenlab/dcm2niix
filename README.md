@@ -15,6 +15,8 @@ This software should run on macOS, Linux and Windows without requiring any other
 
 ## Versions
 
+12-Oct-2017
+ - Locally modified by Rob Reid to get the b values and vectors from diffusion MRI DICOM written by the Siemens XA10 software version (#8805).  
 23-Sept-2017
  - Swap [phase-encoding direction polarity](https://github.com/rordenlab/dcm2niix/issues/125) for Siemens images where PE is in the Column direction.
  - Sort diffusion volumes by [B-value amplitude](https://www.nitrc.org/forum/forum.php?thread_id=8396&forum_id=4703) (use "-d n"/"-d y" to turn the feature off/on).

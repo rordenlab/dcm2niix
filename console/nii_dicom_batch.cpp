@@ -70,7 +70,8 @@
 #endif
 
 struct TDCMsort {
-    uint64_t indx, img;
+  uint64_t indx, img;
+  uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
 };
 
 struct TSearchList {
@@ -2510,18 +2511,54 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 #endif
 
     free(imgM);
+
+    // Prevent these DICOM files from being reused.
+    for(uint i = 0; i < nConvert; ++i)
+      dcmList[dcmSort[i].indx].converted2NII = 1;
+
     return returnCode;//EXIT_SUCCESS;
 }// saveDcm2Nii()
+
+void fillTDCMsort(struct TDCMsort& tdcmref, const uint64_t indx, const struct TDICOMdata& dcmdata){
+  // Copy the relevant parts of dcmdata to tdcmref.
+  tdcmref.indx = indx;
+  tdcmref.img = ((uint64_t)dcmdata.seriesNum << 32) + dcmdata.imageNum;
+  for(uint i = 0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
+    tdcmref.dimensionIndexValues[i] = dcmdata.dimensionIndexValues[i];
+} // fillTDCMsort()
 
 int compareTDCMsort(void const *item1, void const *item2) {
     //for quicksort http://blog.ablepear.com/2011/11/objective-c-tuesdays-sorting-arrays.html
     struct TDCMsort const *dcm1 = (const struct TDCMsort *)item1;
     struct TDCMsort const *dcm2 = (const struct TDCMsort *)item2;
+
+    int retval = 0;   // tie
+
     if (dcm1->img < dcm2->img)
-        return -1;
+        retval = -1;
     else if (dcm1->img > dcm2->img)
-        return 1;
-    return 0; //tie
+        retval = 1;
+
+    if(retval == 0){
+      // Check the dimensionIndexValues (useful for enhanced DICOM 4D series).
+      // ->img is basically behaving as a (seriesNum, imageNum) sort key
+      // concatenated into a (large) integer for qsort.  That is unwieldy when
+      // dimensionIndexValues need to be compared, because the existence of
+      // uint128_t, uint256_t, etc. is not guaranteed.  This sorts by
+      // (seriesNum, ImageNum, div[0], div[1], ...), or if you think of it as a
+      // number, the dimensionIndexValues come after the decimal point.
+      for(uint i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i){
+        if(dcm1->dimensionIndexValues[i] < dcm2->dimensionIndexValues[i]){
+          retval = -1;
+          break;
+        }
+        else if(dcm1->dimensionIndexValues[i] > dcm2->dimensionIndexValues[i]){
+          retval = 1;
+          break;
+        }
+      }
+    }
+    return retval;
 } //compareTDCMsort()
 
 int isSameFloatGE (float a, float b) {
@@ -2637,10 +2674,9 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     strcpy(nameList.str[nameList.numItems],filename);
     nameList.numItems++;
     struct TDCMsort dcmSort[1];
-    dcmSort[0].indx = 0;
-    dcmSort[0].img = ((uint64_t)dcmList[0].seriesNum << 32) + dcmList[0].imageNum;
     dcmList[0].converted2NII = 1;
     dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+    fillTDCMsort(dcmSort[0], 0, dcmList[0]);
     return saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
 }// singleDICOM()
 
@@ -2707,11 +2743,13 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
     if (nConvert < 2) return nConvert;
     int nDuplicates = 0;
     for (int i = 1; i < nConvert; i++) {
-        if (dcmSort[i].img == dcmSort[i-1].img) {
+        if (compareTDCMsort(&dcmSort[i], &dcmSort[i-1]) == 0) {
             nDuplicates ++;
         } else {
             dcmSort[i-nDuplicates].img = dcmSort[i].img;
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
+            for(uint j = 0; j < MAX_NUMBER_OF_DIMENSIONS; ++j)
+              dcmSort[i - nDuplicates].dimensionIndexValues[j] = dcmSort[i].dimensionIndexValues[j];
         }
     }
     if (nDuplicates > 0)
@@ -2724,18 +2762,20 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
     if (nConvert < 2) return nConvert;
     int nDuplicates = 0;
     for (int i = 1; i < nConvert; i++) {
-        if (dcmSort[i].img == dcmSort[i-1].img) {
+        if (compareTDCMsort(&dcmSort[i], &dcmSort[i-1]) == 0) {
             printMessage("\t%s\t=\t%s\n",nameList->str[dcmSort[i-1].indx],nameList->str[dcmSort[i].indx]);
             nDuplicates ++;
         } else {
             dcmSort[i-nDuplicates].img = dcmSort[i].img;
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
+            for(uint j = 0; j < MAX_NUMBER_OF_DIMENSIONS; ++j)
+              dcmSort[i - nDuplicates].dimensionIndexValues[j] = dcmSort[i].dimensionIndexValues[j];
         }
     }
     if (nDuplicates > 0)
         printMessage("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
     return nConvert - nDuplicates;
-}// removeDuplicates()
+}// removeDuplicatesVerbose()
 
 bool isExt (char *file_name, const char* ext) {
     char *p_extension;
@@ -2862,8 +2902,8 @@ int nii_loadDir(struct TDCMopts* opts) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
         if ((dcmList[i].isValid) &&((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
             struct TDCMsort dcmSort[1];
-            dcmSort[0].indx = i;
-            dcmSort[0].img = ((uint64_t)dcmList[i].seriesNum << 32) + dcmList[i].imageNum;
+
+            fillTDCMsort(dcmSort[0], i, dcmList[i]);
             dcmList[i].converted2NII = 1;
             int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
             if (ret == EXIT_SUCCESS)
@@ -2922,9 +2962,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 			nConvert = 0;
 			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
-					dcmSort[nConvert].indx = j;
-					dcmSort[nConvert].img = ((uint64_t)dcmList[j].seriesNum << 32) + dcmList[j].imageNum;
-					dcmList[j].converted2NII = 1;
+                                        fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 					nConvert++;
 				} else {
 					dcmList[i].isMultiEcho = isMultiEcho;

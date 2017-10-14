@@ -652,6 +652,8 @@ struct TDICOMdata clear_dicom_data() {
         d.angulation[i] = 0.0f;
         d.xyzMM[i] = 1;
     }
+    for (int i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
+      d.dimensionIndexValues[i] = 0;
     d.CSA.sliceTiming[0] = -1.0f; //impossible value denotes not known
     d.CSA.numDti = 0;
     for (int i=0; i < 5; i++)
@@ -1160,6 +1162,16 @@ void dcmMultiShorts (int lByteLength, unsigned char lBuffer[], int lnShorts, uin
     	nifti_swap_2bytes(lnShorts, &lShorts[0]);
 } //dcmMultiShorts()
 
+void dcmMultiLongs (int lByteLength, unsigned char lBuffer[], int lnLongs, uint32_t *lLongs, bool littleEndian) {
+  //read array of unsigned longs UL http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
+  if((lnLongs < 1) || (lByteLength != (lnLongs * 4)))
+    return;
+  memcpy(&lLongs[0], (uint32_t *)&lBuffer[0], lByteLength);
+  bool swap = (littleEndian != littleEndianPlatform());
+  if (swap)
+    nifti_swap_4bytes(lnLongs, &lLongs[0]);
+} //dcmMultiLongs()
+
 void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) {
     //warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
     if ((lnFloats < 1) || (lByteLength < 1)) return;
@@ -1193,6 +1205,16 @@ void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloat
 	free(cString);
 //#endif
 } //dcmMultiFloat()
+
+void dcmMultiFloatDouble (uint lByteLength, unsigned char lBuffer[], uint lnFloats, float *lFloats,
+                          bool isLittleEndian) {
+  uint i;
+  uint floatlen = lByteLength / lnFloats;
+
+  for(i = 0; i < lnFloats; ++i)
+    lFloats[i] = dcmFloatDouble(floatlen, lBuffer + i * floatlen, isLittleEndian);
+}
+
 
 float dcmStrFloat (int lByteLength, unsigned char lBuffer[]) { //read float stored as a string
 //#ifdef _MSC_VER
@@ -2765,6 +2787,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
+#define  kSharedFunctionalGroupsSequence  0x5200+(0x9229<< 16 ) // SQ
+#define  kPerFrameFunctionalGroupsSequence  0x5200+(0x9230<< 16 ) // SQ
+#define  kDiffusion_bValue  0x0018+(0x9087<< 16 ) // FD
+#define  kDiffusionOrientation  0x0018+(0x9089<< 16 ) // FD, seen in enhanced
+                                                      // DICOM from Philips 5.*
+                                                      // and Siemens XA10.
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
@@ -2777,6 +2805,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
+#define  kDimensionIndexValues 0x0020+(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
@@ -2973,6 +3002,12 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         if (true) { //(nest <= 0) { //some Philips images have different 0020,0013
         //verbose reporting :
         // printMessage("Pos %ld GroupElement %#08x,%#08x Length %d isLittle %d\n", lPos, (groupElement & 0xFFFF), (groupElement >> 16), lLength, d.isLittleEndian);
+
+        // // Debugging
+        // int groupItem = groupElement >> 16;
+        // int groupGroup = groupElement - (groupItem << 16);
+        // printMessage("groupElement: (%04X, %04X)\n", groupGroup, groupItem);
+
         switch ( groupElement ) {
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
@@ -3158,9 +3193,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                     d.CSA.numDti = 1;
                 }
                 break;
-        	case kBandwidthPerPixelPhaseEncode:
-        		d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
-        		break;
+            case kBandwidthPerPixelPhaseEncode:
+                d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                break;
             case kStudyInstanceUID :
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
@@ -3215,6 +3250,20 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kImageNum:
                 //int dx = 3;
                 if (d.imageNum <= 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image as image1 in 2001,9000
+                break;
+            case kDimensionIndexValues:  // kImageNum is not enough for 4D series from Philips 5.*.
+              {                                   // { necessary for initializing ndim.
+                uint8_t ndim = lLength / 4;
+                
+                if(ndim > MAX_NUMBER_OF_DIMENSIONS){
+                    // Ideally degenerate axes would be cleverly handled.
+                    // They are commonly seen in NIfTIs, but perhaps not in DICOM.
+                    printError("%d is too many dimensions.  Only up to %d are supported\n", ndim,
+                               MAX_NUMBER_OF_DIMENSIONS);
+                    ndim = MAX_NUMBER_OF_DIMENSIONS;  // Truncate
+                }
+                dcmMultiLongs(4 * ndim, &buffer[lPos], ndim, d.dimensionIndexValues, d.isLittleEndian);
+              }
                 break;
             case kPhotometricInterpretation:
  				char interp[kDICOMStr];
@@ -3446,6 +3495,34 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                        d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
                 }
                 break;
+            case kDiffusion_bValue:
+              // Philips uses this tag too, at least as of 5.1, but they also
+              // use kDiffusionBFactor (see above), and we do not want to double count.
+              if ((d.manufacturer == kMANUFACTURER_SIEMENS) && isAtFirstPatientPosition) {
+                d.CSA.numDti++;
+
+                if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
+                  //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
+                  dti4D->S[0].V[0] = d.CSA.dtiV[0];
+                  dti4D->S[0].V[1] = d.CSA.dtiV[1];
+                  dti4D->S[0].V[2] = d.CSA.dtiV[2];
+                  dti4D->S[0].V[3] = d.CSA.dtiV[3];
+                }
+                d.CSA.dtiV[0] = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+                if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+                  dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
+              }
+              break;
+            case kDiffusionOrientation:
+              if(isAtFirstPatientPosition)
+                dcmMultiFloatDouble(lLength, &buffer[lPos], 3, d.CSA.dtiV + 1, d.isLittleEndian);
+              break;
+            // case kSharedFunctionalGroupsSequence:
+            //   if ((d.manufacturer == kMANUFACTURER_SIEMENS) && isAtFirstPatientPosition) {
+            //     break; // For now - need to figure out how to get the nested
+            //            // part of buffer[lPos].
+            //   }
+            //   break;
             case kSliceNumberMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
