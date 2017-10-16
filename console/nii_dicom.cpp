@@ -1972,7 +1972,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
 	if (bitsAllocated == 12)
 	 conv12bit16bit(bImg, hdr);
     return bImg;
-} //nii_loadImg()
+} //nii_loadImgCore()
 
 unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
 	//DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
@@ -2589,15 +2589,13 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
             img = nii_loadImgCoreJasper(imgname, *hdr, dcm, compressFlag);
         else
-        #else
-        UNUSED(compressFlag); //avoid compiler -Wunused-parameter warning: compressFlag required when  myEnableJasper or not myDisableOpenJPEG
-        #endif
+       #endif
     #endif
-    if (dcm.compressionScheme == kCompressYes) {
+     if (dcm.compressionScheme == kCompressYes) {
         printMessage("Software not set up to decompress DICOM\n");
         return NULL;
     } else
-        img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
+    	img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
     if (img == NULL) return img;
     if ((dcm.compressionScheme == kCompressNone) && (dcm.isLittleEndian != littleEndianPlatform()) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);

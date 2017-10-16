@@ -46,7 +46,7 @@ This software should run on macOS, Linux and Windows typically without requiring
  - Experimental [ECAT support](https://github.com/rordenlab/dcm2niix/issues/95).
  - Updated cmake to make JPEG2000 support easier with improved Travis and AppVeyor support [Ningfei Li](https://github.com/ningfei).
  - Supports Data/Time for images that report Data/Time (0008,002A) but not separate Date and Time (0008,0022 and 0008,0032).
- - [BIDS reports morning times correctly](http://www.nitrc.org/forum/message.php?msg_id=20852).
+ - [BIDS reports SliceTiming correctly](http://www.nitrc.org/forum/message.php?msg_id=20852).
  - Options -1..-9 to control [gz compression level](https://github.com/rordenlab/dcm2niix/issues/90).
  - Includes some [PET details in the BIDS JSON sidecar](https://github.com/rordenlab/dcm2niix/issues/87).
  - Better detection of image order for Philips 4D DICOM (reported by Jason McMorrow and Stephen Wilson).
@@ -208,6 +208,7 @@ If you have any problems with the cmake build script described above or want to 
   - [dcm2niir](https://github.com/muschellij2/dcm2niir) R wrapper for dcm2niix/dcm2nii.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) docker.
-  - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix.
+  - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a provides a single, static Dockerfile.
+  - [neurodocker](https://github.com/kaczmarj/neurodocker) generates [custom](https://github.com/rordenlab/dcm2niix/issues/138) Dockerfiles given specific versions of neuroimaging software.
   - [dcm2niix_afni](https://afni.nimh.nih.gov/pub/dist/doc/program_help/dcm2niix_afni.html) is a version of dcm2niix included with the [AFNI](https://afni.nimh.nih.gov/) distribution.
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
