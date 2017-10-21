@@ -936,11 +936,28 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// Slice Timing
 	if (d.CSA.sliceTiming[0] >= 0.0) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
-   		for (int i = 0; i < kMaxEPI3D; i++) {
-   			if (d.CSA.sliceTiming[i] < 0.0) break;
-			if (i != 0)
-				fprintf(fp, ",\n");
-			fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
+   		if (d.CSA.protocolSliceNumber1 > 1) {
+   			//https://github.com/rordenlab/dcm2niix/issues/40
+   			//equivalent to dicm2nii "s.SliceTiming = s.SliceTiming(end:-1:1);"
+   			int mx = 0;
+   			for (int i = 0; i < kMaxEPI3D; i++) {
+				if (d.CSA.sliceTiming[i] < 0.0) break;
+				mx++;
+			}
+			mx--;
+			for (int i = mx; i >= 0; i--) {
+				if (d.CSA.sliceTiming[i] < 0.0) break;
+				if (i != mx)
+					fprintf(fp, ",\n");
+				fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
+			}
+   		} else {
+			for (int i = 0; i < kMaxEPI3D; i++) {
+				if (d.CSA.sliceTiming[i] < 0.0) break;
+				if (i != 0)
+					fprintf(fp, ",\n");
+				fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
+			}
 		}
 		fprintf(fp, "\t],\n");
 	}
@@ -2443,7 +2460,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if (hdr0.dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0, true);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
-		printWarning("Weird CSA 'ProtocolSliceNumber' (%d): SPATIAL, SLICE-ORDER AND DTI TRANSFORMS UNTESTED\n", dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1);
+		printWarning("Weird CSA 'ProtocolSliceNumber' (System/Miscellaneous/ImageNumbering reversed): VALIDATE SLICETIMING AND BVECS\n");
+		//https://www.healthcare.siemens.com/siemens_hwem-hwem_ssxa_websites-context-root/wcm/idc/groups/public/@global/@imaging/@mri/documents/download/mdaz/nzmy/~edisp/mri_60_graessner-01646277.pdf
 		//see https://github.com/neurolabusc/dcm2niix/issues/40
 		sliceDir = -1; //not sure how to handle negative determinants?
 	}
