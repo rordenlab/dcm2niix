@@ -1158,6 +1158,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
             }
         } //if at least 1 item
     }// for lT 1..lnTag
+    if (CSA->protocolSliceNumber1 > 1) CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
     return EXIT_SUCCESS;
 } // readCSAImageHeader()
 
