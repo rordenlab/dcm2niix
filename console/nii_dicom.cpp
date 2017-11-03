@@ -2865,6 +2865,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     //float intenScalePhilips = 0.0;
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
+    int multiBandFactor = 0;
     int encapsulatedDataFragments = 0;
     int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
     int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
@@ -3386,6 +3387,13 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 d.accelFactPE = (float)strtof(accelStr, &ptr);
                 if (*ptr != '\0')
                 	d.accelFactPE = 0.0;
+                //between slice accel
+                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStrDigitsOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
+                multiBandFactor = (int)strtol(accelStr, &ptr, 10);
+                if (*ptr != '\0')
+                	multiBandFactor = 0.0;
+                //printMessage("p%gs%d\n",  d.accelFactPE, multiBandFactor);
 				break; }
             case kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -3761,6 +3769,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
+    if (multiBandFactor > d.CSA.multiBandFactor)
+    	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header
     //d.isValid = false; //debug only - will not create output!
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
