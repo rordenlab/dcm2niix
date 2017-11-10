@@ -1389,6 +1389,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     float minDynTime = 999999.0f;
     bool ADCwarning = false;
     int parVers = 0;
+    int maxEcho = 1;
+    int maxCardiac = 1;
     int nCols = 26;
     int slice = 0;
     //int prevSliceIndex = 0; //index of prior slice: detect if images are not in order
@@ -1526,6 +1528,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kDynTime] > maxDynTime) maxDynTime = cols[kDynTime];
         if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
+        if (cols[kEcho] > maxEcho) maxEcho = cols[kEcho];
+        if (cols[kCardiac] > maxCardiac) maxCardiac = cols[kCardiac];
         if ((cols[kEcho] == 1) && (cols[kDyn] == 1) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 1)) {
 			if (cols[kSlice] == 1) {
 				d.patientPosition[1] = cols[kPositionRL];
@@ -1549,14 +1553,15 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 //it seems like the ADC is always saved as the final volume, so this solution SHOULD be foolproof.
                 ADCwarning = true;
             }*/
-            if (cols[kSlice] == 1) { //only first slice
+            //666: test (cols[kDyn] == 1)
+            if ((cols[kDyn] == 1) && (cols[kEcho] == 1) && (cols[kCardiac] == 1)  && (cols[kSlice] == 1)) { //only first slice
                 d.CSA.numDti++;
                 int dir = d.CSA.numDti;
                 if (dir <= kMaxDTI4D) {
                     if (isVerbose ) {
                         if (d.CSA.numDti == 1) printMessage("n\tdir\tbValue\tV1\tV2\tV3\n");
                         printMessage("%d\t%g\t%g\t%g\t%g\t%g\n", dir-1, cols[kGradientNumber], cols[kbval], cols[kv1], cols[kv2], cols[kv3]);
-                    }
+                	}
                     dti4D->S[dir-1].V[0] = cols[kbval];
                     dti4D->S[dir-1].V[1] = cols[kv1];
                     dti4D->S[dir-1].V[2] = cols[kv2];
@@ -1685,6 +1690,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	if ((!v1varies) || (!v2varies) || (!v3varies))
     		 printError("Bizarre b-vectors %s\n", parname);
     }
+    if ((maxEcho > 1) || (maxCardiac > 1)) printWarning("Multiple Echo (%d) or Cardiac (%d). Segment output, e.g. nii_segment4d('img.nii', %d)\n", maxEcho,  maxCardiac, maxEcho*maxCardiac);
     return d;
 } //nii_readParRec()
 
