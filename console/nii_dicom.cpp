@@ -2781,7 +2781,12 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
+#define  kDiffusionDirectionality  0x0018+(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
+#define  kDiffusion_bValue  0x0018+(0x9087<< 16 ) // FD
+#define  kDiffusionOrientation  0x0018+(0x9089<< 16 ) // FD, seen in enhanced
+                                                      // DICOM from Philips 5.*
+                                                      // and Siemens XA10.
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
@@ -2789,10 +2794,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
 #define  kSharedFunctionalGroupsSequence  0x5200+(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+(0x9230<< 16 ) // SQ
-#define  kDiffusion_bValue  0x0018+(0x9087<< 16 ) // FD
-#define  kDiffusionOrientation  0x0018+(0x9089<< 16 ) // FD, seen in enhanced
-                                                      // DICOM from Philips 5.*
-                                                      // and Siemens XA10.
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
@@ -2892,6 +2893,16 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     bool is2005140FSQwarned = false; //for buggy Philips
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     bool isMosaic = false;
+    bool isPhilipsNonDirectional = false;  // Philips diffusion scans tend to
+                                           // have a "trace" (average of the
+                                           // diffusion weighted volumes)
+                                           // volume tacked on, usually but not
+                                           // always at the end, so b is
+                                           // > 0, but the direction is
+                                           // meaningless.  Most software
+                                           // versions explicitly set the
+                                           // direction to 0, but version 3
+                                           // does not, making (0x18, 0x9075) necessary.
     int patientPositionNum = 0;
     int sqDepth = 0;
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
@@ -3169,6 +3180,12 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 break; }
             case kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
+                break;
+            case kDiffusionDirectionality :
+                if(strncmp((const char*)(&buffer[lPos]), "DIRECTIONAL", 11)) // strncmp = 0 for ==. 
+                    isPhilipsNonDirectional = true;
+                else
+                    isPhilipsNonDirectional = false;
                 break;
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
@@ -3478,27 +3495,34 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 else
                     d.sliceOrient = kSliceOrientTra; //transverse (axial)
                 break; }
-            case	kDiffusionBFactor:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
-                    d.CSA.numDti++; //increment with BFactor: on Philips slices with B=0 have B-factor but no diffusion directions
-                    if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
-                        //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
-                        dti4D->S[0].V[0] = d.CSA.dtiV[0];
-                        dti4D->S[0].V[1] = d.CSA.dtiV[1];
-                        dti4D->S[0].V[2] = d.CSA.dtiV[2];
-                        dti4D->S[0].V[3] = d.CSA.dtiV[3];
-                    }
-                    d.CSA.dtiV[0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
-                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
-                        dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
-                    /*if ((d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                       d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
-                }
-                break;
-            case kDiffusion_bValue:
+            // case	kDiffusionBFactor: // 2001,1003
+            //     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+            //         d.CSA.numDti++; //increment with BFactor: on Philips slices with B=0 have B-factor but no diffusion directions
+            //         if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
+            //             //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
+            //             dti4D->S[0].V[0] = d.CSA.dtiV[0];
+            //             dti4D->S[0].V[1] = d.CSA.dtiV[1];
+            //             dti4D->S[0].V[2] = d.CSA.dtiV[2];
+            //             dti4D->S[0].V[3] = d.CSA.dtiV[3];
+            //         }
+            //         d.CSA.dtiV[0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            //         if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+            //             dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
+            //         /*if ((d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+            //            d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
+            //     }
+            //     break;
+            case kDiffusion_bValue:  // 0018, 9087
+              // Note that this is ahead of kPatientPosition (0020,0032), so
+              // isAtFirstPatientPosition is not necessarily set yet.
               // Philips uses this tag too, at least as of 5.1, but they also
-              // use kDiffusionBFactor (see above), and we do not want to double count.
-              if ((d.manufacturer == kMANUFACTURER_SIEMENS) && isAtFirstPatientPosition) {
+              // use kDiffusionBFactor (see above), and we do not want to
+              // double count.  More importantly, with Philips this tag
+              // (sometimes?)  gets repeated in a nested sequence with the
+              // value *unset*!
+              if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
+                   ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
+                  (isAtFirstPatientPosition || isnan(d.patientPosition[1]))) {
                 d.CSA.numDti++;
 
                 if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
@@ -3513,9 +3537,22 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                   dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
               }
               break;
-            case kDiffusionOrientation:
-              if(isAtFirstPatientPosition)
-                dcmMultiFloatDouble(lLength, &buffer[lPos], 3, d.CSA.dtiV + 1, d.isLittleEndian);
+            case kDiffusionOrientation:  // 0018, 9089
+              // Note that this is ahead of kPatientPosition (0020,0032), so
+              // isAtFirstPatientPosition is not necessarily set yet.
+              // Philips uses this tag too, at least as of 5.1, but they also
+              // use kDiffusionDirectionRL, etc., and we do not want to double
+              // count.  More importantly, with Philips this tag (sometimes?)
+              // gets repeated in a nested sequence with the value *unset*!
+              if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
+                   ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
+                  (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
+                if(isPhilipsNonDirectional){
+                  for(uint i = 0; i < 3; ++i)
+                    d.CSA.dtiV[i] = 0.0;
+                }
+                else
+                  dcmMultiFloatDouble(lLength, &buffer[lPos], 3, d.CSA.dtiV + 1, d.isLittleEndian);
               break;
             // case kSharedFunctionalGroupsSequence:
             //   if ((d.manufacturer == kMANUFACTURER_SIEMENS) && isAtFirstPatientPosition) {
@@ -3561,35 +3598,35 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             		break;
                 locationsInAcquisitionPhilips = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
 				break;
-            case    kDiffusionDirectionRL:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
-                    d.CSA.dtiV[1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
-                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
-                        dti4D->S[d.CSA.numDti-1].V[1] = d.CSA.dtiV[1];
-                }
-                /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                    d.CSA.dtiV[d.CSA.numDti-1][1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
-                break;
-            case kDiffusionDirectionAP:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
-                    d.CSA.dtiV[2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
-                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
-                        dti4D->S[d.CSA.numDti-1].V[2] = d.CSA.dtiV[2];
-                }
-                /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                    d.CSA.dtiV[d.CSA.numDti-1][2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
-                break;
-            case	kDiffusionDirectionFH:
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
-                    d.CSA.dtiV[3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
-                    if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
-                        dti4D->S[d.CSA.numDti-1].V[3] = d.CSA.dtiV[3];
-                    //printMessage("dti XYZ %g %g %g\n",d.CSA.dtiV[1],d.CSA.dtiV[2],d.CSA.dtiV[3]);
-                }
-                /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
-                    d.CSA.dtiV[d.CSA.numDti-1][3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
-                //http://www.na-mic.org/Wiki/index.php/NAMIC_Wiki:DTI:DICOM_for_DWI_and_DTI
-                break;
+            // case    kDiffusionDirectionRL:
+            //     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+            //         d.CSA.dtiV[1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            //         if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+            //             dti4D->S[d.CSA.numDti-1].V[1] = d.CSA.dtiV[1];
+            //     }
+            //     /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+            //         d.CSA.dtiV[d.CSA.numDti-1][1] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
+            //     break;
+            // case kDiffusionDirectionAP:
+            //     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+            //         d.CSA.dtiV[2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            //         if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+            //             dti4D->S[d.CSA.numDti-1].V[2] = d.CSA.dtiV[2];
+            //     }
+            //     /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+            //         d.CSA.dtiV[d.CSA.numDti-1][2] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
+            //     break;
+            // case	kDiffusionDirectionFH:
+            //     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
+            //         d.CSA.dtiV[3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            //         if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+            //             dti4D->S[d.CSA.numDti-1].V[3] = d.CSA.dtiV[3];
+            //         //printMessage("dti XYZ %g %g %g\n",d.CSA.dtiV[1],d.CSA.dtiV[2],d.CSA.dtiV[3]);
+            //     }
+            //     /*if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition) && (d.CSA.numDti > 0) && (d.CSA.numDti <= kMaxDTIv))
+            //         d.CSA.dtiV[d.CSA.numDti-1][3] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
+            //     //http://www.na-mic.org/Wiki/index.php/NAMIC_Wiki:DTI:DICOM_for_DWI_and_DTI
+            //     break;
             case kWaveformSq:
                 d.imageStart = 1; //abort!!!
                 printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
