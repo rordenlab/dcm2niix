@@ -2316,7 +2316,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
-    if ((opts.isIgnoreDerivedAnd2D) && (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) {
+    if ((opts.isIgnoreDerivedAnd2D) && ((strcmp(dcmList[indx].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) ) {
     	printMessage("Ignoring localizer (sequence %s) of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
