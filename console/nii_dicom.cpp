@@ -2628,6 +2628,16 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     return img;
 } //nii_loadImgXL()
 
+int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
+    int array_size = 33;
+    uint32_t array[array_size] = {0x0008+(uint32_t(0x1111)<<16), 0x0008+(uint32_t(0x1115)<<16), 0x0008+(uint32_t(0x1140)<<16), 0x0008+(uint32_t(0x1199)<<16), 0x0008+(uint32_t(0x2218)<<16), 0x0008+(uint32_t(0x9092)<<16), 0x0018+(uint32_t(0x9006)<<16), 0x0018+(uint32_t(0x9042)<<16), 0x0018+(uint32_t(0x9045)<<16), 0x0018+(uint32_t(0x9049)<<16), 0x0018+(uint32_t(0x9112)<<16), 0x0018+(uint32_t(0x9114)<<16), 0x0018+(uint32_t(0x9115)<<16), 0x0018+(uint32_t(0x9119)<<16), 0x0018+(uint32_t(0x9125)<<16), 0x0018+(uint32_t(0x9152)<<16), 0x0018+(uint32_t(0x9176)<<16), 0x0018+(uint32_t(0x9226)<<16), 0x0018+(uint32_t(0x9239)<<16), 0x0020+(uint32_t(0x9071)<<16), 0x0020+(uint32_t(0x9111)<<16), 0x0020+(uint32_t(0x9113)<<16), 0x0020+(uint32_t(0x9116)<<16), 0x0020+(uint32_t(0x9221)<<16), 0x0020+(uint32_t(0x9222)<<16), 0x0028+(uint32_t(0x9110)<<16), 0x0028+(uint32_t(0x9132)<<16), 0x0028+(uint32_t(0x9145)<<16), 0x0040+(uint32_t(0x0260)<<16), 0x0040+(uint32_t(0x0555)<<16), 0x0040+(uint32_t(0xa170)<<16), 0x5200+(uint32_t(0x9229)<<16), 0x5200+(uint32_t(0x9230)<<16)};
+    for (int i = 0; i < array_size; i++) {
+        if (array[i] == groupElement)
+            return 1;
+    }
+    return 0;
+} //isSQ()
+
 int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10 compliant)
     FILE *fp = fopen(fname, "rb");
 	if (!fp)  return 0;
@@ -2723,6 +2733,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
+//#define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
@@ -2845,7 +2856,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionRL 0x2005+(0x10B0 << 16)
 #define  kDiffusionDirectionAP 0x2005+(0x10B1 << 16)
 #define  kDiffusionDirectionFH 0x2005+(0x10B2 << 16)
-#define  k2005140F 0x2005+(0x140F << 16)
+#define  kPrivatePerFrameSq 0x2005+(0x140F << 16)
 #define  kWaveformSq 0x5400+(0x0100 << 16)
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
@@ -2948,7 +2959,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 lPos = lPos + 4;  //skip 4 byte length
             } else if   ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'Q')) {
                 lLength = 8; //Sequence Tag
-                is2005140FSQ = (groupElement == k2005140F);
+                //printMessage(" !!!SQ\t%04x,%04x\n",   groupElement & 65535,groupElement>>16);
+                is2005140FSQ = (groupElement == kPrivatePerFrameSq);
             } else { //explicit VR with 16-bit length
                 if ((d.isLittleEndian)  )
                     lLength = buffer[lPos+2] | (buffer[lPos+3] << 8);
@@ -2964,13 +2976,18 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             else
                 lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
             lPos += 4;  //we have loaded the 32-bit length
+            if (isSQ(groupElement)) {
+            	vr[0] = 'S';
+            	vr[1] = 'Q';
+            	lLength = 8; //Sequence Tag
+                is2005140FSQ = (groupElement == kPrivatePerFrameSq);
+            }
         } //if explicit else implicit VR
         if (lLength == 0xFFFFFFFF) {
             lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
             vr[0] = 'S';
             vr[1] = 'Q';
         }
-
         if   ((vr[0] == 'S') && (vr[1] == 'Q')) {
             sqDepth++;
             //printMessage("SQstart %d\n", sqDepth);
@@ -3039,6 +3056,13 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 }
                 break;} //{} provide scope for variable 'transferSyntax
+            /*case kImplementationVersionName: {
+            	char impTxt[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], impTxt);
+                int slen = (int) strlen(impTxt);
+				if((slen < 6) || (strstr(impTxt, "OSIRIX") == NULL) ) break;
+                printError("OSIRIX Detected\n");
+            	break; }*/
             case kSourceApplicationEntityTitle: {
             	char saeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], saeTxt);
@@ -3656,6 +3680,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
             } else
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, nest);
+        	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
