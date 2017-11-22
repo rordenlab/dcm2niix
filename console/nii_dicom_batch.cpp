@@ -1093,7 +1093,7 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 			free(vx);
 			return NULL;
 		}
-		printMessage("Note: %d volumes appear to be ADC images that will be removed to allow processing\n", *numADC);
+		printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n", *numADC);
 	}
 	//sort ALL including ADC
 	int * volOrderIndex = (int *) malloc(numDti * sizeof(int));

@@ -81,6 +81,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     struct TDTI4D {
         struct TDTI S[kMaxDTI4D];
     };
+
 #ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...
     #pragma pack(2)
     typedef struct {
@@ -130,6 +131,74 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         bool isSegamiOasis, isDerived, isXRay, isMultiEcho, isSlicesSpatiallySequentialPhilips, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC;
     };
+
+  // Gathering spot for all the info needed to get the b value and direction
+  // for a volume.
+  class TVolumeDiffusion {
+  public:
+    TVolumeDiffusion(struct TDICOMdata& tdd, struct TDTI4D* dti4D):
+      dd(tdd),
+      pdti4D(dti4D)
+    {clear_volume();}
+    ~TVolumeDiffusion() {}
+    
+    uint8_t manufacturer;            // kMANUFACTURER_UNKNOWN, kMANUFACTURER_SIEMENS, etc.
+
+    // Blank the volume-specific members or set them to impossible values.
+    void clear_volume();
+
+    void set_directionality0018_9075(const unsigned char* inbuf);
+    //void set_manufacturer(const uint8_t m) {manufacturer = m; update();}
+    void set_orientation0018_9089(const int lLength, const unsigned char* inbuf, const bool isLittleEndian);
+    void set_isAtFirstPatientPosition(const bool iafpp) {isAtFirstPatientPosition = iafpp; update();}
+    void set_bValGE(const int lLength, const unsigned char* inbuf);
+    void set_directionGE(const int lLength, const unsigned char* inbuf, const int axis);
+    void set_bVal(const float b) {dtiV[0] = b; update();}
+    void set_seq0018_9117(const char* inbuf);
+  private:
+    // Note that most of these data elements are private to force the use of setters,
+    // since the design depends on the setters all calling update().
+    struct TDICOMdata& dd;  // The multivolume
+    struct TDTI4D* pdti4D;  // permanent records.
+
+    bool isAtFirstPatientPosition;   // Limit b vals and vecs to 1 per volume.
+
+    //float bVal0018_9087;      // kDiffusion_b_value, always present in Philips/Siemens.
+    //float bVal2001_1003;        // kDiffusionBFactor
+    // float dirRL2005_10b0;        // kDiffusionDirectionRL
+    // float dirAP2005_10b1;        // kDiffusionDirectionAP
+    // float dirFH2005_10b2;        // kDiffusionDirectionFH
+
+    // Philips diffusion scans tend to have a "trace" (average of the diffusion
+    // weighted volumes) volume tacked on, usually but not always at the end,
+    // so b is > 0, but the direction is meaningless.  Most software versions
+    // explicitly set the direction to 0, but version 3 does not, making (0x18,
+    // 0x9075) necessary.
+    bool isPhilipsNonDirectional;
+
+    char directionality0018_9075[16];       // DiffusionDirectionality, not in Philips 2.6.
+    float orientation0018_9089[3];      // kDiffusionOrientation, always
+                                        // present in Philips/Siemens for
+                                        // volumes with a direction.
+    char seq0018_9117[64];      // MRDiffusionSequence, not in Philips 2.6.
+
+    float dtiV[4];
+    //uint16_t numDti;
+
+    // Update the diffusion info in dd and *pdti4D for a volume once all the
+    // diffusion info for that volume has been read into pvd.
+    //
+    // Note that depending on the scanner software the diffusion info can arrive in
+    // different tags, in different orders (because of enclosing sequence tags),
+    // and the values in some tags may be invalid, or may be essential, depending
+    // on the presence of other tags.  Thus it is best to gather all the diffusion
+    // info for a volume (frame) before taking action on it.
+    //
+    // On the other hand, dd and *pdti4D need to be updated as soon as the
+    // diffusion info is ready, before diffusion info for the next volume
+    // is read in.
+    void update();
+  };
 
     size_t nii_ImgBytes(struct nifti_1_header hdr);
     struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);

@@ -880,7 +880,8 @@ float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//r
     return swapVal;
 } //dcmFloat()
 
-double dcmFloatDouble(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
+double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[],
+                      const bool littleEndian) {//read binary 32-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
     bool swap = (littleEndian != littleEndianPlatform());
     double retVal = 0.0f;
@@ -913,14 +914,14 @@ int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //rea
     return lBuffer[3]+(lBuffer[2]<<8)+(lBuffer[1]<<16)+(lBuffer[0]<<24); //shortint vs word?
 } //dcmInt()
 
-int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
+int dcmStrInt (const int lByteLength, const unsigned char lBuffer[]) {//read float stored as a string
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
 //#else
 //	char cString[lByteLength + 1];
 //#endif
     cString[lByteLength] =0;
-    memcpy(cString, (char*)&lBuffer[0], lByteLength);
+    memcpy(cString, (const unsigned char*)(&lBuffer[0]), lByteLength);
     //printMessage(" --> *%s* %s%s\n",cString, &lBuffer[0],&lBuffer[1]);
     int ret = atoi(cString);
 //#ifdef _MSC_VER
@@ -929,7 +930,7 @@ int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as
 	return ret;
 } //dcmStrInt()
 
-int dcmStrManufacturer (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
+int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
     if (lByteLength < 2) return kMANUFACTURER_UNKNOWN;
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
@@ -1206,17 +1207,16 @@ void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloat
 //#endif
 } //dcmMultiFloat()
 
-void dcmMultiFloatDouble (uint lByteLength, unsigned char lBuffer[], uint lnFloats, float *lFloats,
-                          bool isLittleEndian) {
-  uint i;
-  uint floatlen = lByteLength / lnFloats;
+void dcmMultiFloatDouble (const size_t lByteLength, const unsigned char lBuffer[], const size_t lnFloats, float *lFloats,
+                          const bool isLittleEndian) {
+  size_t floatlen = lByteLength / lnFloats;
 
-  for(i = 0; i < lnFloats; ++i)
+  for(size_t i = 0; i < lnFloats; ++i)
     lFloats[i] = dcmFloatDouble(floatlen, lBuffer + i * floatlen, isLittleEndian);
 }
 
 
-float dcmStrFloat (int lByteLength, unsigned char lBuffer[]) { //read float stored as a string
+float dcmStrFloat (const int lByteLength, const unsigned char lBuffer[]) { //read float stored as a string
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
 //#else
@@ -2656,8 +2656,121 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
     return 0;
 } //isDICOMfile()
 
+void TVolumeDiffusion::clear_volume()
+{
+  isAtFirstPatientPosition = false;
+  manufacturer = kMANUFACTURER_UNKNOWN;
+  //bVal0018_9087 = -1;
+  directionality0018_9075[0] = 0;
+  for(uint8_t i = 0; i < 3; ++i)
+    orientation0018_9089[i] = 2;
+  seq0018_9117[0] = 0;
+  //bVal2001_1003 = -1;
+  // dirRL2005_10b0 = 2;
+  // dirAP2005_10b1 = 2;
+  // dirFH2005_10b2 = 2;
+  isPhilipsNonDirectional = false;
+
+  dtiV[0] = -1;
+  for(uint8_t i = 1; i < 4; ++i)
+    dtiV[i] = 2;
+  //numDti = 0;
+}
+
+void TVolumeDiffusion::set_directionality0018_9075(const unsigned char* inbuf)
+{
+  if(strncmp((const char*)(inbuf), "DIRECTIONAL", 11)){ // strncmp = 0 for ==. 
+    isPhilipsNonDirectional = true;
+    // Explicitly set the direction to 0 now, because there may
+    // not be a 0018,9089 for this frame.
+    for(uint8_t i = 1; i < 4; ++i)  // 1-3 is intentional.
+      dtiV[i] = 0.0;                    
+  }
+  else{
+    isPhilipsNonDirectional = false;
+    // Wait for 0018,9089 to get the direction.
+  }
+
+  update();
+}
+
+void TVolumeDiffusion::set_bValGE(const int lLength, const unsigned char* inbuf)
+{
+  dtiV[0] = dcmStrInt(lLength, inbuf);
+  //dd.CSA.numDti = 1;   // Always true for GE.
+
+  update();
+}
+
+// axis: 0 -> x, 1 -> y , 2 -> z
+void TVolumeDiffusion::set_directionGE(const int lLength, const unsigned char* inbuf, const int axis)
+{
+  dtiV[axis + 1] = dcmStrFloat(lLength, inbuf);
+
+  update();
+}
+
+void TVolumeDiffusion::set_orientation0018_9089(const int lLength, const unsigned char* inbuf, const bool isLittleEndian)
+{
+  if(isPhilipsNonDirectional){
+    for(uint8_t i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
+      dtiV[i] = 0.0;
+  }
+  else
+    dcmMultiFloatDouble(lLength, inbuf, 3, dtiV + 1, isLittleEndian);
+
+  update();
+}
+
+// Update the diffusion info in dd and *pdti4D for a volume once all the
+// diffusion info for that volume has been read into pvd.
+//
+// Note that depending on the scanner software the diffusion info can arrive in
+// different tags, in different orders (because of enclosing sequence tags),
+// and the values in some tags may be invalid, or may be essential, depending
+// on the presence of other tags.  Thus it is best to gather all the diffusion
+// info for a volume (frame) before taking action on it.
+//
+// On the other hand, dd and *pdti4D need to be updated as soon as the
+// diffusion info is ready, before diffusion info for the next volume is read
+// in.
+void TVolumeDiffusion::update()
+{
+  // Figure out if we have both the b value and direction (if any) for this
+  // volume, and if isFirstPosition.
+  bool isReady = (isAtFirstPatientPosition && (dtiV[0] >= 0));
+  if(isReady){
+    for(uint8_t i = 1; i < 4; ++i){
+      if(dtiV[i] > 1){
+        isReady = false;
+        break;
+      }
+    }
+  }
+
+  if(!isReady)
+    return;
+
+  // If still here, update dd and *pdti4D.
+  dd.CSA.numDti++;
+  if (dd.CSA.numDti == 2) {                  // First time we know that this is a 4D DTI dataset;
+    for(uint8_t i = 0; i < 4; ++i)          // Start *pdti4D before dd.CSA.dtiV
+      pdti4D->S[0].V[i] = dd.CSA.dtiV[i];   // is updated.
+  }
+  for(uint8_t i = 0; i < 4; ++i)            // Update dd.
+    dd.CSA.dtiV[i] = dtiV[i];
+  if((dd.CSA.numDti > 1) && (dd.CSA.numDti < kMaxDTI4D)){   // Update *pdti4D
+    //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
+    for(uint8_t i = 0; i < 4; ++i)
+      pdti4D->S[dd.CSA.numDti - 1].V[i] = dtiV[i];
+  }
+
+  clear_volume(); // clear the slate for the next volume.
+}
+
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 	struct TDICOMdata d = clear_dicom_data();
+        TVolumeDiffusion volDiffusion(d, dti4D);
     strcpy(d.protocolName, ""); //erase dummy with empty
     strcpy(d.protocolName, ""); //erase dummy with empty
     strcpy(d.seriesDescription, ""); //erase dummy with empty
@@ -2801,7 +2914,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageNum 0x0020+(0x0013 << 16 )
 #define  kStudyInstanceUID 0x0020+(0x000D << 16 )
 #define  kSeriesInstanceUID 0x0020+(0x000E << 16 )
-#define  kPatientPosition 0x0020+(0x0032 << 16 )
+#define  kPatientPosition 0x0020+(0x0032 << 16 )   // Actually ImagePositionPatient!
 #define  kOrientationACR 0x0020+(0x0035 << 16 )
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
@@ -2893,21 +3006,12 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     bool is2005140FSQwarned = false; //for buggy Philips
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     bool isMosaic = false;
-    bool isPhilipsNonDirectional = false;  // Philips diffusion scans tend to
-                                           // have a "trace" (average of the
-                                           // diffusion weighted volumes)
-                                           // volume tacked on, usually but not
-                                           // always at the end, so b is
-                                           // > 0, but the direction is
-                                           // meaningless.  Most software
-                                           // versions explicitly set the
-                                           // direction to 0, but version 3
-                                           // does not, making (0x18, 0x9075) necessary.
     int patientPositionNum = 0;
     int sqDepth = 0;
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
+
     while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
     	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
@@ -3113,6 +3217,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 break;
             case kManufacturer:
                 d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
+                volDiffusion.manufacturer = d.manufacturer;
                 break;
             case kInstitutionName:
             	dcmStr(lLength, &buffer[lPos], d.institutionName);
@@ -3181,11 +3286,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
-            case kDiffusionDirectionality :
-                if(strncmp((const char*)(&buffer[lPos]), "DIRECTIONAL", 11)) // strncmp = 0 for ==. 
-                    isPhilipsNonDirectional = true;
-                else
-                    isPhilipsNonDirectional = false;
+            case kDiffusionDirectionality : // 0018, 9075
+                volDiffusion.set_directionality0018_9075((const unsigned char*)(&buffer[lPos]));
                 break;
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
@@ -3199,27 +3301,27 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
 
                  break;*/
             case kDiffusionDirectionGEX :
-                if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[1] =  dcmStrFloat(lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE)
+                  volDiffusion.set_directionGE(lLength, (const unsigned char*)(&buffer[lPos]), 0);
                 break;
             case kDiffusionDirectionGEY :
-                if (d.manufacturer == kMANUFACTURER_GE)  d.CSA.dtiV[2] =  dcmStrFloat(lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE)
+                  volDiffusion.set_directionGE(lLength, (const unsigned char*)(&buffer[lPos]), 1);
                 break;
             case kDiffusionDirectionGEZ :
-                if (d.manufacturer == kMANUFACTURER_GE) {
-                    d.CSA.dtiV[3] =  dcmStrFloat(lLength, &buffer[lPos]);
-                    d.CSA.numDti = 1;
-                }
+                if (d.manufacturer == kMANUFACTURER_GE)
+                  volDiffusion.set_directionGE(lLength, (const unsigned char*)(&buffer[lPos]), 2);
                 break;
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-            case kStudyInstanceUID :
+            case kStudyInstanceUID : // 0020, 000D
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
-            case kSeriesInstanceUID :
+            case kSeriesInstanceUID : // 0020, 000E
             	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
                 break;
-            case kPatientPosition :
+            case kPatientPosition : // 0020, 0032, ImagePositionPatient
                 if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (is2005140FSQ)) {
                     if (!is2005140FSQwarned)
                         printWarning("Philips R3.2.2 can report different positions for the same slice. Attempting patch.\n");
@@ -3244,6 +3346,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                                 d.patientPositionSequentialRepeats = patientPositionNum-1;
                         } //if different position from 1st slice in file
                     } //if not first slice in file
+
+                    volDiffusion.set_isAtFirstPatientPosition(isAtFirstPatientPosition);
+
                     if (isVerbose > 1)
                     	printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 
@@ -3520,21 +3625,25 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
               // double count.  More importantly, with Philips this tag
               // (sometimes?)  gets repeated in a nested sequence with the
               // value *unset*!
-              if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
-                   ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
-                  (isAtFirstPatientPosition || isnan(d.patientPosition[1]))) {
-                d.CSA.numDti++;
+              // if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
+              //      ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
+              //     (isAtFirstPatientPosition || isnan(d.patientPosition[1]))) {
+              if((d.manufacturer == kMANUFACTURER_SIEMENS) ||
+                 ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)){
+                // d.CSA.numDti++;
 
-                if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
-                  //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
-                  dti4D->S[0].V[0] = d.CSA.dtiV[0];
-                  dti4D->S[0].V[1] = d.CSA.dtiV[1];
-                  dti4D->S[0].V[2] = d.CSA.dtiV[2];
-                  dti4D->S[0].V[3] = d.CSA.dtiV[3];
-                }
-                d.CSA.dtiV[0] = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-                if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
-                  dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
+                // if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
+                //   //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
+                //   dti4D->S[0].V[0] = d.CSA.dtiV[0];
+                //   dti4D->S[0].V[1] = d.CSA.dtiV[1];
+                //   dti4D->S[0].V[2] = d.CSA.dtiV[2];
+                //   dti4D->S[0].V[3] = d.CSA.dtiV[3];
+                // }
+                //d.CSA.dtiV[0] = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+                volDiffusion.set_bVal(dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
+ 
+                // if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
+                //   dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
               }
               break;
             case kDiffusionOrientation:  // 0018, 9089
@@ -3544,15 +3653,12 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
               // use kDiffusionDirectionRL, etc., and we do not want to double
               // count.  More importantly, with Philips this tag (sometimes?)
               // gets repeated in a nested sequence with the value *unset*!
-              if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
-                   ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
-                  (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
-                if(isPhilipsNonDirectional){
-                  for(uint i = 0; i < 3; ++i)
-                    d.CSA.dtiV[i] = 0.0;
-                }
-                else
-                  dcmMultiFloatDouble(lLength, &buffer[lPos], 3, d.CSA.dtiV + 1, d.isLittleEndian);
+              // if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
+              //      ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
+              //     (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
+              if((d.manufacturer == kMANUFACTURER_SIEMENS) ||
+                 ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
+                volDiffusion.set_orientation0018_9089(lLength, (const unsigned char*)(&buffer[lPos]), d.isLittleEndian);
               break;
             // case kSharedFunctionalGroupsSequence:
             //   if ((d.manufacturer == kMANUFACTURER_SIEMENS) && isAtFirstPatientPosition) {
@@ -3656,7 +3762,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kDiffusionBFactorGE :
-                if (d.manufacturer == kMANUFACTURER_GE) d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE)
+                  volDiffusion.set_bValGE(lLength, (const unsigned char*)(&buffer[lPos]));
                 break;
             case kGeiisFlag:
                 if ((lLength > 4) && (buffer[lPos]=='G') && (buffer[lPos+1]=='E') && (buffer[lPos+2]=='I')  && (buffer[lPos+3]=='I')) {
