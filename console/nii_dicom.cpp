@@ -2976,7 +2976,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             else
                 lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
             lPos += 4;  //we have loaded the 32-bit length
-            if (isSQ(groupElement)) {
+            if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
             	vr[0] = 'S';
             	vr[1] = 'Q';
             	lLength = 8; //Sequence Tag
