@@ -2679,7 +2679,8 @@ void TVolumeDiffusion::clear_volume()
 
 void TVolumeDiffusion::set_directionality0018_9075(const unsigned char* inbuf)
 {
-  if(strncmp((const char*)(inbuf), "DIRECTIONAL", 11)){ // strncmp = 0 for ==. 
+  if(strncmp((const char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==. 
+     strncmp((const char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
     isPhilipsNonDirectional = true;
     // Explicitly set the direction to 0 now, because there may
     // not be a 0018,9089 for this frame.
