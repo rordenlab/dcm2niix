@@ -39,7 +39,7 @@ mkdir build && cd build
 cmake ..
 make
 ```
-`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install`.
+`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install` instead of `make` - this will copy the executable to your path so you do not have to provide the full path to the executable.
 
 **optional building with OpenJPEG:**
 
