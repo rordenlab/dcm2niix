@@ -238,9 +238,9 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
                           + (vx[i].V[2]*vx[i].V[2])
                           + (vx[i].V[3]*vx[i].V[3]));
         if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
-            for (int v= 0; v < 4; v++)
-                vx[i].V[v] =0.0f;
-            continue; //do not normalize or reorient b0 vectors
+            for (int v= 1; v < 4; v++) 
+                vx[i].V[v] = 0.0f;
+            continue; //do not normalize or reorient 0 vectors
         }
         if (!col) { //rows need to be swizzled
         	//see Stanford dataset Ax_DWI_Tetrahedral_7 unable to resolve between possible solutions
@@ -1085,15 +1085,35 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
 	}
 	if (*numADC > 0) {
-		if ((numDti - *numADC) < 2) {
-			if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
-				printWarning("No bvec/bval files created: only single value after ADC excluded\n");
-			*numADC = 0;
-			free(bvals);
-			free(vx);
-			return NULL;
-		}
-		printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n", *numADC);
+                // DWIs (i.e. short diffusion scans with too few directions to
+                // calculate tensors...they typically acquire b=0 + 3 b > 0 so
+                // the isotropic trace or MD can be calculated) often come as
+                // b=0 and trace pairs, with the b=0 and trace in either order,
+                // and often as "ORIGINAL", even though the trace is not.
+                // The bval file is needed for downstream processing to know
+                // * which is the b=0 and which is the trace, and
+                // * what b is for the trace,
+                // so dcm2niix should *always* write the bval and bvec files,
+                // AND include the b for the trace for DWIs.
+                // One hackish way to accomplish that is to set *numADC = 0
+                // when *numADC == 1 && numDti == 2.
+                // - Rob Reid, 2017-11-29.
+                if ((*numADC == 1) && ((numDti - *numADC) < 2)){
+                    *numADC = 0;
+                    printMessage("Note: this appears to be a b=0+trace DWI; ADC/trace removal has been disabled.\n");
+                }
+                else{
+                  if ((numDti - *numADC) < 2) {
+                    if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
+                      printWarning("No bvec/bval files created: only single value after ADC excluded\n");
+                    *numADC = 0;
+                    free(bvals);
+                    free(vx);
+                    return NULL;
+                  }
+                  printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n",
+                               *numADC);
+                }
 	}
 	//sort ALL including ADC
 	int * volOrderIndex = (int *) malloc(numDti * sizeof(int));

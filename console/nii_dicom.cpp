@@ -2739,6 +2739,13 @@ void TVolumeDiffusion::update()
 {
   // Figure out if we have both the b value and direction (if any) for this
   // volume, and if isFirstPosition.
+
+  // // GE (software version 27) is liable to NOT include kDiffusion_b_value for the
+  // // slice if it is 0, but should still have kDiffusionBFactor, which comes
+  // // after PatientPosition.
+  // if(isAtFirstPatientPosition && manufacturer == kMANUFACTURER_GE && dtiV[0] < 0)
+  //   dtiV[0] = 0;  // Implied 0.
+
   bool isReady = (isAtFirstPatientPosition && (dtiV[0] >= 0));
   if(isReady){
     for(uint8_t i = 1; i < 4; ++i){
@@ -3626,11 +3633,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
               // double count.  More importantly, with Philips this tag
               // (sometimes?)  gets repeated in a nested sequence with the
               // value *unset*!
-              // if (((d.manufacturer == kMANUFACTURER_SIEMENS) ||
-              //      ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
-              //     (isAtFirstPatientPosition || isnan(d.patientPosition[1]))) {
-              if((d.manufacturer == kMANUFACTURER_SIEMENS) ||
-                 ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)){
+              // GE started using this tag in 27, and annoyingly, NOT including
+              // the b value if it is 0 for the slice.
+              if((d.manufacturer != kMANUFACTURER_PHILIPS) || !is2005140FSQ){
                 // d.CSA.numDti++;
 
                 // if (d.CSA.numDti == 2) { //First time we know that this is a 4D DTI dataset
