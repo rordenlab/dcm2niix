@@ -2584,7 +2584,7 @@ int isSameFloatDouble (double a, double b) {
 }
 
 struct TWarnings { //generate a warning only once per set
-        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, coilVaries, nameVaries, orientVaries;
+        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, coilVaries, nameVaries, nameEmpty, orientVaries;
 };
 
 TWarnings setWarnings() {
@@ -2595,6 +2595,7 @@ TWarnings setWarnings() {
 	r.echoVaries = false;
 	r.coilVaries = false;
 	r.nameVaries = false;
+	r.nameEmpty = false;
 	r.orientVaries = false;
 	return r;
 }
@@ -2649,9 +2650,13 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         warnings->coilVaries = true;
         return false;
     }
-    if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
-        if ((!warnings->nameVaries))
-        	printMessage("slices not stacked: protocol name varies\n");
+    if ((strlen(d1.protocolName) < 1) && (strlen(d2.protocolName) < 1)) {
+    	if (!warnings->nameEmpty)
+    	printWarning("Empty protocol name(s) (0018,1030)\n");
+    	warnings->nameEmpty = true;
+    } else if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
+        if (!warnings->nameVaries)
+        	printMessage("slices not stacked: protocol name varies '%s' != '%s'\n", d1.protocolName, d2.protocolName);
         warnings->nameVaries = true;
         return false;
     }
