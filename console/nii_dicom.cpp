@@ -624,6 +624,11 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         h->dim_info = (3 << 4) + (1 << 2) + 2;
     if (d.phaseEncodingRC =='C')
         h->dim_info = (3 << 4) + (2 << 2) + 1;
+    if (d.CSA.multiBandFactor > 1) {
+        char dtxt[1024] = {""};
+        sprintf(dtxt, ";mb=%d", d.CSA.multiBandFactor);
+        strcat(txt,dtxt);
+    }
     snprintf(h->descrip,80, "%s",txt);
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%s",d.imageComments);
@@ -672,6 +677,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.scanningSequence, "");
     strcpy(d.sequenceVariant, "");
     strcpy(d.manufacturersModelName, "");
+    strcpy(d.institutionalDepartmentName, "");
     strcpy(d.procedureStepDescription, "");
     strcpy(d.institutionName, "");
     strcpy(d.referringPhysicianName, "");
@@ -749,6 +755,10 @@ struct TDICOMdata clear_dicom_data() {
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
     d.phaseEncodingRC = '?';
+    d.patientSex = '?';
+    d.patientWeight = 0.0;
+    strcpy(d.patientBirthDate, "");
+    strcpy(d.patientAge, "");
     d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
     d.CSA.mosaicSlices = 0;
     d.CSA.sliceNormV[1] = 1.0;
@@ -1151,6 +1161,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
             }
         } //if at least 1 item
     }// for lT 1..lnTag
+    if (CSA->protocolSliceNumber1 > 1) CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
     return EXIT_SUCCESS;
 } // readCSAImageHeader()
 
@@ -1400,6 +1411,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     float minDynTime = 999999.0f;
     bool ADCwarning = false;
     int parVers = 0;
+    int maxEcho = 1;
+    int maxCardiac = 1;
     int nCols = 26;
     int slice = 0;
     //int prevSliceIndex = 0; //index of prior slice: detect if images are not in order
@@ -1537,6 +1550,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kDynTime] > maxDynTime) maxDynTime = cols[kDynTime];
         if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
+        if (cols[kEcho] > maxEcho) maxEcho = cols[kEcho];
+        if (cols[kCardiac] > maxCardiac) maxCardiac = cols[kCardiac];
         if ((cols[kEcho] == 1) && (cols[kDyn] == 1) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 1)) {
 			if (cols[kSlice] == 1) {
 				d.patientPosition[1] = cols[kPositionRL];
@@ -1560,14 +1575,15 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 //it seems like the ADC is always saved as the final volume, so this solution SHOULD be foolproof.
                 ADCwarning = true;
             }*/
-            if (cols[kSlice] == 1) { //only first slice
+            //666: test (cols[kDyn] == 1)
+            if ((cols[kDyn] == 1) && (cols[kEcho] == 1) && (cols[kCardiac] == 1)  && (cols[kSlice] == 1)) { //only first slice
                 d.CSA.numDti++;
                 int dir = d.CSA.numDti;
                 if (dir <= kMaxDTI4D) {
                     if (isVerbose ) {
                         if (d.CSA.numDti == 1) printMessage("n\tdir\tbValue\tV1\tV2\tV3\n");
                         printMessage("%d\t%g\t%g\t%g\t%g\t%g\n", dir-1, cols[kGradientNumber], cols[kbval], cols[kv1], cols[kv2], cols[kv3]);
-                    }
+                	}
                     dti4D->S[dir-1].V[0] = cols[kbval];
                     dti4D->S[dir-1].V[1] = cols[kv1];
                     dti4D->S[dir-1].V[2] = cols[kv2];
@@ -1696,6 +1712,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	if ((!v1varies) || (!v2varies) || (!v3varies))
     		 printError("Bizarre b-vectors %s\n", parname);
     }
+    if ((maxEcho > 1) || (maxCardiac > 1)) printWarning("Multiple Echo (%d) or Cardiac (%d). Segment output, e.g. nii_segment4d('img.nii', %d)\n", maxEcho,  maxCardiac, maxEcho*maxCardiac);
     return d;
 } //nii_readParRec()
 
@@ -1984,7 +2001,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
 	if (bitsAllocated == 12)
 	 conv12bit16bit(bImg, hdr);
     return bImg;
-} //nii_loadImg()
+} //nii_loadImgCore()
 
 unsigned char * nii_planar2rgb(unsigned char* bImg, struct nifti_1_header *hdr, int isPlanar) {
 	//DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
@@ -2601,15 +2618,13 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone) )
             img = nii_loadImgCoreJasper(imgname, *hdr, dcm, compressFlag);
         else
-        #else
-        UNUSED(compressFlag); //avoid compiler -Wunused-parameter warning: compressFlag required when  myEnableJasper or not myDisableOpenJPEG
-        #endif
+       #endif
     #endif
-    if (dcm.compressionScheme == kCompressYes) {
+     if (dcm.compressionScheme == kCompressYes) {
         printMessage("Software not set up to decompress DICOM\n");
         return NULL;
     } else
-        img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
+    	img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
     if (img == NULL) return img;
     if ((dcm.compressionScheme == kCompressNone) && (dcm.isLittleEndian != littleEndianPlatform()) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
@@ -2634,6 +2649,16 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     headerDcm2NiiSForm(dcm,dcm, hdr, false);
     return img;
 } //nii_loadImgXL()
+
+int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
+    static const int array_size = 33;
+    uint32_t array[array_size] = {0x0008+(uint32_t(0x1111)<<16), 0x0008+(uint32_t(0x1115)<<16), 0x0008+(uint32_t(0x1140)<<16), 0x0008+(uint32_t(0x1199)<<16), 0x0008+(uint32_t(0x2218)<<16), 0x0008+(uint32_t(0x9092)<<16), 0x0018+(uint32_t(0x9006)<<16), 0x0018+(uint32_t(0x9042)<<16), 0x0018+(uint32_t(0x9045)<<16), 0x0018+(uint32_t(0x9049)<<16), 0x0018+(uint32_t(0x9112)<<16), 0x0018+(uint32_t(0x9114)<<16), 0x0018+(uint32_t(0x9115)<<16), 0x0018+(uint32_t(0x9119)<<16), 0x0018+(uint32_t(0x9125)<<16), 0x0018+(uint32_t(0x9152)<<16), 0x0018+(uint32_t(0x9176)<<16), 0x0018+(uint32_t(0x9226)<<16), 0x0018+(uint32_t(0x9239)<<16), 0x0020+(uint32_t(0x9071)<<16), 0x0020+(uint32_t(0x9111)<<16), 0x0020+(uint32_t(0x9113)<<16), 0x0020+(uint32_t(0x9116)<<16), 0x0020+(uint32_t(0x9221)<<16), 0x0020+(uint32_t(0x9222)<<16), 0x0028+(uint32_t(0x9110)<<16), 0x0028+(uint32_t(0x9132)<<16), 0x0028+(uint32_t(0x9145)<<16), 0x0040+(uint32_t(0x0260)<<16), 0x0040+(uint32_t(0x0555)<<16), 0x0040+(uint32_t(0xa170)<<16), 0x5200+(uint32_t(0x9229)<<16), 0x5200+(uint32_t(0x9230)<<16)};
+    for (int i = 0; i < array_size; i++) {
+        if (array[i] == groupElement)
+            return 1;
+    }
+    return 0;
+} //isSQ()
 
 int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10 compliant)
     FILE *fp = fopen(fname, "rb");
@@ -2851,6 +2876,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
+//#define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
@@ -2866,11 +2892,16 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kReferringPhysicianName 0x0008+(0x0090 << 16 )
 #define  kStationName 0x0008+(0x1010 << 16 )
 #define  kSeriesDescription 0x0008+(0x103E << 16 ) // '0008' '103E' 'LO' 'SeriesDescription'
+#define  kInstitutionalDepartmentName  0x0008+(0x1040 << 16 )
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kPatientBirthDate 0x0010+(0x0030 << 16 )
+#define  kPatientSex 0x0010+(0x0040 << 16 )
+#define  kPatientAge 0x0010+(0x1010 << 16 )
+#define  kPatientWeight 0x0010+(0x1030 << 16 )
 #define  kAnatomicalOrientationType 0x0010+(0x2210 << 16 )
 #define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kScanningSequence 0x0018+(0x0020 << 16)
@@ -2976,7 +3007,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDiffusionDirectionRL 0x2005+(0x10B0 << 16)
 #define  kDiffusionDirectionAP 0x2005+(0x10B1 << 16)
 #define  kDiffusionDirectionFH 0x2005+(0x10B2 << 16)
-#define  k2005140F 0x2005+(0x140F << 16)
+#define  kPrivatePerFrameSq 0x2005+(0x140F << 16)
 #define  kWaveformSq 0x5400+(0x0100 << 16)
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
@@ -3002,6 +3033,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     //float intenScalePhilips = 0.0;
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
+    int multiBandFactor = 0;
     int encapsulatedDataFragments = 0;
     int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
     int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
@@ -3079,7 +3111,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 lPos = lPos + 4;  //skip 4 byte length
             } else if   ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'Q')) {
                 lLength = 8; //Sequence Tag
-                is2005140FSQ = (groupElement == k2005140F);
+                //printMessage(" !!!SQ\t%04x,%04x\n",   groupElement & 65535,groupElement>>16);
+                is2005140FSQ = (groupElement == kPrivatePerFrameSq);
             } else { //explicit VR with 16-bit length
                 if ((d.isLittleEndian)  )
                     lLength = buffer[lPos+2] | (buffer[lPos+3] << 8);
@@ -3095,13 +3128,18 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             else
                 lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
             lPos += 4;  //we have loaded the 32-bit length
+            if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+            	vr[0] = 'S';
+            	vr[1] = 'Q';
+            	lLength = 8; //Sequence Tag
+                is2005140FSQ = (groupElement == kPrivatePerFrameSq);
+            }
         } //if explicit else implicit VR
         if (lLength == 0xFFFFFFFF) {
             lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
             vr[0] = 'S';
             vr[1] = 'Q';
         }
-
         if   ((vr[0] == 'S') && (vr[1] == 'Q')) {
             sqDepth++;
             //printMessage("SQstart %d\n", sqDepth);
@@ -3176,6 +3214,13 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 }
                 break;} //{} provide scope for variable 'transferSyntax
+            /*case kImplementationVersionName: {
+            	char impTxt[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], impTxt);
+                int slen = (int) strlen(impTxt);
+				if((slen < 6) || (strstr(impTxt, "OSIRIX") == NULL) ) break;
+                printError("OSIRIX Detected\n");
+            	break; }*/
             case kSourceApplicationEntityTitle: {
             	char saeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], saeTxt);
@@ -3263,12 +3308,27 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
+            case kPatientBirthDate :
+              	dcmStr (lLength, &buffer[lPos], d.patientBirthDate);
+              	break;
+            case kPatientSex :
+            	d.patientSex = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
+                break;
+            case kPatientAge :
+                dcmStr (lLength, &buffer[lPos], d.patientAge);
+                break;
+        	case kPatientWeight :
+                d.patientWeight = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
             case kStationName :
                 dcmStr (lLength, &buffer[lPos], d.stationName);
                 break;
             case kSeriesDescription: {
                 dcmStr (lLength, &buffer[lPos], d.seriesDescription);
                 break; }
+            case kInstitutionalDepartmentName:
+            	dcmStr (lLength, &buffer[lPos], d.institutionalDepartmentName);
+            	break;
             case kManufacturersModelName :
             	dcmStr (lLength, &buffer[lPos], d.manufacturersModelName);
             	break;
@@ -3536,6 +3596,13 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 d.accelFactPE = (float)strtof(accelStr, &ptr);
                 if (*ptr != '\0')
                 	d.accelFactPE = 0.0;
+                //between slice accel
+                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStrDigitsOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
+                multiBandFactor = (int)strtol(accelStr, &ptr, 10);
+                if (*ptr != '\0')
+                	multiBandFactor = 0.0;
+                //printMessage("p%gs%d\n",  d.accelFactPE, multiBandFactor);
 				break; }
             case kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -3840,6 +3907,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
             } else
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, nest);
+        	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
@@ -3926,8 +3994,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
 		strcpy(d.protocolName, d.seriesDescription);
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
-    if ((strlen(d.protocolName) < 1) && (strlen(d.sequenceName) > 1))
-		strcpy(d.protocolName, d.sequenceName);
+    if ((strlen(d.protocolName) < 1) && (strlen(d.sequenceName) > 1) && (d.manufacturer != kMANUFACTURER_SIEMENS))
+		strcpy(d.protocolName, d.sequenceName); //protocolName (0018,1030) optional, sequence name (0018,0024) is not a good substitute for Siemens as it can vary per volume: *ep_b0 *ep_b1000#1, *ep_b1000#2, etc https://www.nitrc.org/forum/forum.php?thread_id=8771&forum_id=4703
 	//     if (!isOrient) {
 	//     	if (d.isNonImage)
 	//     		printWarning("Spatial orientation ambiguous  (tag 0020,0037 not found) [probably not important: derived image]: %s\n", fname);
@@ -3959,6 +4027,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
+    if (multiBandFactor > d.CSA.multiBandFactor)
+    	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header
     //d.isValid = false; //debug only - will not create output!
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);

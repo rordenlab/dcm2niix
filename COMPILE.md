@@ -6,7 +6,6 @@ The README.md file describes the typical compilation of the software, using the 
 
 The text below generally describes how to build dcm2niix using the [GCC](https://gcc.gnu.org) compiler using the `g++` command. However, the code is portable and you can use different compilers. For [clang/llvm](https://clang.llvm.org) compile using `clang++`.  If you have the [Intel C compiler](https://software.intel.com/en-us/c-compilers), you can substitute the `icc` command. For [Microsoft's C compiler](http://landinghub.visualstudio.com/visual-cpp-build-tools) you would use the `cl` command. In theory, the code should support other compilers, but this has not been tested. Be aware that if you do not have gcc installed the `g++` command may use a default to a compiler (e.g. clang). To check what compiler was used, run the dcm2niix software: it always reports the version and the compiler used for the build.
 
-
 ## Building the command line version without cmake
 
 You can also build the software without C-make. The easiest way to do this is to run the function "make" from the "console" folder. Note that this only creates the default version of dcm2niix, not the optional batch version described above. The make command simply calls the g++ compiler, and if you want you can tune this for your build. In essence, the make function simply calls
@@ -16,6 +15,10 @@ g++ -dead_strip -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp ni
 ```
 
 The following sub-sections list how you can modify this basic recipe for your needs.
+
+## Trouble Shooting
+
+Some [Centos/Redhat](https://github.com/rordenlab/dcm2niix/issues/137) may report "/usr/bin/ld: cannot find -lstdc++". This can be resolved by installing static versions of libstd:  `yum install libstdc++-static`.
 
 ##### ZLIB BUILD
  If we have zlib, we can use it (-lz) and disable [miniz](https://code.google.com/p/miniz/) (-myDisableMiniZ)
