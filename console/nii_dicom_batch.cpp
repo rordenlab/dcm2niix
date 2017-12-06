@@ -536,6 +536,7 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 	char keyStr[] = "### ASCCONV BEGIN"; //skip to start of ASCII often "### ASCCONV BEGIN ###" but also "### ASCCONV BEGIN object=MrProtDataImpl@MrProtocolData"
 	char *keyPos = (char *)memmem(bufferTrim, csaLengthTrim, keyStr, strlen(keyStr));
 	if (keyPos) {
+		//We could detect multi-echo MPRAGE here, e.g. "lContrasts	 = 	4"- but ideally we want an earlier detection
 		csaLengthTrim -= (keyPos-bufferTrim);
 		char keyStrEnd[] = "### ASCCONV END";
 		char *keyPosEnd = (char *)memmem(keyPos, csaLengthTrim, keyStrEnd, strlen(keyStrEnd));
@@ -2659,7 +2660,6 @@ TWarnings setWarnings() {
 
 bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho) {
     //returns true if d1 and d2 should be stacked together as a single output
-    *isMultiEcho = false;
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
     if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
@@ -3025,13 +3025,14 @@ int nii_loadDir(struct TDCMopts* opts) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
 			struct TWarnings warnings = setWarnings();
-			bool isMultiEcho;
+			bool isMultiEcho = false;
 			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho ) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
+			isMultiEcho = false;
 			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
                                         fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
@@ -3041,6 +3042,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 					dcmList[j].isMultiEcho = isMultiEcho;
 				}
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
+			//dcmList[dcmSort[0].indx].isMultiEcho = isMultiEcho;
 			if (opts->isVerbose)
 				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 			else

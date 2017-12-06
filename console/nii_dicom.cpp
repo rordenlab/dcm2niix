@@ -1398,8 +1398,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kYmm	29
 #define	kTEcho	30
 #define	kDynTime	31
-#define	kGradientNumber 42
 #define	kbval 33
+#define	kInversionDelayMs 40
+#define	kGradientNumber 42
 #define	kv1	47
 #define	kv2	45
 #define	kv3	46
@@ -1409,6 +1410,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     float maxBValue = 0.0f;
     float maxDynTime = 0.0f;
     float minDynTime = 999999.0f;
+    int minDyn = 32767;
+    int maxDyn = 0;
     bool ADCwarning = false;
     int parVers = 0;
     int maxEcho = 1;
@@ -1451,7 +1454,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (buff[0] == '.') { //tag
             char Comment[8][50];
             sscanf(buff, ". %s %s %s %s %s %s %s %s\n", Comment[0], Comment[1],Comment[2], Comment[3], Comment[4], Comment[5], Comment[6], Comment[7]);
-
             if ((strcmp(Comment[0], "Acquisition") == 0) && (strcmp(Comment[1], "nr") == 0)) {
                 d.acquNum = atoi( Comment[3]);
                 d.seriesNum = d.acquNum;
@@ -1515,6 +1517,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (slice == 1) {
             //for (int i = 0; i < nCols; i++)
             //    cols1[i] = cols[i]; //store first slice to see if dimensions or intensity scale varies between slices
+            //for (int i = 0; i < nCols; i++)
+            //    printMessage("%d %g\n",i, cols[i]); //store first slice to see if dimensions or intensity scale varies between slices
             d.xyzDim[1] = (int) cols[kXdim];
 			d.xyzDim[2] = (int) cols[kYdim];
             d.xyzMM[1] = cols[kXmm];
@@ -1528,6 +1532,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             d.angulation[3] = cols[kAngulationFHs];
 			d.sliceOrient = (int) cols[kSliceOrients];
             d.TE = cols[kTEcho];
+			d.TI = cols[kInversionDelayMs];
 			d.bitsAllocated = (int) cols[kBitsPerVoxel];
 			d.bitsStored = (int) cols[kBitsPerVoxel];
             d.intenIntercept = cols[kRI];
@@ -1548,6 +1553,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
+        if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
+        if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
         if (cols[kDynTime] > maxDynTime) maxDynTime = cols[kDynTime];
         if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
         if (cols[kEcho] > maxEcho) maxEcho = cols[kEcho];
@@ -1576,7 +1583,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 ADCwarning = true;
             }*/
             //666: test (cols[kDyn] == 1)
-            if ((cols[kDyn] == 1) && (cols[kEcho] == 1) && (cols[kCardiac] == 1)  && (cols[kSlice] == 1)) { //only first slice
+            //(cols[kImageType] == 0) means magnitude scan
+            if ((cols[kImageType] == 0) && (cols[kDyn] == 1) && (cols[kEcho] == 1) && (cols[kCardiac] == 1)  && (cols[kSlice] == 1)) { //only first slice
                 d.CSA.numDti++;
                 int dir = d.CSA.numDti;
                 if (dir <= kMaxDTI4D) {
@@ -1693,8 +1701,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         printError("Unable to convert DTI [increase kMaxDTI4D]\n");
         d.CSA.numDti = 0;
     };
-    if ((maxBValue <= 0.0f) && (maxDynTime > minDynTime) && (d.CSA.numDti > 1)) {
-    	float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(d.CSA.numDti-1);
+    if ((maxBValue <= 0.0f) && (maxDyn > minDyn) && (maxDynTime > minDynTime)) { //use max vs min Dyn instead of && (d.CSA.numDti > 1)
+    	int numDyn = maxDyn - minDyn;
+    	float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)numDyn;
+    	//float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(d.CSA.numDti-1);
     	if (fabs(TRms - d.TR) > 0.005f)
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
