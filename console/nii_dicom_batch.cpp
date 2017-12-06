@@ -2580,7 +2580,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     free(imgM);
 
     // Prevent these DICOM files from being reused.
-    for(uint i = 0; i < nConvert; ++i)
+    for(int i = 0; i < nConvert; ++i)
       dcmList[dcmSort[i].indx].converted2NII = 1;
 
     return returnCode;//EXIT_SUCCESS;
@@ -2590,7 +2590,7 @@ void fillTDCMsort(struct TDCMsort& tdcmref, const uint64_t indx, const struct TD
   // Copy the relevant parts of dcmdata to tdcmref.
   tdcmref.indx = indx;
   tdcmref.img = ((uint64_t)dcmdata.seriesNum << 32) + dcmdata.imageNum;
-  for(uint i = 0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
+  for(int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
     tdcmref.dimensionIndexValues[i] = dcmdata.dimensionIndexValues[i];
 } // fillTDCMsort()
 
@@ -2614,7 +2614,7 @@ int compareTDCMsort(void const *item1, void const *item2) {
       // uint128_t, uint256_t, etc. is not guaranteed.  This sorts by
       // (seriesNum, ImageNum, div[0], div[1], ...), or if you think of it as a
       // number, the dimensionIndexValues come after the decimal point.
-      for(uint i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i){
+      for(int i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i){
         if(dcm1->dimensionIndexValues[i] < dcm2->dimensionIndexValues[i]){
           retval = -1;
           break;
@@ -2820,7 +2820,7 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
         } else {
             dcmSort[i-nDuplicates].img = dcmSort[i].img;
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
-            for(uint j = 0; j < MAX_NUMBER_OF_DIMENSIONS; ++j)
+            for(int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; ++j)
               dcmSort[i - nDuplicates].dimensionIndexValues[j] = dcmSort[i].dimensionIndexValues[j];
         }
     }
@@ -2840,7 +2840,7 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
         } else {
             dcmSort[i-nDuplicates].img = dcmSort[i].img;
             dcmSort[i-nDuplicates].indx = dcmSort[i].indx;
-            for(uint j = 0; j < MAX_NUMBER_OF_DIMENSIONS; ++j)
+            for(int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; ++j)
               dcmSort[i - nDuplicates].dimensionIndexValues[j] = dcmSort[i].dimensionIndexValues[j];
         }
     }

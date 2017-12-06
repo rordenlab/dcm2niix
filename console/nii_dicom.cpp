@@ -2687,7 +2687,7 @@ void TVolumeDiffusion::clear_volume()
   manufacturer = kMANUFACTURER_UNKNOWN;
   //bVal0018_9087 = -1;
   directionality0018_9075[0] = 0;
-  for(uint8_t i = 0; i < 3; ++i)
+  for(int i = 0; i < 3; ++i)
     orientation0018_9089[i] = 2;
   seq0018_9117[0] = 0;
   //bVal2001_1003 = -1;
@@ -2697,7 +2697,7 @@ void TVolumeDiffusion::clear_volume()
   isPhilipsNonDirectional = false;
 
   dtiV[0] = -1;
-  for(uint8_t i = 1; i < 4; ++i)
+  for(int i = 1; i < 4; ++i)
     dtiV[i] = 2;
   //numDti = 0;
 }
@@ -2709,7 +2709,7 @@ void TVolumeDiffusion::set_directionality0018_9075(const unsigned char* inbuf)
     isPhilipsNonDirectional = true;
     // Explicitly set the direction to 0 now, because there may
     // not be a 0018,9089 for this frame.
-    for(uint8_t i = 1; i < 4; ++i)  // 1-3 is intentional.
+    for(int i = 1; i < 4; ++i)  // 1-3 is intentional.
       dtiV[i] = 0.0;                    
   }
   else{
@@ -2739,7 +2739,7 @@ void TVolumeDiffusion::set_directionGE(const int lLength, const unsigned char* i
 void TVolumeDiffusion::set_orientation0018_9089(const int lLength, const unsigned char* inbuf, const bool isLittleEndian)
 {
   if(isPhilipsNonDirectional){
-    for(uint8_t i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
+    for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
       dtiV[i] = 0.0;
   }
   else
@@ -2773,7 +2773,7 @@ void TVolumeDiffusion::update()
 
   bool isReady = (isAtFirstPatientPosition && (dtiV[0] >= 0));
   if(isReady){
-    for(uint8_t i = 1; i < 4; ++i){
+    for(int i = 1; i < 4; ++i){
       if(dtiV[i] > 1){
         isReady = false;
         break;
@@ -2787,14 +2787,14 @@ void TVolumeDiffusion::update()
   // If still here, update dd and *pdti4D.
   dd.CSA.numDti++;
   if (dd.CSA.numDti == 2) {                  // First time we know that this is a 4D DTI dataset;
-    for(uint8_t i = 0; i < 4; ++i)          // Start *pdti4D before dd.CSA.dtiV
+    for(int i = 0; i < 4; ++i)          // Start *pdti4D before dd.CSA.dtiV
       pdti4D->S[0].V[i] = dd.CSA.dtiV[i];   // is updated.
   }
-  for(uint8_t i = 0; i < 4; ++i)            // Update dd.
+  for(int i = 0; i < 4; ++i)            // Update dd.
     dd.CSA.dtiV[i] = dtiV[i];
   if((dd.CSA.numDti > 1) && (dd.CSA.numDti < kMaxDTI4D)){   // Update *pdti4D
     //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
-    for(uint8_t i = 0; i < 4; ++i)
+    for(int i = 0; i < 4; ++i)
       pdti4D->S[dd.CSA.numDti - 1].V[i] = dtiV[i];
   }
 
@@ -2933,19 +2933,19 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
-#define  kDiffusionDirectionality  0x0018+(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
+#define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
-#define  kDiffusion_bValue  0x0018+(0x9087<< 16 ) // FD
-#define  kDiffusionOrientation  0x0018+(0x9089<< 16 ) // FD, seen in enhanced
-                                                      // DICOM from Philips 5.*
-                                                      // and Siemens XA10.
+#define  kDiffusion_bValue  0x0018+uint32_t(0x9087<< 16 ) // FD
+#define  kDiffusionOrientation  0x0018+uint32_t(0x9089<< 16 ) // FD, seen in enhanced
+                                                              // DICOM from Philips 5.*
+                                                              // and Siemens XA10.
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
-#define  kSharedFunctionalGroupsSequence  0x5200+(0x9229<< 16 ) // SQ
-#define  kPerFrameFunctionalGroupsSequence  0x5200+(0x9230<< 16 ) // SQ
+#define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
+#define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
@@ -2958,7 +2958,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
-#define  kDimensionIndexValues 0x0020+(0x9157<< 16 ) // UL n-dimensional index of frame.
+#define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
