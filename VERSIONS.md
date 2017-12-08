@@ -1,5 +1,10 @@
 ## Versions
 
+4-Dev-2017
+ - Handle implicit VR DICOMs where [critical values nested in sequence groups (SQ)](https://github.com/rordenlab/dcm2niix/commit/7f5649c6fe6ed366d07776aa54397b50f6641aff)
+ - Better support for [PAR/REC files with segmented 3D EPI](https://github.com/rordenlab/dcm2niix/commit/66cdf2dcc60d55a6ef37f5a6db8d500d3eeb7c88).
+ - Allow Protocol Name to be [empty](https://github.com/rordenlab/dcm2niix/commit/94f3129898ba83bf310c9ff28e994f29feb13068).
+
 17-Oct-2017
  - Swap [phase-encoding direction polarity](https://github.com/rordenlab/dcm2niix/issues/125) for Siemens images where PE is in the Column direction.
  - Sort diffusion volumes by [B-value amplitude](https://www.nitrc.org/forum/forum.php?thread_id=8396&forum_id=4703) (use "-d n"/"-d y" to turn the feature off/on).
