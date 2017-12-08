@@ -134,34 +134,21 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
 
   // Gathering spot for all the info needed to get the b value and direction
   // for a volume.
-  class TVolumeDiffusion {
-  public:
-    TVolumeDiffusion(struct TDICOMdata& tdd, struct TDTI4D* dti4D):
-      dd(tdd),
-      pdti4D(dti4D)
-    {clear_volume();}
-    ~TVolumeDiffusion() {}
-    
+  struct TVolumeDiffusion {    
+    struct TDICOMdata* pdd;  // The multivolume
+    struct TDTI4D* pdti4D;   // permanent records.
+
     uint8_t manufacturer;            // kMANUFACTURER_UNKNOWN, kMANUFACTURER_SIEMENS, etc.
 
-    // Blank the volume-specific members or set them to impossible values.
-    void clear_volume();
+    //void set_manufacturer(const uint8_t m) {manufacturer = m; update();}  // unnecessary
+  
+    // Everything after this in the structure would be private if it were a C++
+    // class, but it has been rewritten as a struct for C compatibility.  I am
+    // using _ as a hint of that, although _ for privacy is not really a
+    // universal convention in C.  Privacy is desired because immediately
+    // any of these are updated _update_tvd() should be called.
 
-    void set_directionality0018_9075(const unsigned char* inbuf);
-    //void set_manufacturer(const uint8_t m) {manufacturer = m; update();}
-    void set_orientation0018_9089(const int lLength, const unsigned char* inbuf, const bool isLittleEndian);
-    void set_isAtFirstPatientPosition(const bool iafpp) {isAtFirstPatientPosition = iafpp; update();}
-    void set_bValGE(const int lLength, const unsigned char* inbuf);
-    void set_directionGE(const int lLength, const unsigned char* inbuf, const int axis);
-    void set_bVal(const float b) {dtiV[0] = b; update();}
-    void set_seq0018_9117(const char* inbuf);
-  private:
-    // Note that most of these data elements are private to force the use of setters,
-    // since the design depends on the setters all calling update().
-    struct TDICOMdata& dd;  // The multivolume
-    struct TDTI4D* pdti4D;  // permanent records.
-
-    bool isAtFirstPatientPosition;   // Limit b vals and vecs to 1 per volume.
+    bool _isAtFirstPatientPosition;   // Limit b vals and vecs to 1 per volume.
 
     //float bVal0018_9087;      // kDiffusion_b_value, always present in Philips/Siemens.
     //float bVal2001_1003;        // kDiffusionBFactor
@@ -174,31 +161,28 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     // so b is > 0, but the direction is meaningless.  Most software versions
     // explicitly set the direction to 0, but version 3 does not, making (0x18,
     // 0x9075) necessary.
-    bool isPhilipsNonDirectional;
+    bool _isPhilipsNonDirectional;
 
-    char directionality0018_9075[16];       // DiffusionDirectionality, not in Philips 2.6.
-    float orientation0018_9089[3];      // kDiffusionOrientation, always
-                                        // present in Philips/Siemens for
-                                        // volumes with a direction.
-    char seq0018_9117[64];      // MRDiffusionSequence, not in Philips 2.6.
+    //char _directionality0018_9075[16];   // DiffusionDirectionality, not in Philips 2.6.
+    // float _orientation0018_9089[3];      // kDiffusionOrientation, always
+    //                                      // present in Philips/Siemens for
+    //                                      // volumes with a direction.
+    //char _seq0018_9117[64];              // MRDiffusionSequence, not in Philips 2.6.
 
-    float dtiV[4];
+    float _dtiV[4];
     //uint16_t numDti;
-
-    // Update the diffusion info in dd and *pdti4D for a volume once all the
-    // diffusion info for that volume has been read into pvd.
-    //
-    // Note that depending on the scanner software the diffusion info can arrive in
-    // different tags, in different orders (because of enclosing sequence tags),
-    // and the values in some tags may be invalid, or may be essential, depending
-    // on the presence of other tags.  Thus it is best to gather all the diffusion
-    // info for a volume (frame) before taking action on it.
-    //
-    // On the other hand, dd and *pdti4D need to be updated as soon as the
-    // diffusion info is ready, before diffusion info for the next volume
-    // is read in.
-    void update();
   };
+  struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D);
+  void clear_volume(struct TVolumeDiffusion* ptvd); // Blank the volume-specific members or set them to impossible values.
+  void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, const unsigned char* inbuf);
+  void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf,
+                                const bool isLittleEndian);
+  void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, const bool iafpp);
+  void set_bValGE(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf);
+  void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf, const int axis);
+  void set_bVal(struct TVolumeDiffusion* ptvd, const float b);
+  //void set_seq0018_9117(struct TVolumeDiffusion* ptvd, const char* inbuf);
+  void _update_tvd(struct TVolumeDiffusion* ptvd);
 
     size_t nii_ImgBytes(struct nifti_1_header hdr);
     struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
