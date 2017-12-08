@@ -1,8 +1,8 @@
 # Regular use
-#CFLAGS=-s -O3
+CFLAGS=-s -O3
 
 # Debugging
-CFLAGS=-g
+#CFLAGS=-g
 
 ifneq ($(OS),Windows_NT)
 	OS = $(shell uname)
