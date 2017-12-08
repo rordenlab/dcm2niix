@@ -1218,15 +1218,6 @@ void dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloat
 //#endif
 } //dcmMultiFloat()
 
-void dcmMultiFloatDouble (const size_t lByteLength, const unsigned char lBuffer[], const size_t lnFloats, float *lFloats,
-                          const bool isLittleEndian) {
-  size_t floatlen = lByteLength / lnFloats;
-
-  for(size_t i = 0; i < lnFloats; ++i)
-    lFloats[i] = dcmFloatDouble(floatlen, lBuffer + i * floatlen, isLittleEndian);
-}
-
-
 float dcmStrFloat (const int lByteLength, const unsigned char lBuffer[]) { //read float stored as a string
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
@@ -2691,93 +2682,144 @@ int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10
     return 0;
 } //isDICOMfile()
 
-struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D)
-{
-  struct TVolumeDiffusion tvd;
+//START RIR 12/2017 Robert I. Reid
 
-  tvd.pdd = ptdd;
-  tvd.pdti4D = dti4D;
-  clear_volume(&tvd);
-  return tvd;
-}
+// Gathering spot for all the info needed to get the b value and direction
+// for a volume.
+struct TVolumeDiffusion {
+    struct TDICOMdata* pdd;  // The multivolume
+    struct TDTI4D* pdti4D;   // permanent records.
 
-void clear_volume(struct TVolumeDiffusion* ptvd)
-{
-  ptvd->_isAtFirstPatientPosition = false;
-  ptvd->manufacturer = kMANUFACTURER_UNKNOWN;
-  //bVal0018_9087 = -1;
-  //ptvd->_directionality0018_9075[0] = 0;
-  //ptvd->seq0018_9117[0] = 0;
-  //bVal2001_1003 = -1;
-  // dirRL2005_10b0 = 2;
-  // dirAP2005_10b1 = 2;
-  // dirFH2005_10b2 = 2;
-  ptvd->_isPhilipsNonDirectional = false;
+    uint8_t manufacturer;            // kMANUFACTURER_UNKNOWN, kMANUFACTURER_SIEMENS, etc.
 
-  ptvd->_dtiV[0] = -1;
-  for(int i = 1; i < 4; ++i)
-    ptvd->_dtiV[i] = 2;
-  //numDti = 0;
-}
+    //void set_manufacturer(const uint8_t m) {manufacturer = m; update();}  // unnecessary
 
-void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, const unsigned char* inbuf)
-{
-  if(strncmp((const char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==. 
-     strncmp((const char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
-    ptvd->_isPhilipsNonDirectional = true;
-    // Explicitly set the direction to 0 now, because there may
-    // not be a 0018,9089 for this frame.
-    for(int i = 1; i < 4; ++i)  // 1-3 is intentional.
-      ptvd->_dtiV[i] = 0.0;                    
-  }
-  else{
+    // Everything after this in the structure would be private if it were a C++
+    // class, but it has been rewritten as a struct for C compatibility.  I am
+    // using _ as a hint of that, although _ for privacy is not really a
+    // universal convention in C.  Privacy is desired because immediately
+    // any of these are updated _update_tvd() should be called.
+
+    bool _isAtFirstPatientPosition;   // Limit b vals and vecs to 1 per volume.
+
+    //float bVal0018_9087;      // kDiffusion_b_value, always present in Philips/Siemens.
+    //float bVal2001_1003;        // kDiffusionBFactor
+    // float dirRL2005_10b0;        // kDiffusionDirectionRL
+    // float dirAP2005_10b1;        // kDiffusionDirectionAP
+    // float dirFH2005_10b2;        // kDiffusionDirectionFH
+
+    // Philips diffusion scans tend to have a "trace" (average of the diffusion
+    // weighted volumes) volume tacked on, usually but not always at the end,
+    // so b is > 0, but the direction is meaningless.  Most software versions
+    // explicitly set the direction to 0, but version 3 does not, making (0x18,
+    // 0x9075) necessary.
+    bool _isPhilipsNonDirectional;
+
+    //char _directionality0018_9075[16];   // DiffusionDirectionality, not in Philips 2.6.
+    // float _orientation0018_9089[3];      // kDiffusionOrientation, always
+    //                                      // present in Philips/Siemens for
+    //                                      // volumes with a direction.
+    //char _seq0018_9117[64];              // MRDiffusionSequence, not in Philips 2.6.
+
+    float _dtiV[4];
+    //uint16_t numDti;
+};
+struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D);
+void clear_volume(struct TVolumeDiffusion* ptvd); // Blank the volume-specific members or set them to impossible values.
+void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* inbuf);
+void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,
+                              bool isLittleEndian);
+void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, bool iafpp);
+void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
+void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,  int axis);
+void set_bVal(struct TVolumeDiffusion* ptvd, float b);
+void _update_tvd(struct TVolumeDiffusion* ptvd);
+
+struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D) {
+    struct TVolumeDiffusion tvd;
+    tvd.pdd = ptdd;
+    tvd.pdti4D = dti4D;
+    clear_volume(&tvd);
+    return tvd;
+} //initTVolumeDiffusion()
+
+void clear_volume(struct TVolumeDiffusion* ptvd) {
+    ptvd->_isAtFirstPatientPosition = false;
+    ptvd->manufacturer = kMANUFACTURER_UNKNOWN;
+    //bVal0018_9087 = -1;
+    //ptvd->_directionality0018_9075[0] = 0;
+    //ptvd->seq0018_9117[0] = 0;
+    //bVal2001_1003 = -1;
+    // dirRL2005_10b0 = 2;
+    // dirAP2005_10b1 = 2;
+    // dirFH2005_10b2 = 2;
     ptvd->_isPhilipsNonDirectional = false;
-    // Wait for 0018,9089 to get the direction.
-  }
+    ptvd->_dtiV[0] = -1;
+    for(int i = 1; i < 4; ++i)
+        ptvd->_dtiV[i] = 2;
+    //numDti = 0;
+}//clear_volume()
 
-  _update_tvd(ptvd);
-}
+void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* inbuf) {
+    if(strncmp(( char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==.
+       strncmp(( char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
+        ptvd->_isPhilipsNonDirectional = true;
+        // Explicitly set the direction to 0 now, because there may
+        // not be a 0018,9089 for this frame.
+        for(int i = 1; i < 4; ++i)  // 1-3 is intentional.
+            ptvd->_dtiV[i] = 0.0;
+    }
+    else{
+        ptvd->_isPhilipsNonDirectional = false;
+        // Wait for 0018,9089 to get the direction.
+    }
 
-void set_bValGE(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf)
-{
-  ptvd->_dtiV[0] = dcmStrInt(lLength, inbuf);
-  //dd.CSA.numDti = 1;   // Always true for GE.
+    _update_tvd(ptvd);
+} //set_directionality0018_9075()
 
-  _update_tvd(ptvd);
-}
+void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
+    //int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
+dcmStrInt(lLength, inbuf);
+
+    ptvd->_dtiV[0] = dcmStrInt(lLength, inbuf);
+    //dd.CSA.numDti = 1;   // Always true for GE.
+
+    _update_tvd(ptvd);
+} //set_bValGE()
 
 // axis: 0 -> x, 1 -> y , 2 -> z
-void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf, const int axis)
-{
-  ptvd->_dtiV[axis + 1] = dcmStrFloat(lLength, inbuf);
+void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf, const int axis){
+    ptvd->_dtiV[axis + 1] = dcmStrFloat(lLength, inbuf);
 
-  _update_tvd(ptvd);
-}
+    _update_tvd(ptvd);
+}//set_diffusion_directionGE()
 
-void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf,
-                              const bool isLittleEndian)
-{
-  if(ptvd->_isPhilipsNonDirectional){
-    for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
-      ptvd->_dtiV[i] = 0.0;
-  }
-  else
-    dcmMultiFloatDouble(lLength, inbuf, 3, ptvd->_dtiV + 1, isLittleEndian);
+void dcmMultiFloatDouble (size_t lByteLength, unsigned char lBuffer[], size_t lnFloats, float *lFloats, bool isLittleEndian) {
+    size_t floatlen = lByteLength / lnFloats;
 
-  _update_tvd(ptvd);
-}
+    for(size_t i = 0; i < lnFloats; ++i)
+        lFloats[i] = dcmFloatDouble((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
+} //dcmMultiFloatDouble()
 
-void set_bVal(struct TVolumeDiffusion* ptvd, const float b)
-{
-  ptvd->_dtiV[0] = b;
-  _update_tvd(ptvd);
-}
+void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf, bool isLittleEndian) {
+    if(ptvd->_isPhilipsNonDirectional){
+        for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
+            ptvd->_dtiV[i] = 0.0;
+    }
+    else
+        dcmMultiFloatDouble(lLength, inbuf, 3, ptvd->_dtiV + 1, isLittleEndian);
+    _update_tvd(ptvd);
+}//set_orientation0018_9089()
 
-void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, const bool iafpp)
-{
-  ptvd->_isAtFirstPatientPosition = iafpp;
-  _update_tvd(ptvd);
-}
+void set_bVal(struct TVolumeDiffusion* ptvd, const float b) {
+    ptvd->_dtiV[0] = b;
+    _update_tvd(ptvd);
+}//set_bVal()
+
+void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, const bool iafpp) {
+    ptvd->_isAtFirstPatientPosition = iafpp;
+    _update_tvd(ptvd);
+}//set_isAtFirstPatientPosition_tvd()
 
 // Update the diffusion info in dd and *pdti4D for a volume once all the
 // diffusion info for that volume has been read into pvd.
@@ -2791,46 +2833,44 @@ void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, const bool 
 // On the other hand, dd and *pdti4D need to be updated as soon as the
 // diffusion info is ready, before diffusion info for the next volume is read
 // in.
-void _update_tvd(struct TVolumeDiffusion* ptvd)
-{
-  // Figure out if we have both the b value and direction (if any) for this
-  // volume, and if isFirstPosition.
+void _update_tvd(struct TVolumeDiffusion* ptvd) {
+    // Figure out if we have both the b value and direction (if any) for this
+    // volume, and if isFirstPosition.
 
-  // // GE (software version 27) is liable to NOT include kDiffusion_b_value for the
-  // // slice if it is 0, but should still have kDiffusionBFactor, which comes
-  // // after PatientPosition.
-  // if(isAtFirstPatientPosition && manufacturer == kMANUFACTURER_GE && dtiV[0] < 0)
-  //   dtiV[0] = 0;  // Implied 0.
+    // // GE (software version 27) is liable to NOT include kDiffusion_b_value for the
+    // // slice if it is 0, but should still have kDiffusionBFactor, which comes
+    // // after PatientPosition.
+    // if(isAtFirstPatientPosition && manufacturer == kMANUFACTURER_GE && dtiV[0] < 0)
+    //   dtiV[0] = 0;  // Implied 0.
 
-  bool isReady = (ptvd->_isAtFirstPatientPosition && (ptvd->_dtiV[0] >= 0));
-  if(isReady){
-    for(int i = 1; i < 4; ++i){
-      if(ptvd->_dtiV[i] > 1){
-        isReady = false;
-        break;
-      }
+    bool isReady = (ptvd->_isAtFirstPatientPosition && (ptvd->_dtiV[0] >= 0));
+    if(isReady){
+        for(int i = 1; i < 4; ++i){
+            if(ptvd->_dtiV[i] > 1){
+                isReady = false;
+                break;
+            }
+        }
     }
-  }
+    if(!isReady)
+        return;
 
-  if(!isReady)
-    return;
-
-  // If still here, update dd and *pdti4D.
-  ptvd->pdd->CSA.numDti++;
-  if (ptvd->pdd->CSA.numDti == 2) {                  // First time we know that this is a 4D DTI dataset;
-    for(int i = 0; i < 4; ++i)                       // Start *pdti4D before ptvd->pdd->CSA.dtiV
-      ptvd->pdti4D->S[0].V[i] = ptvd->pdd->CSA.dtiV[i];    // is updated.
-  }
-  for(int i = 0; i < 4; ++i)                         // Update pdd
-    ptvd->pdd->CSA.dtiV[i] = ptvd->_dtiV[i];
-  if((ptvd->pdd->CSA.numDti > 1) && (ptvd->pdd->CSA.numDti < kMaxDTI4D)){   // Update *pdti4D
-    //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
-    for(int i = 0; i < 4; ++i)
-      ptvd->pdti4D->S[ptvd->pdd->CSA.numDti - 1].V[i] = ptvd->_dtiV[i];
-  }
-
-  clear_volume(ptvd); // clear the slate for the next volume.
-}
+    // If still here, update dd and *pdti4D.
+    ptvd->pdd->CSA.numDti++;
+    if (ptvd->pdd->CSA.numDti == 2) {                  // First time we know that this is a 4D DTI dataset;
+        for(int i = 0; i < 4; ++i)                       // Start *pdti4D before ptvd->pdd->CSA.dtiV
+            ptvd->pdti4D->S[0].V[i] = ptvd->pdd->CSA.dtiV[i];    // is updated.
+    }
+    for(int i = 0; i < 4; ++i)                         // Update pdd
+        ptvd->pdd->CSA.dtiV[i] = ptvd->_dtiV[i];
+    if((ptvd->pdd->CSA.numDti > 1) && (ptvd->pdd->CSA.numDti < kMaxDTI4D)){   // Update *pdti4D
+        //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
+        for(int i = 0; i < 4; ++i)
+            ptvd->pdti4D->S[ptvd->pdd->CSA.numDti - 1].V[i] = ptvd->_dtiV[i];
+    }
+    clear_volume(ptvd); // clear the slate for the next volume.
+}//_update_tvd()
+//END RIR
 
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 	struct TDICOMdata d = clear_dicom_data();
@@ -3388,7 +3428,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
             case kDiffusionDirectionality : // 0018, 9075
-                set_directionality0018_9075(&volDiffusion, (const unsigned char*)(&buffer[lPos]));
+                set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
                 break;
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
@@ -3403,15 +3443,15 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                  break;*/
             case kDiffusionDirectionGEX :
                 if (d.manufacturer == kMANUFACTURER_GE)
-                  set_diffusion_directionGE(&volDiffusion, lLength, (const unsigned char*)(&buffer[lPos]), 0);
+                  set_diffusion_directionGE(&volDiffusion, lLength, (&buffer[lPos]), 0);
                 break;
             case kDiffusionDirectionGEY :
                 if (d.manufacturer == kMANUFACTURER_GE)
-                  set_diffusion_directionGE(&volDiffusion, lLength, (const unsigned char*)(&buffer[lPos]), 1);
+                  set_diffusion_directionGE(&volDiffusion, lLength, (&buffer[lPos]), 1);
                 break;
             case kDiffusionDirectionGEZ :
                 if (d.manufacturer == kMANUFACTURER_GE)
-                  set_diffusion_directionGE(&volDiffusion, lLength, (const unsigned char*)(&buffer[lPos]), 2);
+                  set_diffusion_directionGE(&volDiffusion, lLength, (&buffer[lPos]), 2);
                 break;
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
@@ -3477,7 +3517,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kDimensionIndexValues:  // kImageNum is not enough for 4D series from Philips 5.*.
               {                                   // { necessary for initializing ndim.
                 uint8_t ndim = lLength / 4;
-                
+
                 if(ndim > MAX_NUMBER_OF_DIMENSIONS){
                     // Ideally degenerate axes would be cleverly handled.
                     // They are commonly seen in NIfTIs, but perhaps not in DICOM.
@@ -3747,7 +3787,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 // }
                 //d.CSA.dtiV[0] = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
                 set_bVal(&volDiffusion, dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
- 
+
                 // if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
                 //   dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
               }
@@ -3764,7 +3804,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
               //     (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
               if((d.manufacturer == kMANUFACTURER_SIEMENS) ||
                  ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-                set_orientation0018_9089(&volDiffusion, lLength, (const unsigned char*)(&buffer[lPos]), d.isLittleEndian);
+                set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
               break;
             // case kSharedFunctionalGroupsSequence:
             //   if ((d.manufacturer == kMANUFACTURER_SIEMENS) && isAtFirstPatientPosition) {
@@ -3869,7 +3909,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 break;
             case kDiffusionBFactorGE :
                 if (d.manufacturer == kMANUFACTURER_GE)
-                  set_bValGE(&volDiffusion, lLength, (const unsigned char*)(&buffer[lPos]));
+                  set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
                 break;
             case kGeiisFlag:
                 if ((lLength > 4) && (buffer[lPos]=='G') && (buffer[lPos+1]=='E') && (buffer[lPos+2]=='I')  && (buffer[lPos+3]=='I')) {

@@ -38,7 +38,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMvers "v1.0.20171204" kDCMsuf kCCsuf
+#define kDCMvers "v1.0.20171208" kDCMsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
@@ -131,58 +131,6 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         bool isSegamiOasis, isDerived, isXRay, isMultiEcho, isSlicesSpatiallySequentialPhilips, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC, patientSex;
     };
-
-  // Gathering spot for all the info needed to get the b value and direction
-  // for a volume.
-  struct TVolumeDiffusion {    
-    struct TDICOMdata* pdd;  // The multivolume
-    struct TDTI4D* pdti4D;   // permanent records.
-
-    uint8_t manufacturer;            // kMANUFACTURER_UNKNOWN, kMANUFACTURER_SIEMENS, etc.
-
-    //void set_manufacturer(const uint8_t m) {manufacturer = m; update();}  // unnecessary
-  
-    // Everything after this in the structure would be private if it were a C++
-    // class, but it has been rewritten as a struct for C compatibility.  I am
-    // using _ as a hint of that, although _ for privacy is not really a
-    // universal convention in C.  Privacy is desired because immediately
-    // any of these are updated _update_tvd() should be called.
-
-    bool _isAtFirstPatientPosition;   // Limit b vals and vecs to 1 per volume.
-
-    //float bVal0018_9087;      // kDiffusion_b_value, always present in Philips/Siemens.
-    //float bVal2001_1003;        // kDiffusionBFactor
-    // float dirRL2005_10b0;        // kDiffusionDirectionRL
-    // float dirAP2005_10b1;        // kDiffusionDirectionAP
-    // float dirFH2005_10b2;        // kDiffusionDirectionFH
-
-    // Philips diffusion scans tend to have a "trace" (average of the diffusion
-    // weighted volumes) volume tacked on, usually but not always at the end,
-    // so b is > 0, but the direction is meaningless.  Most software versions
-    // explicitly set the direction to 0, but version 3 does not, making (0x18,
-    // 0x9075) necessary.
-    bool _isPhilipsNonDirectional;
-
-    //char _directionality0018_9075[16];   // DiffusionDirectionality, not in Philips 2.6.
-    // float _orientation0018_9089[3];      // kDiffusionOrientation, always
-    //                                      // present in Philips/Siemens for
-    //                                      // volumes with a direction.
-    //char _seq0018_9117[64];              // MRDiffusionSequence, not in Philips 2.6.
-
-    float _dtiV[4];
-    //uint16_t numDti;
-  };
-  struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D);
-  void clear_volume(struct TVolumeDiffusion* ptvd); // Blank the volume-specific members or set them to impossible values.
-  void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, const unsigned char* inbuf);
-  void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf,
-                                const bool isLittleEndian);
-  void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, const bool iafpp);
-  void set_bValGE(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf);
-  void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, const int lLength, const unsigned char* inbuf, const int axis);
-  void set_bVal(struct TVolumeDiffusion* ptvd, const float b);
-  //void set_seq0018_9117(struct TVolumeDiffusion* ptvd, const char* inbuf);
-  void _update_tvd(struct TVolumeDiffusion* ptvd);
 
     size_t nii_ImgBytes(struct nifti_1_header hdr);
     struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
