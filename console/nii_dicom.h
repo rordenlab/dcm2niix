@@ -38,7 +38,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMvers "v1.0.20171204" kDCMsuf kCCsuf
+#define kDCMvers "v1.0.20171208" kDCMsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 4096; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
@@ -70,6 +70,10 @@ static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
 static const int kCompressRLE = 4; //run length encoding
 
+// Maximum number of dimensions for .dimensionIndexValues, i.e. possibly the
+// number of axes in the output .nii.
+static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
+
     struct TDTI {
         float V[4];
         int sliceNumberMrPhilips;
@@ -77,6 +81,7 @@ static const int kCompressRLE = 4; //run length encoding
     struct TDTI4D {
         struct TDTI S[kMaxDTI4D];
     };
+
 #ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...
     #pragma pack(2)
     typedef struct {
@@ -121,6 +126,7 @@ static const int kCompressRLE = 4; //run length encoding
         //char mrAcquisitionType[kDICOMStr]
         char scanOptions[kDICOMStr], stationName[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionAddress[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr];
         char imageComments[kDICOMStrLarge];
+        uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
         bool isSegamiOasis, isDerived, isXRay, isMultiEcho, isSlicesSpatiallySequentialPhilips, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled;
         char phaseEncodingRC, patientSex;
