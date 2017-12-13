@@ -89,6 +89,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
+    printf("  -n : only convert this series number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
@@ -279,6 +280,15 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'o') && ((i+1) < argc)) {
                 i++;
                 strcpy(opts.outdir,argv[i]);
+            } else if ((argv[i][1] == 'n') && ((i+1) < argc)) {
+              if (opts.numSeries < MAX_NUM_SERIES) {
+                  i++;
+                  opts.seriesNumber[opts.numSeries] = atoi(argv[i]);
+                  opts.numSeries += 1;
+                }
+                else {
+                  printf("Warning: too many series specified, ignoring -n %s\n", argv[i]);
+                }
             } else
              printf(" Error: invalid option '%s %s'\n", argv[i], argv[i+1]);;
             lastCommandArg = i;

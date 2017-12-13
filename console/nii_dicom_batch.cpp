@@ -2491,6 +2491,18 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
+    // skip converting if user has specified one or more series, but has not specified this one
+    if (opts.numSeries > 0) {
+      int i = 0;
+      for (; i < opts.numSeries; i++) {
+        if (opts.seriesNumber[i] == dcmList[dcmSort[0].indx].seriesNum) {
+          break;
+        }
+      }
+      if (i == opts.numSeries) {
+        return EXIT_SUCCESS;
+      }
+    }
     //move before headerDcm2Nii2 checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
     //nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
@@ -3242,6 +3254,8 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
         opts->isVerbose = false;
 #endif
     opts->isTiltCorrect = true;
+    opts->numSeries = 0;
+    memset(opts->seriesNumber, 0, sizeof(opts->seriesNumber));
     strcpy(opts->filename,"%f_%p_%t_%s");
 } // setDefaultOpts()
 
