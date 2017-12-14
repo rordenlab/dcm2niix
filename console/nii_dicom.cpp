@@ -1397,7 +1397,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kv3	46
 #define	kASL	48
     char buff[LINESZ];
-    int sliceNumberMrPhilipsVol2[kMaxDTI4D];
+    int sliceNumberMrPhilipsB2[kMaxDTI4D], sliceNumberMrPhilipsVol2[kMaxDTI4D];
+    int patientPositionNumPhilipsB2 = 0;
     int patientPositionNumPhilipsVol2 = 0;
     //float intenScalePhilips = 0.0f;
     float maxBValue = 0.0f;
@@ -1556,6 +1557,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
         if (cols[kEcho] > maxEcho) maxEcho = cols[kEcho];
         if (cols[kCardiac] > maxCardiac) maxCardiac = cols[kCardiac];
+        if ((cols[kEcho] == 1) && (cols[kDyn] == 1) && (patientPositionNumPhilipsB2 < kMaxDTI4D) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 2)) {
+			sliceNumberMrPhilipsB2[patientPositionNumPhilipsB2] = round(cols[kSlice]);
+			patientPositionNumPhilipsB2++;
+		}
         if ((cols[kEcho] == 1) && (cols[kDyn] == 2) && (patientPositionNumPhilipsVol2 < kMaxDTI4D) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 1)) {
 			sliceNumberMrPhilipsVol2[patientPositionNumPhilipsVol2] = round(cols[kSlice]);
 			patientPositionNumPhilipsVol2++;
@@ -1610,20 +1615,25 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.isValid = true;
     d.isSigned = true;
+    if ((patientPositionNumPhilipsB2 > 1) && (patientPositionNumPhilipsVol2 < 1)) {
+    	patientPositionNumPhilipsVol2 = patientPositionNumPhilipsB2;
+    	for (int s = 0; s < patientPositionNumPhilipsVol2; s++)
+    		sliceNumberMrPhilipsVol2[s] = sliceNumberMrPhilipsB2[s];
+    }
     if ((patientPositionNumPhilipsVol2 > 1) && (d.patientPositionNumPhilips == patientPositionNumPhilipsVol2)) {
     	bool isSliceOrderConsistent = true;
     	for (int s = 0; s < patientPositionNumPhilipsVol2; s++)
     		if (sliceNumberMrPhilipsVol2[s] != dti4D->S[s].sliceNumberMrPhilips) isSliceOrderConsistent = false;
         if (!isSliceOrderConsistent)
-        	printError("PAR file order of slices varies between volumes\n");
+        	printError("PAR file order of slices varies between volumes (hint: use dicm2nii)\n");
         d.isValid = false;
 	}
     if (dynNotAscending) {
-        printError("PAR file volumes not saved in ascending order\n");
+        printError("PAR file volumes not saved in ascending order (hint: use dicm2nii)\n");
         d.isValid = false;
     }
     if ((slice % d.xyzDim[3]) != 0) {
-        printError("Total number of slices (%d) not divisible by slices per 3D volume (%d) [acquisition aborted]. Try nii_rescue_par to fix this: %s\n", slice, d.xyzDim[3], parname);
+        printError("Total number of slices (%d) not divisible by slices per 3D volume (%d) [acquisition aborted]. Try dicm2nii or nii_rescue_par to fix this: %s\n", slice, d.xyzDim[3], parname);
         d.isValid = false;
     }
     d.xyzDim[4] = slice/d.xyzDim[3];
