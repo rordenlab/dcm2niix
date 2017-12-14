@@ -1397,6 +1397,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kv3	46
 #define	kASL	48
     char buff[LINESZ];
+    int sliceNumberMrPhilipsVol2[kMaxDTI4D];
+    int patientPositionNumPhilipsVol2 = 0;
     //float intenScalePhilips = 0.0f;
     float maxBValue = 0.0f;
     float maxDynTime = 0.0f;
@@ -1404,6 +1406,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     int minDyn = 32767;
     int maxDyn = 0;
     bool ADCwarning = false;
+    int prevDyn = -1;
+    bool dynNotAscending = false;
     int parVers = 0;
     int maxEcho = 1;
     int maxCardiac = 1;
@@ -1546,10 +1550,16 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
+        if (cols[kDyn] < prevDyn) dynNotAscending = true;
+        prevDyn = cols[kDyn];
         if (cols[kDynTime] > maxDynTime) maxDynTime = cols[kDynTime];
         if (cols[kDynTime] < minDynTime) minDynTime = cols[kDynTime];
         if (cols[kEcho] > maxEcho) maxEcho = cols[kEcho];
         if (cols[kCardiac] > maxCardiac) maxCardiac = cols[kCardiac];
+        if ((cols[kEcho] == 1) && (cols[kDyn] == 2) && (patientPositionNumPhilipsVol2 < kMaxDTI4D) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 1)) {
+			sliceNumberMrPhilipsVol2[patientPositionNumPhilipsVol2] = round(cols[kSlice]);
+			patientPositionNumPhilipsVol2++;
+		}
         if ((cols[kEcho] == 1) && (cols[kDyn] == 1) && (cols[kCardiac] == 1) && (cols[kGradientNumber] == 1)) {
 			if (cols[kSlice] == 1) {
 				d.patientPosition[1] = cols[kPositionRL];
@@ -1595,15 +1605,26 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         //printMessage("%f %f %lu\n",cols[9],cols[kGradientNumber], strlen(buff))
         p = fgets (buff, LINESZ, fp);//get next line
     }
-
     free (cols);
     fclose (fp);
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.isValid = true;
     d.isSigned = true;
+    if ((patientPositionNumPhilipsVol2 > 1) && (d.patientPositionNumPhilips == patientPositionNumPhilipsVol2)) {
+    	bool isSliceOrderConsistent = true;
+    	for (int s = 0; s < patientPositionNumPhilipsVol2; s++)
+    		if (sliceNumberMrPhilipsVol2[s] != dti4D->S[s].sliceNumberMrPhilips) isSliceOrderConsistent = false;
+        if (!isSliceOrderConsistent)
+        	printError("PAR file order of slices varies between volumes\n");
+        d.isValid = false;
+	}
+    if (dynNotAscending) {
+        printError("PAR file volumes not saved in ascending order\n");
+        d.isValid = false;
+    }
     if ((slice % d.xyzDim[3]) != 0) {
         printError("Total number of slices (%d) not divisible by slices per 3D volume (%d) [acquisition aborted]. Try nii_rescue_par to fix this: %s\n", slice, d.xyzDim[3], parname);
-        d.isValid = true;
+        d.isValid = false;
     }
     d.xyzDim[4] = slice/d.xyzDim[3];
     d.locationsInAcquisition = d.xyzDim[3];
@@ -1873,6 +1894,7 @@ unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h,
     	memcpy(&srcImg[0], &bImg[volStart], volBytes); //dest, src, size
     	for (int z = 0; z < h->dim[3]; z++) { //for each slice
 			int src = dti4D->S[z].sliceNumberMrPhilips - 1; //-1 as Philips indexes slices from 1 not 0
+			//printMessage("Reordering volume %d slice %d\n", v, dti4D->S[z].sliceNumberMrPhilips);
 			if ((src < 0) || (src >= h->dim[3])) continue;
 			memcpy(&bImg[volStart+(src*sliceBytes)], &srcImg[z*sliceBytes], sliceBytes); //dest, src, size
     	}

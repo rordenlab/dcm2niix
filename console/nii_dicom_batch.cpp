@@ -238,7 +238,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
                           + (vx[i].V[2]*vx[i].V[2])
                           + (vx[i].V[3]*vx[i].V[3]));
         if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
-            for (int v= 1; v < 4; v++) 
+            for (int v= 1; v < 4; v++)
                 vx[i].V[v] = 0.0f;
             continue; //do not normalize or reorient 0 vectors
         }
@@ -2872,6 +2872,7 @@ bool isExt (char *file_name, const char* ext) {
 int convert_parRec(struct TDCMopts opts) {
     //sample dataset from Ed Gronenschild <ed.gronenschild@maastrichtuniversity.nl>
     struct TSearchList nameList;
+    int ret = EXIT_FAILURE;
     nameList.numItems = 1;
     nameList.maxItems = 1;
     nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //we reserve one pointer (32 or 64 bits) per potential file
@@ -2882,7 +2883,8 @@ int convert_parRec(struct TDCMopts opts) {
     dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D);
     struct TDCMsort dcmSort[1];
     dcmSort[0].indx = 0;
-    int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, &dti4D);
+    if (dcmList[0].isValid)
+    	ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, &dti4D);
     free(dcmList);//if (nConvertTotal == 0)
     if (nameList.numItems < 1)
     	printMessage("No valid PAR/REC files were found\n");
