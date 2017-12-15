@@ -842,7 +842,7 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = 
             if (c == 255) cString[i] = 'y';
         }
     for (int i = 0; i < lLength; i++)
-        if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*')) cString[i] = '_';
+        if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 10) || (cString[i] == 13)) cString[i] = '_';
     int len = 1;
     for (int i = 1; i < lLength; i++) { //remove repeated "_"
         if ((cString[i-1]!='_') || (cString[i]!='_')) {
