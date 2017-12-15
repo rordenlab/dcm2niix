@@ -281,9 +281,13 @@ int main(int argc, const char * argv[])
                 i++;
                 strcpy(opts.outdir,argv[i]);
             } else if ((argv[i][1] == 'n') && ((i+1) < argc)) {
-              if (opts.numSeries < MAX_NUM_SERIES) {
-                  i++;
-                  opts.seriesNumber[opts.numSeries] = atoi(argv[i]);
+              i++;
+              int seriesNumber = atoi(argv[i]);
+              if (seriesNumber < 0)
+              	opts.numSeries = -1; //report series: convert none
+              else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {
+
+                  opts.seriesNumber[opts.numSeries] = seriesNumber;
                   opts.numSeries += 1;
                 }
                 else {

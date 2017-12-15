@@ -2477,6 +2477,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         free(imgM);
         return EXIT_FAILURE;
     }
+    if (opts.numSeries < 0) { //report series but do not convert
+    	printMessage("\t%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
+    	return EXIT_SUCCESS;
+    }
     checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
     int sliceDir = 0;
     if (hdr0.dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0, true);
