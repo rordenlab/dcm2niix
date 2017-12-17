@@ -94,7 +94,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
-    printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
+    #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
+	printf("  -u : up-to-date check\n");
+	#endif
+	printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
     printf("  -x : crop (y/n, default n)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
@@ -145,6 +148,53 @@ int invalidParam(int i, const char * argv[]) {
 	printf(" Error: invalid option '%s %s'\n", argv[i-1], argv[i]);
 	return 1;
 }
+
+#if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
+
+int checkUpToDate() {
+	#define URL "/rordenlab/dcm2niix/releases/"
+	#define APIURL "\"https://api.github.com/repos" URL "latest\""
+	#define HTMURL "https://github.com" URL
+	#define SHELLSCRIPT "#!/usr/bin/env bash\n curl --silent " APIURL " | grep '\"tag_name\":' | sed -E 's/.*\"([^\"]+)\".*/\\1/'"
+	//check first 13 characters, e.g. "v1.0.20171204"
+	#define versionChars 13
+    FILE *pipe = popen(SHELLSCRIPT, "r");
+    char ch, gitvers[versionChars+1];
+    int n = 0;
+    int nMatch = 0;
+    while ((ch = fgetc(pipe)) != EOF) {
+    	if (n < versionChars) {
+    		gitvers[n] = ch;
+    		if (gitvers[n] == kDCMvers[n])
+    			nMatch ++;
+        	n ++;
+    	}
+    }
+    pclose(pipe);
+	gitvers[n] = 0; //null terminate
+    if (n < 1) { //script reported nothing
+    	printf("Error: unable to check version with script:\n %s\n", SHELLSCRIPT);
+    	return 3; //different from EXIT_SUCCESS (0) and EXIT_FAILURE (1)
+    }
+    if (nMatch == versionChars) { //versions match
+    	printf("Good news: Your version is up to date: %s\n", gitvers);
+    	return EXIT_SUCCESS;
+    }
+	//report error
+	char myvers[versionChars+1];
+    for (int i = 0; i < versionChars; i++) myvers[i] = kDCMvers[i];
+    myvers[versionChars] = 0; //null terminate
+    int myv = atoi(myvers + 5); //skip "v1.0."
+	int gitv = atoi(gitvers + 5); //skip "v1.0."
+	if (myv > gitv) {
+		printf("Warning: your version ('%s') more recent than stable release ('%s')\n %s\n", myvers, gitvers, HTMURL);
+		return 2; //different from EXIT_SUCCESS (0) and EXIT_FAILURE (1)
+	}
+	printf("Error: your version ('%s') is not the latest release ('%s')\n %s\n", myvers, gitvers, HTMURL);
+	return EXIT_FAILURE;
+} //checkUpToDate()
+
+#endif //shell script for UNIX only
 
 //#define mydebugtest
 int main(int argc, const char * argv[])
@@ -245,6 +295,10 @@ int main(int argc, const char * argv[])
                     opts.isCreateText = false;
                 else
                     opts.isCreateText = true;
+    		#if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
+            } else if (argv[i][1] == 'u') {
+				checkUpToDate();
+			#endif
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
