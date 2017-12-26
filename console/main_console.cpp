@@ -297,7 +297,7 @@ int main(int argc, const char * argv[])
                     opts.isCreateText = true;
     		#if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
             } else if (argv[i][1] == 'u') {
-				checkUpToDate();
+				return checkUpToDate();
 			#endif
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
@@ -340,7 +340,6 @@ int main(int argc, const char * argv[])
               if (seriesNumber < 0)
               	opts.numSeries = -1; //report series: convert none
               else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {
-
                   opts.seriesNumber[opts.numSeries] = seriesNumber;
                   opts.numSeries += 1;
                 }

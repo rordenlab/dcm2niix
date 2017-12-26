@@ -2477,8 +2477,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         free(imgM);
         return EXIT_FAILURE;
     }
-    if (opts.numSeries < 0) { //report series but do not convert
+    // Prevent these DICOM files from being reused.
+    for(int i = 0; i < nConvert; ++i)
+      dcmList[dcmSort[i].indx].converted2NII = 1;
+    if (opts.numSeries < 0) { //report series number but do not convert
     	printMessage("\t%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
+    	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
     checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
@@ -2515,7 +2519,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         free(imgM);
         return EXIT_SUCCESS;
     }
-
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
     int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
@@ -2586,20 +2589,13 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
         returnCode = nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
-
 #ifdef HAVE_R
     // Note that for R, only one image should be created per series
     // Hence the logical OR here
     if (returnCode == EXIT_SUCCESS || nii_saveNII(pathoutname,hdr0,imgM,opts) == EXIT_SUCCESS)
         nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts);
 #endif
-
     free(imgM);
-
-    // Prevent these DICOM files from being reused.
-    for(int i = 0; i < nConvert; ++i)
-      dcmList[dcmSort[i].indx].converted2NII = 1;
-
     return returnCode;//EXIT_SUCCESS;
 }// saveDcm2Nii()
 
