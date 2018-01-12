@@ -79,13 +79,14 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
     printf("  -c : comment stored as NIfTI aux_file (up to 24 characters)\n");
     if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
-    printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
+    //printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
      #define kQstr " %%q=sequence number,"
     #else
      #define kQstr ""
     #endif
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z sequence name; default '%s')\n", kQstr, opts.filename);
+    printf("  -g : generate defaults file (y/n, default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
@@ -200,6 +201,7 @@ int checkUpToDate() {
 int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
+    bool isSaveIni = false;
     readIniFile(&opts, argv); //set default preferences
 #ifdef mydebugtest
     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
@@ -257,8 +259,16 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isSortDTIbyBVal = false;
-                else
+                else {
                     opts.isSortDTIbyBVal = true;
+                    printf("Warning: sorting by b-value is deprecated: do not do this before undistortion.");
+                    printf(" https://www.nitrc.org/forum/message.php?msg_id=22867");
+                }
+            } else if ((argv[i][1] == 'g') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
+                    isSaveIni = true;
             } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -383,6 +393,7 @@ int main(int argc, const char * argv[])
 	#else
 	printf ("Conversion required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
     #endif
-    saveIniFile(opts);
+    if (isSaveIni)
+    	saveIniFile(opts);
     return EXIT_SUCCESS;
 }

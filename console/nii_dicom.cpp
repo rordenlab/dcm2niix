@@ -924,7 +924,32 @@ int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //rea
     return lBuffer[3]+(lBuffer[2]<<8)+(lBuffer[1]<<16)+(lBuffer[0]<<24); //shortint vs word?
 } //dcmInt()
 
-int dcmStrInt (const int lByteLength, const unsigned char lBuffer[]) {//read float stored as a string
+/*
+//the code below trims strings after integer
+// does not appear required not http://en.cppreference.com/w/cpp/string/byte/atoi
+//  "(atoi) Discards any whitespace characters until the first non-whitespace character is found, then takes as many characters as possible to form a valid integer"
+int dcmStrInt (const int lByteLength, const unsigned char lBuffer[]) {//read int stored as a string
+//returns first integer e.g. if 0043,1039 is "1000\8\0\0" the result will be 1000
+    if (lByteLength < 1) return 0; //error
+    bool isOK = false;
+    int i = 0;
+    for (i = 0; i <= lByteLength; i++) {
+        if ((lBuffer[i] >= '0') && (lBuffer[i] <= '9'))
+        	isOK = true;
+        else if (isOK)
+        	break;
+    }
+    if (!isOK) return 0; //error
+	char * cString = (char *)malloc(sizeof(char) * (i + 1));
+    cString[i] =0;
+    memcpy(cString, (const unsigned char*)(&lBuffer[0]), i);
+    int ret = atoi(cString);
+	free(cString);
+	return ret;
+} //dcmStrInt()
+*/
+
+int dcmStrInt (const int lByteLength, const unsigned char lBuffer[]) {//read int stored as a string
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
 //#else
@@ -2812,9 +2837,9 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
 
 void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
     //int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
-dcmStrInt(lLength, inbuf);
-
     ptvd->_dtiV[0] = dcmStrInt(lLength, inbuf);
+    if (ptvd->_dtiV[0] > 10000)
+    	printWarning("GE B-Value implausible. see https://github.com/rordenlab/dcm2niix/issues/149\n");
     //dd.CSA.numDti = 1;   // Always true for GE.
 
     _update_tvd(ptvd);
@@ -3538,6 +3563,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             	break;
             case kSeriesNum:
                 d.seriesNum =  dcmStrInt(lLength, &buffer[lPos]);
+
                 break;
             case kAcquNum:
                 d.acquNum = dcmStrInt(lLength, &buffer[lPos]);

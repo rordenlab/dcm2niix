@@ -1102,6 +1102,9 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
         free(vx);
         return NULL;
     }
+    //report values:
+    //for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
+    //    printMessage("%d bval= %g  bvec= %g %g %g\n",i, vx[i].V[0], vx[i].V[1], vx[i].V[2], vx[i].V[3]);
 	int minB0idx = 0;
     float minB0 = vx[0].V[0];
     for (int i = 0; i < numDti; i++)
@@ -2481,7 +2484,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     for(int i = 0; i < nConvert; ++i)
       dcmList[dcmSort[i].indx].converted2NII = 1;
     if (opts.numSeries < 0) { //report series number but do not convert
-    	printMessage("\t%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
+    	printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
@@ -3151,12 +3154,21 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     #if defined(_WIN64) || defined(_WIN32)
     strcpy(opts->pigzname,"pigz.exe");
     if (!is_exe(opts->pigzname)) {
+      #if defined(__APPLE__)
+        #ifdef myDisableZLib
+        printMessage("Compression requires %s in the same folder as the executable http://macappstore.org/pigz/\n",opts->pigzname);
+		#else //myUseZLib
+ 		printMessage("Compression will be faster with %s in the same folder as the executable http://macappstore.org/pigz/\n",opts->pigzname);
+		#endif
+        strcpy(opts->pigzname,"");
+      #else
         #ifdef myDisableZLib
         printMessage("Compression requires %s in the same folder as the executable\n",opts->pigzname);
 		#else //myUseZLib
  		printMessage("Compression will be faster with %s in the same folder as the executable\n",opts->pigzname);
 		#endif
         strcpy(opts->pigzname,"");
+       #endif
     } else
     	strcpy(opts->pigzname,".\\pigz"); //drop
     #else
@@ -3203,10 +3215,18 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
 			goto pigzFound;
     } //n
     //Failure:
-	#ifdef myDisableZLib
+    #if defined(__APPLE__)
+	  #ifdef myDisableZLib
+    	printMessage("Compression requires 'pigz' to be installed http://macappstore.org/pigz/\n");
+      #else //myUseZLib
+    	printMessage("Compression will be faster with 'pigz' installed http://macappstore.org/pigz/\n");
+      #endif
+	#else //if APPLE else ...
+	  #ifdef myDisableZLib
     	printMessage("Compression requires 'pigz' to be installed\n");
-    #else //myUseZLib
+      #else //myUseZLib
     	printMessage("Compression will be faster with 'pigz' installed\n");
+      #endif
     #endif
 	return;
   	pigzFound: //Success
@@ -3264,17 +3284,18 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
 #if defined(_WIN64) || defined(_WIN32)
 //windows has unusual file permissions for many users - lets save preferences to the registry
 void saveIniFile (struct TDCMopts opts) {
-HKEY hKey;
-if(RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\dcm2nii",0, KEY_SET_VALUE, &hKey) != ERROR_SUCCESS) {
+	HKEY hKey;
+	if(RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\dcm2nii",0, KEY_SET_VALUE, &hKey) != ERROR_SUCCESS) {
+		RegCloseKey(hKey);
+		return;
+	}
+	printMessage("Saving defaults to registry\n");
+	DWORD dwValue    = opts.isGz;
+	//RegSetValueEx(hKey,"isGZ", 0, REG_DWORD,reinterpret_cast<BYTE *>(&dwValue),sizeof(dwValue));
+	//RegSetValueExA(hKey, "isGZ", 0, REG_DWORD, (LPDWORD)&dwValue, sizeof(dwValue));
+	RegSetValueExA(hKey, "isGZ", 0, REG_DWORD, reinterpret_cast<BYTE *>(&dwValue), sizeof(dwValue));
+	RegSetValueExA(hKey,"filename",0, REG_SZ,(LPBYTE)opts.filename, strlen(opts.filename)+1);
 	RegCloseKey(hKey);
-	return;
-}
-DWORD dwValue    = opts.isGz;
-  //RegSetValueEx(hKey,"isGZ", 0, REG_DWORD,reinterpret_cast<BYTE *>(&dwValue),sizeof(dwValue));
-  //RegSetValueExA(hKey, "isGZ", 0, REG_DWORD, (LPDWORD)&dwValue, sizeof(dwValue));
-  RegSetValueExA(hKey, "isGZ", 0, REG_DWORD, reinterpret_cast<BYTE *>(&dwValue), sizeof(dwValue));
-  RegSetValueExA(hKey,"filename",0, REG_SZ,(LPBYTE)opts.filename, strlen(opts.filename)+1);
-  RegCloseKey(hKey);
 } //saveIniFile()
 
 void readIniFile (struct TDCMopts *opts, const char * argv[]) {
@@ -3328,6 +3349,7 @@ void saveIniFile (struct TDCMopts opts) {
     FILE *fp = fopen(opts.optsname, "w");
     //printMessage("%s\n",localfilename);
     if (fp == NULL) return;
+    printMessage("Saving defaults file %s\n", opts.optsname);
     fprintf(fp, "isGZ=%d\n", opts.isGz);
     fprintf(fp, "isBIDS=%d\n", opts.isCreateBIDS);
     fprintf(fp, "filename=%s\n", opts.filename);
