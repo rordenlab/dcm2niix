@@ -74,7 +74,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
     char bidsCh = 'n';
     if (opts.isCreateBIDS) bidsCh = 'y';
-    printf("  -b : BIDS sidecar (y/n/o(o=only: no NIfTI), default %c)\n", bidsCh);
+    printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bidsCh);
     if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
     printf("  -c : comment stored as NIfTI aux_file (up to 24 characters)\n");
@@ -86,7 +86,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
      #define kQstr ""
     #endif
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z sequence name; default '%s')\n", kQstr, opts.filename);
-    printf("  -g : generate defaults file (y/n, default n)\n");
+    printf("  -g : generate defaults file (y/n/o [o=only: reset and write defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
@@ -202,6 +202,7 @@ int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
     bool isSaveIni = false;
+    bool isResetDefaults = false;
     readIniFile(&opts, argv); //set default preferences
 #ifdef mydebugtest
     //strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
@@ -269,6 +270,15 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
                     isSaveIni = true;
+                if (((argv[i][0] == 'o') || (argv[i][0] == 'O')) && (!isResetDefaults)) {
+                	//reset defaults - do not read, but do write defaults
+                    isSaveIni = true;
+                    isResetDefaults = true;
+                    printf("Defaults reset\n");
+                    setDefaultOpts(&opts, argv);
+                    //this next line is optional, otherwise "dcm2niix -f %p_%s -d o" and "dcm2niix -d o -f %p_%s" will create different results
+                    i = 0; //re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
+                }
             } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
