@@ -384,7 +384,7 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
  * SUCH DAMAGE.
  */
 const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
-	register char *cur, *last;
+	char *cur, *last;
 	const char *cl = (const char *)l;
 	const char *cs = (const char *)s;
 	/* we need something to compare */
