@@ -20,7 +20,6 @@ set(PROGRAMS dcm2niix)
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # using Clang
-    add_definitions(-Wno-deprecated-register)
     add_definitions(-fno-caret-diagnostics)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
