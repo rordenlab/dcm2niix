@@ -372,6 +372,8 @@ int main(int argc, const char * argv[])
         } //if parameter is a command
         i ++; //read next parameter
     } //while parameters to read
+    if (isSaveIni)
+    	saveIniFile(opts);
     //printf("%d %d",argc,lastCommandArg);
     if (argc == (lastCommandArg+1))  { //+1 as array indexed from 0
         //the user did not provide an input filename, report filename structure
@@ -403,7 +405,7 @@ int main(int argc, const char * argv[])
 	#else
 	printf ("Conversion required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
     #endif
-    if (isSaveIni)
-    	saveIniFile(opts);
+    //if (isSaveIni) //we now save defaults earlier, in case of early termination.
+    //	saveIniFile(opts);
     return EXIT_SUCCESS;
 }
