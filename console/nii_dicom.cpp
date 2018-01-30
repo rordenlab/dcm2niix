@@ -3221,6 +3221,11 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             if (groupElement == kUnnest2) sqDepth--;
             //if (groupElement == kUnnest) geiisBug = false; //don't exit if there is a proprietary thumbnail
             lLength = 4;
+            //Next: Skip nested items if explicit length provided
+            //int nestLength = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            //if (nestLength < 0xFFFFFFFF) {
+            //	printMessage(" >>>>> %d\n", nestLength);
+            //}
         } else if (d.isExplicitVR) {
             vr[0] = buffer[lPos]; vr[1] = buffer[lPos+1];
             if (buffer[lPos+1] < 'A') {//implicit vr with 32-bit length
@@ -3299,7 +3304,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         // // Debugging
         // int groupItem = groupElement >> 16;
         // int groupGroup = groupElement - (groupItem << 16);
-        // printMessage("groupElement: (%04X, %04X)\n", groupGroup, groupItem);
+        // printMessage("groupElement: (%04X, %04X)\n", groupElement & 65535,groupElement>>16);
 
         switch ( groupElement ) {
             case kTransferSyntax: {
@@ -3992,6 +3997,15 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 break;
             case kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
+                if (isIconImageSequence) {
+                	int imgBytes = (d.xyzDim[1] * d.xyzDim[2] * int(d.bitsAllocated / 8));
+                	if (imgBytes == lLength) {
+                		printWarning("Assuming 7FE0,0010 refers to image not icon\n");
+                		isIconImageSequence = false;
+					} else {
+                		printWarning("Skipping 7FE0,0010: assuming it refers to icon not image\n");
+                	}
+                }
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos + (int)lFileOffset;
                 //geiisBug = false;
@@ -4018,7 +4032,6 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                     d.imageStart = (int)lPos + (int)lFileOffset;
                 isIconImageSequence = false;
                 break;
-
         } //switch/case for groupElement
         } //if nest
         if (isVerbose > 1) {
@@ -4101,8 +4114,6 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     //printMessage("Patient Position\t%g\t%g\t%g\tThick\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3]);
     //printMessage("Patient Position\t%g\t%g\t%g\tThick\t%g\tStart\t%d\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3], d.imageStart);
     // printMessage("ser %ld\n", d.seriesNum);
-
-
     //int kEchoMult = 100; //For Siemens/GE Series 1,2,3... save 2nd echo as 201, 3rd as 301, etc
     //if (d.seriesNum > 100)
     //    kEchoMult = 10; //For Philips data Saved as Series 101,201,301... save 2nd echo as 111, 3rd as 121, etc
