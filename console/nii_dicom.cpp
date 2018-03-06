@@ -631,7 +631,7 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     }
     snprintf(h->descrip,80, "%s",txt);
     if (strlen(d.imageComments) > 0)
-        snprintf(h->aux_file,24,"%s",d.imageComments);
+        snprintf(h->aux_file,24,"%.23s",d.imageComments);
     return headerDcm2NiiSForm(d,d2, h, isVerbose);
 } //headerDcm2Nii2()
 
