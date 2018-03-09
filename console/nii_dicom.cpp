@@ -3183,8 +3183,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
-
-    while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
+	while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
     	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
     		lFileOffset = lFileOffset + lPos;
@@ -3220,13 +3219,13 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             vr[0] = 'N';
             vr[1] = 'A';
             if (groupElement == kUnnest2) sqDepth--;
+            //if (sqDepth < 0) sqDepth = 0;
             //if (groupElement == kUnnest) geiisBug = false; //don't exit if there is a proprietary thumbnail
             lLength = 4;
             //Next: Skip nested items if explicit length provided
-            //int nestLength = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-            //if (nestLength < 0xFFFFFFFF) {
-            //	printMessage(" >>>>> %d\n", nestLength);
-            //}
+			//	int nestLength = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            //if (isVerbose > 1)
+            //	printMessage(" ---SQ\t%04x,%04x %d\n",   groupElement & 65535,groupElement>>16, sqDepth);
         } else if (d.isExplicitVR) {
             vr[0] = buffer[lPos]; vr[1] = buffer[lPos+1];
             if (buffer[lPos+1] < 'A') {//implicit vr with 32-bit length
@@ -3275,17 +3274,27 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         } //if explicit else implicit VR
         if (lLength == 0xFFFFFFFF) {
             lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
-            vr[0] = 'S';
-            vr[1] = 'Q';
+            //09032018 - do not count these as SQs: Horos does not count even groups
+            uint32_t special = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+            //http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
+            //uint32_t kItem = 0xFFFE + (0xE000 << 16 ); //#define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
+            //uint32_t kItemDelim = 0xFFFE + (0xE00D << 16);
+			uint32_t ksqDelim = 0xFFFE + (0xE0DD << 16);
+			if (special != ksqDelim) {
+            	vr[0] = 'S';
+            	vr[1] = 'Q';
+            }
         }
         if   ((vr[0] == 'S') && (vr[1] == 'Q')) {
             sqDepth++;
-            //printMessage("SQstart %d\n", sqDepth);
+            //if (isVerbose > 1)
+            //	printMessage(" +++SQ\t%04x,%04x %d\n",   groupElement & 65535,groupElement>>16, sqDepth);
         }
         if ((groupElement == kNest) || ((vr[0] == 'S') && (vr[1] == 'Q'))) nest++;
         //if ((groupElement == kUnnest) || (groupElement == kUnnest2)) { // <- ?
         if (groupElement == kUnnest) {
         	nest--;
+        	if (nest < 0) nest = 0;
         }
         //next: look for required tags
         if ((groupElement == kNest)  && (isEncapsulatedData)) {
@@ -3298,7 +3307,10 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
-        if (true) { //(nest <= 0) { //some Philips images have different 0020,0013
+
+        if ((isVerbose >= 0) || (nest <= 0)) { //(nest <= 0) { //verbose=-1: turbo mode skips nested tags Philips images have different 0020,0013
+
+        //xx if (true) { //(nest <= 0) { //some Philips images have different 0020,0013
         //verbose reporting :
         // printMessage("Pos %ld GroupElement %#08x,%#08x Length %d isLittle %d\n", lPos, (groupElement & 0xFFFF), (groupElement >> 16), lLength, d.isLittleEndian);
 
@@ -4048,9 +4060,9 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             					tagStr[pos] = 'x';
 				}
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, tagStr);
-            	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
+            	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\tsq=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
             } else
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, nest);
+            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, nest, sqDepth);
         	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);

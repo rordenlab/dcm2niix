@@ -324,7 +324,11 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0')) //0: verbose OFF
                     opts.isVerbose = 0;
-                else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
+                else if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {//-1: experimental SQ skipping: 'O'ptimized!? faster, does not get confused with Philips tags
+                    opts.isVerbose = -1;
+                    printf(">>Experimental SQ skipping enabled\n");
+
+                } else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
                     opts.isVerbose = 2;
                 else
                     opts.isVerbose = 1; //1: verbose ON
