@@ -2932,6 +2932,7 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
 
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 	struct TDICOMdata d = clear_dicom_data();
+	d.imageNum = 0; //not set
     strcpy(d.protocolName, ""); //erase dummy with empty
     strcpy(d.protocolName, ""); //erase dummy with empty
     strcpy(d.seriesDescription, ""); //erase dummy with empty
@@ -3574,8 +3575,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 d.acquNum = dcmStrInt(lLength, &buffer[lPos]);
                 break;
             case kImageNum:
-                //int dx = 3;
-                if (d.imageNum <= 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image as image1 in 2001,9000
+                if (d.imageNum < 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image again in 2001,9000, which can lead to duplicates
                 break;
             case kDimensionIndexValues:  // kImageNum is not enough for 4D series from Philips 5.*.
               {                                   // { necessary for initializing ndim.
@@ -4168,6 +4168,10 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
+    }
+    if (d.imageNum == 0) {
+    	printError("Image number (0020,0013) not found.\n");
+        d.imageNum = 1; //not set
     }
     if (multiBandFactor > d.CSA.multiBandFactor)
     	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header

@@ -2605,12 +2605,40 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 void fillTDCMsort(struct TDCMsort& tdcmref, const uint64_t indx, const struct TDICOMdata& dcmdata){
   // Copy the relevant parts of dcmdata to tdcmref.
   tdcmref.indx = indx;
+  //printf("series/image %d %d\n", dcmdata.seriesNum, dcmdata.imageNum);
   tdcmref.img = ((uint64_t)dcmdata.seriesNum << 32) + dcmdata.imageNum;
   for(int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
     tdcmref.dimensionIndexValues[i] = dcmdata.dimensionIndexValues[i];
 } // fillTDCMsort()
 
 int compareTDCMsort(void const *item1, void const *item2) {
+	//for quicksort http://blog.ablepear.com/2011/11/objective-c-tuesdays-sorting-arrays.html
+	struct TDCMsort const *dcm1 = (const struct TDCMsort *)item1;
+	struct TDCMsort const *dcm2 = (const struct TDCMsort *)item2;
+
+	int retval = 0;   // tie
+
+	if (dcm1->img < dcm2->img)
+		retval = -1;
+	else if (dcm1->img > dcm2->img)
+		retval = 1;
+	if(retval != 0) return retval; //sorted images
+	// Check the dimensionIndexValues (useful for enhanced DICOM 4D series).
+	// ->img is basically behaving as a (seriesNum, imageNum) sort key
+	// concatenated into a (large) integer for qsort.  That is unwieldy when
+	// dimensionIndexValues need to be compared, because the existence of
+	// uint128_t, uint256_t, etc. is not guaranteed.  This sorts by
+	// (seriesNum, ImageNum, div[0], div[1], ...), or if you think of it as a
+	// number, the dimensionIndexValues come after the decimal point.
+	for(int i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i){
+		if(dcm1->dimensionIndexValues[i] < dcm2->dimensionIndexValues[i])
+		  return -1;
+		else if(dcm1->dimensionIndexValues[i] > dcm2->dimensionIndexValues[i])
+		  return 1;
+	}
+	return retval;
+} //compareTDCMsort()
+/*int compareTDCMsort(void const *item1, void const *item2) {
     //for quicksort http://blog.ablepear.com/2011/11/objective-c-tuesdays-sorting-arrays.html
     struct TDCMsort const *dcm1 = (const struct TDCMsort *)item1;
     struct TDCMsort const *dcm2 = (const struct TDCMsort *)item2;
@@ -2642,7 +2670,7 @@ int compareTDCMsort(void const *item1, void const *item2) {
       }
     }
     return retval;
-} //compareTDCMsort()
+} //compareTDCMsort()*/
 
 int isSameFloatGE (float a, float b) {
 //Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
