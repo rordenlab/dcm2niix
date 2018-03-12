@@ -1447,6 +1447,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     bool isIndexSequential = true;
     for (int i = 0; i < kMaxDTI4D; i++)
         dti4D->S[i].V[0] = -1.0;
+    dti4D->S[0].sliceNumberMrPhilips = -1.0;
+    dti4D->S[0].sliceNumberMrPhilipsVol2 = -1.0;
     //d.dti4D = (TDTI *)malloc(kMaxDTI4D * sizeof(TDTI));
     while (p) {
         if (strlen(buff) < 1)
@@ -1924,11 +1926,16 @@ unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h,
     if (sliceBytes < 0)  return bImg;
     size_t volBytes = sliceBytes * h->dim[3];
     unsigned char *srcImg = (unsigned char *)malloc(volBytes);
+    //printMessage("Reordering %d volumes\n", dim4to7);
     for (int v = 0; v < dim4to7; v++) {
+    //for (int v = 0; v < 1; v++) {
+
     	size_t volStart = v * volBytes;
     	memcpy(&srcImg[0], &bImg[volStart], volBytes); //dest, src, size
     	for (int z = 0; z < h->dim[3]; z++) { //for each slice
 			int src = dti4D->S[z].sliceNumberMrPhilips - 1; //-1 as Philips indexes slices from 1 not 0
+			if ((v > 0) && (dti4D->S[0].sliceNumberMrPhilipsVol2 >= 0))
+				src = dti4D->S[z].sliceNumberMrPhilipsVol2 - 1;
 			//printMessage("Reordering volume %d slice %d\n", v, dti4D->S[z].sliceNumberMrPhilips);
 			if ((src < 0) || (src >= h->dim[3])) continue;
 			memcpy(&bImg[volStart+(src*sliceBytes)], &srcImg[z*sliceBytes], sliceBytes); //dest, src, size
@@ -2938,6 +2945,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     strcpy(d.seriesDescription, ""); //erase dummy with empty
     strcpy(d.sequenceName, ""); //erase dummy with empty
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
+	dti4D->S[0].sliceNumberMrPhilips = -1;
+	dti4D->S[0].sliceNumberMrPhilipsVol2  = -1;
 
     struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 
@@ -3144,14 +3153,13 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
-uint32_t kNest = 0xFFFE +(0xE000 << 16 ); //#define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
-uint32_t kUnnest = 0xFFFE +(0xE00D << 16 ); //#define  kUnnest  0xFFFE +(0xE00D << 16 ) //ItemDelimitationItem [length defined] http://www.dabsoft.ch/dicom/5/7.5/
-uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD << 16 )//SequenceDelimitationItem [length undefined]
-    int nest = 0;
-    //double zSpacing = -1.0l; //includes slice thickness plus gap
+uint32_t kItemTag = 0xFFFE +(0xE000 << 16 );
+uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
+uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     int locationsInAcquisitionGE = 0;
     int locationsInAcquisitionPhilips = 0;
     int imagesInAcquisition = 0;
+    int sliceNumberMrPhilips = 0;
     uint32_t lLength;
     uint32_t groupElement;
     long lPos = 0;
@@ -3180,6 +3188,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
     bool isMosaic = false;
     int patientPositionNum = 0;
     int sqDepth = 0;
+    int sqDepthPrivate = 0;
+    int sqEndPrivate = -1; //used to skip private SQs that provide explicit length
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
@@ -3213,19 +3223,11 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         } //transfer syntax requests switching VR after group 0001
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
-    if ((groupElement == kUnnest) || (groupElement == kUnnest2)) isIconImageSequence = false;
-    if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) && (!isEncapsulatedData)) {
-        //if (((groupElement == kNest) || (groupElement == kUnnest) || (groupElement == kUnnest2)) ) {
+	if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
+    if (((groupElement == kItemTag) || (groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) && (!isEncapsulatedData)) {
             vr[0] = 'N';
             vr[1] = 'A';
-            if (groupElement == kUnnest2) sqDepth--;
-            //if (sqDepth < 0) sqDepth = 0;
-            //if (groupElement == kUnnest) geiisBug = false; //don't exit if there is a proprietary thumbnail
             lLength = 4;
-            //Next: Skip nested items if explicit length provided
-			//	int nestLength = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-            //if (isVerbose > 1)
-            //	printMessage(" ---SQ\t%04x,%04x %d\n",   groupElement & 65535,groupElement>>16, sqDepth);
         } else if (d.isExplicitVR) {
             vr[0] = buffer[lPos]; vr[1] = buffer[lPos+1];
             if (buffer[lPos+1] < 'A') {//implicit vr with 32-bit length
@@ -3275,29 +3277,34 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
         if (lLength == 0xFFFFFFFF) {
             lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
             //09032018 - do not count these as SQs: Horos does not count even groups
-            uint32_t special = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+            //uint32_t special = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+
             //http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
-            //uint32_t kItem = 0xFFFE + (0xE000 << 16 ); //#define kNest 0xFFFE +(0xE000 << 16 ) //Item follows SQ
-            //uint32_t kItemDelim = 0xFFFE + (0xE00D << 16);
-			uint32_t ksqDelim = 0xFFFE + (0xE0DD << 16);
-			if (special != ksqDelim) {
+
+			//if (special != ksqDelim) {
             	vr[0] = 'S';
             	vr[1] = 'Q';
-            }
+            //}
         }
         if   ((vr[0] == 'S') && (vr[1] == 'Q')) {
-            sqDepth++;
-            //if (isVerbose > 1)
-            //	printMessage(" +++SQ\t%04x,%04x %d\n",   groupElement & 65535,groupElement>>16, sqDepth);
-        }
-        if ((groupElement == kNest) || ((vr[0] == 'S') && (vr[1] == 'Q'))) nest++;
-        //if ((groupElement == kUnnest) || (groupElement == kUnnest2)) { // <- ?
-        if (groupElement == kUnnest) {
-        	nest--;
-        	if (nest < 0) nest = 0;
-        }
+			//http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
+			uint32_t special = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+            uint32_t slen = dcmInt(4,&buffer[lPos+4],d.isLittleEndian);
+			uint32_t kUndefinedLen = 0xFFFFFFFF;
+			if (special == kSequenceDelimitationItemTag) {
+				//sqDepth--;
+				//printMessage(" SPECIAL >>>>t%04x,%04x  %08x %d\n",   groupElement & 65535,groupElement>>16, special, slen);
+			} else if (slen == kUndefinedLen) {
+				sqDepth++;
+				if ((sqDepthPrivate == 0) && ((groupElement & 65535) % 2))
+					sqDepthPrivate = sqDepth; //in a private SQ: ignore contents
+			} else if ((groupElement & 65535) % 2) //private SQ of known length - lets jump over this!
+				slen = lFileOffset + slen;
+				if (slen > sqEndPrivate)
+					sqEndPrivate = slen; //if nested private SQs, remember the end address of the top parent SQ
+		}
         //next: look for required tags
-        if ((groupElement == kNest)  && (isEncapsulatedData)) {
+        if ((groupElement == kItemTag)  && (isEncapsulatedData)) {
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
             //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
             if (d.imageBytes > 128) {
@@ -3307,23 +3314,18 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
-
-        if ((isVerbose >= 0) || (nest <= 0)) { //(nest <= 0) { //verbose=-1: turbo mode skips nested tags Philips images have different 0020,0013
-
-        //xx if (true) { //(nest <= 0) { //some Philips images have different 0020,0013
-        //verbose reporting :
-        // printMessage("Pos %ld GroupElement %#08x,%#08x Length %d isLittle %d\n", lPos, (groupElement & 0xFFFF), (groupElement >> 16), lLength, d.isLittleEndian);
-
-        // // Debugging
-        // int groupItem = groupElement >> 16;
-        // int groupGroup = groupElement - (groupItem << 16);
-        // printMessage("groupElement: (%04X, %04X)\n", groupElement & 65535,groupElement>>16);
-
+        if (groupElement == kSequenceDelimitationItemTag) {
+        	sqDepth--;
+        	if (sqDepth < sqDepthPrivate) {
+        		sqDepthPrivate = 0; //no longer in a private SQ
+        		is2005140FSQ = false;
+        	}
+        }
+        if (sqDepth < 0) sqDepth = 0;
         switch ( groupElement ) {
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], transferSyntax);
-                //printMessage("%d transfer syntax>>> '%s'\n", compressFlag, transferSyntax);
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
                 else if  (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
@@ -3539,8 +3541,14 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             case kSeriesInstanceUID : // 0020, 000E
             	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
                 break;
-            case kPatientPosition : // 0020, 0032, ImagePositionPatient
-                if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (is2005140FSQ)) {
+            case kPatientPosition : { // 0020,0032, ImagePositionPatient
+                bool ignorePatientPos = false;
+                if (d.manufacturer == kMANUFACTURER_PHILIPS) {
+                	if (is2005140FSQ) ignorePatientPos = true;
+                	if ((lFileOffset + lPos) < sqEndPrivate) ignorePatientPos = true; //inside private SQ, SQ has defined length
+                	if (sqDepthPrivate > 0) ignorePatientPos = true; //inside private SQ, SQ has undefined length
+                }
+                if (ignorePatientPos) {
                     if (!is2005140FSQwarned)
                         printWarning("Philips R3.2.2 can report different positions for the same slice. Attempting patch.\n");
                     is2005140FSQwarned = true;
@@ -3567,9 +3575,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                     set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
                     if (isVerbose > 1)
                     	printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
-
                 } //not after 2005,140F
-                break;
+                break; }
             case kInPlanePhaseEncodingDirection:
                 d.phaseEncodingRC = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
                 break;
@@ -3887,17 +3894,23 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             //            // part of buffer[lPos].
             //   }
             //   break;
-            case kSliceNumberMrPhilips :
+            case kSliceNumberMrPhilips : {
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
-            	/*if ((d.patientPositionNumPhilips >= kMaxDTI4D) || (d.patientPositionNumPhilips >= locationsInAcquisitionPhilips)) {
-            		d.patientPositionNumPhilips++;
-            		break;
-            	}*/
-				if ((locationsInAcquisitionPhilips > 0) && (d.patientPositionNumPhilips == locationsInAcquisitionPhilips))
-					break; //we have acquired all slices in volume (e.g. all volumes after 1st for XYZT storage
 				int sliceNumber;
             	sliceNumber = dcmStrInt(lLength, &buffer[lPos]);
+            	//printf("====> %d %d %d\n", locationsInAcquisitionPhilips, d.patientPositionNumPhilips, sliceNumber);
+				if ((sliceNumberMrPhilips >= locationsInAcquisitionPhilips) && (sliceNumberMrPhilips < (2*locationsInAcquisitionPhilips)) ) {
+            		int p = sliceNumberMrPhilips - locationsInAcquisitionPhilips;
+            		if (p < kMaxDTI4D)
+            			dti4D->S[p].sliceNumberMrPhilipsVol2 = sliceNumber;
+					if ((p > 0) && (abs(dti4D->S[p].sliceNumberMrPhilipsVol2 - dti4D->S[p -1].sliceNumberMrPhilipsVol2) > 1) )
+						d.isSlicesSpatiallySequentialPhilips = false;
+            	}
+            	sliceNumberMrPhilips ++;
+				if ((locationsInAcquisitionPhilips > 0) && (d.patientPositionNumPhilips == locationsInAcquisitionPhilips))
+					break; //we have acquired all slices in volume (e.g. all volumes after 1st for XYZT storage
+
 				if ((d.patientPositionNumPhilips > 0) && (sliceNumber == dti4D->S[d.patientPositionNumPhilips-1].sliceNumberMrPhilips)  )
 					break; //repeated spatial position (e.g. data saved XYTZ so several time points
 				if (d.patientPositionNumPhilips >= kMaxDTI4D) {
@@ -3919,7 +3932,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             	}
 				if (isVerbose > 1)
 					printMessage("slice %d is spatial position %d\n", d.patientPositionNumPhilips, sliceNumber);
-            	break;
+            	break; }
             case kNumberOfSlicesMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
@@ -4045,7 +4058,7 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
                 isIconImageSequence = false;
                 break;
         } //switch/case for groupElement
-        } //if nest
+
         if (isVerbose > 1) {
         	if ((lLength > 12) && (lLength < 128)) { //if length is greater than 8 bytes (+4 hdr) the data must be a string [or image data]
         		char tagStr[kDICOMStr];
@@ -4060,9 +4073,8 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
             					tagStr[pos] = 'x';
 				}
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, tagStr);
-            	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\tsq=%d\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lPos, nest, tagStr);
             } else
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tnest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, nest, sqDepth);
+            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tsq=%d  %d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos,  sqDepth, sqDepthPrivate);
         	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
@@ -4158,13 +4170,15 @@ uint32_t kUnnest2 = 0xFFFE +(0xE0DD << 16 ); //#define  kUnnest2 0xFFFE +(0xE0DD
 	//     	else
 	//     		printWarning("Spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
 	//     }
-	if ((d.numberOfDynamicScans < 2) && (!d.isSlicesSpatiallySequentialPhilips) && (!isnan(patientPositionStartPhilips[1])) && (!isnan(patientPositionEndPhilips[1]))) {
-		//to do: check for d.numberOfDynamicScans > 1
+	if ( (!d.isSlicesSpatiallySequentialPhilips) && (!isnan(patientPositionStartPhilips[1])) && (!isnan(patientPositionEndPhilips[1]))) {
 		for (int k = 0; k < 4; k++) {
 			d.patientPosition[k] = patientPositionStartPhilips[k];
 			d.patientPositionLast[k] = patientPositionEndPhilips[k];
 		}
-		printMessage("Slices not spatially contiguous: please check output [new feature]\n");
+		if (d.numberOfDynamicScans > 1)
+			printError("4D data with non-contiguous slices: please check output [newest feature]\n");
+		else
+			printMessage("Slices not spatially contiguous: please check output [new feature]\n");
     }
     if (isVerbose) {
         printMessage("%s\n patient position (0020,0032)\t%g\t%g\t%g\n",fname, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);

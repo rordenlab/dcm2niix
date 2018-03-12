@@ -77,6 +77,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     struct TDTI {
         float V[4];
         int sliceNumberMrPhilips;
+        int sliceNumberMrPhilipsVol2;
     };
     struct TDTI4D {
         struct TDTI S[kMaxDTI4D];
