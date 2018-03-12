@@ -693,6 +693,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.bodyPartExamined,"");
     d.phaseEncodingLines = 0;
     d.patientPositionSequentialRepeats = 0;
+    d.patientPositionRepeats = 0;
     d.isHasPhase = false;
     d.isHasMagnitude = false;
     d.sliceOrient = kSliceOrientUnknown;
@@ -704,6 +705,7 @@ struct TDICOMdata clear_dicom_data() {
     d.lastScanLoc = NAN;
     d.TR = 0.0;
     d.TE = 0.0;
+    d.TE2 = 0.0;
     d.TI = 0.0;
     d.flipAngle = 0.0;
     d.bandwidthPerPixelPhaseEncode = 0.0;
@@ -750,6 +752,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isSigned = false; //default is unsigned!
     d.isFloat = false; //default is for integers, not single or double precision
     d.isResampled = false; //assume data not resliced to remove gantry tilt problems
+    d.isLocalizer = false;
     d.compressionScheme = 0; //none
     d.isExplicitVR = true;
     d.isLittleEndian = true; //DICOM initially always little endian
@@ -2710,7 +2713,13 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         hdr->dim[0] = 4;
     }
     if ((hdr->dim[0] > 3) && (dcm.patientPositionSequentialRepeats > 1)) //swizzle 3rd and 4th dimension (Philips stores time as 3rd dimension)
-        img = nii_XYTZ_XYZT(img, hdr,dcm.patientPositionSequentialRepeats );
+        img = nii_XYTZ_XYZT(img, hdr,dcm.patientPositionSequentialRepeats);
+    if (((dcm.patientPositionSequentialRepeats * 2) == dcm.patientPositionRepeats) && (dcm.isHasPhase) && (dcm.isHasMagnitude)) {
+    	hdr->dim[3] = hdr->dim[3] / 2;
+		hdr->dim[4] = hdr->dim[4] * 2;
+		hdr->dim[0] = 4;
+		printMessage("Splitting Phase+Magnitude into two volumes for %d slices (Z) and %d volumes (T).\n",hdr->dim[3], hdr->dim[4]);
+    }
     headerDcm2NiiSForm(dcm,dcm, hdr, false);
     return img;
 } //nii_loadImgXL()
@@ -2725,6 +2734,12 @@ int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
     }
     return 0;
 } //isSQ()
+
+int isSameFloatGE (float a, float b) {
+//Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
+    //return (a == b); //niave approach does not have any tolerance for rounding errors
+    return (fabs (a - b) <= 0.0001);
+}
 
 int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10 compliant)
     FILE *fp = fopen(fname, "rb");
@@ -3053,6 +3068,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kZThick  0x0018+(0x0050 << 16 )
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
+#define  kEffectiveTE  0x0018+(0x9082 << 16 )
 #define  kTI  0x0018+(0x0082 << 16) // Inversion time
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
 #define  kMagneticFieldStrength  0x0018+(0x0087 << 16 ) //DS
@@ -3290,7 +3306,11 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 			//http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
 			uint32_t special = dcmInt(4,&buffer[lPos],d.isLittleEndian);
             uint32_t slen = dcmInt(4,&buffer[lPos+4],d.isLittleEndian);
+            //if (d.isExplicitVR)
+            //	slen = dcmInt(4,&buffer[lPos+8],d.isLittleEndian);
 			uint32_t kUndefinedLen = 0xFFFFFFFF;
+			//printError(" SPECIAL >>>>t%04x,%04x  %08x %08x\n",   groupElement & 65535,groupElement>>16, special, slen);
+			//return d;
 			if (special == kSequenceDelimitationItemTag) {
 				//sqDepth--;
 				//printMessage(" SPECIAL >>>>t%04x,%04x  %08x %d\n",   groupElement & 65535,groupElement>>16, special, slen);
@@ -3435,8 +3455,11 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	break;
             case kComplexImageComponent:
                 if (lLength < 2) break;
-                d.isHasPhase = (buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H');
-                d.isHasMagnitude = (buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A');
+                //not: it is possible for Philips enhanced DICOM to store BOTH magnitude and phase in the same image
+                if ((buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H'))
+                	d.isHasPhase = true;
+                if ((buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A'))
+                	d.isHasMagnitude = true;
                 break;
             case kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
@@ -3572,9 +3595,10 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                                 d.patientPositionSequentialRepeats = patientPositionNum-1;
                         } //if different position from 1st slice in file
                     } //if not first slice in file
+                    if (isAtFirstPatientPosition) d.patientPositionRepeats ++;
                     set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
                     if (isVerbose > 1)
-                    	printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
+                    	printMessage("   Patient Position 0020,0032 (#,#repeat,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, d.patientPositionSequentialRepeats, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
                 } //not after 2005,140F
                 break; }
             case kInPlanePhaseEncodingDirection:
@@ -3656,9 +3680,20 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             case kTR :
                 d.TR = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case kTE :
-            	d.TE = dcmStrFloat(lLength, &buffer[lPos]);
-                break;
+            case kTE : {
+            	double te = dcmStrFloat(lLength, &buffer[lPos]);
+            	if (d.TE <= 0.0)
+            		d.TE = te;
+            	else if (d.TE != te)
+            		d.TE2 = te;
+                break; }
+            case kEffectiveTE : {
+            	double te = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	if (d.TE <= 0.0)
+            		d.TE = te;
+            	else if (d.TE != te)
+            		d.TE2 = te;
+                break; }
             case kTI :
                 d.TI = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -3681,7 +3716,15 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	d.phaseFieldofView = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kPixelBandwidth :
+				/*if (d.manufacturer == kMANUFACTURER_PHILIPS) {
+					//Private SQs can report different (more precise?) pixel bandwidth values than in the main header!
+					//  https://github.com/rordenlab/dcm2niix/issues/170
+                	if (is2005140FSQ) break;
+                	if ((lFileOffset + lPos) < sqEndPrivate) break; //inside private SQ, SQ has defined length
+                	if (sqDepthPrivate > 0) break; //inside private SQ, SQ has undefined length
+                }*/
             	d.pixelBandwidth = dcmStrFloat(lLength, &buffer[lPos]);
+            	//printWarning(" PixelBandwidth (0018,0095)====> %g @%d\n", d.pixelBandwidth, lPos);
             	break;
         	case kAcquisitionMatrix :
 				if (lLength == 8) {
@@ -3899,7 +3942,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             		break;
 				int sliceNumber;
             	sliceNumber = dcmStrInt(lLength, &buffer[lPos]);
-            	//printf("====> %d %d %d\n", locationsInAcquisitionPhilips, d.patientPositionNumPhilips, sliceNumber);
+            	printError("====> %d %d %d\n", locationsInAcquisitionPhilips, d.patientPositionNumPhilips, sliceNumber);
 				if ((sliceNumberMrPhilips >= locationsInAcquisitionPhilips) && (sliceNumberMrPhilips < (2*locationsInAcquisitionPhilips)) ) {
             		int p = sliceNumberMrPhilips - locationsInAcquisitionPhilips;
             		if (p < kMaxDTI4D)
@@ -4013,10 +4056,24 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             case kOrientationACR : //use in emergency if kOrientation is not present!
                 if (!isOrient) dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 break;
-            case kOrientation :
+            case kOrientation : {
+                if (isOrient) { //already read orient - read for this slice to see if it varies (localizer)
+                	float orient[7];
+                	dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, orient);
+                	if ((!isSameFloatGE(d.orient[1], orient[1]) || !isSameFloatGE(d.orient[2], orient[2]) ||  !isSameFloatGE(d.orient[3], orient[3]) ||
+    						!isSameFloatGE(d.orient[4], orient[4]) || !isSameFloatGE(d.orient[5], orient[5]) ||  !isSameFloatGE(d.orient[6], orient[6]) ) ) {
+						d.isLocalizer = true;
+						if ((isVerbose > 1))
+							printMessage("slices not stacked: orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
+							d.orient[1], d.orient[2], d.orient[3],d.orient[4], d.orient[5], d.orient[6],
+							orient[1], orient[2], orient[3],orient[4], orient[5], orient[6]);
+               		}
+
+                }
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
+
                 isOrient = true;
-                break;
+                break; }
             case kImagesInAcquisition :
                 imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
@@ -4074,7 +4131,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				}
             	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, tagStr);
             } else
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tsq=%d  %d\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos,  sqDepth, sqDepthPrivate);
+            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tsq=%d  %d %d %c%c\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos,  sqDepth, sqDepthPrivate, sqEndPrivate, vr[0], vr[1]);
         	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
@@ -4170,6 +4227,19 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 	//     	else
 	//     		printWarning("Spatial orientation ambiguous (tag 0020,0037 not found): %s\n", fname);
 	//     }
+/*if (d.isHasMagnitude)
+	printError("=====> mag %d %d\n", d.patientPositionRepeats, d.patientPositionSequentialRepeats );
+if (d.isHasPhase)
+	printError("=====> phase %d %d\n", d.patientPositionRepeats, d.patientPositionSequentialRepeats );
+
+	printError("=====> reps %d %d\n", d.patientPositionRepeats, d.patientPositionSequentialRepeats );
+*/
+	if ((d.patientPositionSequentialRepeats > 1) && ( (d.xyzDim[3] % d.patientPositionSequentialRepeats) == 0 )) {
+		//will require Converting XYTZ to XYZT
+		d.numberOfDynamicScans = d.xyzDim[3] / d.patientPositionSequentialRepeats;
+		d.xyzDim[4] = d.xyzDim[3] / d.numberOfDynamicScans;
+		d.xyzDim[3] = d.numberOfDynamicScans;
+	}
 	if ( (!d.isSlicesSpatiallySequentialPhilips) && (!isnan(patientPositionStartPhilips[1])) && (!isnan(patientPositionEndPhilips[1]))) {
 		for (int k = 0; k < 4; k++) {
 			d.patientPosition[k] = patientPositionStartPhilips[k];

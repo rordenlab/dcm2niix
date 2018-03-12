@@ -109,7 +109,6 @@ void dropTrailingFileSep(char *path) { //
    	path[len] = '\0';
 }
 
-
 void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
 {
     const char *filename = strrchr(path, '/'); //UNIX
@@ -784,7 +783,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR );
 	if (d.echoNum > 1) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
-    json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
+	if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
+	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	float pf = 1.0f; //partial fourier
@@ -874,7 +874,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
     if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
 	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the
@@ -885,7 +884,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
-
 	// Calculate true echo spacing (should match what Siemens reports on the console)
 	// i.e., should match "echoSpacing" extracted from the ASCII CSA header, when that exists
     double trueESfactor = 1.0;
@@ -909,7 +907,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     // https://github.com/rordenlab/dcm2niix/issues/130
     if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
 	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
-
     json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth );
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
@@ -1445,8 +1442,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             }
             if (f == 'N')
                 strcat (outname,dcm.patientName);
-            if (f == 'P')
+            if (f == 'P') {
                 strcat (outname,dcm.protocolName);
+                if (strlen(dcm.protocolName) < 1)
+                	printWarning("Unable to append protocol name (0018,1030) to filename (it is empty).\n");
+            }
             if (f == 'Q')
                 strcat (outname,dcm.scanningSequence);
             if (f == 'S') {
@@ -1514,9 +1514,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
     }
-    if (dcm.isHasPhase)
-    	strcat (outname,"_ph"); //manufacturer name not available
-
+    if (dcm.isHasPhase) {
+    	strcat (outname,"_ph"); //has phase map
+    	if (dcm.isHasMagnitude)
+    		strcat (outname,"Mag"); //Philips enhanced with BOTH phase and Magnitude in single file
+    }
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
@@ -2341,7 +2343,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
-    if ((opts.isIgnoreDerivedAnd2D) && ((strcmp(dcmList[indx].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) ) {
+    if ((opts.isIgnoreDerivedAnd2D) && ((dcmList[indx].isLocalizer) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) ) {
     	printMessage("Ignoring localizer (sequence %s) of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
@@ -2672,11 +2674,11 @@ int compareTDCMsort(void const *item1, void const *item2) {
     return retval;
 } //compareTDCMsort()*/
 
-int isSameFloatGE (float a, float b) {
+/*int isSameFloatGE (float a, float b) {
 //Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
     //return (a == b); //niave approach does not have any tolerance for rounding errors
     return (fabs (a - b) <= 0.0001);
-}
+}*/
 
 int isSameFloatDouble (double a, double b) {
     //Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
