@@ -311,6 +311,8 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
        printWarning("Saving %d DTI gradients. Validate vectors (matrix had a negative determinant).\n", d->CSA.numDti); //perhaps Siemens sagittal
     } else if ( d->sliceOrient == kSliceOrientTra) {
         printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
+    } else if ( d->sliceOrient == kSliceOrientUnknown) {
+    	printWarning("Saving %d DTI gradients. Validate vectors (image slice orientation not reported, e.g. 2001,100B).\n", d->CSA.numDti);
     } else {
         printWarning("Saving %d DTI gradients. Validate vectors (images are not axial slices).\n", d->CSA.numDti);
     }
@@ -783,7 +785,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR );
 	if (d.echoNum > 1) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
-	if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
+	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
@@ -1131,35 +1133,35 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
 	}
 	if (*numADC > 0) {
-                // DWIs (i.e. short diffusion scans with too few directions to
-                // calculate tensors...they typically acquire b=0 + 3 b > 0 so
-                // the isotropic trace or MD can be calculated) often come as
-                // b=0 and trace pairs, with the b=0 and trace in either order,
-                // and often as "ORIGINAL", even though the trace is not.
-                // The bval file is needed for downstream processing to know
-                // * which is the b=0 and which is the trace, and
-                // * what b is for the trace,
-                // so dcm2niix should *always* write the bval and bvec files,
-                // AND include the b for the trace for DWIs.
-                // One hackish way to accomplish that is to set *numADC = 0
-                // when *numADC == 1 && numDti == 2.
-                // - Rob Reid, 2017-11-29.
-                if ((*numADC == 1) && ((numDti - *numADC) < 2)){
-                    *numADC = 0;
-                    printMessage("Note: this appears to be a b=0+trace DWI; ADC/trace removal has been disabled.\n");
-                }
-                else{
-                  if ((numDti - *numADC) < 2) {
-                    if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
-                      printWarning("No bvec/bval files created: only single value after ADC excluded\n");
-                    *numADC = 0;
-                    free(bvals);
-                    free(vx);
-                    return NULL;
-                  }
-                  printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n",
-                               *numADC);
-                }
+		// DWIs (i.e. short diffusion scans with too few directions to
+		// calculate tensors...they typically acquire b=0 + 3 b > 0 so
+		// the isotropic trace or MD can be calculated) often come as
+		// b=0 and trace pairs, with the b=0 and trace in either order,
+		// and often as "ORIGINAL", even though the trace is not.
+		// The bval file is needed for downstream processing to know
+		// * which is the b=0 and which is the trace, and
+		// * what b is for the trace,
+		// so dcm2niix should *always* write the bval and bvec files,
+		// AND include the b for the trace for DWIs.
+		// One hackish way to accomplish that is to set *numADC = 0
+		// when *numADC == 1 && numDti == 2.
+		// - Rob Reid, 2017-11-29.
+		if ((*numADC == 1) && ((numDti - *numADC) < 2)){
+			*numADC = 0;
+			printMessage("Note: this appears to be a b=0+trace DWI; ADC/trace removal has been disabled.\n");
+		}
+		else{
+		  if ((numDti - *numADC) < 2) {
+			if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
+			  printWarning("No bvec/bval files created: only single value after ADC excluded\n");
+			*numADC = 0;
+			free(bvals);
+			free(vx);
+			return NULL;
+		  }
+		  printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n",
+					   *numADC);
+		}
 	}
 	//sort ALL including ADC
 	int * volOrderIndex = (int *) malloc(numDti * sizeof(int));
@@ -1200,7 +1202,6 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	if (!isSequential)
 	  printMessage("DTI volumes re-ordered by ascending b-value\n");
 	dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
-
     geCorrectBvecs(&dcmList[indx0],sliceDir, vx);
     siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx);
     if (!opts.isFlipY ) { //!FLIP_Y&& (dcmList[indx0].CSA.mosaicSlices < 2) mosaics are always flipped in the Y direction
@@ -2332,7 +2333,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
 }//checkSliceTiming
 
-int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
+int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int vol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
@@ -2353,7 +2354,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     }
     bool saveAs3D = dcmList[indx].isHasPhase;
     struct nifti_1_header hdr0;
-    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose);
+    unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose, dti4D);
     if (strlen(opts.imageComments) > 0) {
     	for (int i = 0; i < 24; i++) hdr0.aux_file[i] = 0; //remove dcm.imageComments
         snprintf(hdr0.aux_file,24,"%s",opts.imageComments);
@@ -2443,6 +2444,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             hdr0.dim[5] = nConvert;
             hdr0.dim[0] = 5;
         }
+
         /*if (nConvert > 1) { //next determine if TR is true time between volumes
         	double startTime = dcmList[indx0].acquisitionTime;
         	double endTime = startTime;
@@ -2461,7 +2463,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
         for (int i = 1; i < nConvert; i++) { //stack additional images
             indx = dcmSort[i].indx;
             //if (headerDcm2Nii(dcmList[indx], &hdrI) == EXIT_FAILURE) return EXIT_FAILURE;
-            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose);
+            img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose, dti4D);
             if (img == NULL) return EXIT_FAILURE;
             if ((hdr0.dim[1] != hdrI.dim[1]) || (hdr0.dim[2] != hdrI.dim[2]) || (hdr0.bitpix != hdrI.bitpix)) {
                 printError("Image dimensions differ %s %s",nameList->str[dcmSort[0].indx], nameList->str[indx]);
@@ -2472,6 +2474,18 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
             memcpy(&imgM[(uint64_t)i*imgsz], &img[0], imgsz);
             free(img);
         }
+    }
+    if ((vol >= 0) && (hdr0.dim[4] > 1) && (vol < hdr0.dim[4])) {
+    	size_t imgsz4D = imgsz;
+    	hdr0.dim[0] = 3; //3D
+    	hdr0.dim[4] = 1;
+    	imgsz = nii_ImgBytes(hdr0);
+		unsigned char *img4D = (unsigned char *)malloc(imgsz4D);
+    	memcpy(&img4D[0], &imgM[0], imgsz4D);
+    	free(imgM);
+    	imgM = (unsigned char *)malloc(imgsz);
+    	memcpy(&imgM[0], &img4D[vol * imgsz], imgsz);
+    	free(img4D);
     }
     char pathoutname[2048] = {""};
     if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
@@ -2530,8 +2544,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0);
-    if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
-    	nii_reorderSlices(imgM, &hdr0, dti4D);
+    //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
+    //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
     	printWarning("Check that 2D images are not mirrored.\n");
 #ifndef HAVE_R
@@ -2603,6 +2617,49 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
     free(imgM);
     return returnCode;//EXIT_SUCCESS;
 }// saveDcm2Nii()
+
+int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
+	//this wrapper does nothing if all the images share the same echo time and scale
+	// however, it segments images when these properties vary
+	uint64_t indx = dcmSort[0].indx;
+    if ((!dcmList[indx].isScaleOrTEVaries) || (dcmList[indx].xyzDim[4] < 2))
+		return saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, -1);
+	if ((dcmList[indx].xyzDim[4]) && (dti4D->sliceOrder[0] < 0)) {
+		printError("Unexpected error for image with varying echo time or intensity scaling\n");
+		return EXIT_FAILURE;
+	}
+
+	int echoNum[kMaxDTI4D];
+	int echo = 1;
+	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
+		echoNum[i] = 0;
+	echoNum[0] = 1;
+	for (int i = 1; i < dcmList[indx].xyzDim[4]; i++) {
+		for (int j = 0; j < i; j++)
+			if (dti4D->TE[i] == dti4D->TE[j]) echoNum[i] = echoNum[j];
+		if (echoNum[i] == 0) {
+			echo++;
+			echoNum[i] = echo;
+		}
+
+	}
+	if (echo > 1) dcmList[indx].isMultiEcho = true;
+	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
+		//printMessage("volume %d TE=%g Slope=%g Inter=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[i], dti4D->intenIntercept[i], dti4D->isPhase[i] );
+		dcmList[indx].TE = dti4D->TE[i];
+		dcmList[indx].intenScale = dti4D->intenScale[i];
+		dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
+		dcmList[indx].isHasPhase = dti4D->isPhase[i];
+		dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
+		dcmList[indx].isHasMagnitude = false;
+		dcmList[indx].echoNum = echoNum[i];
+		/*int echoNum = 1;
+		for (int i = 1; i < d.xyzDim[4]; i++) {
+			if (dti4D->TE[i-1] != dti4D->TE[i])
+		}*/
+		int ret = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, i);
+	}
+}
 
 void fillTDCMsort(struct TDCMsort& tdcmref, const uint64_t indx, const struct TDICOMdata& dcmdata){
   // Copy the relevant parts of dcmdata to tdcmref.
@@ -2794,7 +2851,8 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     dcmList[0].converted2NII = 1;
     dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
     fillTDCMsort(dcmSort[0], 0, dcmList[0]);
-    return saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+    int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+    return ret;
 }// singleDICOM()
 
 size_t fileBytes(const char * fname) {
@@ -3019,10 +3077,10 @@ int nii_loadDir(struct TDCMopts* opts) {
     bool convertError = false;
     for (int i = 0; i < (int)nDcm; i++ ) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
-        if ((dcmList[i].isValid) &&((dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
-            struct TDCMsort dcmSort[1];
-
-            fillTDCMsort(dcmSort[0], i, dcmList[i]);
+        //~ if ((dcmList[i].isValid) &&((dcmList[i].totalSlicesIn4DOrder != NULL) ||(dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+        if ((dcmList[i].isValid) &&((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+			struct TDCMsort dcmSort[1];
+			fillTDCMsort(dcmSort[0], i, dcmList[i]);
             dcmList[i].converted2NII = 1;
             int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
             if (ret == EXIT_SUCCESS)
