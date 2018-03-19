@@ -360,7 +360,7 @@ int main(int argc, const char * argv[])
                 strcpy(opts.outdir,argv[i]);
             } else if ((argv[i][1] == 'n') && ((i+1) < argc)) {
               i++;
-              int seriesNumber = atoi(argv[i]);
+              float seriesNumber = atof(argv[i]);
               if (seriesNumber < 0)
               	opts.numSeries = -1; //report series: convert none
               else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {

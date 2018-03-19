@@ -2500,7 +2500,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     for(int i = 0; i < nConvert; ++i)
       dcmList[dcmSort[i].indx].converted2NII = 1;
     if (opts.numSeries < 0) { //report series number but do not convert
-    	printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
+    	if (vol >= 0)
+    		printMessage("\t%ld.%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, vol, pathoutname);
+    	else
+    		printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
@@ -2521,8 +2524,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) {
       int i = 0;
+      float seriesNum = (float) dcmList[dcmSort[0].indx].seriesNum;
+      if (vol > 0)
+      	seriesNum = seriesNum + (float) vol / 10.0; //n.b. we will have problems if vol > 9. However, 9 distinct TEs/scalings/PhaseMag seems unlikely
       for (; i < opts.numSeries; i++) {
-        if (opts.seriesNumber[i] == dcmList[dcmSort[0].indx].seriesNum) {
+        if (isSameFloatGE(opts.seriesNumber[i], seriesNum)) {
+        //if (opts.seriesNumber[i] == dcmList[dcmSort[0].indx].seriesNum) {
           break;
         }
       }
