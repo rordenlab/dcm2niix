@@ -3509,6 +3509,15 @@ double TE = 0.0; //most recent echo time recorded
         	}
         }
         if (sqDepth < 0) sqDepth = 0;*/
+        if ((groupElement == kItemTag)  && (isEncapsulatedData)) {
+            d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
+            //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
+            if (d.imageBytes > 128) {
+            	encapsulatedDataFragments++;
+   				if (encapsulatedDataFragmentStart == 0)
+                	encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
+            }
+        }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
         if (groupElement == kSequenceDelimitationItemTag) is2005140FSQ = false;
         switch ( groupElement ) {
