@@ -1649,8 +1649,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			volStep = volStep * maxNumberOfEchoes;
 			vol = vol  + (volStep * ((int)cols[kCardiac] - 1));
 			volStep = volStep * maxNumberOfCardiacPhases;
+			//if (slice == 1) printWarning("%d\n", (int)cols[kEcho]);
 			slice = slice + (vol * d.xyzDim[3]);
-            if (numSlice2D < kMaxSlice2D) {
+
+            if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice -1] = numSlice2D;
 			}
 			numSlice2D++;
@@ -1697,10 +1699,19 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     }
     if (!isSlicesSpatiallySequentialPhilips) {
     	printWarning("PAR file order of slices is not sequential: please ensure correct slice re-ordering\n");
-    	if (numSlice2D > kMaxSlice2D)
-    		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", patientPositionNumPhilips, kMaxSlice2D);
+    	if (numSlice2D > kMaxSlice2D) {
+    		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
+    		dti4D->sliceOrder[0] = -1;
+    	}
     } else
     	dti4D->sliceOrder[0] = -1; //sequential slices do not need to be re-ordered
+	int numExpected = (d.xyzDim[3] * maxNumberOfDiffusionValues * maxNumberOfGradientOrients
+	 * maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes);
+    if (numSlice2D != numExpected) {
+    	printMessage(" found %d slices, but expected %d: slices*diff*grad*cardiac*echo*dynamic*mix = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, numExpected,
+    		d.xyzDim[3], maxNumberOfDiffusionValues, maxNumberOfGradientOrients,
+    		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes);
+    }
     //~
     /*if ((patientPositionNumPhilipsVol2 > 1) && (d.patientPositionNumPhilips == patientPositionNumPhilipsVol2)) {
     	bool isSliceOrderConsistent = true;
@@ -2257,6 +2268,7 @@ unsigned char * nii_reorderSlicesX(unsigned char* bImg, struct nifti_1_header *h
     for (int i = 3; i < 8; i++)
         if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
     if (dim3to7 < 2) return bImg;
+    if (dim3to7 > kMaxSlice2D) return bImg;
     uint64_t imgSz = nii_ImgBytes(*hdr);
     uint64_t sliceBytes = hdr->dim[1]*hdr->dim[2]*hdr->bitpix/8;
 	unsigned char *outImg = (unsigned char *)malloc( imgSz);
