@@ -1669,10 +1669,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 //int dir = d.CSA.numDti;
                 int dir =(int)cols[kGradientNumber];
                 if (dir <= kMaxDTI4D) {
-                    //if (isVerbose ) {
+                    if (isVerbose ) {
                         if (d.CSA.numDti == 1) printMessage("n\tdir\tbValue\tV1\tV2\tV3\n");
                         printMessage("%d\t%g\t%g\t%g\t%g\t%g\n", dir-1, cols[kGradientNumber], cols[kbval], cols[kv1], cols[kv2], cols[kv3]);
-                	//}
+                	}
                     dti4D->S[dir-1].V[0] = cols[kbval];
                     dti4D->S[dir-1].V[1] = cols[kv1];
                     dti4D->S[dir-1].V[2] = cols[kv2];
@@ -3351,12 +3351,14 @@ double TE = 0.0; //most recent echo time recorded
     int numberOfFrames = 0;
     int MRImageGradientOrientationNumber = 0;
     //int maxMRImageGradientOrientationNumber = -1;
+    int minGradNum = kMaxDTI4D + 1;
     int maxGradNum = -1;
     int numberOfDynamicScans = 0;
     uint32_t lLength;
     uint32_t groupElement;
     long lPos = 0;
-    bool isPhilipsADC = false;
+    bool isPhilipsDerived = false;
+    bool isPhilipsDiffusion = false;
     if (isPart10prefix) { //for part 10 files, skip preamble and prefix
     	lPos = 128+4; //4-byte signature starts at 128
     	groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -3751,7 +3753,7 @@ double TE = 0.0; //most recent echo time recorded
                 char dir[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], dir);
                 if (strcmp(dir, "ISOTROPIC") == 0)
-                	isPhilipsADC = true;
+                	isPhilipsDerived = true;
                 break; }
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
@@ -3908,7 +3910,7 @@ double TE = 0.0; //most recent echo time recorded
         		next two lines attempt to skip ADC maps
         		we could also increment gradNum for ADC if we wanted...
 				*/
-				if (isPhilipsADC) {
+				if (isPhilipsDerived) {
 					gradNum ++;
 					B0Philips = 2000.0;
 					vRLPhilips = 0.0;
@@ -3916,8 +3918,14 @@ double TE = 0.0; //most recent echo time recorded
 					vFHPhilips = 0.0;
 
 				}
+				if (B0Philips == 0.0) {
+					//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
+					vRLPhilips = 0.0;
+					vAPPhilips = 0.0;
+					vFHPhilips = 0.0;
+				}
     			//if ((MRImageGradientOrientationNumber > 0) && ((gradNum != MRImageGradientOrientationNumber)) break;
-
+				if (gradNum < minGradNum) minGradNum = gradNum;
     			if (gradNum >= maxGradNum) maxGradNum = gradNum;
 				if (gradNum >= kMaxDTI4D) {
 						printError("Number of DTI gradients exceeds 'kMaxDTI4D (%d).\n", kMaxDTI4D);
@@ -3928,7 +3936,7 @@ double TE = 0.0; //most recent echo time recorded
 				philDTI[gradNum].V[1] = vRLPhilips;
 				philDTI[gradNum].V[2] = vAPPhilips;
 				philDTI[gradNum].V[3] = vFHPhilips;
-				isPhilipsADC = false;
+				isPhilipsDerived = false;
 				//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
 
 
@@ -4609,6 +4617,7 @@ if (d.isHasPhase)
 
 		d.xyzDim[3] = d.numberOfDynamicScans;
 	}*/
+
 	if (numberOfFrames == 0) numberOfFrames = d.xyzDim[3];
 
 	if ((numberOfDynamicScans > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % numberOfDynamicScans) == 0)) {
@@ -4713,30 +4722,28 @@ if (d.isHasPhase)
 		philDTI[maxGradNum].V[3] = 0.0;
 		maxGradNum++;
 	}*/
+    if  ((minGradNum >= 1) && ((maxGradNum-minGradNum+1) == d.xyzDim[4])) {
+    	//see ADNI DWI data for 018_S_4868 - the gradient numbers are in the range 2..37 for 36 volumes - no gradient number 1!
+    	if (philDTI[minGradNum -1].V[0] >= 0) {
+			if (isVerbose)
+				printMessage("Using %d diffusion data directions coded by DimensionIndexValues\n", maxGradNum);
+			int off = 0;
+			if (minGradNum > 1) {
+				off = minGradNum - 1;
+				printWarning("DimensionIndexValues (0020,9157) is not indexed from 1 (range %d..%d). Please validate results\n", minGradNum, maxGradNum);
+			}
+			for (int i = 0; i < d.xyzDim[4]; i++) {
+				dti4D->S[i].V[0] = philDTI[i+off].V[0];
+				dti4D->S[i].V[1] = philDTI[i+off].V[1];
+				dti4D->S[i].V[2] = philDTI[i+off].V[2];
+				dti4D->S[i].V[3] = philDTI[i+off].V[3];
+				if (isVerbose > 1)
+					printMessage(" grad %d b=%g vec=%gx%gx%g\n", i, dti4D->S[i].V[0], dti4D->S[i].V[1], dti4D->S[i].V[2], dti4D->S[i].V[3]);
 
-
-	//printMessage("CXC grad %g %d %d\n", philDTI[0].V[0], maxGradNum, d.xyzDim[4]);
-
-    if ((philDTI[0].V[0] >= 0) && (maxGradNum == d.xyzDim[4])) {
-    	if (isVerbose)
-			printMessage("Using diffusion data coded by DimensionIndexValues\n");
-		for (int i = 0; i < d.xyzDim[4]; i++) {
-			dti4D->S[i].V[0] = philDTI[i].V[0];
-			dti4D->S[i].V[1] = philDTI[i].V[1];
-			dti4D->S[i].V[2] = philDTI[i].V[2];
-			dti4D->S[i].V[3] = philDTI[i].V[3];
-			if (isVerbose > 1)
-				printMessage(" grad %d b=%g vec=%gx%gx%g\n", i, dti4D->S[i].V[0], dti4D->S[i].V[1], dti4D->S[i].V[2], dti4D->S[i].V[3]);
-
+			}
+			d.CSA.numDti = maxGradNum - off;
 		}
-		d.CSA.numDti = maxGradNum;
 	}
-	//~~
-    /*if (d.patientPositionNumPhilips >= kMaxDTI4D) {
-
-        printError("Too many 2D slices in a single file [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.patientPositionNumPhilips, kMaxDTI4D);
-        d.CSA.numDti = 0;
-    }*/
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
