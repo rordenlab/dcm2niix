@@ -2656,9 +2656,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		return EXIT_FAILURE;
 	}
     int ret = EXIT_SUCCESS;
-
 	//check for repeated echoes - count unique number of echoes
-	/* //code below checks for multi-echoes - not required if maxNumberOfEchoes reported in PARREC
+	//code below checks for multi-echoes - not required if maxNumberOfEchoes reported in PARREC
 	int echoNum[kMaxDTI4D];
 	int echo = 1;
 	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
@@ -2672,7 +2671,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 			echoNum[i] = echo;
 		}
 	}
-	if (echo > 1) dcmList[indx].isMultiEcho = true;*/
+	if (echo > 1) dcmList[indx].isMultiEcho = true;
 	//check for repeated volumes
 	int seriesNum[kMaxDTI4D];
 	int series = 1;
@@ -2687,7 +2686,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 			seriesNum[i] = series;
 		}
 	}
-
 	for (int s = 1; s <= series; s++) {
 		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
 			dti4D->gradDynVol[i] = 0;

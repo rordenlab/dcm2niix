@@ -1752,7 +1752,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     }
     //even is sequential, we need to decode if multiple echoes/phasemaps,etc
     //if (!isSlicesSpatiallySequentialPhilips) {
-    	printWarning("PAR file order of slices is not sequential: please ensure correct slice re-ordering\n");
+    	//printWarning("PAR file order of slices is not sequential: please ensure correct slice re-ordering\n");
+    	d.isScaleOrTEVaries = true;
     	if (numSlice2D > kMaxSlice2D) {
     		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
     		dti4D->sliceOrder[0] = -1;
@@ -1893,8 +1894,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		}
 		if (d.isScaleOrTEVaries)
 			printWarning("Varying dimensions (echoes, phase maps, intensity scaling) will require volumes to be saved separately (hint: you may prefer dicm2nii output)\n");
-
-
     }
     //check DTI makes sense
     if (d.CSA.numDti > 1) {
@@ -1909,7 +1908,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	if ((!v1varies) || (!v2varies) || (!v3varies))
     		 printError("Bizarre b-vectors %s\n", parname);
     }
-    if ((maxEcho > 1) || (maxCardiac > 1)) printWarning("Multiple Echo (%d) or Cardiac (%d). Segment output, e.g. nii_segment4d('img.nii', %d)\n", maxEcho,  maxCardiac, maxEcho*maxCardiac);
+    if ((maxEcho > 1) || (maxCardiac > 1)) printWarning("Multiple Echo (%d) or Cardiac (%d). Carefully inspect output\n", maxEcho,  maxCardiac);
+    if ((maxEcho > 1) || (maxCardiac > 1)) d.isScaleOrTEVaries = true;
     return d;
 } //nii_readParRec()
 
