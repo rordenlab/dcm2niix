@@ -1515,6 +1515,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
     }
+    /*if (dcm.maxGradDynVol > 0) { //Philips segmented
+        sprintf(newstr, "_v%04d", dcm.gradDynVol+1); //+1 as indexed from zero
+        strcat (outname,newstr);
+    }*/
     if (dcm.isHasPhase) {
     	strcat (outname,"_ph"); //has phase map
     	if (dcm.isHasMagnitude)
@@ -2477,15 +2481,28 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     }
     if ((vol >= 0) && (hdr0.dim[4] > 1) && (vol < hdr0.dim[4])) {
     	size_t imgsz4D = imgsz;
-    	hdr0.dim[0] = 3; //3D
+    	if (vol < 2)
+    		hdr0.dim[0] = 3; //3D
+    	int inVol = hdr0.dim[4];
     	hdr0.dim[4] = 1;
-    	imgsz = nii_ImgBytes(hdr0);
+    	size_t imgsz3D = nii_ImgBytes(hdr0);
 		unsigned char *img4D = (unsigned char *)malloc(imgsz4D);
     	memcpy(&img4D[0], &imgM[0], imgsz4D);
     	free(imgM);
-    	imgM = (unsigned char *)malloc(imgsz);
-    	memcpy(&imgM[0], &img4D[vol * imgsz], imgsz);
+    	imgM = (unsigned char *)malloc(imgsz3D * vol);
+    	int outVol = 0;
+    	for (int v = 0; v < inVol; v++) {
+    		//dti4D cxc
+    		if ((dti4D->gradDynVol[v] != 0) && (outVol < vol)) {
+    			//printError("cxc -> %d %d %d\n", v, v * imgsz3D, imgsz4D);
+    			memcpy(&imgM[outVol * imgsz3D], &img4D[v * imgsz3D], imgsz3D);
+    			outVol ++;
+    		}
+    	}
+    	hdr0.dim[4] = vol;
+		imgsz = nii_ImgBytes(hdr0);
     	free(img4D);
+    	saveAs3D = false;
     }
     char pathoutname[2048] = {""};
     if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
@@ -2623,8 +2640,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 #endif
     free(imgM);
     return returnCode;//EXIT_SUCCESS;
-}// saveDcm2Nii()
+}// saveDcm2NiiCore()
 
+//int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
+//	return saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, -1);
+//}
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
 	//this wrapper does nothing if all the images share the same echo time and scale
 	// however, it segments images when these properties vary
@@ -2635,7 +2655,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		printError("Unexpected error for image with varying echo time or intensity scaling\n");
 		return EXIT_FAILURE;
 	}
+    int ret = EXIT_SUCCESS;
 
+	//check for repeated echoes - count unique number of echoes
+	/* //code below checks for multi-echoes - not required if maxNumberOfEchoes reported in PARREC
 	int echoNum[kMaxDTI4D];
 	int echo = 1;
 	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
@@ -2648,11 +2671,50 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 			echo++;
 			echoNum[i] = echo;
 		}
-
 	}
-	if (echo > 1) dcmList[indx].isMultiEcho = true;
-	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
-		//printMessage("volume %d TE=%g Slope=%g Inter=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[i], dti4D->intenIntercept[i], dti4D->isPhase[i] );
+	if (echo > 1) dcmList[indx].isMultiEcho = true;*/
+	//check for repeated volumes
+	int seriesNum[kMaxDTI4D];
+	int series = 1;
+	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
+		seriesNum[i] = 0;
+	seriesNum[0] = 1;
+	for (int i = 1; i < dcmList[indx].xyzDim[4]; i++) {
+		for (int j = 0; j < i; j++)
+			if ((dti4D->intenIntercept[i] == dti4D->intenIntercept[j]) && (dti4D->intenScale[i] == dti4D->intenScale[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j])) seriesNum[i] = seriesNum[j];
+		if (seriesNum[i] == 0) {
+			series++;
+			seriesNum[i] = series;
+		}
+	}
+
+	for (int s = 1; s <= series; s++) {
+		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
+			dti4D->gradDynVol[i] = 0;
+		int nVol = 0;
+		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
+			 if (seriesNum[i] == s) {
+			 	dti4D->gradDynVol[i] = 1;
+				nVol ++;
+				dcmList[indx].TE = dti4D->TE[i];
+				dcmList[indx].intenScale = dti4D->intenScale[i];
+				dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
+				dcmList[indx].isHasPhase = dti4D->isPhase[i];
+				dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
+				dcmList[indx].isHasMagnitude = false;
+				dcmList[indx].echoNum = echoNum[i];
+				//dcmList[indx].gradDynVol = dti4D->gradDynVol[i];
+			 }
+		//printError("cxc files %d %d %g\n", nVol,echo, dcmList[indx].TE);
+		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, nVol);
+        if (ret2 != EXIT_SUCCESS) ret = ret2; //return EXIT_SUCCESS only if ALL are successful
+	}
+	//
+	//printError("cxc files %d %d %g\n", series,echo, dcmList[indx].TE);
+	//return ret;
+
+	/*for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
+		printMessage("volume %d TE=%g Slope=%g Inter=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[i], dti4D->intenIntercept[i], dti4D->isPhase[i] );
 		dcmList[indx].TE = dti4D->TE[i];
 		dcmList[indx].intenScale = dti4D->intenScale[i];
 		dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
@@ -2660,13 +2722,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
 		dcmList[indx].isHasMagnitude = false;
 		dcmList[indx].echoNum = echoNum[i];
-		/*int echoNum = 1;
-		for (int i = 1; i < d.xyzDim[4]; i++) {
-			if (dti4D->TE[i-1] != dti4D->TE[i])
-		}*/
-		int ret = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, i);
-	}
-}
+		dcmList[indx].gradDynVol = dti4D->gradDynVol[i];
+		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, i);
+        if (ret2 != EXIT_SUCCESS) ret = ret2; //return EXIT_SUCCESS only if ALL are successful
+	}*/
+    return ret;
+}// saveDcm2Nii()
 
 void fillTDCMsort(struct TDCMsort& tdcmref, const uint64_t indx, const struct TDICOMdata& dcmdata){
   // Copy the relevant parts of dcmdata to tdcmref.
@@ -2978,7 +3039,7 @@ int convert_parRec(struct TDCMopts opts) {
     nameList.str[0]  = (char *)malloc(strlen(opts.indir)+1);
     strcpy(nameList.str[0],opts.indir);
     TDTI4D dti4D;
-    dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D);
+    dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D, false);
     struct TDCMsort dcmSort[1];
     dcmSort[0].indx = 0;
     if (dcmList[0].isValid)
