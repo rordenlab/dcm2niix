@@ -2925,7 +2925,7 @@ int isSameFloatDouble (double a, double b) {
 }
 
 struct TWarnings { //generate a warning only once per set
-        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, coilVaries, nameVaries, nameEmpty, orientVaries;
+        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, phaseVaries, coilVaries, nameVaries, nameEmpty, orientVaries;
 };
 
 TWarnings setWarnings() {
@@ -2933,6 +2933,7 @@ TWarnings setWarnings() {
 	r.acqNumVaries = false;
 	r.bitDepthVaries = false;
 	r.dateTimeVaries = false;
+	r.phaseVaries = false;
 	r.echoVaries = false;
 	r.coilVaries = false;
 	r.nameVaries = false;
@@ -2974,6 +2975,12 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     	if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum))
     		*isMultiEcho = true;
     	return true; //we will stack these images, even if they differ in the following attributes
+    }
+    if (d1.isHasPhase != d2.isHasPhase) {
+    	if (!warnings->phaseVaries)
+        	printMessage("slices not stacked: some are phase maps, others are not. Use 'merge 2D slices' option to force stacking\n");
+    	warnings->phaseVaries = true;
+    	return false;
     }
     if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
         if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
