@@ -28,7 +28,8 @@ extern "C" {
         bool isSave3D,isGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackSameSeries, isCrop;
         int isVerbose, compressFlag, gzLevel; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
-        long seriesNumber[MAX_NUM_SERIES], numSeries;
+        float seriesNumber[MAX_NUM_SERIES];
+        long numSeries;
 #ifdef HAVE_R
         bool isScanOnly;
         void *imageList;

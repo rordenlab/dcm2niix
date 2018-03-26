@@ -85,7 +85,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #else
      #define kQstr ""
     #endif
-    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e echo number, %%f=folder name, %%i ID of patient, %%j seriesInstanceUID, %%k studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z sequence name; default '%s')\n", kQstr, opts.filename);
+    printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -g : generate defaults file (y/n/o [o=only: reset and write defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
@@ -324,7 +324,11 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0')) //0: verbose OFF
                     opts.isVerbose = 0;
-                else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
+                else if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {//-1: experimental SQ skipping: 'O'ptimized!? faster, does not get confused with Philips tags
+                    opts.isVerbose = -1;
+                    printf(">> Experimental SQ skipping enabled\n");
+
+                } else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
                     opts.isVerbose = 2;
                 else
                     opts.isVerbose = 1; //1: verbose ON
@@ -356,7 +360,7 @@ int main(int argc, const char * argv[])
                 strcpy(opts.outdir,argv[i]);
             } else if ((argv[i][1] == 'n') && ((i+1) < argc)) {
               i++;
-              int seriesNumber = atoi(argv[i]);
+              float seriesNumber = atof(argv[i]);
               if (seriesNumber < 0)
               	opts.numSeries = -1; //report series: convert none
               else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {
