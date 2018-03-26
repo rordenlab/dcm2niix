@@ -719,6 +719,8 @@ struct TDICOMdata clear_dicom_data() {
     d.echoTrainLength = 0;
     d.phaseFieldofView = 0.0;
     d.dwellTime = 0;
+    d.protocolBlockStartGE = 0;
+    d.protocolBlockLengthGE = 0;
     d.phaseEncodingSteps = 0;
     d.coilNum = 0;
     d.accelFactPE = 0.0;
@@ -3444,7 +3446,7 @@ double TE = 0.0; //most recent echo time recorded
     uint32_t groupElement;
     long lPos = 0;
     bool isPhilipsDerived = false;
-    bool isPhilipsDiffusion = false;
+    //bool isPhilipsDiffusion = false;
     if (isPart10prefix) { //for part 10 files, skip preamble and prefix
     	lPos = 128+4; //4-byte signature starts at 128
     	groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -4072,8 +4074,9 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kProtocolDataBlockGE :
             	if (d.manufacturer != kMANUFACTURER_GE) break;
-            	//printError("ProtocolDataBlockGE to do  %d %d %2x%2x\n", lPos, lLength, (uint8_t)buffer[lPos], (uint8_t)buffer[lPos+1]);
-            	//readProtocolDataBlockGE(&buffer[lPos], lLength, &d.CSA, isVerbose); //, dti4D);
+            	d.protocolBlockLengthGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	d.protocolBlockStartGE = lPos+lFileOffset+4;
+            	//printError("ProtocolDataBlockGE %d  @ %d\n", d.protocolBlockLengthGE, d.protocolBlockStartGE);
             	break;
             case kDoseCalibrationFactor :
                 d.doseCalibrationFactor = dcmStrFloat(lLength, &buffer[lPos]);
