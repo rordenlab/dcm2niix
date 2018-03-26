@@ -1434,7 +1434,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kv2	45
 #define	kv3	46
 #define	kASL	48
-    printWarning("dcm2niix PAR is not actively supported. Use with extreme caution (hint: use dicm2nii)\n");
+    printWarning("dcm2niix PAR is not actively supported. Use with extreme caution (hint: use dicm2nii or R2AGUI)\n");
     if (isReadPhase) printWarning(" Reading phase images from PAR/REC\n");
     char buff[LINESZ];
 	int maxNumberOfDiffusionValues = 1;
@@ -1786,7 +1786,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         //d.isValid = false;
     }
     if ((slice % d.xyzDim[3]) != 0) {
-        printError("Total number of slices (%d) not divisible by slices per 3D volume (%d) [acquisition aborted]. Try dicm2nii: %s\n", slice, d.xyzDim[3], parname);
+        printError("Total number of slices (%d) not divisible by slices per 3D volume (%d) [acquisition aborted]. Try dicm2nii or R2AGUI: %s\n", slice, d.xyzDim[3], parname);
         d.isValid = false;
         return d;
     }
@@ -3711,6 +3711,8 @@ double TE = 0.0; //most recent echo time recorded
                 	isMosaic = true;
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
+                if((slen > 6) && (strstr(d.imageType, "PHASE") != NULL) )
+                	d.isHasPhase = true;
                 if((slen > 6) && (strstr(d.imageType, "DERIVED") != NULL) )
                 	d.isDerived = true;
                 //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )

@@ -69,6 +69,7 @@ If you have any problems with the cmake build script described above or want to 
  - [Jolinda Smith's mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) has great support for various vendors.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package. In my limited experience this tool works well for GE and Siemens data, but fails with Philips 4D datasets.
  - [SPM12](http://www.fil.ion.ucl.ac.uk/spm/software/spm12/) is one of the most popular tools in the field. It includes DICOM to NIfTI conversion. Being based on Matlab it is easy to script.
+ - [R2A_GUI](http://r2agui.sourceforge.net/) is a Matlab script that converts Philips PAR/REC images to NIfTI.
 
 ## Links
 
