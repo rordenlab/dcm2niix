@@ -1491,8 +1491,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             sscanf(buff, "# %s %s %s %s %s %s V%s\n", Comment[0], Comment[1], Comment[2], Comment[3],Comment[4], Comment[5],Comment[6]);
 
             if ((strcmp(Comment[0], "sl") == 0) && (strcmp(Comment[1], "ec") == 0) ) {
-            	//printError("BINGO\n");
-            	numExpected = (d.xyzDim[3] * maxNumberOfDiffusionValues * maxNumberOfGradientOrients
+            	numExpected = (d.xyzDim[3] * maxNumberOfGradientOrients
 	 			* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes);
 			}
             if (strcmp(Comment[1], "TRYOUT") == 0) {
@@ -1564,6 +1563,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             }
             if ((strcmp(Comment[0], "Max.") == 0) && (strcmp(Comment[3], "gradient") == 0)) {
                 maxNumberOfGradientOrients = atoi(Comment[6]);
+                if (maxNumberOfDiffusionValues > 2)
+                	printError("maxNumberOfDiffusionValues > 2\n");
+                if (maxNumberOfDiffusionValues == 2)
+                	maxNumberOfGradientOrients += 1; //e.g. 32 directions plus isotropic = 33 volumes
             }
             if ((strcmp(Comment[0], "Max.") == 0) && (strcmp(Comment[3], "cardiac") == 0)) {
                 maxNumberOfCardiacPhases = atoi(Comment[6]);
@@ -1611,11 +1614,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		*/
         if ((cols[kIndex]) != slice) isIndexSequential = false; //slices 0,1,2.. should have indices 0,1,2,3...
         slice ++;
+        bool isADC = false;
+        if ((maxNumberOfDiffusionValues == 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) )
+        	isADC = true;
         if (slice == 1) {
-            //for (int i = 0; i < nCols; i++)
-            //    cols1[i] = cols[i]; //store first slice to see if dimensions or intensity scale varies between slices
-            //for (int i = 0; i < nCols; i++)
-            //    printMessage("%d %g\n",i, cols[i]); //store first slice to see if dimensions or intensity scale varies between slices
             d.xyzDim[1] = (int) cols[kXdim];
 			d.xyzDim[2] = (int) cols[kYdim];
             d.xyzMM[1] = cols[kXmm];
@@ -1683,6 +1685,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			int gradDynVol = (int)cols[kGradientNumber] - 1;
 			if (vol > gradDynVol) gradDynVol = vol; //if fMRI series, else DWI
 			vol = vol + (volStep * ((int)cols[kGradientNumber] - 1));
+			if (isADC) vol ++;
 			volStep = volStep * maxNumberOfGradientOrients;
 			vol = vol  + (volStep * ((int)cols[kEcho] - 1));
 			volStep = volStep * maxNumberOfEchoes;
@@ -1725,6 +1728,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 d.CSA.numDti++;
                 //int dir = d.CSA.numDti;
                 int dir =(int)cols[kGradientNumber];
+                if (isADC) dir ++;
                 if (dir <= kMaxDTI4D) {
                     if (isVerbose ) {
                         if (d.CSA.numDti == 1) printMessage("n\tdir\tbValue\tV1\tV2\tV3\n");
@@ -1766,8 +1770,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	numExpected *= 2; //the initial header does not report that both types are stored
     }
 	if (numSlice2D != numExpected) {
-    	printMessage(" found %d slices, but expected %d: slices*diff*grad*cardiac*echo*dynamic*mix = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, numExpected,
-    		d.xyzDim[3], maxNumberOfDiffusionValues, maxNumberOfGradientOrients,
+    	printMessage(" found %d slices, but expected %d: slices*grad*cardiac*echo*dynamic*mix = %d*%d*%d*%d*%d*%d\n", numSlice2D, numExpected,
+    		d.xyzDim[3],  maxNumberOfGradientOrients,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes);
     	d.isValid = false;
     }

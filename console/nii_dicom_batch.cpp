@@ -1226,8 +1226,8 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
             if (vx[i].V[3] != vx[0].V[3]) bVecVaries = true;
         }
         if (!bVecVaries) {
-                free(vx);
-                return NULL;
+			free(vx);
+			return NULL;
         }
         for (int i = 1; i < numDti; i++)
                 printMessage("bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
@@ -1261,7 +1261,6 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 		bvals[i] = vx[i].V[0];
 		if (isADCnotDTI(vx[i])) {
             *numADC = *numADC + 1;
-            //printMessage("Volume %d is not a normal DTI image (ADC?)\n", i+1);
             bvals[i] = kADCval;
         }
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
@@ -3061,6 +3060,14 @@ int strcicmp(char const *a, char const *b) //case insensitive compare
     }
 }// strcicmp()
 
+bool isExt (char *file_name, const char* ext) {
+    char *p_extension;
+    if((p_extension = strrchr(file_name,'.')) != NULL )
+        if(strcicmp(p_extension,ext) == 0) return true;
+    //if(strcmp(p_extension,ext) == 0) return true;
+    return false;
+}// isExt()
+
 void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth, struct TDCMopts* opts ) {
     tinydir_dir dir;
     tinydir_open(&dir, path);
@@ -3081,11 +3088,10 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
         	; //printMessage("skipping hidden file %s\n", file.name);
         else if ((strlen(file.name) == 8) && (strcicmp(file.name, "DICOMDIR") == 0))
         	; //printMessage("skipping DICOMDIR\n");
-        else if (isDICOMfile(filename) > 0) {
+        else if ((isDICOMfile(filename) > 0) || (isExt(filename, ".par")) ) {
             if (nameList->numItems < nameList->maxItems) {
                 nameList->str[nameList->numItems]  = (char *)malloc(strlen(filename)+1);
                 strcpy(nameList->str[nameList->numItems],filename);
-                //printMessage("OK\n");
             }
             nameList->numItems++;
             //printMessage("dcm %lu %s \n",nameList->numItems, filename);
@@ -3139,14 +3145,6 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
         printMessage("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
     return nConvert - nDuplicates;
 }// removeDuplicatesVerbose()
-
-bool isExt (char *file_name, const char* ext) {
-    char *p_extension;
-    if((p_extension = strrchr(file_name,'.')) != NULL )
-        if(strcicmp(p_extension,ext) == 0) return true;
-    //if(strcmp(p_extension,ext) == 0) return true;
-    return false;
-}// isExt()
 
 int convert_parRec(struct TDCMopts opts) {
     //sample dataset from Ed Gronenschild <ed.gronenschild@maastrichtuniversity.nl>
@@ -3264,6 +3262,16 @@ int nii_loadDir(struct TDCMopts* opts) {
     bool compressionWarning = false;
     bool convertError = false;
     for (int i = 0; i < (int)nDcm; i++ ) {
+    	if ((isExt(nameList.str[i], ".par")) && (isDICOMfile(nameList.str[i]) < 1)) {
+			strcpy(opts->indir, nameList.str[i]); //set to original file name, not path
+            dcmList[i].converted2NII = 1;
+            int ret = convert_parRec(*opts);
+            if (ret == EXIT_SUCCESS)
+            	nConvertTotal++;
+            else
+            	convertError = true;
+            continue;
+    	}
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
         //~ if ((dcmList[i].isValid) &&((dcmList[i].totalSlicesIn4DOrder != NULL) ||(dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
         if ((dcmList[i].isValid) &&((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
