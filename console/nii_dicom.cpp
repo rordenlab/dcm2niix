@@ -1653,6 +1653,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
+        if ((cols[kImageType] != 0) && (cols[kImageType] != 3))
+        	printError("Novel image type %d: not magnitude or phase. Perhaps real, imaginary or a subsequent calculation such as B1.  Please check output\n", cols[kImageType]);
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
         if (cols[kDyn] < prevDyn) dynNotAscending = true;
@@ -1898,8 +1900,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isPhase[i] != dti4D->isPhase[0]) d.isScaleOrTEVaries = true;
 		}
-		if (d.isScaleOrTEVaries)
-			printWarning("Varying dimensions (echoes, phase maps, intensity scaling) will require volumes to be saved separately (hint: you may prefer dicm2nii output)\n");
+		//if (d.isScaleOrTEVaries)
+		//	printWarning("Varying dimensions (echoes, phase maps, intensity scaling) will require volumes to be saved separately (hint: you may prefer dicm2nii output)\n");
     }
     //check DTI makes sense
     if (d.CSA.numDti > 1) {

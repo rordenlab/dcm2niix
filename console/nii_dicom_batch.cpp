@@ -1046,12 +1046,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	// Slice Timing GE
-	if ((viewOrderGE > -1) && (h->dim[3] > 1) && (h->dim[4] > 1) && (d.TR > 0)) { //
+	if ((sliceOrderGE > -1) && (h->dim[3] > 1) && (h->dim[4] > 1) && (d.TR > 0)) { //
 		//Warning: not correct for multiband sequences... not sure how these are stored
 		//Warning: will not create correct times for sparse acquisitions where DelayTimeInTR > 0
 		float t = d.TR/ (float)h->dim[3] ;
 		fprintf(fp, "\t\"SliceTiming\": [\n");
-		if (viewOrderGE == 1) {//interleaved ascending
+		if (sliceOrderGE == 1) {//interleaved ascending
 			for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
 					fprintf(fp, ",\n");
