@@ -631,7 +631,7 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 } // siemensCsaAscii()
 #endif //myReadAsciiCsa()
 
-#ifndef myDisableMiniZ
+#ifndef myDisableZLib //v1.0.20180330 in future myDisableZLib not myDisableMiniZ
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
@@ -649,7 +649,7 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 		return ret;
 	}
 	fseek(pFile, geOffset, SEEK_SET);
-	mz_uint8 * pCmp = (mz_uint8*) malloc (geLength);
+	uint8_t * pCmp = (uint8_t*) malloc (geLength); //uint8_t -> mz_uint8
 	if(pCmp == NULL) return ret;
 	size_t result = fread (pCmp,1,geLength,pFile);
 	if ((int)result != geLength) return ret;
@@ -677,17 +677,28 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 
 	z_stream s;
 	memset (&s, 0, sizeof (z_stream));
+	#ifdef myDisableMiniZ
+		#define MZ_DEFAULT_WINDOW_BITS 15 // Window bits
+	#endif
 	inflateInit2(&s, -MZ_DEFAULT_WINDOW_BITS);
-	mz_uint8 *pUnCmp = (mz_uint8 *)malloc((size_t)unCmpSz);
+	uint8_t *pUnCmp = (uint8_t *)malloc((size_t)unCmpSz);
 	s.avail_out = unCmpSz;
 	s.next_in = pCmp+ hdrSz;
 	s.avail_in = cmpSz-hdrSz-8;
 	s.next_out = (uint8_t *) pUnCmp;
+	#ifdef myDisableMiniZ
+	ret = inflate(&s, Z_SYNC_FLUSH);
+	if (ret != Z_STREAM_END) {
+		free(pUnCmp);
+		return EXIT_FAILURE;
+	}
+	#else
 	ret = mz_inflate(&s, MZ_SYNC_FLUSH);
 	if (ret != MZ_STREAM_END) {
 		free(pUnCmp);
 		return EXIT_FAILURE;
 	}
+	#endif
 	//https://groups.google.com/forum/#!msg/comp.protocols.dicom/mxnCkv8A-i4/W_uc6SxLwHQJ
 	// DISCOVERY MR750 / 24\MX\MR Software release:DV24.0_R01_1344.a) are now storing an XML file
 	//   <?xml version="1.0" encoding="UTF-8"?>
@@ -698,7 +709,7 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	char keyStrVO[] = "VIEWORDER"; //"MATRIXX";
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	if (isVerbose > 1) {
-		printMessage("GE Protocol Block %s bytes %d compressed, %d uncompressed @ %d\n", filename, geLength, unCmpSz, geOffset);
+		printMessage("GE Protocol Block %s bytes %d compressed, %zu uncompressed @ %d\n", filename, geLength, unCmpSz, geOffset);
 		printMessage(" ViewOrder %d SliceOrder %d\n", *viewOrder, *sliceOrder);
 		printMessage("%s\n", pUnCmp);
 	}
@@ -890,8 +901,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
 	int viewOrderGE = -1;
-	#ifdef myReadGeProtocolBlock
 	int sliceOrderGE = -1;
+	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
 		printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
 		int ok = geProtocolBlock(filename, d.protocolBlockStartGE, d.protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE);

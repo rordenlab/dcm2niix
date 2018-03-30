@@ -1654,7 +1654,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
         if ((cols[kImageType] != 0) && (cols[kImageType] != 3))
-        	printError("Novel image type %d: not magnitude or phase. Perhaps real, imaginary or a subsequent calculation such as B1.  Please check output\n", cols[kImageType]);
+        	printError("Novel image type %g: not magnitude or phase. Perhaps real, imaginary or a subsequent calculation such as B1.  Please check output\n", cols[kImageType]);
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
         if (cols[kDyn] < prevDyn) dynNotAscending = true;
@@ -4083,7 +4083,7 @@ double TE = 0.0; //most recent echo time recorded
             case kProtocolDataBlockGE :
             	if (d.manufacturer != kMANUFACTURER_GE) break;
             	d.protocolBlockLengthGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-            	d.protocolBlockStartGE = lPos+lFileOffset+4;
+            	d.protocolBlockStartGE = (int)lPos+(int)lFileOffset+4;
             	//printError("ProtocolDataBlockGE %d  @ %d\n", d.protocolBlockLengthGE, d.protocolBlockStartGE);
             	break;
             case kDoseCalibrationFactor :
