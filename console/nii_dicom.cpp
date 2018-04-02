@@ -3375,6 +3375,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
+#define  kRTIA_timer 0x0021+(0x105E<< 16 )// 'DS'
 #define  kProtocolDataBlockGE 0x0025+(0x101B<< 16 )// 'OB'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
@@ -4079,6 +4080,11 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kLocationsInAcquisitionGE:
                 locationsInAcquisitionGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
+            case kRTIA_timer:
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	//see dicm2nii slice timing from 0021,105E DS RTIA_timer
+                // =  dcmStrFloat(lLength, &buffer[lPos]); //RefAcqTimes = t/10; end % in ms
                 break;
             case kProtocolDataBlockGE :
             	if (d.manufacturer != kMANUFACTURER_GE) break;

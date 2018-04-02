@@ -1042,6 +1042,16 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 				fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
 		else
 			fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
+		//these next lines temporary while we understand GE
+		if (viewOrderGE > -1) {
+			fprintf(fp, "\",\n");
+			if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+				fprintf(fp, "\t\"ProbablePhaseEncodingDirection\": \"j");
+			else if (d.phaseEncodingRC == 'R')
+					fprintf(fp, "\t\"ProbablePhaseEncodingDirection\": \"i");
+			else
+				fprintf(fp, "\t\"ProbablePhaseEncodingDirection\": \"?");
+		}
 		//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 		//However, DICOM and NIfTI are reversed in the j (ROW) direction
 		//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
@@ -1061,7 +1071,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//Warning: not correct for multiband sequences... not sure how these are stored
 		//Warning: will not create correct times for sparse acquisitions where DelayTimeInTR > 0
 		float t = d.TR/ (float)h->dim[3] ;
-		fprintf(fp, "\t\"SliceTiming\": [\n");
+		fprintf(fp, "\t\"ProbableSliceTiming\": [\n");
 		if (sliceOrderGE == 1) {//interleaved ascending
 			for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
