@@ -631,8 +631,9 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 } // siemensCsaAscii()
 #endif //myReadAsciiCsa()
 
-#ifndef myDisableZLib //v1.0.20180330 in future myDisableZLib not myDisableMiniZ
- #define myReadGeProtocolBlock
+#ifndef myDisableZLib
+ //Uncomment next line to decode GE Protocol Data Block, for caveats see https://github.com/rordenlab/dcm2niix/issues/163
+ // #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
 int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder) {
