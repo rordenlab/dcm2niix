@@ -2375,7 +2375,7 @@ unsigned char * nii_reorderSlicesX(unsigned char* bImg, struct nifti_1_header *h
     for (int i = 3; i < 8; i++)
         if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
     if (dim3to7 < 2) return bImg;
-    //printMessage("xxx NOT reordering %d Philips slices.\n", dim3to7); return bImg;
+    //printMessage(" NOT reordering %d Philips slices.\n", dim3to7); return bImg;
     uint64_t sliceBytes = hdr->dim[1]*hdr->dim[2]*hdr->bitpix/8;
 	unsigned char *sliceImg = (unsigned char *)malloc( sliceBytes);
     //for (int i = 0; i < dim3to7; i++) { //for each volume
@@ -3375,6 +3375,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
+#define  kRTIA_timer 0x0021+(0x105E<< 16 )// 'DS'
 #define  kProtocolDataBlockGE 0x0025+(0x101B<< 16 )// 'OB'
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
@@ -3509,6 +3510,7 @@ double TE = 0.0; //most recent echo time recorded
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
     	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
     		lFileOffset = lFileOffset + lPos;
+    		printError("%zu %zu ", lFileOffset, MaxBufferSz);
     		if ((lFileOffset+MaxBufferSz) > (size_t)fileLen) MaxBufferSz = fileLen - lFileOffset;
 			fseek(file, lFileOffset, SEEK_SET);
 			size_t sz = fread(buffer, 1, MaxBufferSz, file);
@@ -3622,8 +3624,11 @@ double TE = 0.0; //most recent echo time recorded
 		}
         //next: look for required tags
         if ((groupElement == kItemTag) && (isEncapsulatedData)) {
+            d.imageBytes = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+            printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
+
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
-            //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
+            printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
             if (d.imageBytes > 128) {
             	encapsulatedDataFragments++;
    				if (encapsulatedDataFragmentStart == 0)
@@ -3641,7 +3646,7 @@ double TE = 0.0; //most recent echo time recorded
         if (sqDepth < 0) sqDepth = 0;*/
         if ((groupElement == kItemTag)  && (isEncapsulatedData)) { //use this to find image fragment for compressed datasets, e.g. JPEG transfer syntax
             d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
-            //printMessage("compressed data %d-> %ld\n",d.imageBytes, lPos);
+            lLength = d.imageBytes;
             if (d.imageBytes > 128) {
             	encapsulatedDataFragments++;
    				if (encapsulatedDataFragmentStart == 0)
@@ -4079,6 +4084,11 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kLocationsInAcquisitionGE:
                 locationsInAcquisitionGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
+            case kRTIA_timer:
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	//see dicm2nii slice timing from 0021,105E DS RTIA_timer
+                // =  dcmStrFloat(lLength, &buffer[lPos]); //RefAcqTimes = t/10; end % in ms
                 break;
             case kProtocolDataBlockGE :
             	if (d.manufacturer != kMANUFACTURER_GE) break;
@@ -4572,7 +4582,6 @@ double TE = 0.0; //most recent echo time recorded
                     lLength = 0;
                     isEncapsulatedData = true;
                     encapsulatedDataImageStart = (int)lPos + (int)lFileOffset;
-                    //printWarning("Encapsulated\n");
                 }
 				isIconImageSequence = false;
                 break;
