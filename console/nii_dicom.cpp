@@ -3218,7 +3218,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	//dti4D->S[0].sliceNumberMrPhilipsVol2  = -1;
 	dti4D->sliceOrder[0] = -1;
     struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
-
     struct stat s;
     if( stat(fname,&s) == 0 ) {
         if( !(s.st_mode & S_IFREG) ){
@@ -3233,7 +3232,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     	d.isExplicitVR = false;
     	isPart10prefix = false;
     }
-
     FILE *file = fopen(fname, "rb");
 	if (!file) {
         printMessage("Unable to open file %s\n", fname);
@@ -3486,15 +3484,6 @@ double TE = 0.0; //most recent echo time recorded
     //float patientPositionPublic[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
-/* //not required?
-    int sqDepth = 0;
-    int sqDepthPrivate = 0;
-    int sqEndPrivate = -1; //used to skip private SQs that provide explicit length
-    bool is2005140FSQ = false; //Philips stores 2D slice data here
-    bool is2005140FSQwarned = false; //for buggy Philips
-
-*/
-	//array for storing Philips DTI when tags kMRImageGradientOrientationNumber and kDimensionIndexValues are available
 	struct TDTI philDTI[kMaxDTI4D];
     for (int i = 0; i < kMaxDTI4D; i++)
     	philDTI[i].V[0] = -1;
@@ -3510,7 +3499,6 @@ double TE = 0.0; //most recent echo time recorded
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
     	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
     		lFileOffset = lFileOffset + lPos;
-    		printError("%zu %zu ", lFileOffset, MaxBufferSz);
     		if ((lFileOffset+MaxBufferSz) > (size_t)fileLen) MaxBufferSz = fileLen - lFileOffset;
 			fseek(file, lFileOffset, SEEK_SET);
 			size_t sz = fread(buffer, 1, MaxBufferSz, file);
@@ -4739,21 +4727,15 @@ if (d.isHasPhase)
 		d.xyzDim[4] = d.xyzDim[3] / maxInStackPositionNumber;
 		d.xyzDim[3] = maxInStackPositionNumber;
 	}
-
 	if ((!isnan(patientPositionStartPhilips[1])) && (!isnan(patientPositionEndPhilips[1]))) {
 			for (int k = 0; k < 4; k++) {
 				d.patientPosition[k] = patientPositionStartPhilips[k];
 				d.patientPositionLast[k] = patientPositionEndPhilips[k];
 			}
-		/*if (d.numberOfDynamicScans > 1)
-			printError("4D data with non-contiguous slices: please check output [newest feature]\n");
-		else
-			printMessage("Slices not spatially contiguous: please check output [new feature]\n");*/
     }
 	if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
-
     if (isVerbose) {
         printMessage("DICOM file %s:\n", fname);
         printMessage(" patient position (0020,0032)\t%g\t%g\t%g\n", d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
@@ -4764,7 +4746,6 @@ if (d.isHasPhase)
         //if (d.CSA.dtiV[0] > 0)
         //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
-
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
     	if (isVerbose > 1) { //
@@ -4786,7 +4767,6 @@ if (d.isHasPhase)
     	qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
-
 		for (int i = 0; i < numberOfFrames; i++)
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
 		if ((d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
