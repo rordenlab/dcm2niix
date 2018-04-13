@@ -1036,6 +1036,15 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	int phPos = d.CSA.phaseEncodingDirectionPositive;
 	if (viewOrderGE > -1)
 		phPos = viewOrderGE;
+	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos < 0)) {
+		//when phase encoding axis is known but we do not know phase encoding polarity
+		// https://github.com/rordenlab/dcm2niix/issues/163
+		// This will typically correspond with InPlanePhaseEncodingDirectionDICOM
+		if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+			fprintf(fp, "\t\"PhaseEncodingAxis\": \"j\",\n");
+		else if (d.phaseEncodingRC == 'R')
+				fprintf(fp, "\t\"PhaseEncodingAxis\": \"i\",\n");
+	}
 	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos >= 0)) {
 		if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
 			fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
