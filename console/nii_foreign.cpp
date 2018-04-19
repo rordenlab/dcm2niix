@@ -308,7 +308,7 @@ PACK( typedef struct {
 			fseek(f, imgOffsets[v] * 512, SEEK_SET);
 			nRead = fread( &imgIn[0], 1, bytesPerVolumeIn, f);
     		if (nRead != bytesPerVolumeIn) {
-        		printMessage("%d Error reading ECAT file (offset %d bytes %d)\n", nRead, imgOffsets[v] * 512, bytesPerVolumeIn);
+        		printMessage("%zu Error reading ECAT file (offset %zu bytes %zu)\n", nRead, imgOffsets[v] * 512, bytesPerVolumeIn);
         		fclose(f);
         		return NULL;
     		}
