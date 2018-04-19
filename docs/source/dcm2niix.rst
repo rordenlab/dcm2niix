@@ -24,7 +24,11 @@ only and should not be considered a clinical tool.
 Options
 -------
 
+-1..-9          gz compression level (1=fastest..9=smallest, default 6)
+
 -b <y/n>        Save additional BIDS metadata to a side-car .json file.
+
+-ba <y/n>       anonymize BIDS
 
 -f <format>     Format string for the output filename(s). The following
                 specifiers are supported:
@@ -35,22 +39,33 @@ Options
                 - %e, echo number
                 - %f, folder name
                 - %i, patient ID
+                - %j, seriesInstanceUID
+                - %k, studyInstanceUID
                 - %m, manufacturer
                 - %n, patient name
                 - %p, protocol
                 - %s, series number
                 - %t, time
                 - %u, acquisition number
-                - %z, sequence name.
+                - %v, vendor
+                - %x, study ID
+                - %z, sequence name
 
                 The default format string is "%p_%e_%4s".
+
+-i <y/n>        Ignore derived, localizer and 2D images.
 
 -m <y/n>        Merge slices from the same series regardless of study time,
                 echo, coil, orientation, etc...
 
+-n <number>     Only convert this series number. Provide a negative number for
+                listing of series numbers in input folder.
+
 -o <path>       Output directory where the converted files should be saved. If
                 unspecified, the files are saved within the specified source
                 directory.
+
+-p <y/n>        Use Philips precise float (rather than display) scaling.
 
 -s <y/n>        Convert a single file only.
 

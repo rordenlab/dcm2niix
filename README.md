@@ -61,8 +61,9 @@ If you have any problems with the cmake build script described above or want to 
 
 ## Alternatives
 
- - [Valerio Luccio's dinifti](http://cbi.nyu.edu/software/dinifti.php) is focused on conversion of Siemens data
+ - [Valerio Luccio's dinifti](http://cbi.nyu.edu/software/dinifti.php) is focused on conversion of Siemens data.
  - [dcm2nii](http://www.mccauslandcenter.sc.edu/mricro/mricron/dcm2nii.htm) is the predecessor of dcm2niix. It is deprecated for modern images, but does handle image formats that predate DICOM (proprietary Elscint, GE and Siemens formats).
+ - [DWIConvert](https://github.com/BRAINSia/BRAINSTools/tree/master/DWIConvert) converts DICOM images to NRRD and NIfTI formats.
  - [Xiangrui Li's dicm2nii](http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter) is written in Matlab. The Matlab language makes this very scriptable.
  - [dicom2nifti](https://github.com/icometrix/dicom2nifti) uses the scriptable Python wrapper utilizes the [high performance  GDCMCONV](http://gdcm.sourceforge.net/wiki/index.php/Gdcmconv) executables.
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
