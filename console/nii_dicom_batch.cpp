@@ -2466,6 +2466,15 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return returnCode;
 }// nii_saveCrop()
 
+void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
+	if (d->acquisitionDate < d1->acquisitionDate) return; //d1 occurred on later date
+	if (d->acquisitionTime <= d1->acquisitionTime) return; //d1 occurred on later (or same) time
+	if (d->imageNum > d1->imageNum)
+		printWarning("Images not sorted in ascending instance number (0020,0013)\n");
+	else
+		printWarning("Images sorted by instance number  [0020,0013](%d..%d), but AcquisitionTime [0008,0032] suggests a different order (%g..%g) \n", d->imageNum,d1->imageNum, d->acquisitionTime,d1->acquisitionTime);
+}
+
 void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 //detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
@@ -2627,8 +2636,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         }*/
         //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
         struct nifti_1_header hdrI;
+        //double time = -1.0;
         for (int i = 1; i < nConvert; i++) { //stack additional images
             indx = dcmSort[i].indx;
+            //double time2 = dcmList[dcmSort[i].indx].acquisitionTime;
+            //if (time != time2)
+            //	printWarning("%g\n", time2);
+            //time = time2;
             //if (headerDcm2Nii(dcmList[indx], &hdrI) == EXIT_FAILURE) return EXIT_FAILURE;
             img = nii_loadImgXL(nameList->str[indx], &hdrI, dcmList[indx],iVaries, opts.compressFlag, opts.isVerbose, dti4D);
             if (img == NULL) return EXIT_FAILURE;
@@ -2641,6 +2655,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             memcpy(&imgM[(uint64_t)i*imgsz], &img[0], imgsz);
             free(img);
         }
+        checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
     if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
