@@ -2466,6 +2466,10 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return returnCode;
 }// nii_saveCrop()
 
+float acquisitionTimeDifference(struct TDICOMdata * d, struct TDICOMdata * d1) {
+	if (d->acquisitionDate != d1->acquisitionDate) return -1; //to do: scans running across midnight
+	return (d1->acquisitionTime - d->acquisitionTime);
+}
 void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	if (d->acquisitionDate < d1->acquisitionDate) return; //d1 occurred on later date
 	if (d->acquisitionTime <= d1->acquisitionTime) return; //d1 occurred on later (or same) time
@@ -2579,6 +2583,31 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
+            //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
+    		bool trVaries = false;
+    		float tr = -1;
+    		int prevVolIndx = indx0;
+    		for (int i = 0; i < nConvert; i++)
+                    if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
+                    	float trDiff = acquisitionTimeDifference(&dcmList[prevVolIndx], &dcmList[dcmSort[i].indx]);
+                    	prevVolIndx = dcmSort[i].indx;
+                    	if (trDiff <= 0) continue;
+                    	if (tr < 0) tr = trDiff;
+                    	if (!isSameFloatGE(tr,trDiff))
+                    		trVaries = true;
+            		}
+            if (trVaries) {
+            	saveAs3D = true;
+            	printWarning("Creating independent volumes as time between volumes varies\n");
+				printMessage(" OnsetTime = [");
+				for (int i = 0; i < nConvert; i++)
+						if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
+							float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
+							printMessage(" %g", trDiff);
+						}
+				printMessage(" ]\n");
+            }
+            //next: detect variable inter-slice distance
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             bool dxVaries = false;
             for (int i = 1; i < nConvert; i++)

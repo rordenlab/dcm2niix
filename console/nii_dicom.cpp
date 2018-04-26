@@ -3403,6 +3403,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //If ImageType is REPROJECTION we slice direction is reversed - need example to test
 // #define  kSeriesType  0x0054+(0x1000 << 16 )
 #define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
+#define  kPETImageIndex  0x0054+(0x1330<< 16 )
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
@@ -3434,6 +3435,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
     int locationsInAcquisitionGE = 0;
+    int PETImageIndex = 0;
     int inStackPositionNumber = 0;
     int maxInStackPositionNumber = 0;
     int temporalPositionIdentifier = 0;
@@ -4087,6 +4089,9 @@ double TE = 0.0; //most recent echo time recorded
             case kDoseCalibrationFactor :
                 d.doseCalibrationFactor = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
+            case kPETImageIndex :
+            	PETImageIndex = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	break;
             case kBitsAllocated :
                 d.bitsAllocated = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
@@ -4621,6 +4626,10 @@ double TE = 0.0; //most recent echo time recorded
 		//Uncompressed data (unencapsulated) is sent in DICOM as a series of raw bytes or words (little or big endian) in the Value field of the Pixel Data element (7FE0,0010). Encapsulated data on the other hand is sent not as raw bytes or words but as Fragments contained in Items that are the Value field of Pixel Data
     	printWarning("DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010: %s\n", fname);
     	d.imageStart = encapsulatedDataImageStart;
+    }
+    if ((d.modality == kMODALITY_PT) && (PETImageIndex > 0)) {
+    	d.imageNum = PETImageIndex; //https://github.com/rordenlab/dcm2niix/issues/184
+    	//printWarning("PET scan using 0054,1330 for image number %d\n", PETImageIndex);
     }
     //Recent Philips images include DateTime (0008,002A) but not separate date and time (0008,0022 and 0008,0032)
     #define kYYYYMMDDlen 8 //how many characters to encode year,month,day in "YYYYDDMM" format
