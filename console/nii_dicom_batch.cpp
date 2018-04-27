@@ -2466,9 +2466,24 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return returnCode;
 }// nii_saveCrop()
 
-float acquisitionTimeDifference(struct TDICOMdata * d, struct TDICOMdata * d1) {
-	if (d->acquisitionDate != d1->acquisitionDate) return -1; //to do: scans running across midnight
-	return (d1->acquisitionTime - d->acquisitionTime);
+float dicomTimeToSec (float dicomTime) {
+	char acqTimeBuf[64];
+	snprintf(acqTimeBuf, sizeof acqTimeBuf, "%+013.5f", (double)dicomTime);
+	int ahour,amin;
+	double asec;
+	int count = 0;
+	sscanf(acqTimeBuf, "%3d%2d%lf%n", &ahour, &amin, &asec, &count);
+	if (!count) return -1;
+	return  (ahour * 3600)+(amin * 60) + asec;
+}
+
+float acquisitionTimeDifference(struct TDICOMdata * d1, struct TDICOMdata * d2) {
+	if (d1->acquisitionDate != d2->acquisitionDate) return -1; //to do: scans running across midnight
+	float sec1 = dicomTimeToSec(d1->acquisitionTime);
+	float sec2 = dicomTimeToSec(d2->acquisitionTime);
+	//printMessage("%g\n",d2->acquisitionTime);
+	if ((sec1 < 0) || (sec2 < 0)) return -1;
+	return (sec2 - sec1);
 }
 void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	if (d->acquisitionDate < d1->acquisitionDate) return; //d1 occurred on later date
@@ -2585,6 +2600,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             }
             //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
     		bool trVaries = false;
+    		bool dayVaries = false;
     		float tr = -1;
     		int prevVolIndx = indx0;
     		for (int i = 0; i < nConvert; i++)
@@ -2593,12 +2609,17 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     	prevVolIndx = dcmSort[i].indx;
                     	if (trDiff <= 0) continue;
                     	if (tr < 0) tr = trDiff;
+                    	if (trDiff < 0) dayVaries = true;
                     	if (!isSameFloatGE(tr,trDiff))
                     		trVaries = true;
             		}
             if (trVaries) {
-            	saveAs3D = true;
-            	printWarning("Creating independent volumes as time between volumes varies\n");
+            	if (dayVaries)
+            		printWarning("Seconds between volumes varies (perhaps run through midnight)\n");
+            	else
+            		printWarning("Seconds between volumes varies\n");
+            	// saveAs3D = true;
+            	//  printWarning("Creating independent volumes as time between volumes varies\n");
 				printMessage(" OnsetTime = [");
 				for (int i = 0; i < nConvert; i++)
 						if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
