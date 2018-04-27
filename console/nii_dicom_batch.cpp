@@ -1218,6 +1218,13 @@ int cmp_bvals(const void *a, const void *b){
     return bvals[ia] < bvals[ib] ? -1 : bvals[ia] > bvals[ib];
 } // cmp_bvals()
 
+bool isAllZeroFloat(float v1, float v2, float v3) {
+	if (!isSameFloatGE(v1, 0.0)) return false;
+	if (!isSameFloatGE(v2, 0.0)) return false;
+	if (!isSameFloatGE(v3, 0.0)) return false;
+	return true;
+}
+
 int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, int * numADC) {
     //reports non-zero if any volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
@@ -1260,11 +1267,24 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 			free(vx);
 			return NULL;
         }
-        for (int i = 1; i < numDti; i++)
+        for (int i = 0; i < numDti; i++)
                 printMessage("bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
-        printWarning("No bvec/bval files created. Only one B-value reported for all volumes: %g\n",vx[0].V[0]);
-        free(vx);
-        return NULL;
+        //Stutters XINAPSE7 seem to save B=0 as B=2000, but these are not derived? https://github.com/rordenlab/dcm2niix/issues/182
+        bool bZeroBvec = false;
+        for (int i = 0; i < numDti; i++) {//check if all bvalues match first volume
+            if (isAllZeroFloat(vx[i].V[1], vx[i].V[2], vx[i].V[3])) {
+            	vx[i].V[0] = 0;
+            	//printWarning("volume %d might be B=0\n", i);
+            	bZeroBvec = true;
+            }
+        }
+        if (bZeroBvec)
+        	printWarning("Assuming volumes without gradients are actually B=0\n");
+        else {
+        	printWarning("No bvec/bval files created. Only one B-value reported for all volumes: %g\n",vx[0].V[0]);
+        	free(vx);
+        	return NULL;
+        }
     }
     //report values:
     //for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
@@ -1290,9 +1310,11 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	bvals = (float *) malloc(numDti * sizeof(float));
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
+		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
 		if (isADCnotDTI(vx[i])) {
             *numADC = *numADC + 1;
             bvals[i] = kADCval;
+            //printMessage("+++bxyz %d\n",i);
         }
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
 	}
@@ -2599,35 +2621,37 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 }
             }
             //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
-    		bool trVaries = false;
-    		bool dayVaries = false;
-    		float tr = -1;
-    		int prevVolIndx = indx0;
-    		for (int i = 0; i < nConvert; i++)
-                    if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
-                    	float trDiff = acquisitionTimeDifference(&dcmList[prevVolIndx], &dcmList[dcmSort[i].indx]);
-                    	prevVolIndx = dcmSort[i].indx;
-                    	if (trDiff <= 0) continue;
-                    	if (tr < 0) tr = trDiff;
-                    	if (trDiff < 0) dayVaries = true;
-                    	if (!isSameFloatGE(tr,trDiff))
-                    		trVaries = true;
-            		}
-            if (trVaries) {
-            	if (dayVaries)
-            		printWarning("Seconds between volumes varies (perhaps run through midnight)\n");
-            	else
-            		printWarning("Seconds between volumes varies\n");
-            	// saveAs3D = true;
-            	//  printWarning("Creating independent volumes as time between volumes varies\n");
-				printMessage(" OnsetTime = [");
+    		if (dcmList[indx0].modality == kMODALITY_PT) {
+				bool trVaries = false;
+				bool dayVaries = false;
+				float tr = -1;
+				int prevVolIndx = indx0;
 				for (int i = 0; i < nConvert; i++)
 						if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
-							float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
-							printMessage(" %g", trDiff);
+							float trDiff = acquisitionTimeDifference(&dcmList[prevVolIndx], &dcmList[dcmSort[i].indx]);
+							prevVolIndx = dcmSort[i].indx;
+							if (trDiff <= 0) continue;
+							if (tr < 0) tr = trDiff;
+							if (trDiff < 0) dayVaries = true;
+							if (!isSameFloatGE(tr,trDiff))
+								trVaries = true;
 						}
-				printMessage(" ]\n");
-            }
+				if (trVaries) {
+					if (dayVaries)
+						printWarning("Seconds between volumes varies (perhaps run through midnight)\n");
+					else
+						printWarning("Seconds between volumes varies\n");
+					// saveAs3D = true;
+					//  printWarning("Creating independent volumes as time between volumes varies\n");
+					printMessage(" OnsetTime = [");
+					for (int i = 0; i < nConvert; i++)
+							if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
+								float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
+								printMessage(" %g", trDiff);
+							}
+					printMessage(" ]\n");
+				} //if trVaries
+            } //if PET
             //next: detect variable inter-slice distance
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             bool dxVaries = false;
