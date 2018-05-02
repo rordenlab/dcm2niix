@@ -613,7 +613,10 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     char txt[1024] = {""};
     if (h->slice_code == NIFTI_SLICE_UNKNOWN) h->slice_code = d.CSA.sliceOrder;
     if (h->slice_code == NIFTI_SLICE_UNKNOWN) h->slice_code = d2.CSA.sliceOrder; //sometimes the first slice order is screwed up https://github.com/eauerbach/CMRR-MB/issues/29
-    sprintf(txt, "TE=%.2g;Time=%.3f", d.TE,d.acquisitionTime);// d.dateTime);
+    if (d.modality == kMODALITY_MR)
+    	sprintf(txt, "TE=%.2g;Time=%.3f", d.TE,d.acquisitionTime);
+    else
+    	sprintf(txt, "Time=%.3f", d.TE,d.acquisitionTime);
     if (d.CSA.phaseEncodingDirectionPositive >= 0) {
         char dtxt[1024] = {""};
         sprintf(dtxt, ";phase=%d", d.CSA.phaseEncodingDirectionPositive);
@@ -3712,7 +3715,9 @@ double TE = 0.0; //most recent echo time recorded
                 	isMosaic = true;
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
-                if((slen > 6) && (strstr(d.imageType, "PHASE") != NULL) )
+                if((slen > 3) && (strstr(d.imageType, "_P_") != NULL) )
+                	d.isHasPhase = true;
+				if((slen > 6) && (strstr(d.imageType, "PHASE") != NULL) )
                 	d.isHasPhase = true;
                 if((slen > 6) && (strstr(d.imageType, "DERIVED") != NULL) )
                 	d.isDerived = true;
@@ -4493,7 +4498,8 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kCSAImageHeaderInfo:
             	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose); //, dti4D);
-                d.isHasPhase = d.CSA.isPhaseMap;
+                if (!d.isHasPhase)
+                	d.isHasPhase = d.CSA.isPhaseMap;
                 break;
                 //case kObjectGraphics:
                 //    printMessage("---->%d,",lLength);

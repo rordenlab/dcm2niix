@@ -2620,6 +2620,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
+            //next: detect if ANY file flagged as echo vaies
+            for (int i = 0; i < nConvert; i++)
+            	if (dcmList[dcmSort[i].indx].isMultiEcho)
+            		dcmList[indx0].isMultiEcho = true;
             //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
     		if (dcmList[indx0].modality == kMODALITY_PT) {
 				bool trVaries = false;
@@ -2729,7 +2733,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             memcpy(&imgM[(uint64_t)i*imgsz], &img[0], imgsz);
             free(img);
         }
-        checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
+        if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
+        	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
     if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
@@ -3456,7 +3461,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 			isMultiEcho = false;
 			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
-                                        fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
+                    fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 					nConvert++;
 				} else {
 					dcmList[i].isMultiEcho = isMultiEcho;
