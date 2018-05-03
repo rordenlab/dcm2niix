@@ -2629,7 +2629,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				bool trVaries = false;
 				bool dayVaries = false;
 				float tr = -1;
-				int prevVolIndx = indx0;
+				uint64_t prevVolIndx = indx0;
 				for (int i = 0; i < nConvert; i++)
 						if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
 							float trDiff = acquisitionTimeDifference(&dcmList[prevVolIndx], &dcmList[dcmSort[i].indx]);

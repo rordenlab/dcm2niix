@@ -616,7 +616,7 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     if (d.modality == kMODALITY_MR)
     	sprintf(txt, "TE=%.2g;Time=%.3f", d.TE,d.acquisitionTime);
     else
-    	sprintf(txt, "Time=%.3f", d.TE,d.acquisitionTime);
+    	sprintf(txt, "Time=%.3f", d.acquisitionTime);
     if (d.CSA.phaseEncodingDirectionPositive >= 0) {
         char dtxt[1024] = {""};
         sprintf(dtxt, ";phase=%d", d.CSA.phaseEncodingDirectionPositive);
