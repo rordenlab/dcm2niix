@@ -3365,6 +3365,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
 //#define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
+#define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
@@ -3411,6 +3412,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
+#define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kImaPATModeText  0x0051+(0x1011 << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
@@ -3480,6 +3482,7 @@ double TE = 0.0; //most recent echo time recorded
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
     int multiBandFactor = 0;
+    int numberOfImagesInMosaic = 0;
     int encapsulatedDataFragments = 0;
     int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
     int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
@@ -3863,6 +3866,10 @@ double TE = 0.0; //most recent echo time recorded
                 if (strcmp(dir, "ISOTROPIC") == 0)
                 	isPhilipsDerived = true;
                 break; }
+            case kNumberOfImagesInMosaic :
+            	if (d.manufacturer == kMANUFACTURER_SIEMENS)
+            		numberOfImagesInMosaic =  dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	break;
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
@@ -4209,6 +4216,15 @@ double TE = 0.0; //most recent echo time recorded
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
                 d.zThick = d.xyzMM[3];
                 break;
+             case kAcquisitionMatrixText : {
+               if (d.manufacturer == kMANUFACTURER_SIEMENS) {
+					char matStr[kDICOMStr];
+					dcmStr (lLength, &buffer[lPos], matStr);
+					char* pPosition = strchr(matStr, 'I');
+					if (pPosition != NULL)
+						printWarning("interpolated Siemens data\n");
+            	}
+               break; }
             case kCoilSiemens : {
                 if (d.manufacturer == kMANUFACTURER_SIEMENS) {
                     //see if image from single coil "H12" or an array "HEA;HEP"
@@ -4707,6 +4723,8 @@ double TE = 0.0; //most recent echo time recorded
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
         d.isValid = false;
     }
+    if ((numberOfImagesInMosaic > 1) && (d.CSA.mosaicSlices < 1))
+    	d.CSA.mosaicSlices = numberOfImagesInMosaic;
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (isMosaic) && (d.CSA.mosaicSlices < 1) && (d.phaseEncodingSteps > 0) && ((d.xyzDim[1] % d.phaseEncodingSteps) == 0) && ((d.xyzDim[2] % d.phaseEncodingSteps) == 0) ) {
     	d.CSA.mosaicSlices = (d.xyzDim[1] / d.phaseEncodingSteps) * (d.xyzDim[2] / d.phaseEncodingSteps);
     	printWarning("Mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
