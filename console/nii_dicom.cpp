@@ -1082,6 +1082,17 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
             nifti_swap_4bytes(1, &tagCSA.nitems);
         if (isVerbose > 1) //extreme verbosity: show every CSA tag
         	printMessage("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
+        /*if (true) {
+        	printMessage("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
+        	float * vals = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
+			csaMultiFloat (&buff[lPos], tagCSA.nitems,vals, &itemsOK);
+			if (itemsOK > 0) {
+				for (int z = 1; z <= itemsOK; z++) //find index and value of fastest time
+                    printMessage("%g\t",  vals[z]);
+            	printMessage("\n");
+            }
+        }*/
+
         if (tagCSA.nitems > 0) {
             if (strcmp(tagCSA.name, "ImageHistory") == 0)
                 CSA->isPhaseMap =  csaIsPhaseMap(&buff[lPos], tagCSA.nitems);
@@ -2978,6 +2989,7 @@ int isSameFloatGE (float a, float b) {
 }
 
 int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10 compliant)
+    //Someday: it might be worthwhile to detect "IMGF" at offset 3228 to warn user if they attempt to convert Signa data
     FILE *fp = fopen(fname, "rb");
 	if (!fp)  return 0;
 	fseek(fp, 0, SEEK_END);
