@@ -4222,7 +4222,7 @@ double TE = 0.0; //most recent echo time recorded
 					dcmStr (lLength, &buffer[lPos], matStr);
 					char* pPosition = strchr(matStr, 'I');
 					if (pPosition != NULL)
-						printWarning("interpolated Siemens data\n");
+						printWarning("interpolated data may exhibit Gibbs ringing and be unsuitable for dwidenoise/mrdegibbs.\n");
             	}
                break; }
             case kCoilSiemens : {

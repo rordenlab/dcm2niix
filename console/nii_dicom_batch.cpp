@@ -2676,6 +2676,17 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                         sliceMMarray[i] = dx0;
                     }
                     printMessage("]\n");
+					int imageNumRange = 1 + abs( dcmList[dcmSort[nConvert-1].indx].imageNum -  dcmList[dcmSort[0].indx].imageNum);
+					if ((imageNumRange > 1) && (imageNumRange != nConvert)) {
+						printWarning("Missing images? Expected %d images, but instance number (0020,0013) ranges from %d to %d\n", nConvert, dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[nConvert-1].indx].imageNum);
+						printMessage("instance=[");
+						for (int i = 0; i < nConvert; i++) {
+							printMessage(" %d", dcmList[dcmSort[i].indx].imageNum);
+
+						}
+						printMessage("]\n");
+                    } //imageNum not sequential
+
                 }
             }
             if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) &&  ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS))  ) { //Niels Janssen has provided GE sequential multi-phase acquisitions that also require swizzling
@@ -2857,7 +2868,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (volOrderIndex) //reorder volumes
         	imgM = reorderVolumes(&hdr0, imgM, volOrderIndex);
 #ifndef HAVE_R
-		if (numADC > 0) {//ADC maps can disrupt analysis: save a copy with the ADC map, and another without
+		if ((opts.isIgnoreDerivedAnd2D) && (numADC > 0))
+			printMessage("Ignoring derived diffusion image(s). Better isotropic and ADC maps can be generated later processing.\n");
+		if ((!opts.isIgnoreDerivedAnd2D) && (numADC > 0)) {//ADC maps can disrupt analysis: save a copy with the ADC map, and another without
 			char pathoutnameADC[2048] = {""};
 			strcat(pathoutnameADC,pathoutname);
 			strcat(pathoutnameADC,"_ADC");
