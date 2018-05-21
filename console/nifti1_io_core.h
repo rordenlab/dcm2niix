@@ -1,4 +1,4 @@
-//this minimal set of nifti routines is based on nifti1_io with the dependencies (zlib) and a few extra functions
+//this minimal set of nifti routines is based on nifti1_io without the dependencies (zlib) and a few extra functions
 // http://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1_io.h
 // http://niftilib.sourceforge.net
 #ifndef _NIFTI_IO_CORE_HEADER_

@@ -1,4 +1,5 @@
 //#define MY_DEBUG
+#define DEBUG_READ_NOT_WRITE
 #if defined(_WIN64) || defined(_WIN32)
 	#include <windows.h> //write to registry
 #endif
@@ -357,7 +358,7 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
 	return iSL;
 } //verify_slice_dir()
 
-mat44 noNaN(mat44 Q44, bool isVerbose) //simplify any headers that have NaN values
+mat44 noNaN(mat44 Q44, bool isVerbose, bool * isBogus) //simplify any headers that have NaN values
 {
     mat44 ret = Q44;
     bool isNaN44 = false;
@@ -366,6 +367,7 @@ mat44 noNaN(mat44 Q44, bool isVerbose) //simplify any headers that have NaN valu
             if (isnan(ret.m[i][j]))
                 isNaN44 = true;
     if (isNaN44) {
+        *isBogus = true;
         if (isVerbose)
         	printWarning("Bogus spatial matrix (perhaps non-spatial image): inspect spatial orientation\n");
         for (int i = 0; i < 4; i++)
@@ -380,8 +382,12 @@ mat44 noNaN(mat44 Q44, bool isVerbose) //simplify any headers that have NaN valu
 }
 
 void setQSForm(struct nifti_1_header *h, mat44 Q44i, bool isVerbose) {
-    mat44 Q44 = noNaN(Q44i, isVerbose);
-    h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
+    bool isBogus = false;
+    mat44 Q44 = noNaN(Q44i, isVerbose, & isBogus);
+    if (isBogus)
+    	h->sform_code = NIFTI_XFORM_UNKNOWN;
+    else
+    	h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
     h->srow_x[0] = Q44.m[0][0];
     h->srow_x[1] = Q44.m[0][1];
     h->srow_x[2] = Q44.m[0][2];
@@ -396,7 +402,7 @@ void setQSForm(struct nifti_1_header *h, mat44 Q44i, bool isVerbose) {
     h->srow_z[3] = Q44.m[2][3];
     float dumdx, dumdy, dumdz;
     nifti_mat44_to_quatern( Q44 , &h->quatern_b, &h->quatern_c, &h->quatern_d,&h->qoffset_x, &h->qoffset_y, &h->qoffset_z, &dumdx, &dumdy, &dumdz,&h->pixdim[0]) ;
-    h->qform_code = NIFTI_XFORM_SCANNER_ANAT;
+    h->qform_code = h->sform_code;
 } //setQSForm()
 
 #ifdef my_unused
@@ -3794,7 +3800,9 @@ double TE = 0.0; //most recent echo time recorded
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
-                //printMessage("%s\n",acquisitionTimeTxt);
+                #ifdef DEBUG_READ_NOT_WRITE
+                //printMessage("acquisitionTime0008x0032=%s\n",acquisitionTimeTxt);
+                #endif
                 break;
             case kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
@@ -4052,6 +4060,16 @@ double TE = 0.0; //most recent echo time recorded
 				philDTI[gradNum].V[2] = vAPPhilips;
 				philDTI[gradNum].V[3] = vFHPhilips;
 				isPhilipsDerived = false;
+    			#ifdef DEBUG_READ_NOT_WRITE
+              	if (numDimensionIndexValues < 19) {
+					printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
+					for (int i = 0; i < ndim; i++)
+						printMessage("%d ", d.dimensionIndexValues[i]);
+					printMessage("]\n");
+					//printMessage("B0= %g  num=%d\n", B0Philips, gradNum);
+				}
+              	#endif
+
 				//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
 
 
@@ -4895,6 +4913,11 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
+	#ifdef DEBUG_READ_NOT_WRITE
+    d.isValid = false;
+    printError("No files saved: DEBUG_READ_NOT_WRITE set\n");
+	#endif
+
     //printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
     return d;
 } // readDICOM()
