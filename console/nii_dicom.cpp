@@ -381,12 +381,16 @@ mat44 noNaN(mat44 Q44, bool isVerbose, bool * isBogus) //simplify any headers th
     return ret;
 }
 
+#define kSessionOK 0
+#define kSessionBadMatrix 1
+
 void setQSForm(struct nifti_1_header *h, mat44 Q44i, bool isVerbose) {
     bool isBogus = false;
     mat44 Q44 = noNaN(Q44i, isVerbose, & isBogus);
-    if (isBogus)
+    if ((h->session_error == kSessionBadMatrix) || (isBogus)) {
+    	h->session_error = kSessionBadMatrix;
     	h->sform_code = NIFTI_XFORM_UNKNOWN;
-    else
+    } else
     	h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
     h->srow_x[0] = Q44.m[0][0];
     h->srow_x[1] = Q44.m[0][1];
@@ -1328,7 +1332,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
     }
     //next items listed as unused in NIfTI format, but zeroed for consistency across runs
 	h->extents = 0;
-    h->session_error = 0;
+    h->session_error = kSessionOK;
     h->glmin = 0; //unused, but make consistent
     h->glmax = 0; //unused, but make consistent
     h->regular = 114; //in legacy Analyze this was always 114
@@ -1372,7 +1376,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
 	h->srow_y[3] = -((float)h->dim[3] / 2);
 	h->srow_z[3] = ((float)h->dim[2] / 2);
     h->qform_code = NIFTI_XFORM_UNKNOWN;
-    h->sform_code = NIFTI_XFORM_SCANNER_ANAT;
+    h->sform_code = NIFTI_XFORM_UNKNOWN;
     h->toffset = 0;
     h->intent_code = NIFTI_INTENT_NONE;
     h->dim_info = 0; //Freq, Phase and Slice all unknown
