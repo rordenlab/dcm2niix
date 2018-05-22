@@ -32,7 +32,7 @@ before_build:
 
     cd c:\projects\dcm2niix\build
 
-    cmake -G "Visual Studio 14 2015 Win64" -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON ..\
+    cmake -Wno-dev -G "Visual Studio 14 2015 Win64" -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON ..\
 
 build:
   project: c:\projects\dcm2niix\build\dcm2niix.sln

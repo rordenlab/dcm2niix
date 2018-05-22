@@ -177,7 +177,7 @@ PACK( typedef struct {
     fseek(f, 512, SEEK_SET);
     size_t nRead = fread(&lhdr, sizeof(lhdr), 1, f);
     if (nRead != 1) {
-        printMessage("Error reading ECAT file\n");
+        printMessage("Error reading ECAT file (list header)\n");
         fclose(f);
         return NULL;
     }
@@ -189,7 +189,7 @@ PACK( typedef struct {
     ecat_img_hdr ihdr;
     nRead = fread(&ihdr, sizeof(ihdr), 1, f);
     if (nRead != 1) {
-        printMessage("Error reading ECAT file\n");
+        printMessage("Error reading ECAT file (image header)\n");
         fclose(f);
         return NULL;
     }
@@ -230,7 +230,7 @@ PACK( typedef struct {
     		fseek(f, 512 * (lhdr.hdr[1] -1), SEEK_SET);
     		nRead =fread(&lhdr, 512, 1, f);
     		if (nRead != 1) {
-        		printMessage("Error reading ECAT file\n");
+        		printMessage("Error reading ECAT file (yet another list header)\n");
         		fclose(f);
         		return NULL;
     		}
@@ -243,7 +243,7 @@ PACK( typedef struct {
     		fseek(f, (lhdr.r[k][1]-1) * 512, SEEK_SET); //image header is block immediately before image
     		nRead = fread(&ihdrN, sizeof(ihdrN), 1, f);
     		if (nRead != 1) {
-        		printMessage("Error reading ECAT file\n");
+        		printMessage("Error reading ECAT file (yet another image header)\n");
         		fclose(f);
         		return NULL;
     		}
@@ -307,8 +307,8 @@ PACK( typedef struct {
 		for (int v = 0; v < num_vol; v++) {
 			fseek(f, imgOffsets[v] * 512, SEEK_SET);
 			nRead = fread( &imgIn[0], 1, bytesPerVolumeIn, f);
-    		if (nRead != 1) {
-        		printMessage("Error reading ECAT file\n");
+    		if (nRead != bytesPerVolumeIn) {
+        		printMessage("%zu Error reading ECAT file (offset %zu bytes %zu)\n", nRead, imgOffsets[v] * 512, bytesPerVolumeIn);
         		fclose(f);
         		return NULL;
     		}

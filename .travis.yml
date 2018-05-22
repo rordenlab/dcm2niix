@@ -15,7 +15,7 @@ before_install:
   - git submodule update --init --depth=3 dcm_qa
 
 script:
-  - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON .. && make && cd -
+  - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DCMAKE_C_FLAGS="-mmmx -msse -msse2 -mfpmath=sse" -DCMAKE_CXX_FLAGS="-mmmx -msse -msse2 -mfpmath=sse" .. && make && cd -
   - export PATH=$PWD/build/bin:$PATH
   - cd dcm_qa && ./batch.sh && cd -
 
