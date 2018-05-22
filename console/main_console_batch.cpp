@@ -4,7 +4,6 @@
 //  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
 #include <stdbool.h> //requires VS 2015 or later
-#endif
 #ifdef _MSC_VER
 	#include  <io.h> //access()
 	#ifndef F_OK
