@@ -1,5 +1,5 @@
 //#define MY_DEBUG
-#define DEBUG_READ_NOT_WRITE
+//#define DEBUG_READ_NOT_WRITE
 #if defined(_WIN64) || defined(_WIN32)
 	#include <windows.h> //write to registry
 #endif
