@@ -28,17 +28,7 @@
 
 //#define mydebugtest //automatically process directory specified in main, ignore input arguments
 
-#ifdef _MSC_VER
-	#if _MSC_VER < 1800
-		#define false   0
-		#define true    1
-		#define bool  int
-	#else
-		#include <stdbool.h>
-	#endif
-#else
-	#include <stdbool.h>
-#endif
+#include <stdbool.h> //requires VS 2015 or later
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <ctype.h>

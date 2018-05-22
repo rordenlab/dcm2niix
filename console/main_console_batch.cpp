@@ -3,16 +3,7 @@
 //  Copyright (c) 2014 Chris Rorden. All rights reserved.
 //  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
-#ifdef _MSC_VER
-	#if _MSC_VER < 1800
-		#define false   0
-		#define true    1
-		#define bool  int
-	#else
-		#include <stdbool.h>
-	#endif
-#else
-	#include <stdbool.h>
+#include <stdbool.h> //requires VS 2015 or later
 #endif
 #ifdef _MSC_VER
 	#include  <io.h> //access()

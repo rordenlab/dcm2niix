@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdbool.h>
+#include <stdbool.h> //requires VS 2015 or later
 #include <math.h>
 #include "print.h"
 #ifdef _MSC_VER

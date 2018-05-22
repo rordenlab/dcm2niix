@@ -36,7 +36,7 @@
 #include <ctype.h> //toupper
 #include <float.h>
 #include <math.h>
-#include <stdbool.h>
+#include <stdbool.h> //requires VS 2015 or later
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

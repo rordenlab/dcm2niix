@@ -1,14 +1,4 @@
-#ifdef _MSC_VER
-	#if _MSC_VER < 1800
-		#define false   0
-		#define true    1
-		#define bool  int
-	#else
-		#include <stdbool.h>
-	#endif
-#else
-	#include <stdbool.h>
-#endif
+#include <stdbool.h> //requires VS 2015 or later
 #include <string.h>
 #include <stdint.h>
 #include "nifti1_io_core.h"
