@@ -4,6 +4,17 @@
 //  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
 
 #ifdef _MSC_VER
+	#if _MSC_VER < 1800
+		#define false   0
+		#define true    1
+		#define bool  int
+	#else
+		#include <stdbool.h>
+	#endif
+#else
+	#include <stdbool.h>
+#endif
+#ifdef _MSC_VER
 	#include  <io.h> //access()
 	#ifndef F_OK
 	#define F_OK 0 /* existence check */
@@ -14,7 +25,6 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
