@@ -20,6 +20,11 @@ The following sub-sections list how you can modify this basic recipe for your ne
 
 Some [Centos/Redhat](https://github.com/rordenlab/dcm2niix/issues/137) may report "/usr/bin/ld: cannot find -lstdc++". This can be resolved by installing static versions of libstdc++:  `yum install libstdc++-static`.
 
+To compile with debugging symbols, use
+```
+cmake -DUSE_OPENJPEG=ON -DCMAKE_CXX_FLAGS=-g .. && make
+```
+
 ##### ZLIB BUILD
  If we have zlib, we can use it (-lz) and disable [miniz](https://code.google.com/p/miniz/) (-myDisableMiniZ)
 
