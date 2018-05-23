@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <stdbool.h>
+#include <stdbool.h> //requires VS 2015 or later
 #include <ctype.h>
 #include <string.h>
 #include <stddef.h>
