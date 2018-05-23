@@ -4252,7 +4252,8 @@ double TE = 0.0; //most recent echo time recorded
                     //see if image from single coil "H12" or an array "HEA;HEP"
                     char coilStr[kDICOMStr];
                     dcmStr (lLength, &buffer[lPos], coilStr);
-                    //long coilNum = 0;
+                    if (strlen(coilStr) < 1) break;
+                    if (coilStr[0] == 'C') break; //kludge as Nova 32-channel defaults to "C:A32" https://github.com/rordenlab/dcm2niix/issues/187
                     char *ptr;
                     dcmStrDigitsOnly(coilStr);
                     d.coilNum = (int)strtol(coilStr, &ptr, 10);
