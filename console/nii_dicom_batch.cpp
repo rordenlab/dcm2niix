@@ -1705,6 +1705,12 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         sprintf(newstr, "_v%04d", dcm.gradDynVol+1); //+1 as indexed from zero
         strcat (outname,newstr);
     }*/
+    if (dcm.isHasImaginary) {
+    	strcat (outname,"_imaginary"); //has phase map
+    }
+    if (dcm.isHasReal) {
+    	strcat (outname,"_real"); //has phase map
+    }
     if (dcm.isHasPhase) {
     	strcat (outname,"_ph"); //has phase map
     	if (dcm.isHasMagnitude)
@@ -2570,7 +2576,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage("Ignoring 2D image of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
-    bool saveAs3D = dcmList[indx].isHasPhase;
+    bool saveAs3D = dcmList[indx].isHasPhase || dcmList[indx].isHasReal  || dcmList[indx].isHasImaginary;
     struct nifti_1_header hdr0;
     unsigned char * img = nii_loadImgXL(nameList->str[indx], &hdr0,dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose, dti4D);
     if (strlen(opts.imageComments) > 0) {
@@ -2952,7 +2958,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	dti4D->gradDynVol[0] = 1;
 	for (int i = 1; i < dcmList[indx].xyzDim[4]; i++) {
 		for (int j = 0; j < i; j++)
-			if ((dti4D->intenIntercept[i] == dti4D->intenIntercept[j]) && (dti4D->intenScale[i] == dti4D->intenScale[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
+			if ((dti4D->intenIntercept[i] == dti4D->intenIntercept[j]) && (dti4D->intenScale[i] == dti4D->intenScale[j]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
 				dti4D->gradDynVol[i] = dti4D->gradDynVol[j];
 		if (dti4D->gradDynVol[i] == 0) {
 			series++;
@@ -2968,6 +2974,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 				dcmList[indx].intenScale = dti4D->intenScale[i];
 				dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
 				dcmList[indx].isHasPhase = dti4D->isPhase[i];
+				dcmList[indx].isHasReal = dti4D->isReal[i];
+				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
 				dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
@@ -3113,9 +3121,9 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     		*isMultiEcho = true;
     	return true; //we will stack these images, even if they differ in the following attributes
     }
-    if (d1.isHasPhase != d2.isHasPhase) {
+    if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || ((d1.isHasReal != d2.isHasReal))) {
     	if (!warnings->phaseVaries)
-        	printMessage("slices not stacked: some are phase maps, others are not. Use 'merge 2D slices' option to force stacking\n");
+        	printMessage("slices not stacked: some are phase/real/imaginary maps, others are not. Use 'merge 2D slices' option to force stacking\n");
     	warnings->phaseVaries = true;
     	return false;
     }

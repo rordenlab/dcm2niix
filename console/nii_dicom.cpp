@@ -708,6 +708,8 @@ struct TDICOMdata clear_dicom_data() {
     //~ d.patientPositionSequentialRepeats = 0;
     //~ d.patientPositionRepeats = 0;
     d.isHasPhase = false;
+    d.isHasReal = false;
+    d.isHasImaginary = false;
     d.isHasMagnitude = false;
     //d.maxGradDynVol = -1; //PAR/REC only
     d.sliceOrient = kSliceOrientUnknown;
@@ -1728,6 +1730,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             	dti4D->intenScale[vol] = cols[kRS];
             	dti4D->intenScalePhilips[vol] = cols[kSS];
             	dti4D->isPhase[vol] = (cols[kImageType] != 0);
+            	//dti4D->isReal[vol]; !Nice to have an example
+            	//dti4D->isImaginary[vol]; !Nice to have an example
             }
 			//if (slice == 1) printWarning("%d\n", (int)cols[kEcho]);
 			slice = slice + (vol * d.xyzDim[3]);
@@ -1923,6 +1927,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isPhase[i] != dti4D->isPhase[0]) d.isScaleOrTEVaries = true;
+			if (dti4D->isReal[i] != dti4D->isReal[0]) d.isScaleOrTEVaries = true;
+			if (dti4D->isImaginary[i] != dti4D->isImaginary[0]) d.isScaleOrTEVaries = true;
 		}
 		//if (d.isScaleOrTEVaries)
 		//	printWarning("Varying dimensions (echoes, phase maps, intensity scaling) will require volumes to be saved separately (hint: you may prefer dicm2nii output)\n");
@@ -3215,6 +3221,8 @@ struct TDCMdim { //DimensionIndexValues
   uint32_t diskPos;
   float TE, intenScale, intenIntercept, intenScalePhilips;
   bool isPhase;
+  bool isReal;
+  bool isImaginary;
 };
 
 int compareTDCMdim(void const *item1, void const *item2) {
@@ -3508,6 +3516,8 @@ double TE = 0.0; //most recent echo time recorded
     float vAPPhilips = 0.0;
     float vFHPhilips = 0.0;
     bool isPhase = false;
+    bool isReal = false;
+    bool isImaginary = false;
     bool isMagnitude = false;
     float patientPositionPrivate[4] = {NAN, NAN, NAN, NAN};
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
@@ -3791,13 +3801,21 @@ double TE = 0.0; //most recent echo time recorded
             case kComplexImageComponent:
                 if (lLength < 2) break;
                 isPhase = false;
+                isReal = false;
+                isImaginary = false;
                 isMagnitude = false;
+                if ((buffer[lPos]=='R') && (toupper(buffer[lPos+1]) == 'E'))
+                	isReal = true;
+                if ((buffer[lPos]=='I') && (toupper(buffer[lPos+1]) == 'M'))
+                	isImaginary = true;
                 if ((buffer[lPos]=='P') && (toupper(buffer[lPos+1]) == 'H'))
                 	isPhase = true;
                 if ((buffer[lPos]=='M') && (toupper(buffer[lPos+1]) == 'A'))
                 	isMagnitude = true;
                 //not mutually exclusive: possible for Philips enhanced DICOM to store BOTH magnitude and phase in the same image
                 if (isPhase) d.isHasPhase = true;
+                if (isReal) d.isHasReal = true;
+                if (isImaginary) d.isHasImaginary = true;
                 if (isMagnitude) d.isHasMagnitude = true;
                 break;
             case kAcquisitionTime :
@@ -4019,6 +4037,8 @@ double TE = 0.0; //most recent echo time recorded
 				dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
 				dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
 				dcmDim[numDimensionIndexValues].isPhase = isPhase;
+				dcmDim[numDimensionIndexValues].isReal = isReal;
+				dcmDim[numDimensionIndexValues].isImaginary = isImaginary;
 				dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
     			numDimensionIndexValues ++;
     			//next: add diffusion if reported
@@ -4850,11 +4870,15 @@ if (d.isHasPhase)
 				dti4D->intenScale[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScale;
 				dti4D->intenIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].intenIntercept;
 				dti4D->isPhase[i] =  dcmDim[j+(i * d.xyzDim[3])].isPhase;
+				dti4D->isReal[i] =  dcmDim[j+(i * d.xyzDim[3])].isReal;
+				dti4D->isImaginary[i] =  dcmDim[j+(i * d.xyzDim[3])].isImaginary;
 				dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
 				if (dti4D->TE[i] != d.TE) isTEvaries = true;
 				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
 				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
 				if (dti4D->isPhase[i] != isPhase) d.isScaleOrTEVaries = true;
+				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
+				if (dti4D->isImaginary[i] != isImaginary) d.isScaleOrTEVaries = true;
 			}
 			if((isScaleVaries) || (isTEvaries)) d.isScaleOrTEVaries = true;
 			if (isTEvaries) d.isMultiEcho = true;

@@ -85,6 +85,8 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         int sliceOrder[kMaxSlice2D]; // [7,3,2] means the first slice on disk should be moved to 7th position
         int gradDynVol[kMaxDTI4D]; //used to parse dimensions of Philips data, e.g. file with multiple dynamics, echoes, phase+magnitude
         float TE[kMaxDTI4D], intenScale[kMaxDTI4D], intenIntercept[kMaxDTI4D], intenScalePhilips[kMaxDTI4D];
+        bool isReal[kMaxDTI4D];
+        bool isImaginary[kMaxDTI4D];
         bool isPhase[kMaxDTI4D];
     };
 
@@ -139,7 +141,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
         //isSlicesSpatiallySequentialPhilips
-        bool isSegamiOasis, isScaleOrTEVaries,  isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase,isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
+        bool isSegamiOasis, isScaleOrTEVaries,  isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
         //uint32_t *totalSlicesIn4DOrder; //Reordering array for Philips slices
     };
