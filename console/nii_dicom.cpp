@@ -760,6 +760,9 @@ struct TDICOMdata clear_dicom_data() {
     //~ d.isSlicesSpatiallySequentialPhilips = true; //Philips can save slices in random order, e.g. 4,5,6,1,2,3
     d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.isSegamiOasis = false; //these images do not store spatial coordinates
+    d.triggerDelayTime = 0.0;
+    d.RWVScale = 0.0;
+    d.RWVIntercept = 0.0;
     d.isScaleOrTEVaries = false;
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
@@ -912,7 +915,7 @@ float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//r
 } //dcmFloat()
 
 double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[],
-                      const bool littleEndian) {//read binary 32-bit float
+                      const bool littleEndian) {//read binary 64-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
     bool swap = (littleEndian != littleEndianPlatform());
     double retVal = 0.0f;
@@ -1679,7 +1682,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
-        if ((cols[kImageType] != 0) && (cols[kImageType] != 3))
+        if ((cols[kImageType] < 0) && (cols[kImageType] > 3))
         	printError("Novel image type %g: not magnitude or phase. Perhaps real, imaginary or a subsequent calculation such as B1.  Please check output\n", cols[kImageType]);
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
@@ -1729,7 +1732,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
              	dti4D->intenIntercept[vol] = cols[kRI];
             	dti4D->intenScale[vol] = cols[kRS];
             	dti4D->intenScalePhilips[vol] = cols[kSS];
-            	dti4D->isPhase[vol] = (cols[kImageType] != 0);
+            	dti4D->isPhase[vol] = (cols[kImageType] == 3);
+            	dti4D->isReal[vol] = (cols[kImageType] == 1);
+            	dti4D->isImaginary[vol] = (cols[kImageType] == 2);
             	//dti4D->isReal[vol]; !Nice to have an example
             	//dti4D->isImaginary[vol]; !Nice to have an example
             }
@@ -3219,7 +3224,7 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
 struct TDCMdim { //DimensionIndexValues
   uint32_t dimIdx[MAX_NUMBER_OF_DIMENSIONS];
   uint32_t diskPos;
-  float TE, intenScale, intenIntercept, intenScalePhilips;
+  float TE, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
   bool isPhase;
   bool isReal;
   bool isImaginary;
@@ -3382,7 +3387,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusionOrientation  0x0018+uint32_t(0x9089<< 16 ) // FD, seen in enhanced
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
-//#define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
+#define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
@@ -3404,6 +3409,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
+#define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
@@ -3469,6 +3475,9 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
+    int sqDepth = 0;
+    int sqDepth00189114 = -1;
+    int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
     int PETImageIndex = 0;
     int inStackPositionNumber = 0;
@@ -3566,6 +3575,113 @@ double TE = 0.0; //most recent echo time recorded
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
 	if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
+    if (groupElement == kItemTag) sqDepth++;
+    if (groupElement == kItemDelimitationTag) {
+    	sqDepth--;
+    	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
+    	//if we leave the folder MREchoSequence 0018,9114
+    	if (( nDimIndxVal > 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (sqDepth00189114 == sqDepth)) {
+    		sqDepth00189114 = -1; //triggered
+			if (inStackPositionNumber > 0) {
+				//for images without SliceNumberMrPhilips (2001,100A)
+				int sliceNumber = inStackPositionNumber;
+				if ((sliceNumber == 1) && (!isnan(patientPosition[1])) ) {
+					for (int k = 0; k < 4; k++)
+						patientPositionStartPhilips[k] = patientPosition[k];
+				} else if ((sliceNumber == 1) && (!isnan(patientPositionPrivate[1]))) {
+					for (int k = 0; k < 4; k++)
+						patientPositionStartPhilips[k] = patientPositionPrivate[k];
+				}
+				if ((sliceNumber == maxInStackPositionNumber) && (!isnan(patientPosition[1])) ) {
+					for (int k = 0; k < 4; k++)
+						patientPositionEndPhilips[k] = patientPosition[k];
+				} else if ((sliceNumber == maxInStackPositionNumber) && (!isnan(patientPositionPrivate[1])) ) {
+					for (int k = 0; k < 4; k++)
+						patientPositionEndPhilips[k] = patientPositionPrivate[k];
+				}
+				patientPosition[1] = NAN;
+				patientPositionPrivate[1] = NAN;
+			}
+			inStackPositionNumber = 0;
+			if (numDimensionIndexValues >= kMaxSlice2D) {
+				printError("Too many slices to track dimensions. Only up to %d are supported\n", kMaxSlice2D);
+				break;
+			}
+			int ndim = nDimIndxVal;
+			for (int i = 0; i < ndim; i++)
+				dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[i];
+			dcmDim[numDimensionIndexValues].TE = TE;
+			dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
+			dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
+			dcmDim[numDimensionIndexValues].isPhase = isPhase;
+			dcmDim[numDimensionIndexValues].isReal = isReal;
+			dcmDim[numDimensionIndexValues].isImaginary = isImaginary;
+			dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
+			dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
+			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
+			#ifdef DEBUG_READ_NOT_WRITE
+			if (numDimensionIndexValues < 19) {
+				printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
+				for (int i = 0; i < ndim; i++)
+					printMessage("%d ", d.dimensionIndexValues[i]);
+				printMessage("]\n");
+				//printMessage("B0= %g  num=%d\n", B0Philips, gradNum);
+			} else return d;
+			#endif
+			numDimensionIndexValues ++;
+			//next: add diffusion if reported
+			if (B0Philips >= 0.0) { //diffusion parameters
+				// Philips does not always provide 2005,1413 (MRImageGradientOrientationNumber) and sometimes after dimensionIndexValues
+				int gradNum = 0;
+				for (int i = 0; i < ndim; i++)
+					if (d.dimensionIndexValues[i] > 0) gradNum = d.dimensionIndexValues[i];
+				if (gradNum <= 0) break;
+				/*
+				With Philips 51.0 both ADC and B=0 are saved as same direction, though they vary in another dimension
+				(0018,9075) CS [ISOTROPIC]
+				(0020,9157) UL 1\2\1\33 << ADC MAP
+				(0018,9075) CS [NONE]
+				(0020,9157) UL 1\1\2\33
+				next two lines attempt to skip ADC maps
+				we could also increment gradNum for ADC if we wanted...
+				*/
+				if (isPhilipsDerived) {
+					gradNum ++;
+					B0Philips = 2000.0;
+					vRLPhilips = 0.0;
+					vAPPhilips = 0.0;
+					vFHPhilips = 0.0;
+				}
+				if (B0Philips == 0.0) {
+					//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
+					vRLPhilips = 0.0;
+					vAPPhilips = 0.0;
+					vFHPhilips = 0.0;
+				}
+				//if ((MRImageGradientOrientationNumber > 0) && ((gradNum != MRImageGradientOrientationNumber)) break;
+				if (gradNum < minGradNum) minGradNum = gradNum;
+				if (gradNum >= maxGradNum) maxGradNum = gradNum;
+				if (gradNum >= kMaxDTI4D) {
+						printError("Number of DTI gradients exceeds 'kMaxDTI4D (%d).\n", kMaxDTI4D);
+				} else {
+					gradNum = gradNum - 1;//index from 0
+					philDTI[gradNum].V[0] = B0Philips;
+					philDTI[gradNum].V[1] = vRLPhilips;
+					philDTI[gradNum].V[2] = vAPPhilips;
+					philDTI[gradNum].V[3] = vFHPhilips;
+				}
+				isPhilipsDerived = false;
+				//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
+				//!!! 16032018 : next line as well as definition of B0Philips may need to be set to zero if Philips omits DiffusionBValue tag for B=0
+				B0Philips = -1.0; //Philips may skip reporting B-values for B=0 volumes, so zero these
+				vRLPhilips = 0.0;
+				vAPPhilips = 0.0;
+				vFHPhilips = 0.0;
+				MRImageGradientOrientationNumber = 0;
+			}//diffusion parameters
+    		nDimIndxVal = -1; //we need DimensionIndexValues
+    	} //record dimensionIndexValues slice information
+    } //groupElement == kItemDelimitationTag : delimit item exits folder
     if (((groupElement == kItemTag) || (groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) && (!isEncapsulatedData)) {
             vr[0] = 'N';
             vr[1] = 'A';
@@ -3896,6 +4012,10 @@ double TE = 0.0; //most recent echo time recorded
                 if (strcmp(dir, "ISOTROPIC") == 0)
                 	isPhilipsDerived = true;
                 break; }
+            case kMREchoSequence :
+            	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
+            	sqDepth00189114 = sqDepth - 1;
+            	break;
             case kNumberOfImagesInMosaic :
             	if (d.manufacturer == kMANUFACTURER_SIEMENS)
             		numberOfImagesInMosaic =  dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -3993,123 +4113,24 @@ double TE = 0.0; //most recent echo time recorded
 				inStackPositionNumber = dcmInt(4,&buffer[lPos],d.isLittleEndian);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
+			case kTriggerDelayTime: { //0x0020+uint32_t(0x9153<< 16 ) //FD
+				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+				//if (isVerbose < 2) break;
+				double trigger = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+				if ((d.triggerDelayTime > 0) && (!isSameDouble(trigger, d.triggerDelayTime)))
+					printMessage("TriggerDelayTime varies %g %g\n", trigger, d.triggerDelayTime);
+				d.triggerDelayTime = trigger;
+				break; }
             case kDimensionIndexValues: { // kImageNum is not enough for 4D series from Philips 5.*.
                 if (lLength < 4) break;
-                uint8_t ndim = lLength / 4;
-                if(ndim > MAX_NUMBER_OF_DIMENSIONS){
-                    // Ideally degenerate axes would be cleverly handled.
-                    // They are commonly seen in NIfTIs, but perhaps not in DICOM.
-                    printError("%d is too many dimensions.  Only up to %d are supported\n", ndim,
+                nDimIndxVal = lLength / 4;
+                if(nDimIndxVal > MAX_NUMBER_OF_DIMENSIONS){
+                    printError("%d is too many dimensions.  Only up to %d are supported\n", nDimIndxVal,
                                MAX_NUMBER_OF_DIMENSIONS);
-                    ndim = MAX_NUMBER_OF_DIMENSIONS;  // Truncate
+                    nDimIndxVal = MAX_NUMBER_OF_DIMENSIONS;  // Truncate
                 }
-                dcmMultiLongs(4 * ndim, &buffer[lPos], ndim, d.dimensionIndexValues, d.isLittleEndian);
-              	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
-              	//
-              	if (inStackPositionNumber > 0) {
-              		//for images without SliceNumberMrPhilips (2001,100A)
-              		int sliceNumber = inStackPositionNumber;
-					if ((sliceNumber == 1) && (!isnan(patientPosition[1])) ) {
-						for (int k = 0; k < 4; k++)
-							patientPositionStartPhilips[k] = patientPosition[k];
-					} else if ((sliceNumber == 1) && (!isnan(patientPositionPrivate[1]))) {
-						for (int k = 0; k < 4; k++)
-							patientPositionStartPhilips[k] = patientPositionPrivate[k];
-					}
-					if ((sliceNumber == maxInStackPositionNumber) && (!isnan(patientPosition[1])) ) {
-						for (int k = 0; k < 4; k++)
-							patientPositionEndPhilips[k] = patientPosition[k];
-					} else if ((sliceNumber == maxInStackPositionNumber) && (!isnan(patientPositionPrivate[1])) ) {
-						for (int k = 0; k < 4; k++)
-							patientPositionEndPhilips[k] = patientPositionPrivate[k];
-					}
-					patientPosition[1] = NAN;
-					patientPositionPrivate[1] = NAN;
-				}
-				inStackPositionNumber = 0;
-              	if (numDimensionIndexValues >= kMaxSlice2D) {
-              		printError("Too many slices to track dimensions. Only up to %d are supported\n", kMaxSlice2D);
-              		break;
-              	}
-              	for (int i = 0; i < ndim; i++)
-					dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[i];
-				dcmDim[numDimensionIndexValues].TE = TE;
-				dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
-				dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
-				dcmDim[numDimensionIndexValues].isPhase = isPhase;
-				dcmDim[numDimensionIndexValues].isReal = isReal;
-				dcmDim[numDimensionIndexValues].isImaginary = isImaginary;
-				dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
-    			numDimensionIndexValues ++;
-    			//next: add diffusion if reported
-    			if (B0Philips < 0.0) break; //diffusion parameters not reported
-    			// Philips does not always provide 2005,1413 (MRImageGradientOrientationNumber) and sometimes after dimensionIndexValues
-    			int gradNum = 0;
-    			for (int i = 0; i < ndim; i++)
-					if (d.dimensionIndexValues[i] > 0) gradNum = d.dimensionIndexValues[i];
-				if (gradNum <= 0) break;
-				/*
-				With Philips 51.0 both ADC and B=0 are saved as same direction, though they vary in another dimension
-        		(0018,9075) CS [ISOTROPIC]
-        		(0020,9157) UL 1\2\1\33 << ADC MAP
-        		(0018,9075) CS [NONE]
-        		(0020,9157) UL 1\1\2\33
-        		next two lines attempt to skip ADC maps
-        		we could also increment gradNum for ADC if we wanted...
-				*/
-				if (isPhilipsDerived) {
-					gradNum ++;
-					B0Philips = 2000.0;
-					vRLPhilips = 0.0;
-					vAPPhilips = 0.0;
-					vFHPhilips = 0.0;
-
-				}
-				if (B0Philips == 0.0) {
-					//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
-					vRLPhilips = 0.0;
-					vAPPhilips = 0.0;
-					vFHPhilips = 0.0;
-				}
-    			//if ((MRImageGradientOrientationNumber > 0) && ((gradNum != MRImageGradientOrientationNumber)) break;
-				if (gradNum < minGradNum) minGradNum = gradNum;
-    			if (gradNum >= maxGradNum) maxGradNum = gradNum;
-				if (gradNum >= kMaxDTI4D) {
-						printError("Number of DTI gradients exceeds 'kMaxDTI4D (%d).\n", kMaxDTI4D);
-						break;
-				}
-				gradNum = gradNum - 1;//index from 0
-				philDTI[gradNum].V[0] = B0Philips;
-				philDTI[gradNum].V[1] = vRLPhilips;
-				philDTI[gradNum].V[2] = vAPPhilips;
-				philDTI[gradNum].V[3] = vFHPhilips;
-				isPhilipsDerived = false;
-    			#ifdef DEBUG_READ_NOT_WRITE
-              	if (numDimensionIndexValues < 19) {
-					printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
-					for (int i = 0; i < ndim; i++)
-						printMessage("%d ", d.dimensionIndexValues[i]);
-					printMessage("]\n");
-					//printMessage("B0= %g  num=%d\n", B0Philips, gradNum);
-				}
-              	#endif
-
-				//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
-
-
-				/*if ((sliceNumberMrPhilips == locationsInAcquisitionPhilips) || ((locationsInAcquisitionPhilips == 0) &&(sliceNumberMrPhilips == maxInStackPositionNumber)) ) {
-					for (int k = 0; k < 4; k++)
-						patientPositionEndPhilips[k] = patientPosition[k];
-				}*/
-				//!!! 16032018 : next line as well as definition of B0Philips may need to be set to zero if Philips omits DiffusionBValue tag for B=0
-				B0Philips = -1.0; //Philips may skip reporting B-values for B=0 volumes, so zero these
-				vRLPhilips = 0.0;
-				vAPPhilips = 0.0;
-				vFHPhilips = 0.0;
-				MRImageGradientOrientationNumber = 0;
-            	break;
-              }
-                break;
+                dcmMultiLongs(4 * nDimIndxVal, &buffer[lPos], nDimIndxVal, d.dimensionIndexValues, d.isLittleEndian);
+              	break; }
             case kPhotometricInterpretation: {
  				char interp[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], interp);
@@ -4582,12 +4603,17 @@ double TE = 0.0; //most recent echo time recorded
             	d.CSA.SeriesHeader_length = lLength;
             	break;
             case kRealWorldIntercept:
+                if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+                d.RWVIntercept = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 if (isSameFloat(0.0, d.intenIntercept)) //give precedence to standard value
-                    d.intenIntercept = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                    d.intenIntercept = d.RWVIntercept;
                 break;
             case kRealWorldSlope:
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+            	d.RWVScale = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                //printMessage("RWVScale %g\n", d.RWVScale);
                 if (isSameFloat(1.0, d.intenScale))  //give precedence to standard value
-                    d.intenScale = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                    d.intenScale = d.RWVScale;
                 break;
             case kEffectiveEchoSpacingGE:
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -4873,6 +4899,8 @@ if (d.isHasPhase)
 				dti4D->isReal[i] =  dcmDim[j+(i * d.xyzDim[3])].isReal;
 				dti4D->isImaginary[i] =  dcmDim[j+(i * d.xyzDim[3])].isImaginary;
 				dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
+				dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
+				dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
 				if (dti4D->TE[i] != d.TE) isTEvaries = true;
 				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
 				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;

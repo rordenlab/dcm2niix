@@ -51,6 +51,8 @@ AA.m[3][0]=AA.m[3][1]=AA.m[3][2]=0.0f , AA.m[3][3]=1.0f            )
 float dotProduct(vec3 u, vec3 v);
 float nifti_mat33_determ( mat33 R ) ;
 int isSameFloat (float a, float b) ;
+int isSameDouble (double a, double b) ;
+
 mat33 nifti_mat33_inverse( mat33 R );
 mat33 nifti_mat33_mul( mat33 A , mat33 B );
 mat33 nifti_mat33_transpose( mat33 A ) ;

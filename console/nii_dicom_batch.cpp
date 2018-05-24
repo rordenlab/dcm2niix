@@ -870,6 +870,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
 	json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
+	fprintf(fp, "\t\"TriggerDelayTime\": %g,\n", d.triggerDelayTime );
+	if (d.RWVScale != 0) {
+		fprintf(fp, "\t\"PhilipsRWVSlope\": %g,\n", d.RWVScale );
+		fprintf(fp, "\t\"PhilipsRWVIntercept\": %g,\n", d.RWVIntercept );
+	}
 	if ((d.intenScalePhilips != 0) || (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
 		fprintf(fp, "\t\"PhilipsRescaleSlope\": %g,\n", d.intenScale );
 		fprintf(fp, "\t\"PhilipsRescaleIntercept\": %g,\n", d.intenIntercept );
@@ -2331,7 +2336,20 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
 }
 
 void PhilipsPrecise (struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling, struct nifti_1_header *h) {
-	if ((d->intenScalePhilips == 0) || (d->manufacturer != kMANUFACTURER_PHILIPS)) return; //not Philips
+	if (d->manufacturer != kMANUFACTURER_PHILIPS) return; //not Philips
+	if (!isSameFloatGE(0.0, d->RWVScale)) {
+		printMessage("Using RWVSlope:RWVIntercept = %g:%g\n",d->RWVScale,d->RWVIntercept);
+		printMessage("Potential Alternative Intensity Scalings\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
+		printMessage(" Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
+		printMessage(" R = raw value, P = precise value, D = displayed value\n");
+		printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
+		printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
+    	h->scl_slope = d->RWVScale;
+    	h->scl_inter = d->RWVIntercept;
+		return;
+	}
+	if (d->intenScalePhilips == 0)  return; //no Philips Precise
+
 	//we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
 	float l0 = PhilipsPreciseVal (0, d->intenScale, d->intenIntercept, d->intenScalePhilips);
 	float l1 = PhilipsPreciseVal (1, d->intenScale, d->intenIntercept, d->intenScalePhilips);
@@ -2977,6 +2995,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
 				dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
+				dcmList[indx].RWVScale = dti4D->RWVScale[i];
+				dcmList[indx].RWVIntercept = dti4D->RWVIntercept[i];
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
 				break;

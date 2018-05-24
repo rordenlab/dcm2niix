@@ -84,6 +84,10 @@ int isSameFloat (float a, float b) {
     return (fabs (a - b) <= FLT_EPSILON);
 }
 
+int isSameDouble (double a, double b) {
+    return (fabs (a - b) <= DBL_EPSILON);
+}
+
 ivec3 setiVec3(int x, int y, int z)
 {
     ivec3 v = {{x, y, z}};
