@@ -3762,7 +3762,7 @@ double TE = 0.0; //most recent echo time recorded
             if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
             	vr[0] = 'S';
             	vr[1] = 'Q';
-            	lLength = 0; //Do not skip Sequence Tag
+            	lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
             }
         } //if explicit else implicit VR
 
