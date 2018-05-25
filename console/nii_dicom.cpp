@@ -3557,7 +3557,7 @@ double TE = 0.0; //most recent echo time recorded
     // fffe,e000 can provide explicit lengths, to demonstrate ./dcmconv +ti ex.DCM im.DCM
     #define kMaxNestPost 128
     int nNestPos = 0;
-    int nestPos[kMaxNestPost];
+    size_t nestPos[kMaxNestPost];
 	while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
     	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
@@ -3713,7 +3713,7 @@ double TE = 0.0; //most recent echo time recorded
     	if (slen != kUndefinedLen) {
     		nNestPos++;
     		if (nNestPos >= kMaxNestPost) nNestPos = kMaxNestPost - 1;
-    		nestPos[nNestPos] = (int)slen+lFileOffset+lPos;
+    		nestPos[nNestPos] = slen+lFileOffset+lPos;
     	}
     	lLength = 4;
     	sqDepth++;
