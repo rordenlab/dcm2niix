@@ -870,7 +870,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
 	json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
-	fprintf(fp, "\t\"TriggerDelayTime\": %g,\n", d.triggerDelayTime );
+	json_Float(fp, "\t\"TriggerDelayTime\": %g,\n", d.triggerDelayTime );
 	if (d.RWVScale != 0) {
 		fprintf(fp, "\t\"PhilipsRWVSlope\": %g,\n", d.RWVScale );
 		fprintf(fp, "\t\"PhilipsRWVIntercept\": %g,\n", d.RWVIntercept );
