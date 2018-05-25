@@ -108,6 +108,7 @@ int main(int argc, const char * argv[]) {
     readIniFile(&opts, argv); //setup defaults, e.g. path to pigz
     opts.isCreateBIDS = config["Options"]["isCreateBIDS"].as<bool>();
     opts.isOnlySingleFile = config["Options"]["isOnlySingleFile"].as<bool>();
+    opts.isFlipY = config["Options"]["isFlipY"].as<bool>();
     opts.isCreateText = false;
     opts.isVerbose = 0;
     opts.isGz = config["Options"]["isGz"].as<bool>(); //save data as compressed (.nii.gz) or raw (.nii)

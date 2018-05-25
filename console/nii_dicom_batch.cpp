@@ -2339,7 +2339,7 @@ void PhilipsPrecise (struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling
 	if (d->manufacturer != kMANUFACTURER_PHILIPS) return; //not Philips
 	if (!isSameFloatGE(0.0, d->RWVScale)) {
 		printMessage("Using RWVSlope:RWVIntercept = %g:%g\n",d->RWVScale,d->RWVIntercept);
-		printMessage("Potential Alternative Intensity Scalings\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
+		printMessage("Potential Alternative Intensity Scalings\n");
 		printMessage(" Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
 		printMessage(" R = raw value, P = precise value, D = displayed value\n");
 		printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
