@@ -1496,7 +1496,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     float *cols = (float *)malloc(sizeof(float) * kMaxCols);
     char *p = fgets (buff, LINESZ, fp);
     bool isIntenScaleVaries = false;
-    bool isIndexSequential = true;
     for (int i = 0; i < kMaxDTI4D; i++) {
         dti4D->S[i].V[0] = -1.0;
         dti4D->TE[i] = -1.0;
@@ -1645,8 +1644,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         	continue;
         }
 		*/
-		if ((cols[kIndex]) != slice) isIndexSequential = false; //slices 0,1,2.. should have indices 0,1,2,3...
-        slice ++;
+		slice ++;
         bool isADC = false;
         if ((maxNumberOfDiffusionValues == 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) )
         	isADC = true;
@@ -1848,9 +1846,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     if (ADCwarning)
         printWarning("PAR/REC dataset includes an ADC map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
     if (isIntenScaleVaries)
-       printWarning("Intensity slope/intercept varies between slices! [solution: user dcm2nii instead]\n");
-    if (!isIndexSequential)
-    	printWarning("Slice order not saved to disk sequentially! [solution: user dcm2nii instead]\n");
+       printWarning("Intensity slope/intercept varies between slices! [check resulting images]\n");
     printMessage("Done reading PAR header version %.1f, with %d volumes\n", (float)parVers/10, d.CSA.numDti);
 	//see Xiangrui Li 's dicm2nii (also BSD license)
 	// http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
@@ -3007,9 +3003,9 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
 } //nii_loadImgXL()
 
 int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
-    static const int array_size = 34;
-    uint32_t array[array_size] = {0x2005+(uint32_t(0x140F)<<16), 0x0008+(uint32_t(0x1111)<<16), 0x0008+(uint32_t(0x1115)<<16), 0x0008+(uint32_t(0x1140)<<16), 0x0008+(uint32_t(0x1199)<<16), 0x0008+(uint32_t(0x2218)<<16), 0x0008+(uint32_t(0x9092)<<16), 0x0018+(uint32_t(0x9006)<<16), 0x0018+(uint32_t(0x9042)<<16), 0x0018+(uint32_t(0x9045)<<16), 0x0018+(uint32_t(0x9049)<<16), 0x0018+(uint32_t(0x9112)<<16), 0x0018+(uint32_t(0x9114)<<16), 0x0018+(uint32_t(0x9115)<<16), 0x0018+(uint32_t(0x9119)<<16), 0x0018+(uint32_t(0x9125)<<16), 0x0018+(uint32_t(0x9152)<<16), 0x0018+(uint32_t(0x9176)<<16), 0x0018+(uint32_t(0x9226)<<16), 0x0018+(uint32_t(0x9239)<<16), 0x0020+(uint32_t(0x9071)<<16), 0x0020+(uint32_t(0x9111)<<16), 0x0020+(uint32_t(0x9113)<<16), 0x0020+(uint32_t(0x9116)<<16), 0x0020+(uint32_t(0x9221)<<16), 0x0020+(uint32_t(0x9222)<<16), 0x0028+(uint32_t(0x9110)<<16), 0x0028+(uint32_t(0x9132)<<16), 0x0028+(uint32_t(0x9145)<<16), 0x0040+(uint32_t(0x0260)<<16), 0x0040+(uint32_t(0x0555)<<16), 0x0040+(uint32_t(0xa170)<<16), 0x5200+(uint32_t(0x9229)<<16), 0x5200+(uint32_t(0x9230)<<16)};
-    for (int i = 0; i < array_size; i++) {
+    static const int array_size = 35;
+    uint32_t array[array_size] = {0x2005+(uint32_t(0x140F)<<16), 0x0008+(uint32_t(0x1111)<<16), 0x0008+(uint32_t(0x1115)<<16), 0x0008+(uint32_t(0x1140)<<16), 0x0008+(uint32_t(0x1199)<<16), 0x0008+(uint32_t(0x2218)<<16), 0x0008+(uint32_t(0x9092)<<16), 0x0018+(uint32_t(0x9006)<<16), 0x0018+(uint32_t(0x9042)<<16), 0x0018+(uint32_t(0x9045)<<16), 0x0018+(uint32_t(0x9049)<<16), 0x0018+(uint32_t(0x9112)<<16), 0x0018+(uint32_t(0x9114)<<16), 0x0018+(uint32_t(0x9115)<<16), 0x0018+(uint32_t(0x9117)<<16), 0x0018+(uint32_t(0x9119)<<16), 0x0018+(uint32_t(0x9125)<<16), 0x0018+(uint32_t(0x9152)<<16), 0x0018+(uint32_t(0x9176)<<16), 0x0018+(uint32_t(0x9226)<<16), 0x0018+(uint32_t(0x9239)<<16), 0x0020+(uint32_t(0x9071)<<16), 0x0020+(uint32_t(0x9111)<<16), 0x0020+(uint32_t(0x9113)<<16), 0x0020+(uint32_t(0x9116)<<16), 0x0020+(uint32_t(0x9221)<<16), 0x0020+(uint32_t(0x9222)<<16), 0x0028+(uint32_t(0x9110)<<16), 0x0028+(uint32_t(0x9132)<<16), 0x0028+(uint32_t(0x9145)<<16), 0x0040+(uint32_t(0x0260)<<16), 0x0040+(uint32_t(0x0555)<<16), 0x0040+(uint32_t(0xa170)<<16), 0x5200+(uint32_t(0x9229)<<16), 0x5200+(uint32_t(0x9230)<<16)};
+	for (int i = 0; i < array_size; i++) {
         //if (array[i] == groupElement) printMessage(" implicitSQ %04x,%04x\n",   groupElement & 65535,groupElement>>16);
         if (array[i] == groupElement)
             return 1;
@@ -3555,6 +3551,13 @@ double TE = 0.0; //most recent echo time recorded
     	for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++)
     		dcmDim[i].dimIdx[j] = 0;
     }
+    //http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
+    //The array nestPos tracks explicit lengths for Data Element Tag of Value (FFFE,E000)
+    //a delimiter (fffe,e000) can have an explicit length, in which case there is no delimiter (fffe,e00d)
+    // fffe,e000 can provide explicit lengths, to demonstrate ./dcmconv +ti ex.DCM im.DCM
+    #define kMaxNestPost 128
+    int nNestPos = 0;
+    int nestPos[kMaxNestPost];
 	while ((d.imageStart == 0) && ((lPos+8+lFileOffset) <  fileLen)) {
     	#ifndef myLoadWholeFileToReadHeader //read one segment at a time
     	if ((size_t)(lPos + 128) > MaxBufferSz) { //avoid overreading the file
@@ -3586,12 +3589,22 @@ double TE = 0.0; //most recent echo time recorded
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
 	if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
-    if (groupElement == kItemTag) sqDepth++;
-    if (groupElement == kItemDelimitationTag) {
-    	sqDepth--;
+    //if (groupElement == kItemTag) sqDepth++;
+    bool unNest = false;
+    while ((nNestPos > 0) && (nestPos[nNestPos] <= (lFileOffset+lPos))) {
+			nNestPos--;
+			sqDepth--;
+			unNest = true;
+	}
+	if (groupElement == kItemDelimitationTag) { //end of item with undefined length
+		sqDepth--;
+		unNest = true;
+	}
+	if (unNest)  {
     	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
     	//if we leave the folder MREchoSequence 0018,9114
-    	if (( nDimIndxVal > 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (sqDepth00189114 == sqDepth)) {
+
+    	if (( nDimIndxVal > 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (sqDepth00189114 >= sqDepth)) {
     		sqDepth00189114 = -1; //triggered
 			if (inStackPositionNumber > 0) {
 				//for images without SliceNumberMrPhilips (2001,100A)
@@ -3693,7 +3706,19 @@ double TE = 0.0; //most recent echo time recorded
     		nDimIndxVal = -1; //we need DimensionIndexValues
     	} //record dimensionIndexValues slice information
     } //groupElement == kItemDelimitationTag : delimit item exits folder
-    if (((groupElement == kItemTag) || (groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) && (!isEncapsulatedData)) {
+    //groupElement == kItemTag) ||
+    if (groupElement == kItemTag) {
+    	uint32_t slen = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+    	uint32_t kUndefinedLen = 0xFFFFFFFF;
+    	if (slen != kUndefinedLen) {
+    		nNestPos++;
+    		if (nNestPos >= kMaxNestPost) nNestPos = kMaxNestPost - 1;
+    		nestPos[nNestPos] = (int)slen+lFileOffset+lPos;
+    	}
+    	lLength = 4;
+    	sqDepth++;
+    	//return d;
+    } else if (( (groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) && (!isEncapsulatedData)) {
             vr[0] = 'N';
             vr[1] = 'A';
             lLength = 4;
@@ -3737,9 +3762,10 @@ double TE = 0.0; //most recent echo time recorded
             if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
             	vr[0] = 'S';
             	vr[1] = 'Q';
-            	lLength = 8; //Sequence Tag
+            	lLength = 0; //Do not skip Sequence Tag
             }
         } //if explicit else implicit VR
+
         if (lLength == 0xFFFFFFFF) {
             lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
             //09032018 - do not count these as SQs: Horos does not count even groups
@@ -4680,6 +4706,10 @@ double TE = 0.0; //most recent echo time recorded
         } //switch/case for groupElement
 
         if (isVerbose > 1) {
+        	//(0018,9114) SQ
+        	char str[kDICOMStr];
+        	sprintf(str, "%*c%04x,%04x %u@%ld ", sqDepth+1, ' ',  groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos);
+			if (d.isExplicitVR) sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
         	if ((lLength > 12) && (lLength < 128)) { //if length is greater than 8 bytes (+4 hdr) the data must be a string [or image data]
         		char tagStr[kDICOMStr];
             	tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
@@ -4692,15 +4722,9 @@ double TE = 0.0; //most recent echo time recorded
            					|| (tagStr[pos] == '*') || (tagStr[pos] == '|') || (tagStr[pos] == '?'))
             					tagStr[pos] = 'x';
 				}
-            	printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%s\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, tagStr);
-            } else {
-            	if (d.isExplicitVR)
-            		printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\t%c%c\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos, vr[0], vr[1]);
-            	else
-            		printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos);
-
-            	//printMessage(" Tag\t%04x,%04x\tSize=%u\tOffset=%ld\tsq=%d  %d %d %c%c\n",   groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos,  sqDepth, sqDepthPrivate, sqEndPrivate, vr[0], vr[1]);
-        	}
+				printMessage("%s %s\n", str, tagStr);
+            } else
+            	printMessage("%s\n", str);
 
         	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
@@ -4916,7 +4940,7 @@ if (d.isHasPhase)
 	if ((maxGradNum > 1) && ((maxGradNum+1) == d.xyzDim[4]) ) {
 		//ADC map (non-zero b-value with zero vector length)
 		if (isVerbose)
-			printMessage("Final volume does not have an associated 0020,9157. Assuming final volume is an ADC map\n", philDTI[0].V[0], maxGradNum, d.xyzDim[4]);
+			printMessage("Final volume does not have an associated 0020,9157. Assuming final volume is an ADC/isotropic map\n", philDTI[0].V[0], maxGradNum, d.xyzDim[4]);
 		philDTI[maxGradNum].V[0] = 1000.0;
 		philDTI[maxGradNum].V[1] = 0.0;
 		philDTI[maxGradNum].V[2] = 0.0;
