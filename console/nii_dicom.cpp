@@ -3765,7 +3765,6 @@ double TE = 0.0; //most recent echo time recorded
             	lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
             }
         } //if explicit else implicit VR
-
         if (lLength == 0xFFFFFFFF) {
             lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
             //09032018 - do not count these as SQs: Horos does not count even groups
@@ -3826,7 +3825,8 @@ double TE = 0.0; //most recent echo time recorded
         }
         if (sqDepth < 0) sqDepth = 0;*/
         if ((groupElement == kItemTag)  && (isEncapsulatedData)) { //use this to find image fragment for compressed datasets, e.g. JPEG transfer syntax
-            d.imageBytes = dcmInt(4,&buffer[lPos-4],d.isLittleEndian);
+            d.imageBytes = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+            lPos = lPos + 4;
             lLength = d.imageBytes;
             if (d.imageBytes > 128) {
             	encapsulatedDataFragments++;
