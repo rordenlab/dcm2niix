@@ -3407,7 +3407,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
         nameList.numItems = 0;
-        searchDirForDICOM(opts->indir, &nameList,  5, 1, opts);
+        searchDirForDICOM(opts->indir, &nameList, opts->dirSearchDepth, 0, opts);
         if (nameList.numItems <= nameList.maxItems)
             break;
         freeNameList(nameList);
@@ -3415,7 +3415,12 @@ int nii_loadDir(struct TDCMopts* opts) {
         //printMessage("Second pass required, found %ld images\n", nameList.numItems);
     }
     if (nameList.numItems < 1) {
-        printError("Unable to find any DICOM images in %s\n", opts->indir);
+        if (opts->dirSearchDepth > 0)
+        	printError("Unable to find any DICOM images in %s%s (or subfolders %d deep)\n", opts->indir, opts->dirSearchDepth);
+        else {
+        	//keep silent for dirSearchDepth = 0 - presumably searching multiple folders
+        	//printError("Unable to find any DICOM images in %s%s\n", opts->indir, str);
+        }
         free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
         return kEXIT_NO_VALID_FILES_FOUND;
     }
@@ -3571,8 +3576,8 @@ int findpathof(char *pth, const char *exe) {
 	int stop, found;
 	size_t len;
 	if (strchr(exe, '/') != NULL) {
-	if (realpath(exe, pth) == NULL) return 0;
-	return  is_exe(pth);
+		if (realpath(exe, pth) == NULL) return 0;
+		return  is_exe(pth);
 	}
 	searchpath = getenv("PATH");
 	if (searchpath == NULL) return 0;
@@ -3584,18 +3589,24 @@ int findpathof(char *pth, const char *exe) {
 	if (end == NULL) {
 		len = strlen(beg);
 		if (len == 0) return 0;
-		strncpy(pth, beg, len);
+		//gcc 8.1 warning: specified bound depends on the length of the source argument
+		//https://developers.redhat.com/blog/2018/05/24/detecting-string-truncation-with-gcc-8/
+		//strncpy(pth, beg, len);
+		strcpy(pth,beg);
 		stop = 1;
 	} else {
 	   strncpy(pth, beg, end - beg);
 	   pth[end - beg] = '\0';
 	   len = end - beg;
 	}
-	if (pth[len - 1] != '/') strncat(pth, "/", 1);
+	//gcc8.1 warning: specified bound depends on the length of the source argument
+	//if (pth[len - 1] != '/') strncat(pth, "/", 1);
+	if (pth[len - 1] != '/') strcat(pth, "/");
 	strncat(pth, exe, PATH_MAX - len);
 	found = is_exe(pth);
 	if (!stop) beg = end + 1;
 	} while (!stop && !found);
+	if (!found) strcpy(pth,"");
 	return found;
 }
 #endif
@@ -3708,6 +3719,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isCrop = false;
     opts->isGz = false;
     opts->isSave3D = false;
+    opts->dirSearchDepth = 5;
     opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)

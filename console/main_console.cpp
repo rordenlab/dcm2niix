@@ -76,7 +76,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bidsCh);
     if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
-    printf("  -c : comment stored as NIfTI aux_file (up to 24 characters)\n");
+    printf("  -c : comment stored in NIfTI aux_file (up to 24 characters)\n");
+    printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
     if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
     //printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
@@ -110,7 +111,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     	#ifdef myDisableMiniZ
     	printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
 		#else
-		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal, n=no, 3=no,3D]\n", gzCh);
+		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
 
@@ -256,14 +257,8 @@ int main(int argc, const char * argv[])
                 snprintf(opts.imageComments,24,"%s",argv[i]);
             } else if ((argv[i][1] == 'd') && ((i+1) < argc)) {
                 i++;
-                if (invalidParam(i, argv)) return 0;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isSortDTIbyBVal = false;
-                else {
-                    opts.isSortDTIbyBVal = true;
-                    printf("Warning: sorting by b-value is deprecated: do not do this before undistortion.");
-                    printf(" https://www.nitrc.org/forum/message.php?msg_id=22867");
-                }
+                if ((argv[i][0] >= '0') && (argv[i][0] <= '9'))
+                	opts.dirSearchDepth = abs((int)strtol(argv[i], NULL, 10));
             } else if ((argv[i][1] == 'g') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -323,11 +318,7 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0')) //0: verbose OFF
                     opts.isVerbose = 0;
-                else if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {//-1: experimental SQ skipping: 'O'ptimized!? faster, does not get confused with Philips tags
-                    opts.isVerbose = -1;
-                    printf(">> Experimental SQ skipping enabled\n");
-
-                } else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
+                else if ((argv[i][0] == 'h') || (argv[i][0] == 'H')  || (argv[i][0] == '2')) //2: verbose HYPER
                     opts.isVerbose = 2;
                 else
                     opts.isVerbose = 1; //1: verbose ON
@@ -345,8 +336,10 @@ int main(int argc, const char * argv[])
                     opts.isGz = false; //uncompressed 3D
                 	opts.isSave3D = true;
                 } else if ((argv[i][0] == 'i') || (argv[i][0] == 'I') ) {
-                    opts.isGz = true; //force use of internal compression instead of pigz
-                	strcpy(opts.pigzname,"");
+                    opts.isGz = true;
+                    #ifndef myDisableZLib
+                	strcpy(opts.pigzname,""); //force use of internal compression instead of pigz
+                	#endif
                 } else if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isGz = false;
                 else
@@ -375,6 +368,12 @@ int main(int argc, const char * argv[])
         } //if parameter is a command
         i ++; //read next parameter
     } //while parameters to read
+    #ifndef myDisableZLib
+    if ((opts.isGz) && (opts.dirSearchDepth < 1) && (strlen(opts.pigzname)>0)) {
+    	strcpy(opts.pigzname,"");
+    	printf("n.b. Setting directory search depth of zero invokes internal gz (network mode)\n");
+	}
+	#endif
     if (isSaveIni)
     	saveIniFile(opts);
     //printf("%d %d",argc,lastCommandArg);

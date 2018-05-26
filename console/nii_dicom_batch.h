@@ -26,7 +26,7 @@ extern "C" {
 
     struct TDCMopts {
         bool isSave3D,isGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackSameSeries, isCrop;
-        int isVerbose, compressFlag, gzLevel; //support for compressed data 0=none,
+        int isVerbose, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
         float seriesNumber[MAX_NUM_SERIES];
         long numSeries;
