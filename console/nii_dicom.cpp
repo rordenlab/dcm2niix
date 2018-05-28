@@ -1479,6 +1479,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     int minDyn = 32767;
     int maxDyn = 0;
     bool ADCwarning = false;
+    bool isTypeWarning = false;
     int numSlice2D = 0;
     int prevDyn = -1;
     bool dynNotAscending = false;
@@ -1689,8 +1690,13 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
-        if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+        if ((isSameFloat(cols[kImageType],18)) && (!isTypeWarning)) {
+        	printWarning("Field map in Hz will be saved as the 'real' image.\n");
+        	isTypeWarning = true;
+        } else if (((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0)) && (!isTypeWarning)) {
         	printError("Unknown type %g: not magnitude[0], real[1], imaginary[2] or phase[3].\n", cols[kImageType]);
+        	isTypeWarning = true;
+        }
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
         if (cols[kDyn] < prevDyn) dynNotAscending = true;

@@ -3417,11 +3417,9 @@ int nii_loadDir(struct TDCMopts* opts) {
     }
     if (nameList.numItems < 1) {
         if (opts->dirSearchDepth > 0)
-        	printError("Unable to find any DICOM images in %s%s (or subfolders %d deep)\n", opts->indir, opts->dirSearchDepth);
-        else {
-        	//keep silent for dirSearchDepth = 0 - presumably searching multiple folders
-        	//printError("Unable to find any DICOM images in %s%s\n", opts->indir, str);
-        }
+        	printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", opts->indir, opts->dirSearchDepth);
+        else //keep silent for dirSearchDepth = 0 - presumably searching multiple folders
+        	; //printError("Unable to find any DICOM images in %s%s\n", opts->indir, str);
         free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
         return kEXIT_NO_VALID_FILES_FOUND;
     }

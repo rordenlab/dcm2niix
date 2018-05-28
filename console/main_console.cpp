@@ -333,6 +333,17 @@ int main(int argc, const char * argv[])
                     opts.isCrop = false;
                 else
                     opts.isCrop = true;
+            } else if ((argv[i][1] == 'y') && ((i+1) < argc)) {
+                i++;
+                bool isFlipY = opts.isFlipY;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') ) {
+                    opts.isFlipY = true; //force use of internal compression instead of pigz
+                	strcpy(opts.pigzname,"");
+                } else if ((argv[i][0] == 'n') || (argv[i][0] == 'N'))
+                    opts.isFlipY = false;
+                if (isFlipY != opts.isFlipY)
+                	printf("Advanced feature: You are flipping the default order of rows in your image.\n");
             } else if ((argv[i][1] == 'z') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
