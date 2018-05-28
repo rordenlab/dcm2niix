@@ -1689,8 +1689,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
-        if ((cols[kImageType] < 0) && (cols[kImageType] > 3))
-        	printError("Novel image type %g: not magnitude or phase. Perhaps real, imaginary or a subsequent calculation such as B1.  Please check output\n", cols[kImageType]);
+        if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+        	printError("Unknown type %g: not magnitude[0], real[1], imaginary[2] or phase[3].\n", cols[kImageType]);
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
         if (cols[kDyn] < prevDyn) dynNotAscending = true;
@@ -1728,6 +1728,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
 			bool isPhase = (cols[kImageType] == 3);
+			if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
 			if (isReal) vol += num3DExpected;
 			if (isImaginary) vol += (2*num3DExpected);
 			if (isPhase) vol += (3*num3DExpected);
