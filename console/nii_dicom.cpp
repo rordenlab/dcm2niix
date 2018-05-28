@@ -4880,8 +4880,10 @@ if (d.isHasPhase)
 	}*/
 
 	if (numberOfFrames == 0) numberOfFrames = d.xyzDim[3];
-
-	if ((numberOfDynamicScans > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % numberOfDynamicScans) == 0)) {
+	if ((locationsInAcquisitionPhilips > 0) && ((d.xyzDim[3] % locationsInAcquisitionPhilips) == 0)) {
+		d.xyzDim[4] = d.xyzDim[3] / locationsInAcquisitionPhilips;
+		d.xyzDim[3] = locationsInAcquisitionPhilips;
+	} else if ((numberOfDynamicScans > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % numberOfDynamicScans) == 0)) {
 		d.xyzDim[3] = d.xyzDim[3] / numberOfDynamicScans;
 		d.xyzDim[4] = numberOfDynamicScans;
 	}
@@ -4908,6 +4910,7 @@ if (d.isHasPhase)
         //if (d.CSA.dtiV[0] > 0)
         //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
+
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
     	if (isVerbose > 1) { //
@@ -4926,6 +4929,7 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
+    	//sort dimensions
     	qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
