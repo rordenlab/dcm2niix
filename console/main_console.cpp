@@ -238,7 +238,7 @@ int main(int argc, const char * argv[])
                 	if (invalidParam(i, argv)) return 0;
                 	if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     	opts.isCreateBIDS = false;
-                	if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
+                	else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
                     	//input only mode (for development): does not create NIfTI or BIDS outputs!
                     	opts.isCreateBIDS = false;
                     	opts.isOnlyBIDS = true;
