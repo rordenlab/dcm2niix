@@ -2,7 +2,7 @@
 
 dcm2niix attempts to convert all DICOM images to NIfTI. The Philips enhanced DICOM images are elegantly able to save all images from a series as a single file. However, this format is necessarily complex. The usage of this format has evolved over time, and can become further complicated when DICOM are handled by DICOM tools (for example, anonymization, transfer which converts explicit VRs to implicit VRs, etc.).
 
-This web page describes some of the strategies handle these images. However, users should be vigilant when handling these datasets. If you encounter problems using dcm2niix you can explore [https://github.com/rordenlab/dcm2niix competing DICOM to NIfTI converters] or [ [https://github.com/rordenlab/dcm2niix report an issue].
+This web page describes some of the strategies handle these images. However, users should be vigilant when handling these datasets. If you encounter problems using dcm2niix you can explore [alternative DICOM to NIfTI converters](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Alternatives) or [report an issue](https://github.com/rordenlab/dcm2niix).
 
 ## Image Patient Position
 
@@ -43,4 +43,4 @@ The current version of dcm2niix uses Dimension Index Values (0020,9157) to deter
 
 ## General variations
 
-Prior versions of dcm2niix used different methods to sort images. However, these have proved unreliable The undocumented tags SliceNumberMrPhilips (2001,100A), NumberOfSlicesMrPhilips (2001,1018) are not always present. In theory, InStackPositionNumber (0020,9057) should be present in all enhanced files, but has not proved reliable (perhaps not in older Philips images or DICOM images that were modified after leaving the scanner). MRImageGradientOrientationNumber (2005,1413) is complicated by the inclusion of derived images.Therefore, current versions of dcm2niix do not depend on any of these.
+Prior versions of dcm2niix used different methods to sort images. However, these have proved unreliable The undocumented tags SliceNumberMrPhilips (2001,100A). In theory, InStackPositionNumber (0020,9057) should be present in all enhanced files, but has not proved reliable (perhaps not in older Philips images or DICOM images that were modified after leaving the scanner). MRImageGradientOrientationNumber (2005,1413) is complicated by the inclusion of derived images. Therefore, current versions of dcm2niix do not generally depend on any of these.

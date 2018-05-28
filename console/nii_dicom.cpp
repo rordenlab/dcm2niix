@@ -3491,7 +3491,7 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
-    int sqDepth = 0;
+	int sqDepth = 0;
     int sqDepth00189114 = -1;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
@@ -3511,6 +3511,7 @@ double TE = 0.0; //most recent echo time recorded
     uint32_t lLength;
     uint32_t groupElement;
     long lPos = 0;
+    bool triggerDelayTimeWarning = false;
     bool isPhilipsDerived = false;
     //bool isPhilipsDiffusion = false;
     if (isPart10prefix) { //for part 10 files, skip preamble and prefix
@@ -3609,6 +3610,7 @@ double TE = 0.0; //most recent echo time recorded
 		unNest = true;
 	}
 	if (unNest)  {
+    	is2005140FSQ = false;
     	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
     	//if we leave the folder MREchoSequence 0018,9114
 
@@ -3843,7 +3845,6 @@ double TE = 0.0; //most recent echo time recorded
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
-        if (groupElement == kSequenceDelimitationItemTag) is2005140FSQ = false;
         switch ( groupElement ) {
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
@@ -4105,13 +4106,6 @@ double TE = 0.0; //most recent echo time recorded
 				patientPositionNum++;
 				isAtFirstPatientPosition = true;
 				dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &patientPosition[0]); //slice position
-
-				/*if (!is2005140FSQ) {
-					printMessage("cxcPublic   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
-					for (int k = 0; k < 4; k++)
-						patientPositionPublic[k] = patientPosition[k];
-				}*/
-
 				if (isnan(d.patientPosition[1])) {
 					//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
 					for (int k = 0; k < 4; k++)
@@ -4162,8 +4156,10 @@ double TE = 0.0; //most recent echo time recorded
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				//if (isVerbose < 2) break;
 				double trigger = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
-				if ((d.triggerDelayTime > 0) && (!isSameDouble(trigger, d.triggerDelayTime)))
+				if ((!triggerDelayTimeWarning) && (d.triggerDelayTime > 0) && (!isSameDouble(trigger, d.triggerDelayTime))) {
+					triggerDelayTimeWarning = true;
 					printMessage("TriggerDelayTime varies %g %g\n", trigger, d.triggerDelayTime);
+				}
 				d.triggerDelayTime = trigger;
 				break; }
             case kDimensionIndexValues: { // kImageNum is not enough for 4D series from Philips 5.*.
