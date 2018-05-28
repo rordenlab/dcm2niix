@@ -1095,7 +1095,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
         if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &tagCSA.nitems);
         if (isVerbose > 1) //extreme verbosity: show every CSA tag
-        	printMessage("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
+        	printMessage("   %d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         /*if (true) {
         	printMessage("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         	float * vals = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
@@ -1131,7 +1131,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 CSA->sliceNormV[2] = lFloats[2];
                 CSA->sliceNormV[3] = lFloats[3];
                 if (isVerbose)
-                    printMessage("SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
+                    printMessage("   SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
             } else if (strcmp(tagCSA.name, "SliceMeasurementDuration") == 0)
                 CSA->sliceMeasurementDuration = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
@@ -1157,7 +1157,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 minTimeValue = sliceTimes[1];
                 maxTimeValue = minTimeValue;
                 if (isVerbose)
-                    printMessage("sliceTimes %g\t", sliceTimes[1]);
+                    printMessage("   sliceTimes %g\t", sliceTimes[1]);
 				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
                     if (isVerbose)
                         printMessage("%g\t",  sliceTimes[z]);
@@ -1689,8 +1689,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
-        if ((cols[kImageType] < 0) && (cols[kImageType] > 3))
-        	printError("Novel image type %g: not magnitude or phase. Perhaps real, imaginary or a subsequent calculation such as B1.  Please check output\n", cols[kImageType]);
+        if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+        	printError("Unknown type %g: not magnitude[0], real[1], imaginary[2] or phase[3].\n", cols[kImageType]);
         if (cols[kDyn] > maxDyn) maxDyn = (int) cols[kDyn];
         if (cols[kDyn] < minDyn) minDyn = (int) cols[kDyn];
         if (cols[kDyn] < prevDyn) dynNotAscending = true;
@@ -1728,6 +1728,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
 			bool isPhase = (cols[kImageType] == 3);
+			if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
 			if (isReal) vol += num3DExpected;
 			if (isImaginary) vol += (2*num3DExpected);
 			if (isPhase) vol += (3*num3DExpected);
@@ -4121,7 +4123,7 @@ double TE = 0.0; //most recent echo time recorded
 					} //if different position from 1st slice in file
 				} //if not first slice in file
 				set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
-				if (isVerbose > 1)
+				if (isVerbose == 1) //verbose > 1 will report full DICOM tag
 					printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 				break; }
             case kInPlanePhaseEncodingDirection:
@@ -4606,7 +4608,6 @@ double TE = 0.0; //most recent echo time recorded
                 //    printMessage("---->%d,",lLength);
                 //    break;
             case kCSASeriesHeaderInfo:
-            	//printMessage("Series %d %d\n", lPos, lLength);
             	if ((lPos + lLength) > fileLen) break;
             	d.CSA.SeriesHeader_offset = (int)lPos;
             	d.CSA.SeriesHeader_length = lLength;
@@ -4706,11 +4707,47 @@ double TE = 0.0; //most recent echo time recorded
         } //switch/case for groupElement
 
         if (isVerbose > 1) {
-        	//(0018,9114) SQ
+        	//dcm2niix i fast because it does not use a dictionary.
+        	// this is a very incomplete DICOM header report, and not a substitute for tools like dcmdump
+        	// the purpose is to see how dcm2niix has parsed the image for diagnostics
+        	// this section will report very little for implicit data
         	char str[kDICOMStr];
         	sprintf(str, "%*c%04x,%04x %u@%ld ", sqDepth+1, ' ',  groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos);
-			if (d.isExplicitVR) sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
-        	if ((lLength > 12) && (lLength < 128)) { //if length is greater than 8 bytes (+4 hdr) the data must be a string [or image data]
+			bool isStr = false;
+			if (d.isExplicitVR) {
+				sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
+				if ((vr[0]=='F') && (vr[1]=='D')) sprintf(str, "%s%g ", str, dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
+				if ((vr[0]=='F') && (vr[1]=='L')) sprintf(str, "%s%g ", str, dcmFloat(lLength, &buffer[lPos], d.isLittleEndian));
+				if ((vr[0]=='S') && (vr[1]=='S')) sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+				if ((vr[0]=='S') && (vr[1]=='L')) sprintf(str, "%s%d ", str, dcmInt(lLength,&buffer[lPos],d.isLittleEndian));
+				if ((vr[0]=='U') && (vr[1]=='S')) sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+				if ((vr[0]=='U') && (vr[1]=='L')) sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+				if ((vr[0]=='A') && (vr[1]=='E')) isStr = true;
+				if ((vr[0]=='A') && (vr[1]=='S')) isStr = true;
+				//if ((vr[0]=='A') && (vr[1]=='T')) isStr = xxx;
+				if ((vr[0]=='C') && (vr[1]=='S')) isStr = true;
+				if ((vr[0]=='D') && (vr[1]=='A')) isStr = true;
+				if ((vr[0]=='D') && (vr[1]=='S')) isStr = true;
+				if ((vr[0]=='D') && (vr[1]=='T')) isStr = true;
+				if ((vr[0]=='I') && (vr[1]=='S')) isStr = true;
+				if ((vr[0]=='L') && (vr[1]=='O')) isStr = true;
+				if ((vr[0]=='L') && (vr[1]=='T')) isStr = true;
+				//if ((vr[0]=='O') && (vr[1]=='B')) isStr = xxx;
+				//if ((vr[0]=='O') && (vr[1]=='D')) isStr = xxx;
+				//if ((vr[0]=='O') && (vr[1]=='F')) isStr = xxx;
+				//if ((vr[0]=='O') && (vr[1]=='W')) isStr = xxx;
+				if ((vr[0]=='P') && (vr[1]=='N')) isStr = true;
+				if ((vr[0]=='S') && (vr[1]=='H')) isStr = true;
+				if ((vr[0]=='S') && (vr[1]=='T')) isStr = true;
+				if ((vr[0]=='T') && (vr[1]=='M')) isStr = true;
+				if ((vr[0]=='U') && (vr[1]=='I')) isStr = true;
+				if ((vr[0]=='U') && (vr[1]=='T')) isStr = true;
+			} else
+				isStr = (lLength > 12); //implicit encoding: not always true as binary vectors may exceed 12 bytes, but often true
+        	if (lLength > 128) {
+        		sprintf(str, "%s<%d bytes> ", str, lLength);
+        		printMessage("%s\n", str);
+        	} else if (isStr) { //if length is greater than 8 bytes (+4 hdr) the MIGHT be a string
         		char tagStr[kDICOMStr];
             	tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
                 dcmStr (lLength, &buffer[lPos], tagStr);
@@ -4845,8 +4882,10 @@ if (d.isHasPhase)
 	}*/
 
 	if (numberOfFrames == 0) numberOfFrames = d.xyzDim[3];
-
-	if ((numberOfDynamicScans > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % numberOfDynamicScans) == 0)) {
+	if ((locationsInAcquisitionPhilips > 0) && ((d.xyzDim[3] % locationsInAcquisitionPhilips) == 0)) {
+		d.xyzDim[4] = d.xyzDim[3] / locationsInAcquisitionPhilips;
+		d.xyzDim[3] = locationsInAcquisitionPhilips;
+	} else if ((numberOfDynamicScans > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % numberOfDynamicScans) == 0)) {
 		d.xyzDim[3] = d.xyzDim[3] / numberOfDynamicScans;
 		d.xyzDim[4] = numberOfDynamicScans;
 	}
@@ -4873,6 +4912,7 @@ if (d.isHasPhase)
         //if (d.CSA.dtiV[0] > 0)
         //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
+
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
     	if (isVerbose > 1) { //
@@ -4891,6 +4931,7 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
+    	//sort dimensions
     	qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
