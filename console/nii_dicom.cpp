@@ -3515,7 +3515,6 @@ double TE = 0.0; //most recent echo time recorded
     uint32_t lLength;
     uint32_t groupElement;
     long lPos = 0;
-    bool triggerDelayTimeWarning = false;
     bool isPhilipsDerived = false;
     //bool isPhilipsDiffusion = false;
     if (isPart10prefix) { //for part 10 files, skip preamble and prefix
@@ -4161,10 +4160,6 @@ double TE = 0.0; //most recent echo time recorded
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				//if (isVerbose < 2) break;
 				double trigger = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
-				if ((!triggerDelayTimeWarning) && (d.triggerDelayTime > 0) && (!isSameDouble(trigger, d.triggerDelayTime))) {
-					triggerDelayTimeWarning = true;
-					printMessage("TriggerDelayTime varies %g %g\n", trigger, d.triggerDelayTime);
-				}
 				d.triggerDelayTime = trigger;
 				if (isSameFloatGE(d.triggerDelayTime, 0.0)) d.triggerDelayTime = 0.0; //double to single
 				break; }
