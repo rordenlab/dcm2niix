@@ -1,5 +1,4 @@
 //#define MY_DEBUG
-//#define DEBUG_READ_NOT_WRITE
 #if defined(_WIN64) || defined(_WIN32)
 	#include <windows.h> //write to registry
 #endif
@@ -3485,6 +3484,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusionDirectionAP 0x2005+(0x10B1 << 16)
 #define  kDiffusionDirectionFH 0x2005+(0x10B2 << 16)
 #define  kPrivatePerFrameSq 0x2005+(0x140F << 16)
+#define  kMRImageDiffBValueNumber 0x2005+(0x1412 << 16) //IS
 //#define  kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define  kWaveformSq 0x5400+(0x0100 << 16)
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
@@ -3495,6 +3495,7 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
+	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
     int sqDepth00189114 = -1;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
@@ -3657,7 +3658,7 @@ double TE = 0.0; //most recent echo time recorded
 			dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
 			dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
-			#ifdef DEBUG_READ_NOT_WRITE
+			#ifdef MY_DEBUG
 			if (numDimensionIndexValues < 19) {
 				printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
 				for (int i = 0; i < ndim; i++)
@@ -3988,9 +3989,6 @@ double TE = 0.0; //most recent echo time recorded
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
-                #ifdef DEBUG_READ_NOT_WRITE
-                //printMessage("acquisitionTime0008x0032=%s\n",acquisitionTimeTxt);
-                #endif
                 break;
             case kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
@@ -4598,6 +4596,10 @@ double TE = 0.0; //most recent echo time recorded
             //    if (d.manufacturer == kMANUFACTURER_PHILIPS)
             //       MRImageGradientOrientationNumber =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
+            case kMRImageDiffBValueNumber:
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+            	philMRImageDiffBValueNumber =  dcmStrInt(lLength, &buffer[lPos]);
+                break;
             case kWaveformSq:
                 d.imageStart = 1; //abort!!!
                 printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
@@ -5010,7 +5012,6 @@ if (d.isHasPhase)
 				dti4D->S[i].V[3] = philDTI[i+off].V[3];
 				if (isVerbose > 1)
 					printMessage(" grad %d b=%g vec=%gx%gx%g\n", i, dti4D->S[i].V[0], dti4D->S[i].V[1], dti4D->S[i].V[2], dti4D->S[i].V[3]);
-
 			}
 			d.CSA.numDti = maxGradNum - off;
 		}
@@ -5019,21 +5020,23 @@ if (d.isHasPhase)
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
-    if (d.imageNum == 0) {
-    	printError("Image number (0020,0013) not found.\n");
+    if ((d.isValid) && (d.imageNum == 0)) { //Philips non-image DICOMs (PS_*, XX_*) are not valid images and do not include instance numbers
+    	printError("Instance number (0020,0013) not found: %s\n", fname);
         d.imageNum = 1; //not set
+    }
+    if ((numDimensionIndexValues < 1) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (d.seriesNum > 99999) && (philMRImageDiffBValueNumber > 0)) {
+    	//Ugly kludge to distinguish Philips classic DICOM dti
+    	// images from a single sequence can have identical series number, instance number, gradient number
+    	// the ONLY way to distinguish slices is using the private tag MRImageDiffBValueNumber
+    	// confusingly, the same sequence can also generate MULTIPLE series numbers!
+    	// for examples see https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
+    	d.seriesNum += (philMRImageDiffBValueNumber*1000);
     }
     if (multiBandFactor > d.CSA.multiBandFactor)
     	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header
-    //d.isValid = false; //debug only - will not create output!
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
-	#ifdef DEBUG_READ_NOT_WRITE
-    d.isValid = false;
-    printError("No files saved: DEBUG_READ_NOT_WRITE set\n");
-	#endif
-
     //printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
     return d;
 } // readDICOM()

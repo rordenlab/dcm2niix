@@ -1262,6 +1262,12 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     bool bValueVaries = false;
     for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
         if (vx[i].V[0] != vx[0].V[0]) bValueVaries = true;
+    //optional: record b-values even without variability
+    float minBval = vx[0].V[0];
+    for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
+        if (vx[i].V[0] < minBval) minBval = vx[i].V[0];
+    if (minBval > 50.0) bValueVaries = true;
+    //do not save files without variability
     if (!bValueVaries) {
         bool bVecVaries = false;
         for (int i = 1; i < numDti; i++) {//check if all bvalues match first volume
@@ -2340,17 +2346,18 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
         return (lPV * lRS + lRI) / (lRS * lSS);
 }
 
-void PhilipsPrecise (struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling, struct nifti_1_header *h) {
+void PhilipsPrecise(struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling, struct nifti_1_header *h, int verbose) {
 	if (d->manufacturer != kMANUFACTURER_PHILIPS) return; //not Philips
 	if (!isSameFloatGE(0.0, d->RWVScale)) {
+		h->scl_slope = d->RWVScale;
+    	h->scl_inter = d->RWVIntercept;
 		printMessage("Using RWVSlope:RWVIntercept = %g:%g\n",d->RWVScale,d->RWVIntercept);
+		printMessage(" Philips Scaling Values RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
+		if (verbose == 0) return;
 		printMessage("Potential Alternative Intensity Scalings\n");
-		printMessage(" Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
 		printMessage(" R = raw value, P = precise value, D = displayed value\n");
 		printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
 		printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
-    	h->scl_slope = d->RWVScale;
-    	h->scl_inter = d->RWVIntercept;
 		return;
 	}
 	if (d->intenScalePhilips == 0)  return; //no Philips Precise
@@ -2365,15 +2372,17 @@ void PhilipsPrecise (struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling
 		intenScaleP = l1-l0;
 	}
 	if (isSameFloat(d->intenIntercept,intenInterceptP) && isSameFloat(d->intenScale, intenScaleP)) return; //same result for both methods: nothing to do or report!
-	printMessage("Philips Precise RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
-	printMessage(" R = raw value, P = precise value, D = displayed value\n");
-	printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
-	printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
-	printMessage(" D scl_slope:scl_inter = %g:%g\n", d->intenScale,d->intenIntercept);
-	printMessage(" P scl_slope:scl_inter = %g:%g\n", intenScaleP,intenInterceptP);
+	printMessage("Philips Scaling Values RS:RI:SS = %g:%g:%g (see PMC3998685)\n",d->intenScale,d->intenIntercept,d->intenScalePhilips);
+	if (verbose > 0) {
+		printMessage(" R = raw value, P = precise value, D = displayed value\n");
+		printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
+		printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
+		printMessage(" D scl_slope:scl_inter = %g:%g\n", d->intenScale,d->intenIntercept);
+		printMessage(" P scl_slope:scl_inter = %g:%g\n", intenScaleP,intenInterceptP);
+	}
 	//#define myUsePhilipsPrecise
 	if (isPhilipsFloatNotDisplayScaling) {
-		printMessage(" Using P values ('-p n ' for D values)\n");
+		if (verbose > 0) printMessage(" Using P values ('-p n ' for D values)\n");
 		//to change DICOM:
 		//d->intenScale = intenScaleP;
 		//d->intenIntercept = intenInterceptP;
@@ -2381,7 +2390,7 @@ void PhilipsPrecise (struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling
     	h->scl_slope = intenScaleP;
     	h->scl_inter = intenInterceptP;
     	d->intenScalePhilips = 0; //so we never run this TWICE!
-	} else
+	} else if (verbose > 0)
 		printMessage(" Using D values ('-p y ' for P values)\n");
 } //PhilipsPrecise()
 
@@ -2645,7 +2654,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[0] = 4;
             } else {
                 hdr0.dim[3] = nConvert;
-                if (nAcq > 1) {
+                if ((nAcq > 1) && (nConvert != nAcq)) {
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
@@ -2870,7 +2879,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
-    PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0);
+    PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
     //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
@@ -3429,7 +3438,7 @@ int nii_loadDir(struct TDCMopts* opts) {
         return kEXIT_NO_VALID_FILES_FOUND;
     }
     size_t nDcm = nameList.numItems;
-    printMessage( "Found %lu DICOM image(s)\n", nameList.numItems);
+    printMessage( "Found %lu DICOM file(s)\n", nameList.numItems); //includes images and other non-image DICOMs
     // struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
     struct TDTI4D dti4D;
@@ -3522,7 +3531,8 @@ int nii_loadDir(struct TDCMopts* opts) {
 			if (opts->isVerbose)
 				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 			else
-				nConvert = removeDuplicates(nConvert, dcmSort);
+				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
+				//nConvert = removeDuplicates(nConvert, dcmSort);
 			int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
             if (ret == EXIT_SUCCESS)
             	nConvertTotal += nConvert;
@@ -3539,7 +3549,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (convertError)
         return EXIT_FAILURE; //at least one image failed to convert
     if (nConvertTotal == 0) {
-        printMessage("No valid DICOM files were found\n");
+        printMessage("No valid DICOM images were found\n"); //we may have found valid DICOM files but they are not DICOM images
         return kEXIT_NO_VALID_FILES_FOUND;
     }
     return EXIT_SUCCESS;
