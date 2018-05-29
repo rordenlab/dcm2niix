@@ -3303,7 +3303,7 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
         }
     }
     if (nDuplicates > 0)
-        printMessage("Some images have identical time, series, acquisition and image values. DUPLICATES REMOVED.\n");
+        printMessage("%d images have identical time, series, acquisition and image values. DUPLICATES REMOVED.\n", nDuplicates);
     return nConvert - nDuplicates;
 }// removeDuplicates()
 
@@ -3323,7 +3323,7 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
         }
     }
     if (nDuplicates > 0)
-        printMessage("Some images have identical time, series, acquisition and image values. Duplicates removed.\n");
+        printMessage("%d images have identical time, series, acquisition and image values. Duplicates removed.\n", nDuplicates);
     return nConvert - nDuplicates;
 }// removeDuplicatesVerbose()
 
@@ -3520,6 +3520,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 			isMultiEcho = false;
 			for (int j = i; j < (int)nDcm; j++)
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
+                    dcmList[j].converted2NII = 1; //do not reprocess repeats
                     fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 					nConvert++;
 				} else {
@@ -3531,8 +3532,8 @@ int nii_loadDir(struct TDCMopts* opts) {
 			if (opts->isVerbose)
 				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 			else
-				nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
-				//nConvert = removeDuplicates(nConvert, dcmSort);
+				//nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
+				nConvert = removeDuplicates(nConvert, dcmSort);
 			int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
             if (ret == EXIT_SUCCESS)
             	nConvertTotal += nConvert;
