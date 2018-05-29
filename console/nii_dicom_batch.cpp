@@ -1722,6 +1722,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     	if (dcm.isHasMagnitude)
     		strcat (outname,"Mag"); //Philips enhanced with BOTH phase and Magnitude in single file
     }
+    if (dcm.triggerDelayTime >= 1) {
+    	sprintf(newstr, "_t%d", (int)roundf(dcm.triggerDelayTime));
+        strcat (outname,newstr);
+    }
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
@@ -2977,7 +2981,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	dti4D->gradDynVol[0] = 1;
 	for (int i = 1; i < dcmList[indx].xyzDim[4]; i++) {
 		for (int j = 0; j < i; j++)
-			if ((dti4D->intenIntercept[i] == dti4D->intenIntercept[j]) && (dti4D->intenScale[i] == dti4D->intenScale[j]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
+			if (isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j]) && (dti4D->intenIntercept[i] == dti4D->intenIntercept[j]) && (dti4D->intenScale[i] == dti4D->intenScale[j]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
 				dti4D->gradDynVol[i] = dti4D->gradDynVol[j];
 		if (dti4D->gradDynVol[i] == 0) {
 			series++;
@@ -2998,6 +3002,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 				dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
 				dcmList[indx].RWVScale = dti4D->RWVScale[i];
 				dcmList[indx].RWVIntercept = dti4D->RWVIntercept[i];
+				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i];
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
 				break;

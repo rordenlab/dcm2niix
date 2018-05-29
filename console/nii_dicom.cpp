@@ -1455,6 +1455,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kYmm	29
 #define	kTEcho	30
 #define	kDynTime	31
+#define	kTriggerTime 32
 #define	kbval 33
 #define	kInversionDelayMs 40
 #define	kGradientNumber 42
@@ -1742,6 +1743,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
+			dti4D->triggerDelayTime[vol] = cols[kTriggerTime];
 			if (dti4D->TE[vol] < 0) dti4D->TE[vol] = 0; //used to detect sparse volumes
 			dti4D->intenIntercept[vol] = cols[kRI];
 			dti4D->intenScale[vol] = cols[kRS];
@@ -1801,6 +1803,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     for (int i = 0; i < kMaxDTI4D; i++) {
     	if (dti4D->TE[i] > -1.0) {
 			dti4D->TE[maxVol] = dti4D->TE[i];
+			dti4D->triggerDelayTime[maxVol] = dti4D->triggerDelayTime[i];
 			dti4D->intenIntercept[maxVol] = dti4D->intenIntercept[i];
 			dti4D->intenScale[maxVol] = dti4D->intenScale[i];
 			dti4D->intenScalePhilips[maxVol] = dti4D->intenScalePhilips[i];
@@ -1952,6 +1955,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (dti4D->isPhase[i] != dti4D->isPhase[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isReal[i] != dti4D->isReal[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isImaginary[i] != dti4D->isImaginary[0]) d.isScaleOrTEVaries = true;
+			if (dti4D->triggerDelayTime[i] != dti4D->triggerDelayTime[0]) d.isScaleOrTEVaries = true;
 		}
 		//if (d.isScaleOrTEVaries)
 		//	printWarning("Varying dimensions (echoes, phase maps, intensity scaling) will require volumes to be saved separately (hint: you may prefer dicm2nii output)\n");
@@ -3242,7 +3246,7 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
 struct TDCMdim { //DimensionIndexValues
   uint32_t dimIdx[MAX_NUMBER_OF_DIMENSIONS];
   uint32_t diskPos;
-  float TE, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
+  float triggerDelayTime, TE, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
   bool isPhase;
   bool isReal;
   bool isImaginary;
@@ -3653,6 +3657,7 @@ double TE = 0.0; //most recent echo time recorded
 			dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
 			dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
+			dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
 			#ifdef DEBUG_READ_NOT_WRITE
 			if (numDimensionIndexValues < 19) {
 				printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
@@ -4161,6 +4166,7 @@ double TE = 0.0; //most recent echo time recorded
 					printMessage("TriggerDelayTime varies %g %g\n", trigger, d.triggerDelayTime);
 				}
 				d.triggerDelayTime = trigger;
+				if (isSameFloatGE(d.triggerDelayTime, 0.0)) d.triggerDelayTime = 0.0; //double to single
 				break; }
             case kDimensionIndexValues: { // kImageNum is not enough for 4D series from Philips 5.*.
                 if (lLength < 4) break;
@@ -4957,10 +4963,12 @@ if (d.isHasPhase)
 				dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
 				dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
 				dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
+				dti4D->triggerDelayTime[i] =  dcmDim[j+(i * d.xyzDim[3])].triggerDelayTime;
 				if (dti4D->TE[i] != d.TE) isTEvaries = true;
 				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
 				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
 				if (dti4D->isPhase[i] != isPhase) d.isScaleOrTEVaries = true;
+				if (dti4D->triggerDelayTime[i] != d.triggerDelayTime) d.isScaleOrTEVaries = true;
 				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary) d.isScaleOrTEVaries = true;
 			}
