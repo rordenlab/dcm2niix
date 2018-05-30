@@ -3035,7 +3035,7 @@ int compareTDCMsort(void const *item1, void const *item2) {
 	//for quicksort http://blog.ablepear.com/2011/11/objective-c-tuesdays-sorting-arrays.html
 	struct TDCMsort const *dcm1 = (const struct TDCMsort *)item1;
 	struct TDCMsort const *dcm2 = (const struct TDCMsort *)item2;
-
+	//to do: detect duplicates with SOPInstanceUID (0008,0018) - accurate but slow text comparison
 	int retval = 0;   // tie
 
 	if (dcm1->img < dcm2->img)

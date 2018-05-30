@@ -1540,6 +1540,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         } //process '#' comment
         if (buff[0] == '.') { //tag
             char Comment[8][50];
+            for (int i = 0; i < 8; i++)
+            	strcpy(Comment[i], "");
             sscanf(buff, ". %s %s %s %s %s %s %s %s\n", Comment[0], Comment[1],Comment[2], Comment[3], Comment[4], Comment[5], Comment[6], Comment[7]);
             if ((strcmp(Comment[0], "Acquisition") == 0) && (strcmp(Comment[1], "nr") == 0)) {
                 d.acquNum = atoi( Comment[3]);
@@ -1561,12 +1563,44 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 strcat(d.protocolName, Comment[5]);
                 strcat(d.protocolName, Comment[6]);
                 strcat(d.protocolName, Comment[7]);
-                //printMessage("%s\n",d.protocolName);
+            }
+            if ((strcmp(Comment[0], "Examination") == 0) && (strcmp(Comment[1], "name") == 0)) {
+            	strcpy(d.imageComments, Comment[3]);
+                strcat(d.imageComments, Comment[4]);
+                strcat(d.imageComments, Comment[5]);
+                strcat(d.imageComments, Comment[6]);
+                strcat(d.imageComments, Comment[7]);
+
+            }
+            if ((strcmp(Comment[0], "Series") == 0) && (strcmp(Comment[1], "Type") == 0)) {
+            	strcpy(d.seriesDescription, Comment[3]);
+                strcat(d.seriesDescription, Comment[4]);
+                strcat(d.seriesDescription, Comment[5]);
+                strcat(d.seriesDescription, Comment[6]);
+                strcat(d.seriesDescription, Comment[7]);
             }
             if ((strcmp(Comment[0], "Examination") == 0) && (strcmp(Comment[1], "date/time") == 0)) {
-                strcpy(d.studyDate, Comment[3]);
-                strcpy(d.studyTime, Comment[5]);
-                //to do convert to traditional DICOM style date time
+            	if ((strlen(Comment[3]) >= 10) && (strlen(Comment[5]) >= 8)) {
+            		//DICOM date format is YYYYMMDD, but PAR stores YYYY.MM.DD 2016.03.25
+            		d.studyDate[0] = Comment[3][0];
+            		d.studyDate[1] = Comment[3][1];
+            		d.studyDate[2] = Comment[3][2];
+            		d.studyDate[3] = Comment[3][3];
+            		d.studyDate[4] = Comment[3][5];
+            		d.studyDate[5] = Comment[3][6];
+            		d.studyDate[6] = Comment[3][8];
+            		d.studyDate[7] = Comment[3][9];
+            		d.studyDate[8] = '\0';
+    				//DICOM time format is HHMMSS.FFFFFF, but PAR stores HH:MM:SS, e.g. 18:00:42 or 09:34:16
+            		d.studyTime[0] = Comment[5][0];
+            		d.studyTime[1] = Comment[5][1];
+            		d.studyTime[2] = Comment[5][3];
+            		d.studyTime[3] = Comment[5][4];
+            		d.studyTime[4] = Comment[5][6];
+            		d.studyTime[5] = Comment[5][7];
+            		d.studyTime[6] = '\0';
+    				d.dateTime = (atof(d.studyDate)* 1000000) + atof(d.studyTime);
+    			}
             }
             if ((strcmp(Comment[0], "Off") == 0) && (strcmp(Comment[1], "Centre") == 0)) {
                 //Off Centre midslice(ap,fh,rl) [mm]
