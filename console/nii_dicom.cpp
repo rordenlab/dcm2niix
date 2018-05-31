@@ -1870,6 +1870,21 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
 		dti4D->sliceOrder[0] = -1;
 	}
+    if ((maxBValue <= 0.0f) && (maxDyn > minDyn) && (maxDynTime > minDynTime)) { //use max vs min Dyn instead of && (d.CSA.numDti > 1)
+    	int numDyn = (maxDyn - minDyn)+1;
+    	if (numDyn != maxNumberOfDynamics) {
+    		printWarning("Expected %d dynamics, but found %d (%d..%d).\n", maxNumberOfDynamics, numDyn, minDyn, maxDyn);
+			maxNumberOfDynamics = numDyn;
+			num3DExpected = maxNumberOfGradientOrients * maxNumberOfLabels
+	 				* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes;
+            num2DExpected = d.xyzDim[3] * num3DExpected;
+    	}
+    	float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(numDyn-1); //-1 for fence post
+    	//float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(d.CSA.numDti-1);
+    	if (fabs(TRms - d.TR) > 0.005f)
+    		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
+    	d.TR = TRms;
+    }
     if ((numSlice2D % num2DExpected) != 0) {
     	printMessage(" found %d slices, but expected divisible by %d: slices*grad*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
     		d.xyzDim[3],  maxNumberOfGradientOrients,
@@ -1970,14 +1985,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         printError("Unable to convert DTI [increase kMaxDTI4D] found %d directions\n", d.CSA.numDti);
         d.CSA.numDti = 0;
     };
-    if ((maxBValue <= 0.0f) && (maxDyn > minDyn) && (maxDynTime > minDynTime)) { //use max vs min Dyn instead of && (d.CSA.numDti > 1)
-    	int numDyn = maxDyn - minDyn;
-    	float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)numDyn;
-    	//float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(d.CSA.numDti-1);
-    	if (fabs(TRms - d.TR) > 0.005f)
-    		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
-    	d.TR = TRms;
-    }
     //check if dimensions vary
     if (maxVol > 0) { //maxVol indexed from 0
 		for (int i = 1; i <= maxVol; i++) {
@@ -3910,6 +3917,9 @@ double TE = 0.0; //most recent echo time recorded
                     d.compressionScheme = kCompressC3;
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.80") == 0) {
                     printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls or gdcmconv)\n",transferSyntax);
+                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                } else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
+                    printMessage("Unsupported transfer syntax '%s' (decode with rle2img)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
                     d.compressionScheme = kCompressYes;
