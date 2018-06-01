@@ -776,6 +776,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isExplicitVR = true;
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
+    d.phaseEncodingGE = kGE_PHASE_DIRECTION_UNKNOWN;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
     d.patientWeight = 0.0;
@@ -1478,6 +1479,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     float minDynTime = 999999.0f;
     int minDyn = 32767;
     int maxDyn = 0;
+    int minSlice = 32767;
+    int maxSlice = 0;
     bool ADCwarning = false;
     bool isTypeWarning = false;
     int numSlice2D = 0;
@@ -1749,6 +1752,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		}
 		if (true) { //for every slice
 			int slice = round(cols[kSlice]);
+			if (slice < minSlice) minSlice = slice;
+			if (slice > maxSlice) maxSlice = slice;
 			int volStep =  maxNumberOfDynamics;
 			int vol = ((int)cols[kDyn] - 1);
 			int gradDynVol = (int)cols[kGradientNumber] - 1;
@@ -1869,6 +1874,12 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 	if (numSlice2D > kMaxSlice2D) {
 		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
 		dti4D->sliceOrder[0] = -1;
+	}
+	if ((maxSlice-minSlice+1) != d.xyzDim[3]) {
+		int numSlice = (maxSlice - minSlice)+1;
+		printWarning("Expected %d slices, but found %d (%d..%d).\n", d.xyzDim[3], numSlice, minSlice, maxSlice);
+		d.xyzDim[3] = numSlice;
+		num2DExpected = d.xyzDim[3] * num3DExpected;
 	}
     if ((maxBValue <= 0.0f) && (maxDyn > minDyn) && (maxDynTime > minDynTime)) { //use max vs min Dyn instead of && (d.CSA.numDti > 1)
     	int numDyn = (maxDyn - minDyn)+1;
@@ -3494,6 +3505,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kProcedureStepDescription 0x0040+(0x0254 << 16 )
 #define  kRealWorldIntercept  0x0040+uint32_t(0x9224 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
+#define  kUserDefineDataGE  0x0043+(0x102A << 16 ) //OB
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
 #define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
@@ -4674,6 +4686,65 @@ double TE = 0.0; //most recent echo time recorded
                 if (isSameFloat(1.0, d.intenScale))  //give precedence to standard value
                     d.intenScale = d.RWVScale;
                 break;
+            case kUserDefineDataGE: { //0043,102A
+            	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
+            	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
+            	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %d %d\n", lFileOffset+lPos, lLength);
+            	if (lLength < 4224) {
+            		printMessage(" GE header too small to be valid\n");
+            		break;
+            	}
+            	if ((size_t)(lPos + lLength) > MaxBufferSz) {
+            		//we could re-read the buffer in this case, however in practice GE headers are concise so we never see this issue
+            		printMessage(" GE header overflows buffer\n");
+            		break;
+            	}
+            	uint16_t hdr_offset = dcmInt(2,&buffer[lPos+24],true);
+            	if (isVerboseX > 1) printMessage(" header offset: %d\n", hdr_offset);
+            	int hdr = lPos+hdr_offset;
+            	float version = dcmFloat(4,&buffer[hdr],true);
+            	if (isVerboseX > 1) printMessage(" version %g\n", version);
+            	if (version < 5.0 || version > 40.0) {
+    				printMessage(" GE header file format incorrect\n");
+    				break;
+    			}
+    			if (version >= 26.0) hdr += (19*4);
+            	//int check1 = dcmInt(2,&buffer[hdr + 0x36a],true);
+      			//int check2 = dcmInt(2,&buffer[hdr + 0x372],true);
+      			//printMessage("checks %d %d\n", check1, check2);
+				//Check for PE polarity
+				int flag1 = dcmInt(2,&buffer[hdr + 0x0030],true) & 0x0004;
+				//Check for ky direction (view order)
+				int flag2 = dcmInt(2,&buffer[hdr + 0x0394],true) & 0x0004;
+				if (isVerboseX > 1) printMessage(" flags %d %d\n", flag1, flag2);
+				switch (flag2) {
+					case 0:
+					case 2:
+					  if ((flag1 && !flag2) || (!flag1 && flag2)) {
+						if (isVerboseX > 1) printMessage(" Bottom up\n");
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_BOTTOM_UP;
+					  }
+					  else {
+						if (isVerboseX > 1) printMessage(" Top down\n");
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_TOP_DOWN;
+					  }
+					  break;
+
+					case 1:
+					  if (flag1) {
+						if (isVerboseX > 1) printMessage(" Center out, polarity reversed\n");
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
+					  }
+					  else {
+						if (isVerboseX > 1) printMessage(" Center out, polarity normal\n");
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT;
+					  }
+					  break;
+					default:
+					  if (isVerboseX > 1) printMessage(" Unknown Ky encoding direction");
+				}
+				break;
+            }
             case kEffectiveEchoSpacingGE:
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
