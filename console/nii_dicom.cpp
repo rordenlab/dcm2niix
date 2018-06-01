@@ -4693,10 +4693,12 @@ double TE = 0.0; //most recent echo time recorded
             		printMessage(" GE header too small to be valid  (A)\n");
             		break;
             	}
+
             	//debug code to export binary data
             	// FILE *pFile = fopen("ge.bin", "wb");
 				// fwrite(&buffer[lPos], 1, lLength, pFile);
             	// fclose (pFile);
+
             	if ((size_t)(lPos + lLength) > MaxBufferSz) {
             		//we could re-read the buffer in this case, however in practice GE headers are concise so we never see this issue
             		printMessage(" GE header overflows buffer\n");
@@ -4728,7 +4730,7 @@ double TE = 0.0; //most recent echo time recorded
 				//Check for PE polarity
 				int flag1 = dcmInt(2,&buffer[hdr + 0x0030],true) & 0x0004;
 				//Check for ky direction (view order)
-				int flag2 = dcmInt(2,&buffer[hdr + 0x0394],true) & 0x0004;
+				int flag2 = dcmInt(2,&buffer[hdr + 0x0394],true);
 				if (isVerboseX > 1) printMessage(" flags %d %d\n", flag1, flag2);
 				switch (flag2) {
 					case 0:
