@@ -1515,8 +1515,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             	num3DExpected = maxNumberOfGradientOrients * maxNumberOfLabels
 	 				* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes;
             	num2DExpected = d.xyzDim[3] * num3DExpected;
-	 			if ((num2DExpected * kMaxImageType) >= kMaxDTI4D) {
-					printError("Use dicm2nii or increase kMaxDTI4D to be more than %d\n", num2DExpected * kMaxImageType);
+	 			if ((num2DExpected ) >= kMaxDTI4D) {
+					printError("Use dicm2nii or increase kMaxDTI4D to be more than %d\n", num2DExpected);
 					printMessage("  slices*grad*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d\n",
             		d.xyzDim[3],  maxNumberOfGradientOrients,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
@@ -1753,7 +1753,12 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		if (true) { //for every slice
 			int slice = round(cols[kSlice]);
 			if (slice < minSlice) minSlice = slice;
-			if (slice > maxSlice) maxSlice = slice;
+			if (slice > maxSlice) {
+				maxSlice = slice;
+				d.patientPositionLast[1] = cols[kPositionRL];
+            	d.patientPositionLast[2] = cols[kPositionAP];
+            	d.patientPositionLast[3] = cols[kPositionFH];
+			}
 			int volStep =  maxNumberOfDynamics;
 			int vol = ((int)cols[kDyn] - 1);
 			int gradDynVol = (int)cols[kGradientNumber] - 1;
@@ -1778,6 +1783,14 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (isReal) vol += num3DExpected;
 			if (isImaginary) vol += (2*num3DExpected);
 			if (isPhase) vol += (3*num3DExpected);
+			if (vol >= kMaxDTI4D) {
+					printError("Use dicm2nii or increase kMaxDTI4D (currently %d)to be more than %d\n", kMaxDTI4D, kMaxImageType*num2DExpected);
+					printMessage("  slices*grad*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d\n",
+            		d.xyzDim[3],  maxNumberOfGradientOrients,
+    		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
+					free (cols);
+					return d;
+	 		}
 			// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
@@ -1896,6 +1909,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
     }
+    if ((isTypeWarning) && ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
+    	num2DExpected = numSlice2D;
+    }
     if ((numSlice2D % num2DExpected) != 0) {
     	printMessage(" found %d slices, but expected divisible by %d: slices*grad*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
     		d.xyzDim[3],  maxNumberOfGradientOrients,
@@ -1968,13 +1984,15 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
     if (d.sliceOrient == kSliceOrientSag) iOri = 0; //for sagittal, slices are 1st dimension (i)
     if (d.sliceOrient == kSliceOrientCor) iOri = 1; //for coronal, slices are 2nd dimension (j)
-	if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
+	if ((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0) {
+	//if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
 		d.patientPosition[1] = R44.m[0][3];
 		d.patientPosition[2] = R44.m[1][3];
 		d.patientPosition[3] = R44.m[2][3];
 		d.patientPositionLast[1] = y.v[0];
 		d.patientPositionLast[2] = y.v[1];
 		d.patientPositionLast[3] = y.v[2];
+		printWarning(" Flipping slice order: please verify %s\n", parname);
 	}else {
 		d.patientPosition[1] = y.v[0];
 		d.patientPosition[2] = y.v[1];
