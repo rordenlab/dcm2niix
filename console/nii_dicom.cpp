@@ -4722,39 +4722,33 @@ double TE = 0.0; //most recent echo time recorded
 						break;
 					}
     			}
-            	//int check1 = dcmInt(2,&buffer[hdr + 0x36a],true);
-      			//int check2 = dcmInt(2,&buffer[hdr + 0x372],true);
-      			//printMessage("checks %d %d\n", check1, check2);
-				//Check for PE polarity
+            	//Check for PE polarity
 				int flag1 = dcmInt(2,&buffer[hdr + 0x0030],true) & 0x0004;
 				//Check for ky direction (view order)
-				int flag2 = dcmInt(2,&buffer[hdr + 0x0394],true) & 0x0004;
+				int flag2 = dcmInt(2,&buffer[hdr + 0x0394],true);
 				if (isVerboseX > 1) printMessage(" flags %d %d\n", flag1, flag2);
-				switch (flag2) {
-					case 0:
-					case 2:
-					  if ((flag1 && !flag2) || (!flag1 && flag2)) {
-						if (isVerboseX > 1) printMessage(" Bottom up\n");
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_BOTTOM_UP;
-					  }
-					  else {
-						if (isVerboseX > 1) printMessage(" Top down\n");
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_TOP_DOWN;
-					  }
-					  break;
-
-					case 1:
-					  if (flag1) {
-						if (isVerboseX > 1) printMessage(" Center out, polarity reversed\n");
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
-					  }
-					  else {
-						if (isVerboseX > 1) printMessage(" Center out, polarity normal\n");
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT;
-					  }
-					  break;
-					default:
-					  if (isVerboseX > 1) printMessage(" Unknown Ky encoding direction");
+				if (flag2 == 0 || flag2 == 2) {
+				      if ((flag1 && !flag2) || (!flag1 && flag2)) {
+					    if (isVerboseX > 1) printMessage(" Bottom up\n");
+					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_BOTTOM_UP;
+				      }
+				      else {
+					    if (isVerboseX > 1) printMessage(" Top down\n");
+					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_TOP_DOWN;
+				      }
+				}
+				else if (flag2 == 1) { /* Center out */
+				      if (flag1) {
+					    if (isVerboseX > 1) printMessage(" Center out, polarity reversed\n");
+					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
+				      }
+				      else {
+					    if (isVerboseX > 1) printMessage(" Center out, polarity normal\n");
+					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT;
+				      }
+				}
+				else {
+				      if (isVerboseX > 1) printMessage(" Unknown Ky encoding direction");
 				}
 				break;
             }
