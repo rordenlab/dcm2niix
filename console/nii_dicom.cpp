@@ -1967,23 +1967,22 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     y= nifti_vect44mat44_mul(y, R44 );
     int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
     if (d.sliceOrient == kSliceOrientSag) iOri = 0; //for sagittal, slices are 1st dimension (i)
-        if (d.sliceOrient == kSliceOrientCor) iOri = 1; //for coronal, slices are 2nd dimension (j)
-            if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
-                d.patientPosition[1] = R44.m[0][3];
-                d.patientPosition[2] = R44.m[1][3];
-                d.patientPosition[3] = R44.m[2][3];
-                d.patientPositionLast[1] = y.v[0];
-                d.patientPositionLast[2] = y.v[1];
-                d.patientPositionLast[3] = y.v[2];
-            }else {
-                //d.patientPosition
-                d.patientPosition[1] = y.v[0];
-                d.patientPosition[2] = y.v[1];
-                d.patientPosition[3] = y.v[2];
-                d.patientPositionLast[1] = R44.m[0][3];
-                d.patientPositionLast[2] = R44.m[1][3];
-                d.patientPositionLast[3] = R44.m[2][3];
-            }
+    if (d.sliceOrient == kSliceOrientCor) iOri = 1; //for coronal, slices are 2nd dimension (j)
+	if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
+		d.patientPosition[1] = R44.m[0][3];
+		d.patientPosition[2] = R44.m[1][3];
+		d.patientPosition[3] = R44.m[2][3];
+		d.patientPositionLast[1] = y.v[0];
+		d.patientPositionLast[2] = y.v[1];
+		d.patientPositionLast[3] = y.v[2];
+	}else {
+		d.patientPosition[1] = y.v[0];
+		d.patientPosition[2] = y.v[1];
+		d.patientPosition[3] = y.v[2];
+		d.patientPositionLast[1] = R44.m[0][3];
+		d.patientPositionLast[2] = R44.m[1][3];
+		d.patientPositionLast[3] = R44.m[2][3];
+	}
     //finish up
     changeExt (parname, "REC");
     #ifndef _MSC_VER //Linux is case sensitive, #include <unistd.h>
@@ -4694,6 +4693,10 @@ double TE = 0.0; //most recent echo time recorded
             		printMessage(" GE header too small to be valid\n");
             		break;
             	}
+            	//debug code to export binary data
+            	// FILE *pFile = fopen("ge.bin", "wb");
+				// fwrite(&buffer[lPos], 1, lLength, pFile);
+            	// fclose (pFile);
             	if ((size_t)(lPos + lLength) > MaxBufferSz) {
             		//we could re-read the buffer in this case, however in practice GE headers are concise so we never see this issue
             		printMessage(" GE header overflows buffer\n");
@@ -4882,8 +4885,7 @@ double TE = 0.0; //most recent echo time recorded
 				printMessage("%s %s\n", str, tagStr);
             } else
             	printMessage("%s\n", str);
-
-        	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
+	    	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
