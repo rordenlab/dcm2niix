@@ -4689,8 +4689,8 @@ double TE = 0.0; //most recent echo time recorded
             	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
             	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
             	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %d %d\n", lFileOffset+lPos, lLength);
-            	if (lLength < 4224) {
-            		printMessage(" GE header too small to be valid\n");
+            	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
+            		printMessage(" GE header too small to be valid  (A)\n");
             		break;
             	}
             	//debug code to export binary data
@@ -4704,6 +4704,10 @@ double TE = 0.0; //most recent echo time recorded
             	}
             	uint16_t hdr_offset = dcmInt(2,&buffer[lPos+24],true);
             	if (isVerboseX > 1) printMessage(" header offset: %d\n", hdr_offset);
+            	if (lLength < (hdr_offset+916)) { //minimum size is hdr_offset=0, read 0x0394
+            		printMessage(" GE header too small to be valid  (B)\n");
+            		break;
+            	}
             	int hdr = lPos+hdr_offset;
             	float version = dcmFloat(4,&buffer[hdr],true);
             	if (isVerboseX > 1) printMessage(" version %g\n", version);
@@ -4711,7 +4715,13 @@ double TE = 0.0; //most recent echo time recorded
     				printMessage(" GE header file format incorrect\n");
     				break;
     			}
-    			if (version >= 26.0) hdr += (19*4);
+    			if (version >= 26.0) {
+    				hdr += (19*4);
+					if (lLength < (hdr_offset+(19*4)+916)) { //minimum size is hdr_offset=0, read 0x0394
+						printMessage(" GE header too small to be valid (C)\n");
+						break;
+					}
+    			}
             	//int check1 = dcmInt(2,&buffer[hdr + 0x36a],true);
       			//int check2 = dcmInt(2,&buffer[hdr + 0x372],true);
       			//printMessage("checks %d %d\n", check1, check2);
