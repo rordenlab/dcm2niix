@@ -41,6 +41,8 @@ make
 ```
 `dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install` instead of `make` - this will copy the executable to your path so you do not have to provide the full path to the executable.
 
+In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
+
 **optional building with OpenJPEG:**
 
 Support for JPEG2000 using OpenJPEG is optional. To build with OpenJPEG change the cmake command to `cmake -DUSE_OPENJPEG=ON ..`:
