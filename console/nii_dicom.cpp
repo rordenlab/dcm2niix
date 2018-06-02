@@ -1551,6 +1551,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     d.isValid = false;
     const int kMaxCols = 49;
     float *cols = (float *)malloc(sizeof(float) * kMaxCols);
+    for (int i = 0; i < kMaxCols; i++)
+    	cols[i] = 0.0; //old versions of PAR do not fill all columns - beware of buffer overflow
     char *p = fgets (buff, LINESZ, fp);
     bool isIntenScaleVaries = false;
     for (int i = 0; i < kMaxDTI4D; i++) {
@@ -1580,12 +1582,14 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             if (strcmp(Comment[1], "TRYOUT") == 0) {
                 //sscanf(buff, "# %s %s %s %s %s %s V%s\n", Comment[0], Comment[1], Comment[2], Comment[3],Comment[4], Comment[5],Comment[6]);
                 parVers = (int)round(atof(Comment[6])*10); //4.2 = 42 etc
-                if (parVers <= 40) {
-                    printMessage("This software is unable to convert ancient PAR files: please use legacy dcm2nii\n");
+                if (parVers <= 39) {
+                    printMessage("Unsupported old PAR version %0.2f (use dicm2nii)\n", parVers/10.0);
                     return d;
                     //nCols = 26; //e.g. PAR 3.0 has 26 relevant columns
-                } else if (parVers < 41)
-                    nCols = 32; //e.g PAR 4.0
+                } else if (parVers < 40)
+                    nCols = 32; //e.g PAR 3.0?
+                else if (parVers < 41)
+                	nCols = 41; //e.g PAR 4.0
                 else if (parVers < 42)
                     nCols = kv1; //e.g. PAR 4.1 - last column is final diffusion b-value
                 else
@@ -1724,21 +1728,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			p = fgets (buff, LINESZ, fp);//get next line
 			continue;
 		}
-        //the initial header does not report if phase or magnitude are include, so we read each separately in two passes
-        /*
-        if ((!isReadPhase) && (cols[kImageType] != 0)) { //skip phase images
-        	p = fgets (buff, LINESZ, fp);//get next line
-        	numSlice2D++;
-        	d.isHasPhase = true;
-        	continue;
-        }
-        if ((isReadPhase) && (cols[kImageType] == 0)) { //skip magnitude images
-        	p = fgets (buff, LINESZ, fp);//get next line
-        	numSlice2D++;
-        	d.isHasMagnitude = true;
-        	continue;
-        }
-		*/
 		slice ++;
         bool isADC = false;
         if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
@@ -1812,7 +1801,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		}
 		if (true) { //for every slice
 			int slice = round(cols[kSlice]);
-			//
 			if (slice < minSlice) minSlice = slice;
 			if (slice > maxSlice) {
 				maxSlice = slice;
@@ -1823,8 +1811,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			int volStep =  maxNumberOfDynamics;
 			int vol = ((int)cols[kDyn] - 1);
 			int gradDynVol = (int)cols[kGradientNumber] - 1;
-			if (vol > gradDynVol) gradDynVol = vol; //if fMRI series, else DWI
-			vol = vol + (volStep * ((int)cols[kGradientNumber] - 1));
+			if (gradDynVol < 0) gradDynVol = 0; //old PAREC without cols[kGradientNumber]
+			vol = vol + (volStep * (gradDynVol));
+			if (vol < 0) vol = 0;
 			volStep = volStep * maxNumberOfGradientOrients;
 
 			int bval = (int)cols[kbvalNumber];
@@ -1874,7 +1863,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			dti4D->isReal[vol] = isReal;
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
-			if (maxNumberOfGradientOrients > 1) {
+			if ((maxNumberOfGradientOrients > 1) && (parVers > 40)) {
 				dti4D->S[vol].V[0] = cols[kbval];
     			dti4D->S[vol].V[1] = cols[kv1];
     			dti4D->S[vol].V[2] = cols[kv2];
@@ -1899,7 +1888,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     }
     free (cols);
     fclose (fp);
-    if ((parVers <= 40) || (numSlice2D < 1)) {
+    if ((parVers <= 0) || (numSlice2D < 1)) {
 		printError("Invalid PAR format header (unable to detect version or slices) %s\n", parname);
     	return d;
     }
@@ -1925,6 +1914,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     		maxVol = maxVol + 1;
     	}
     }
+
     if (d.CSA.numDti > 0) d.CSA.numDti = maxVol; //e.g. gradient 2 can skip B=0 but include isotropic
     //remove unused slices - this will happen if unless we have all 4 image types: real, imag, mag, phase
     slice = 0;
@@ -1935,7 +1925,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         }
     }
     if (slice != numSlice2D) {
-    	printError("Catastrophic error: found %d but expected %d.\n", slice, numSlice2D);
+    	printError("Catastrophic error: found %d but expected %d slices.\n", slice, numSlice2D);
         printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n",
             		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
@@ -4113,6 +4103,7 @@ double TE = 0.0; //most recent echo time recorded
             	dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
             	break;
             case kComplexImageComponent:
+                if (is2005140FSQ) break; //see Maastricht DICOM data for magnitude data with this field set as REAL!  https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
                 if (lLength < 2) break;
                 isPhase = false;
                 isReal = false;
@@ -4808,7 +4799,7 @@ double TE = 0.0; //most recent echo time recorded
             	float version = dcmFloat(4,&buffer[hdr],true);
             	if (isVerboseX > 1) printMessage(" version %g\n", version);
             	if (version < 5.0 || version > 40.0) {
-    				printMessage(" GE header file format incorrect\n");
+    				printMessage(" GE header file format incorrect %g\n", version);
     				break;
     			}
     			if (version >= 26.0) {
@@ -4895,12 +4886,10 @@ double TE = 0.0; //most recent echo time recorded
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if (isIconImageSequence) {
                 	int imgBytes = (d.xyzDim[1] * d.xyzDim[2] * int(d.bitsAllocated / 8));
-                	if (imgBytes == lLength) {
-                		printWarning("Assuming 7FE0,0010 refers to image not icon\n");
+                	if (imgBytes == lLength)
                 		isIconImageSequence = false;
-					} else {
-                		printWarning("Skipping 7FE0,0010: assuming it refers to icon not image\n");
-                	}
+					if (sqDepth < 1) printWarning("Assuming 7FE0,0010 to an icon not the main image\n");
+
                 }
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                     d.imageStart = (int)lPos + (int)lFileOffset;
