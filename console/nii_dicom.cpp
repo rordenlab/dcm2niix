@@ -1510,7 +1510,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kTriggerTime 32
 #define	kbval 33
 #define	kInversionDelayMs 40
-//#define	kbvalNumber 41
+#define	kbvalNumber 41
 #define	kGradientNumber 42
 #define	kv1	47
 #define	kv2	45
@@ -1565,13 +1565,13 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             char Comment[7][50];
             sscanf(buff, "# %s %s %s %s %s %s V%s\n", Comment[0], Comment[1], Comment[2], Comment[3],Comment[4], Comment[5],Comment[6]);
             if ((strcmp(Comment[0], "sl") == 0) && (strcmp(Comment[1], "ec") == 0) ) {
-            	num3DExpected = maxNumberOfGradientOrients * maxNumberOfLabels
+            	num3DExpected = maxNumberOfGradientOrients * maxNumberOfDiffusionValues * maxNumberOfLabels
 	 				* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes;
             	num2DExpected = d.xyzDim[3] * num3DExpected;
-	 			if ((num2DExpected ) >= kMaxDTI4D) {
+	 			if ((num2DExpected ) >= kMaxSlice2D) {
 					printError("Use dicm2nii or increase kMaxDTI4D to be more than %d\n", num2DExpected);
-					printMessage("  slices*grad*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d\n",
-            		d.xyzDim[3],  maxNumberOfGradientOrients,
+					printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d*%d\n",
+            		d.xyzDim[3],  maxNumberOfGradientOrients,maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
 					free (cols);
 					return d;
@@ -1679,6 +1679,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             }
             if ((strcmp(Comment[0], "Max.") == 0) && (strcmp(Comment[3], "diffusion") == 0)) {
                 maxNumberOfDiffusionValues = atoi(Comment[6]);
+                if (maxNumberOfDiffusionValues > 1) maxNumberOfDiffusionValues -= 1; //if two listed, one is B=0
             }
             if ((strcmp(Comment[0], "Max.") == 0) && (strcmp(Comment[3], "gradient") == 0)) {
                 maxNumberOfGradientOrients = atoi(Comment[6]);
@@ -1740,7 +1741,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		*/
 		slice ++;
         bool isADC = false;
-        if ((maxNumberOfDiffusionValues == 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
+        if ((maxNumberOfDiffusionValues >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
         	isADC = true;
         	ADCwarning = true;
         }
@@ -1824,8 +1825,18 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			int gradDynVol = (int)cols[kGradientNumber] - 1;
 			if (vol > gradDynVol) gradDynVol = vol; //if fMRI series, else DWI
 			vol = vol + (volStep * ((int)cols[kGradientNumber] - 1));
-			if (isADC) vol ++;
 			volStep = volStep * maxNumberOfGradientOrients;
+
+			int bval = (int)cols[kbvalNumber];
+			if (bval > 2) //b=0 is 0, b=1000 is 1, b=2000 is 2 - b=0 does not have multiple directions
+				bval = bval - 1;
+			else
+				bval = 1;
+			vol = vol  + (volStep * (bval- 1));
+			int xl = volStep;
+			volStep = volStep * maxNumberOfDiffusionValues;
+			if (isADC)
+				vol = volStep + (bval-1);
 			vol = vol  + (volStep * ((int)cols[kEcho] - 1));
 			volStep = volStep * maxNumberOfEchoes;
 			vol = vol  + (volStep * ((int)cols[kCardiac] - 1));
@@ -1834,6 +1845,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (ASL < 1) ASL = 1;
 			vol = vol  + (volStep * (ASL - 1));
 			volStep = volStep * maxNumberOfLabels;
+			//printMessage("%d\t%d\t%d\t%d\t%d\n", xl,(int)cols[kbvalNumber], (int)cols[kGradientNumber], bval, vol);
 			if (vol > maxVol) maxVol = vol;
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
@@ -1845,8 +1857,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (isPhase) vol += (3*num3DExpected);
 			if (vol >= kMaxDTI4D) {
 					printError("Use dicm2nii or increase kMaxDTI4D (currently %d)to be more than %d\n", kMaxDTI4D, kMaxImageType*num2DExpected);
-					printMessage("  slices*grad*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d\n",
-            		d.xyzDim[3],  maxNumberOfGradientOrients,
+					printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d*%d\n",
+            		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
 					free (cols);
 					return d;
@@ -1863,6 +1875,14 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			dti4D->isReal[vol] = isReal;
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
+			if (maxNumberOfGradientOrients > 1) {
+				dti4D->S[vol].V[0] = cols[kbval];
+    			dti4D->S[vol].V[1] = cols[kv1];
+    			dti4D->S[vol].V[2] = cols[kv2];
+    			dti4D->S[vol].V[3] = cols[kv3];
+    			if ((vol+1) > d.CSA.numDti)
+    				d.CSA.numDti = vol+1;
+			}
 			//if (slice == 1) printWarning("%d\n", (int)cols[kEcho]);
 			slice = slice + (vol * d.xyzDim[3]);
 			//offset images by type: mag+0,real+1, imag+2,phase+3
@@ -1875,34 +1895,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			}
 			numSlice2D++;
         }
-        if (cols[kGradientNumber] > 0) {
-        	/*int dir = (int) cols[kGradientNumber];
-            if ((dir > 0) && (cols[kbval] > 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) && (cols[kv1] == 0.0) ) {
-                if (dti4D->S[dir-1].V[0] >= 0) dir = dir + 1; //Philips often stores an ADC map along with B0 and weighted images, unfortunately they give it the same kGradientNumber as the B0! (seen in PAR V4.2)
-                //the logic here is that IF the gradient was previously used we increment the gradient number. This should provide compatibility when Philips fixes this bug
-                //it seems like the ADC is always saved as the final volume, so this solution SHOULD be foolproof.
-                ADCwarning = true;
-            }*/
-            //(cols[kImageType] == 0) means magnitude scan
-            if ((maxNumberOfGradientOrients > 1) && (cols[kImageType] == 0) && (cols[kDyn] == 1) && (cols[kEcho] == 1) && (cols[kCardiac] == 1)  && (cols[kSlice] == 1)) { //only first slice
-                d.CSA.numDti++;
-                //int dir = d.CSA.numDti;
-                int dir =(int)cols[kGradientNumber];
-                if (isADC) dir ++;
-                if (dir <= kMaxDTI4D) {
-                    if (isVerbose ) {
-                        if (d.CSA.numDti == 1) printMessage("n\tdir\tbValue\tV1\tV2\tV3\n");
-                        printMessage("%d\t%g\t%g\t%g\t%g\t%g\n", dir-1, cols[kGradientNumber], cols[kbval], cols[kv1], cols[kv2], cols[kv3]);
-                	}
-                    dti4D->S[dir-1].V[0] = cols[kbval];
-                    dti4D->S[dir-1].V[1] = cols[kv1];
-                    dti4D->S[dir-1].V[2] = cols[kv2];
-                    dti4D->S[dir-1].V[3] = cols[kv3];
-					if (cols[kbval] > maxBValue)
-						maxBValue = cols[kbval];
-                } //save DTI direction
-            }
-        } //if DTI directions
         //printMessage("%f %f %lu\n",cols[9],cols[kGradientNumber], strlen(buff))
         p = fgets (buff, LINESZ, fp);//get next line
     }
@@ -1934,6 +1926,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     		maxVol = maxVol + 1;
     	}
     }
+    if (d.CSA.numDti > 0) d.CSA.numDti = maxVol; //e.g. gradient 2 can skip B=0 but include isotropic
     //remove unused slices - this will happen if unless we have all 4 image types: real, imag, mag, phase
     slice = 0;
     for (int i = 0; i < kMaxDTI4D; i++) {
@@ -1942,10 +1935,12 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         	slice = slice + 1;
         }
     }
+    printMessage(">%d<>%d<", numSlice2D, slice);
+
     if (slice != numSlice2D) {
     	printError("Catastrophic error: found %d but expected %d.\n", slice, numSlice2D);
-        printMessage("  slices*grad*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d\n",
-            		d.xyzDim[3],  maxNumberOfGradientOrients,
+        printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n",
+            		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
         d.isValid = false;
     }
@@ -1966,7 +1961,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	if (numDyn != maxNumberOfDynamics) {
     		printWarning("Expected %d dynamics, but found %d (%d..%d).\n", maxNumberOfDynamics, numDyn, minDyn, maxDyn);
 			maxNumberOfDynamics = numDyn;
-			num3DExpected = maxNumberOfGradientOrients * maxNumberOfLabels
+			num3DExpected = maxNumberOfGradientOrients * maxNumberOfDiffusionValues * maxNumberOfLabels
 	 				* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes;
             num2DExpected = d.xyzDim[3] * num3DExpected;
     	}
@@ -1984,8 +1979,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	printWarning("More volumes than described in header (ADC or isotropic?)\n");
     }
     if ((numSlice2D % num2DExpected) != 0) {
-    	printMessage("Found %d slices, but expected divisible by %d: slices*grad*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
-    		d.xyzDim[3],  maxNumberOfGradientOrients,
+    	printMessage("Found %d slices, but expected divisible by %d: slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
+    		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
     	d.isValid = false;
     }
@@ -2004,7 +1999,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         printWarning("PAR/REC dataset includes an derived (isotropic, ADC, etc) map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
     if (isIntenScaleVaries)
        printWarning("Intensity slope/intercept varies between slices! [check resulting images]\n");
-    printMessage("Done reading PAR header version %.1f, with %d volumes\n", (float)parVers/10, d.CSA.numDti);
+    printMessage("Done reading PAR header version %.1f, with %d slices\n", (float)parVers/10, numSlice2D);
 	//see Xiangrui Li 's dicm2nii (also BSD license)
 	// http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
 	// Rotation order and signs are figured out by try and err, not 100% sure
@@ -2099,6 +2094,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		//if (d.isScaleOrTEVaries)
 		//	printWarning("Varying dimensions (echoes, phase maps, intensity scaling) will require volumes to be saved separately (hint: you may prefer dicm2nii output)\n");
     }
+    //if (d.CSA.numDti > 1)
+    //	for (int i = 0; i < d.CSA.numDti; i++)
+    //		printMessage("%d\tb=\t%g\tv=\t%g\t%g\t%g\n",i,dti4D->S[i].V[0],dti4D->S[i].V[1],dti4D->S[i].V[2],dti4D->S[i].V[3]);
     //check DTI makes sense
     if (d.CSA.numDti > 1) {
     	bool v1varies = false;
