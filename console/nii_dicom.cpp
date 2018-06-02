@@ -4711,10 +4711,12 @@ double TE = 0.0; //most recent echo time recorded
             		printMessage(" GE header too small to be valid  (A)\n");
             		break;
             	}
+
             	//debug code to export binary data
             	// FILE *pFile = fopen("ge.bin", "wb");
 				// fwrite(&buffer[lPos], 1, lLength, pFile);
             	// fclose (pFile);
+
             	if ((size_t)(lPos + lLength) > MaxBufferSz) {
             		//we could re-read the buffer in this case, however in practice GE headers are concise so we never see this issue
             		printMessage(" GE header overflows buffer\n");
