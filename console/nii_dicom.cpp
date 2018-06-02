@@ -824,9 +824,6 @@ void dcmStrDigitsOnly(char* lStr) {
 }
 
 void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false) {
-    //char test[] = " 1     2    3    ";
-    //lLength = (int)strlen(test);
-
     if (lLength < 1) return;
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lLength + 1));
@@ -1420,6 +1417,61 @@ void changeExt (char *file_name, const char* ext) {
     }
 } //changeExt()
 
+void cleanStr(char* lOut) {
+//e.g. strings such as image comments with special characters (e.g. "G/6/2009") can disrupt file saves
+	size_t lLength = strlen(lOut);
+    if (lLength < 1) return;
+	char * cString = (char *)malloc(sizeof(char) * (lLength + 1));
+    cString[lLength] =0;
+    memcpy(cString, (char*)&lOut[0], lLength);
+    for (int i = 0; i < lLength; i++)
+        //assume specificCharacterSet (0008,0005) is ISO_IR 100 http://en.wikipedia.org/wiki/ISO/IEC_8859-1
+        if (cString[i]< 1) {
+            unsigned char c = (unsigned char)cString[i];
+            if ((c >= 192) && (c <= 198)) cString[i] = 'A';
+            if (c == 199) cString[i] = 'C';
+            if ((c >= 200) && (c <= 203)) cString[i] = 'E';
+            if ((c >= 204) && (c <= 207)) cString[i] = 'I';
+            if (c == 208) cString[i] = 'D';
+            if (c == 209) cString[i] = 'N';
+            if ((c >= 210) && (c <= 214)) cString[i] = 'O';
+            if (c == 215) cString[i] = 'x';
+            if (c == 216) cString[i] = 'O';
+            if ((c >= 217) && (c <= 220)) cString[i] = 'O';
+            if (c == 221) cString[i] = 'Y';
+            if ((c >= 224) && (c <= 230)) cString[i] = 'a';
+            if (c == 231) cString[i] = 'c';
+            if ((c >= 232) && (c <= 235)) cString[i] = 'e';
+            if ((c >= 236) && (c <= 239)) cString[i] = 'i';
+            if (c == 240) cString[i] = 'o';
+            if (c == 241) cString[i] = 'n';
+            if ((c >= 242) && (c <= 246)) cString[i] = 'o';
+            if (c == 248) cString[i] = 'o';
+            if ((c >= 249) && (c <= 252)) cString[i] = 'u';
+            if (c == 253) cString[i] = 'y';
+            if (c == 255) cString[i] = 'y';
+        }
+    for (int i = 0; i < lLength; i++)
+        if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13)) cString[i] = '_';
+    int len = 1;
+    for (int i = 1; i < lLength; i++) { //remove repeated "_"
+        if ((cString[i-1]!='_') || (cString[i]!='_')) {
+            cString[len] =cString[i];
+            len++;
+        }
+    } //for each item
+    if (cString[len-1] == '_') len--;
+    cString[len] = 0; //null-terminate, strlcpy does this anyway
+    int maxLen = kDICOMStr;
+    len = dcmStrLen(len, maxLen);
+    if (len == maxLen) { //we need space for null-termination
+		if (cString[len-2] == '_') len = len -2;
+	}
+    memcpy(lOut,cString,len-1);
+    lOut[len-1] = 0;
+	free(cString);
+} //cleanStr()
+
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //erase dummy with empty
@@ -1458,6 +1510,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kTriggerTime 32
 #define	kbval 33
 #define	kInversionDelayMs 40
+//#define	kbvalNumber 41
 #define	kGradientNumber 42
 #define	kv1	47
 #define	kv2	45
@@ -1558,6 +1611,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 strcat(d.patientName, Comment[5]);
                 strcat(d.patientName, Comment[6]);
                 strcat(d.patientName, Comment[7]);
+                cleanStr(d.patientName);
                 //printMessage("%s\n",d.patientName);
             }
             if ((strcmp(Comment[0], "Protocol") == 0) && (strcmp(Comment[1], "name") == 0)) {
@@ -1566,6 +1620,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 strcat(d.protocolName, Comment[5]);
                 strcat(d.protocolName, Comment[6]);
                 strcat(d.protocolName, Comment[7]);
+                cleanStr(d.protocolName);
             }
             if ((strcmp(Comment[0], "Examination") == 0) && (strcmp(Comment[1], "name") == 0)) {
             	strcpy(d.imageComments, Comment[3]);
@@ -1573,7 +1628,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 strcat(d.imageComments, Comment[5]);
                 strcat(d.imageComments, Comment[6]);
                 strcat(d.imageComments, Comment[7]);
-
+                cleanStr(d.imageComments);
             }
             if ((strcmp(Comment[0], "Series") == 0) && (strcmp(Comment[1], "Type") == 0)) {
             	strcpy(d.seriesDescription, Comment[3]);
@@ -1581,6 +1636,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
                 strcat(d.seriesDescription, Comment[5]);
                 strcat(d.seriesDescription, Comment[6]);
                 strcat(d.seriesDescription, Comment[7]);
+                cleanStr(d.seriesDescription);
             }
             if ((strcmp(Comment[0], "Examination") == 0) && (strcmp(Comment[1], "date/time") == 0)) {
             	if ((strlen(Comment[3]) >= 10) && (strlen(Comment[5]) >= 8)) {
@@ -1684,12 +1740,15 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		*/
 		slice ++;
         bool isADC = false;
-        if ((maxNumberOfDiffusionValues == 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) )
+        if ((maxNumberOfDiffusionValues == 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
         	isADC = true;
-        if (isADC) {  //skip ADC/Isotropic volumes
+        	ADCwarning = true;
+        }
+        /*if (isADC) {  //skip ADC/Isotropic volumes
 			p = fgets (buff, LINESZ, fp);//get next line
+			numSlice2Din++;
 			continue;
-		}
+		}*/
         if (slice == 1) {
             d.xyzDim[1] = (int) cols[kXdim];
 			d.xyzDim[2] = (int) cols[kYdim];
@@ -1752,6 +1811,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		}
 		if (true) { //for every slice
 			int slice = round(cols[kSlice]);
+			//
 			if (slice < minSlice) minSlice = slice;
 			if (slice > maxSlice) {
 				maxSlice = slice;
@@ -1791,6 +1851,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 					free (cols);
 					return d;
 	 		}
+	 		//printMessage("%d\t%d\t%d\n", numSlice2D, slice, vol);
 			// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
@@ -1810,6 +1871,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			//printWarning("%d\t%d\n", slice -1, numSlice2D);
             if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice -1] = numSlice2D;
+				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
 			}
 			numSlice2D++;
         }
@@ -1846,6 +1908,10 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     }
     free (cols);
     fclose (fp);
+    if ((parVers <= 40) || (numSlice2D < 1)) {
+		printError("Invalid PAR format header (unable to detect version or slices) %s\n", parname);
+    	return d;
+    }
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.isValid = true;
     d.isSigned = true;
@@ -1890,7 +1956,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 	}
 	if ((maxSlice-minSlice+1) != d.xyzDim[3]) {
 		int numSlice = (maxSlice - minSlice)+1;
-		printWarning("Expected %d slices, but found %d (%d..%d).\n", d.xyzDim[3], numSlice, minSlice, maxSlice);
+		printWarning("Expected %d slices, but found %d (%d..%d). %s\n", d.xyzDim[3], numSlice, minSlice, maxSlice, parname);
+		if (numSlice <= 0) d.isValid = false;
 		d.xyzDim[3] = numSlice;
 		num2DExpected = d.xyzDim[3] * num3DExpected;
 	}
@@ -1912,8 +1979,12 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     if ((isTypeWarning) && ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
     	num2DExpected = numSlice2D;
     }
+    if ( ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
+    	num2DExpected = d.xyzDim[3] * (int)(numSlice2D / d.xyzDim[3]);
+    	printWarning("More volumes than described in header (ADC or isotropic?)\n");
+    }
     if ((numSlice2D % num2DExpected) != 0) {
-    	printMessage(" found %d slices, but expected divisible by %d: slices*grad*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
+    	printMessage("Found %d slices, but expected divisible by %d: slices*grad*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
     		d.xyzDim[3],  maxNumberOfGradientOrients,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
     	d.isValid = false;
@@ -1930,7 +2001,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     d.xyzDim[4] = slice/d.xyzDim[3];
     d.locationsInAcquisition = d.xyzDim[3];
     if (ADCwarning)
-        printWarning("PAR/REC dataset includes an ADC map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
+        printWarning("PAR/REC dataset includes an derived (isotropic, ADC, etc) map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
     if (isIntenScaleVaries)
        printWarning("Intensity slope/intercept varies between slices! [check resulting images]\n");
     printMessage("Done reading PAR header version %.1f, with %d volumes\n", (float)parVers/10, d.CSA.numDti);
@@ -2481,6 +2552,7 @@ unsigned char * nii_reorderSlicesX(unsigned char* bImg, struct nifti_1_header *h
     for (int i = 0; i < dim3to7; i++) { //for each volume
 		int fromSlice = dti4D->sliceOrder[i];
 		//if (i < 10) printMessage(" ===> Moving slice from/to positions\t%d\t%d\n", i, toSlice);
+		//printMessage(" ===> Moving slice from/to positions\t%d\t%d\n", fromSlice, i);
 		if ((i < 0) || (fromSlice >= dim3to7))
 			printError("Re-ordered slice out-of-volume %d\n", fromSlice);
 		else if (i != fromSlice) {
@@ -4705,8 +4777,12 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kUserDefineDataGE: { //0043,102A
             	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
+            	#ifdef MY_DEBUG
             	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
-            	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %d %d\n", lFileOffset+lPos, lLength);
+            	#else
+            	int isVerboseX = isVerbose;
+            	#endif
+            	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset+lPos, lLength);
             	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
             		printMessage(" GE header too small to be valid  (A)\n");
             		break;
@@ -4726,7 +4802,7 @@ double TE = 0.0; //most recent echo time recorded
             		printMessage(" GE header too small to be valid  (B)\n");
             		break;
             	}
-            	int hdr = lPos+hdr_offset;
+            	size_t hdr = lPos+hdr_offset;
             	float version = dcmFloat(4,&buffer[hdr],true);
             	if (isVerboseX > 1) printMessage(" version %g\n", version);
             	if (version < 5.0 || version > 40.0) {
