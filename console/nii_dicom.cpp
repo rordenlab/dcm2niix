@@ -1517,7 +1517,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kv3	46
 #define	kASL	48
 #define kMaxImageType 4 //4 observed image types: real, imag, mag, phase (in theory also subsequent calculation such as B1)
-    printWarning("dcm2niix PAR is not actively supported. Use with extreme caution (hint: use dicm2nii or R2AGUI)\n");
+    printWarning("dcm2niix PAR is not actively supported (hint: use dicm2nii)\n");
     if (isReadPhase) printWarning(" Reading phase images from PAR/REC\n");
     char buff[LINESZ];
 	int maxNumberOfDiffusionValues = 1;
@@ -1741,7 +1741,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		*/
 		slice ++;
         bool isADC = false;
-        if ((maxNumberOfDiffusionValues >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
+        if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
         	isADC = true;
         	ADCwarning = true;
         }
@@ -1833,7 +1833,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			else
 				bval = 1;
 			vol = vol  + (volStep * (bval- 1));
-			int xl = volStep;
 			volStep = volStep * maxNumberOfDiffusionValues;
 			if (isADC)
 				vol = volStep + (bval-1);
@@ -1845,7 +1844,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			if (ASL < 1) ASL = 1;
 			vol = vol  + (volStep * (ASL - 1));
 			volStep = volStep * maxNumberOfLabels;
-			//printMessage("%d\t%d\t%d\t%d\t%d\n", xl,(int)cols[kbvalNumber], (int)cols[kGradientNumber], bval, vol);
+			//if (slice == 1)  printMessage("%d\t%d\t%d\t%d\t%d\n", isADC,(int)cols[kbvalNumber], (int)cols[kGradientNumber], bval, vol);
 			if (vol > maxVol) maxVol = vol;
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
@@ -1974,7 +1973,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     }
     if ( ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
     	num2DExpected = d.xyzDim[3] * (int)(numSlice2D / d.xyzDim[3]);
-    	printWarning("More volumes than described in header (ADC or isotropic?)\n");
+    	if (!ADCwarning) printWarning("More volumes than described in header (ADC or isotropic?)\n");
     }
     if ((numSlice2D % num2DExpected) != 0) {
     	printMessage("Found %d slices, but expected divisible by %d: slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
@@ -1983,8 +1982,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     	d.isValid = false;
     }
     if (dynNotAscending) {
-        printWarning("PAR file volumes not saved in ascending order (please check re-ordering)\n");
-        //d.isValid = false;
+        printWarning("PAR file volumes not saved in ascending temporal order (please check re-ordering)\n");
     }
     if ((slice % d.xyzDim[3]) != 0) {
         printError("Total number of slices (%d) not divisible by slices per 3D volume (%d) [acquisition aborted]. Try dicm2nii or R2AGUI: %s\n", slice, d.xyzDim[3], parname);
@@ -1994,7 +1992,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     d.xyzDim[4] = slice/d.xyzDim[3];
     d.locationsInAcquisition = d.xyzDim[3];
     if (ADCwarning)
-        printWarning("PAR/REC dataset includes an derived (isotropic, ADC, etc) map that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
+        printWarning("PAR/REC dataset includes derived (isotropic, ADC, etc) map(s) that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
     if (isIntenScaleVaries)
        printWarning("Intensity slope/intercept varies between slices! [check resulting images]\n");
     printMessage("Done reading PAR header version %.1f, with %d slices\n", (float)parVers/10, numSlice2D);
@@ -2048,7 +2046,14 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
     if (d.sliceOrient == kSliceOrientSag) iOri = 0; //for sagittal, slices are 1st dimension (i)
     if (d.sliceOrient == kSliceOrientCor) iOri = 1; //for coronal, slices are 2nd dimension (j)
-	if ((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0) {
+	//printMessage("%d\t%g\t%g\t%g\t->\t%g\t%g\t%g\t=\t%g\n",iOri,d.patientPosition[1],d.patientPosition[2],d.patientPosition[3],d.patientPositionLast[1],d.patientPositionLast[2],d.patientPositionLast[3],(d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]));
+	bool flip = false;
+	//assume head first supine
+	if ((iOri == 0) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) > 0))) flip = true;
+	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0))) flip = true;
+	if ((iOri == 1) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0))) flip = true;
+ 	if (flip) {
+	//if ((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0) {
 	//if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
 		d.patientPosition[1] = R44.m[0][3];
 		d.patientPosition[2] = R44.m[1][3];
@@ -2056,8 +2061,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 		d.patientPositionLast[1] = y.v[0];
 		d.patientPositionLast[2] = y.v[1];
 		d.patientPositionLast[3] = y.v[2];
-		printWarning(" Flipping slice order: please verify %s\n", parname);
+		//printWarning(" Flipping slice order: please verify %s\n", parname);
 	}else {
+		//printWarning(" NOT Flipping slice order: please verify %s\n", parname);
 		d.patientPosition[1] = y.v[0];
 		d.patientPosition[2] = y.v[1];
 		d.patientPosition[3] = y.v[2];
