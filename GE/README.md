@@ -2,6 +2,10 @@
 
 dcm2niix attempts to convert GE DICOM format images to NIfTI.
 
+## Diffusion Tensor Notes
+
+As noted by Jaemin Shin (GE), the GE convention for reported diffusion gradient direction has always been in “MR physics” logical coordinate, i.e Freq (X), Phase (Y), Slice (Z). Note that this is neither “with reference to the scanner bore” (like Siemens or Philips) nor “with reference to the imaging plane” (as expected by FSL tools). This is the main source of confusion. This explains why the dcm2niix function geCorrectBvecs() checks whether the DICOM tag In-plane Phase Encoding Direction (0018,1312) is 'ROW' or 'COL'. In addition, it will generate the warning 'reorienting for ROW phase-encoding untested' if you acquire DTI data with the phase encoding in the ROW direction. If you do test this feature, please report your findings as a Github issue.
+
 ## dcm2niix Notes
 
 In addition to reading the
