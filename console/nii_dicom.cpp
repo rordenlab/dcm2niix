@@ -1935,8 +1935,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         	slice = slice + 1;
         }
     }
-    printMessage(">%d<>%d<", numSlice2D, slice);
-
     if (slice != numSlice2D) {
     	printError("Catastrophic error: found %d but expected %d.\n", slice, numSlice2D);
         printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n",
