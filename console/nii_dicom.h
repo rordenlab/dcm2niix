@@ -78,6 +78,7 @@ static const int kCompressYes = 1;
 static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
 static const int kCompressRLE = 4; //run length encoding
+static const int kCompressPMSCT_RLE1 = 5; //see rel2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
 
 // Maximum number of dimensions for .dimensionIndexValues, i.e. possibly the
 // number of axes in the output .nii.

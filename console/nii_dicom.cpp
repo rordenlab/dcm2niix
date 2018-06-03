@@ -2392,6 +2392,9 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
     }
 	fseek(file, (long) hdr.vox_offset, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
+    //int i = 0;
+    //while (bImg[i] == 0) i++;
+    //printMessage("%d %d<\n",i,bImg[i]);
     size_t  sz = fread(bImg, 1, imgszRead, file);
 	fclose(file);
 	if (sz < imgszRead) {
@@ -2981,6 +2984,103 @@ uint32_t rleInt(int lIndex, unsigned char lBuffer[], bool swap) {//read binary 3
     return swapVal;
 } //rleInt()
 
+unsigned char * nii_loadImgPMSCT_RLE1(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+//Transfer Syntax 1.3.46.670589.33.1.4.1 also handled by TomoVision and GDCM's rle2img
+//https://github.com/malaterre/GDCM/blob/a923f206060e85e8d81add565ae1b9dd7b210481/Examples/Cxx/rle2img.cxx
+//see rel2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
+    if (dcm.imageBytes < 66 ) { //64 for header+ 2 byte minimum image
+        printError("%d is not enough bytes for PMSCT_RLE1 compression '%s'\n", dcm.imageBytes, imgname);
+        return NULL;
+    }
+    int bytesPerSample = dcm.samplesPerPixel * (dcm.bitsAllocated / 8);
+	if (bytesPerSample != 2) {
+		//there is an RGB variation of this format, but we have not seen it in the wild
+        printError("PMSCT_RLE1 should be 16-bits per sample (please report on Github and use pmsct_rgb1).\n");
+        return NULL;
+	}
+    FILE *file = fopen(imgname , "rb");
+	if (!file) {
+         printError("Unable to open %s\n", imgname);
+         return NULL;
+    }
+	fseek(file, 0, SEEK_END);
+	long fileLen=ftell(file);
+    if ((fileLen < 1) || (dcm.imageBytes < 1) || (fileLen < (dcm.imageBytes+dcm.imageStart))) {
+        printMessage("File not large enough to store image data: %s\n", imgname);
+        fclose(file);
+        return NULL;
+    }
+	fseek(file, (long) dcm.imageStart, SEEK_SET);
+	size_t imgsz = nii_ImgBytes(hdr);
+    char *cImg = (char *)malloc(dcm.imageBytes); //compressed input
+    size_t  sz = fread(cImg, 1, dcm.imageBytes, file);
+	fclose(file);
+	if (sz < (size_t)dcm.imageBytes) {
+         printError("Only loaded %zu of %d bytes for %s\n", sz, dcm.imageBytes, imgname);
+         free(cImg);
+         return NULL;
+    }
+	if( imgsz == dcm.imageBytes ) {// Handle special case that data is not compressed:
+		return (unsigned char *)cImg;
+	}
+	unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
+	for (size_t i = 0; i < imgsz; i++)
+		bImg[i] = 0;
+	// RLE pass
+	char *tImg = (char *)malloc(imgsz); //temp output
+	int o = 0;
+	for(size_t i = 0; i < dcm.imageBytes; ++i) {
+		//if ((i > 59) && (i <  66)) printMessage("%d --> %d\n", cImg[i], (unsigned char)0xa5);
+		if( cImg[i] == (char)0xa5 ) {
+		  int repeat = (unsigned char)cImg[i+1] + 1;
+		  char value = cImg[i+2];
+		  while(repeat) {
+			tImg[o] = value ;
+			//
+			o ++;
+			--repeat;
+			}
+		  i+=2;
+		} else {
+		  tImg[o] = cImg[i];
+		  o ++;
+		}
+	} //for i
+	free(cImg);
+	int tempsize = o;
+	//Looks like this RLE is pretty ineffective...
+	//printMessage("RLE %d -> %d\n", dcm.imageBytes, o);
+	// Delta encoding pass
+	unsigned short delta = 0;
+	o = 0;
+	int n16 = (int) imgsz >> 1;
+	unsigned short *bImg16 = (unsigned short *) bImg;
+	for(size_t i = 0; i < tempsize; ++i) {
+    	if( tImg[i] == (unsigned char)0x5a ) {
+    		unsigned char v1 = (unsigned char)tImg[i+1];
+      		unsigned char v2 = (unsigned char)tImg[i+2];
+      		unsigned short value = (unsigned short)(v2 * 256 + v1);
+      		if (o < n16)
+      			bImg16[o] = value;
+      		o ++;
+      		delta = value;
+      		i+=2;
+      	} else {
+      		unsigned short value = (unsigned short)(tImg[i] + delta);
+      		if (o < n16)
+      			bImg16[o] = value;
+      		o ++;
+      		delta = value;
+      	}
+    } //for i
+	//for (int i = 0; i < 18; i++)
+	//	printMessage("%d %04x -> %04x \n", i, tImg[i], bImg16[i]);
+	//printMessage("Delta %d -> %d (of %d)\n", tempsize, 2*(o-1), imgsz);
+	free(tImg);
+    return bImg;
+} // nii_loadImgPMSCT_RLE1()
+
+
 unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
 //decompress PackBits run-length encoding https://en.wikipedia.org/wiki/PackBits
     if (dcm.imageBytes < 66 ) { //64 for header+ 2 byte minimum image
@@ -3088,6 +3188,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     		if (hdr->datatype ==DT_RGB24) //convert to planar
         		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
         #endif
+    } else if (dcm.compressionScheme == kCompressPMSCT_RLE1) {
+    	img = nii_loadImgPMSCT_RLE1(imgname, *hdr, dcm);
     } else if (dcm.compressionScheme == kCompressRLE) {
     	img = nii_loadImgRLE(imgname, *hdr, dcm);
     	if (hdr->datatype ==DT_RGB24) //convert to planar
@@ -3599,6 +3701,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
 #define  kPETImageIndex  0x0054+(0x1330<< 16 )
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
+#define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
@@ -4012,8 +4115,9 @@ double TE = 0.0; //most recent echo time recorded
                     printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls or gdcmconv)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
-                    printMessage("Unsupported transfer syntax '%s' (decode with rle2img)\n",transferSyntax);
-                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    d.compressionScheme = kCompressPMSCT_RLE1;
+                    //printMessage("Unsupported transfer syntax '%s' (decode with rle2img)\n",transferSyntax);
+                    //d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
                     d.compressionScheme = kCompressYes;
                     //printMessage("JPEG2000 Lossless support is new: please validate conversion\n");
@@ -4569,6 +4673,11 @@ double TE = 0.0; //most recent echo time recorded
                 else
                     d.sliceOrient = kSliceOrientTra; //transverse (axial)
                 break; }
+			case kPMSCT_RLE1 :
+				if (d.compressionScheme != kCompressPMSCT_RLE1) break;
+				d.imageStart = (int)lPos + (int)lFileOffset;
+				d.imageBytes = lLength;
+				break;
             case kDiffusionBFactor :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
             	B0Philips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
@@ -4774,6 +4883,7 @@ double TE = 0.0; //most recent echo time recorded
             	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
             	#else
             	int isVerboseX = isVerbose;
+            	break; //This code is not ready for prime time: even the version check generates errors.
             	#endif
             	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset+lPos, lLength);
             	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
