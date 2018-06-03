@@ -1558,8 +1558,9 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
     for (int i = 0; i < kMaxDTI4D; i++) {
         dti4D->S[i].V[0] = -1.0;
         dti4D->TE[i] = -1.0;
-        dti4D->sliceOrder[i] = -1;
     }
+    for (int i = 0; i < kMaxSlice2D; i++)
+    	dti4D->sliceOrder[i] = -1;
     while (p) {
         if (strlen(buff) < 1)
             continue;
@@ -1711,7 +1712,6 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             p = fgets (buff, LINESZ, fp);//get next line
             continue;
         } //process '.' tag
-        //printMessage("%d>%s%<\n",strlen(buff),p);
         if (strlen(buff) < 24) { //empty line
             p = fgets (buff, LINESZ, fp);//get next line
             continue;
@@ -1851,8 +1851,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 					free (cols);
 					return d;
 	 		}
-	 		//printMessage("%d\t%d\t%d\n", numSlice2D, slice, vol);
-			// dti4D->S[vol].V[0] = cols[kbval];
+	 		// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
 			dti4D->triggerDelayTime[vol] = cols[kTriggerTime];
@@ -1877,7 +1876,8 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
 			//printWarning("%d\t%d\n", slice -1, numSlice2D);
-            if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
+            //printMessage("%d\t%d\t%d\n", numSlice2D, slice, vol);
+			if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice -1] = numSlice2D;
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
 			}
@@ -1917,8 +1917,12 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 
     if (d.CSA.numDti > 0) d.CSA.numDti = maxVol; //e.g. gradient 2 can skip B=0 but include isotropic
     //remove unused slices - this will happen if unless we have all 4 image types: real, imag, mag, phase
+    if (numSlice2D > kMaxSlice2D) { //check again after reading, as top portion of header does not report image types or isotropics
+    	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
+        d.isValid = false;
+    }
     slice = 0;
-    for (int i = 0; i < kMaxDTI4D; i++) {
+    for (int i = 0; i < kMaxSlice2D; i++) {
         if (dti4D->sliceOrder[i] > -1) { //this slice was populated
         	dti4D->sliceOrder[slice]	= dti4D->sliceOrder[i];
         	slice = slice + 1;
@@ -2993,8 +2997,7 @@ unsigned char * nii_loadImgPMSCT_RLE1(char* imgname, struct nifti_1_header hdr, 
         return NULL;
     }
     int bytesPerSample = dcm.samplesPerPixel * (dcm.bitsAllocated / 8);
-	if (bytesPerSample != 2) {
-		//there is an RGB variation of this format, but we have not seen it in the wild
+	if (bytesPerSample != 2) { //there is an RGB variation of this format, but we have not seen it in the wild
         printError("PMSCT_RLE1 should be 16-bits per sample (please report on Github and use pmsct_rgb1).\n");
         return NULL;
 	}
@@ -3024,19 +3027,15 @@ unsigned char * nii_loadImgPMSCT_RLE1(char* imgname, struct nifti_1_header hdr, 
 		return (unsigned char *)cImg;
 	}
 	unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
-	for (size_t i = 0; i < imgsz; i++)
-		bImg[i] = 0;
-	// RLE pass
+	// RLE pass: compressed -> temp (bImg -> tImg)
 	char *tImg = (char *)malloc(imgsz); //temp output
 	int o = 0;
 	for(size_t i = 0; i < dcm.imageBytes; ++i) {
-		//if ((i > 59) && (i <  66)) printMessage("%d --> %d\n", cImg[i], (unsigned char)0xa5);
 		if( cImg[i] == (char)0xa5 ) {
 		  int repeat = (unsigned char)cImg[i+1] + 1;
 		  char value = cImg[i+2];
 		  while(repeat) {
 			tImg[o] = value ;
-			//
 			o ++;
 			--repeat;
 			}
@@ -3049,8 +3048,8 @@ unsigned char * nii_loadImgPMSCT_RLE1(char* imgname, struct nifti_1_header hdr, 
 	free(cImg);
 	int tempsize = o;
 	//Looks like this RLE is pretty ineffective...
-	//printMessage("RLE %d -> %d\n", dcm.imageBytes, o);
-	// Delta encoding pass
+	// printMessage("RLE %d -> %d\n", dcm.imageBytes, o);
+	//Delta encoding pass: temp -> output (tImg -> bImg)
 	unsigned short delta = 0;
 	o = 0;
 	int n16 = (int) imgsz >> 1;
@@ -3073,13 +3072,10 @@ unsigned char * nii_loadImgPMSCT_RLE1(char* imgname, struct nifti_1_header hdr, 
       		delta = value;
       	}
     } //for i
-	//for (int i = 0; i < 18; i++)
-	//	printMessage("%d %04x -> %04x \n", i, tImg[i], bImg16[i]);
 	//printMessage("Delta %d -> %d (of %d)\n", tempsize, 2*(o-1), imgsz);
 	free(tImg);
     return bImg;
 } // nii_loadImgPMSCT_RLE1()
-
 
 unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
 //decompress PackBits run-length encoding https://en.wikipedia.org/wiki/PackBits
