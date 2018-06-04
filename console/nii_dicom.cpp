@@ -1671,6 +1671,15 @@ int	kbval = 33; //V3: 27
                 cleanStr(d.patientName);
                 //printMessage("%s\n",d.patientName);
             }
+            if ((strcmp(Comment[0], "Technique") == 0) && (strcmp(Comment[1], ":") == 0)) {
+                strcpy(d.patientID, Comment[2]);
+                strcat(d.patientID, Comment[3]);
+                strcat(d.patientID, Comment[4]);
+                strcat(d.patientID, Comment[5]);
+                strcat(d.patientID, Comment[6]);
+                strcat(d.patientID, Comment[9]);
+                cleanStr(d.patientID);
+            }
             if ((strcmp(Comment[0], "Protocol") == 0) && (strcmp(Comment[1], "name") == 0)) {
                 strcpy(d.protocolName, Comment[3]);
                 strcat(d.protocolName, Comment[4]);
@@ -2005,7 +2014,7 @@ int	kbval = 33; //V3: 27
         }
     }
     if (slice != numSlice2D) {
-    	printError("Catastrophic error: found %d but expected %d slices.\n", slice, numSlice2D);
+    	printError("Catastrophic error: found %d but expected %d slices. %s\n", slice, numSlice2D, parname);
         printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n",
             		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
@@ -2046,9 +2055,9 @@ int	kbval = 33; //V3: 27
     	if (!ADCwarning) printWarning("More volumes than described in header (ADC or isotropic?)\n");
     }
     if ((numSlice2D % num2DExpected) != 0) {
-    	printMessage("Found %d slices, but expected divisible by %d: slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n", numSlice2D, num2DExpected,
+    	printMessage("Found %d slices, but expected divisible by %d: slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d %s\n", numSlice2D, num2DExpected,
     		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
-    		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
+    		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels, parname);
     	d.isValid = false;
     }
     if (dynNotAscending) {
@@ -2116,12 +2125,12 @@ int	kbval = 33; //V3: 27
     int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
     if (d.sliceOrient == kSliceOrientSag) iOri = 0; //for sagittal, slices are 1st dimension (i)
     if (d.sliceOrient == kSliceOrientCor) iOri = 1; //for coronal, slices are 2nd dimension (j)
-	//printMessage("%d\t%g\t%g\t%g\t->\t%g\t%g\t%g\t=\t%g\n",iOri,d.patientPosition[1],d.patientPosition[2],d.patientPosition[3],d.patientPositionLast[1],d.patientPositionLast[2],d.patientPositionLast[3],(d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]));
+	//printMessage("<>\t%d\t%g\t%g\t%g\t->\t%g\t%g\t%g\t=\t%g\t%s\n",iOri,d.patientPosition[1],d.patientPosition[2],d.patientPosition[3],d.patientPositionLast[1],d.patientPositionLast[2],d.patientPositionLast[3],(d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]), parname);
 	bool flip = false;
 	//assume head first supine
 	if ((iOri == 0) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) > 0))) flip = true; //6/2018 : TODO, not sure if this is >= or >
-	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= required!
-	if ((iOri == 1) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0))) flip = true; //6/2018 : TODO, not sure if this is >= or >
+	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= not <, see leslie_dti_3_1.PAR
+	if ((iOri == 1) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= not <, leslie_dti_6_1.PAR
  	if (flip) {
 	//if ((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0) {
 	//if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
@@ -2147,7 +2156,6 @@ int	kbval = 33; //V3: 27
     if( access( parname, F_OK ) != 0 ) changeExt (parname, "rec");
 	#endif
     d.locationsInAcquisition = d.xyzDim[3];
-    d.manufacturer = kMANUFACTURER_PHILIPS;
     d.imageStart = 0;
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [increase kMaxDTI4D] found %d directions\n", d.CSA.numDti);
@@ -5158,7 +5166,7 @@ double TE = 0.0; //most recent echo time recorded
     free (buffer);
     if (encapsulatedDataFragmentStart > 0) {
         if (encapsulatedDataFragments > 1)
-        	printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k\n", encapsulatedDataFragments);
+        	printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
     	else
     		d.imageStart = encapsulatedDataFragmentStart;
     } else if ((isEncapsulatedData) && (d.imageStart < 128)) {
