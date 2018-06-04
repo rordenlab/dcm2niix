@@ -1472,6 +1472,12 @@ void cleanStr(char* lOut) {
 	free(cString);
 } //cleanStr()
 
+int isSameFloatGE (float a, float b) {
+//Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
+    //return (a == b); //niave approach does not have any tolerance for rounding errors
+    return (fabs (a - b) <= 0.0001);
+}
+
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.protocolName, ""); //erase dummy with empty
@@ -1541,6 +1547,7 @@ int	kbval = 33; //V3: 27
     float maxBValue = 0.0f;
     float maxDynTime = 0.0f;
     float minDynTime = 999999.0f;
+    float TE = 0.0;
     int minDyn = 32767;
     int maxDyn = 0;
     int minSlice = 32767;
@@ -1554,7 +1561,7 @@ int	kbval = 33; //V3: 27
     int maxEcho = 1;
     int maxCardiac = 1;
     int nCols = 26;
-    int slice = 0;
+    //int diskSlice = 0;
     int num3DExpected = 0; //number of 3D volumes in the top part of the header
     int num2DExpected = 0; //number of 2D slices described in the top part of the header
     int maxVol = -1;
@@ -1773,13 +1780,14 @@ int	kbval = 33; //V3: 27
 			p = fgets (buff, LINESZ, fp);//get next line
 			continue;
 		}
-		slice ++;
+		//diskSlice ++;
         bool isADC = false;
         if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
         	isADC = true;
         	ADCwarning = true;
         }
-        if (slice == 1) {
+        //printMessage(">>%d  %d\n", (int)cols[kSlice],  diskSlice);
+        if (numSlice2D < 1) {
             d.xyzMM[1] = cols[kXmm];
             d.xyzMM[2] = cols[kYmm];
             if (parVers < 40) { //v3 does things differently
@@ -1804,8 +1812,10 @@ int	kbval = 33; //V3: 27
             d.angulation[2] = cols[kAngulationAPs];
             d.angulation[3] = cols[kAngulationFHs];
 			d.sliceOrient = (int) cols[kSliceOrients];
+			printMessage(">>>> %d\n", d.sliceOrient);
             d.TE = cols[kTEcho];
-			d.TI = cols[kInversionDelayMs];
+            d.echoNum = cols[kEcho];
+            d.TI = cols[kInversionDelayMs];
 			d.intenIntercept = cols[kRI];
             d.intenScale = cols[kRS];
             d.intenScalePhilips = cols[kSS];
@@ -1817,12 +1827,6 @@ int	kbval = 33; //V3: 27
 					return d;
 				}
             }
-            //~
-            /*if ((d.patientPositionSequentialRepeats == 0) && ((!isSameFloat(d.patientPosition[1],cols[kPositionRL])) ||
-                                                              (!isSameFloat(d.patientPosition[2],cols[kPositionAP])) ||
-                                                              (!isSameFloat(d.patientPosition[3],cols[kPositionFH])) ) )//this is the first slice with different position
-                d.patientPositionSequentialRepeats = slice-1;
-			*/
             if ((d.intenScale != cols[kRS]) || (d.intenIntercept != cols[kRI]))
                 isIntenScaleVaries = true;
         }
@@ -1852,7 +1856,7 @@ int	kbval = 33; //V3: 27
 			patientPositionNumPhilips++;
 		}
 		if (true) { //for every slice
-			int slice = round(cols[kSlice]);
+			int slice = (int)cols[kSlice];
 			if (slice < minSlice) minSlice = slice;
 			if (slice > maxSlice) {
 				maxSlice = slice;
@@ -1893,7 +1897,6 @@ int	kbval = 33; //V3: 27
 					//if (slice == 1) printMessage("vol %d step %d bVal %d bVec %d isADC %d nbVal %d nGrad %d\n", vol, volStep, (int) cols[kbvalNumber], (int)cols[kGradientNumber], isADC, maxNumberOfDiffusionValues, maxNumberOfGradientOrients);
 				}
 			#endif
-
 			vol = vol  + (volStep * ((int)cols[kEcho] - 1));
 			volStep = volStep * maxNumberOfEchoes;
 			vol = vol  + (volStep * ((int)cols[kCardiac] - 1));
@@ -1923,7 +1926,11 @@ int	kbval = 33; //V3: 27
 	 		// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
-			dti4D->triggerDelayTime[vol] = cols[kTriggerTime];
+			if (isSameFloatGE(cols[kTEcho], 0))
+				dti4D->TE[vol] = TE;//kludge for cols[kImageType]==18 where TE set as 0
+			else
+				TE = cols[kTEcho];
+            dti4D->triggerDelayTime[vol] = cols[kTriggerTime];
 			if (dti4D->TE[vol] < 0) dti4D->TE[vol] = 0; //used to detect sparse volumes
 			dti4D->intenIntercept[vol] = cols[kRI];
 			dti4D->intenScale[vol] = cols[kRS];
@@ -1990,7 +1997,7 @@ int	kbval = 33; //V3: 27
     	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
         d.isValid = false;
     }
-    slice = 0;
+    int slice = 0;
     for (int i = 0; i < kMaxSlice2D; i++) {
         if (dti4D->sliceOrder[i] > -1) { //this slice was populated
         	dti4D->sliceOrder[slice]	= dti4D->sliceOrder[i];
@@ -2112,9 +2119,9 @@ int	kbval = 33; //V3: 27
 	//printMessage("%d\t%g\t%g\t%g\t->\t%g\t%g\t%g\t=\t%g\n",iOri,d.patientPosition[1],d.patientPosition[2],d.patientPosition[3],d.patientPositionLast[1],d.patientPositionLast[2],d.patientPositionLast[3],(d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]));
 	bool flip = false;
 	//assume head first supine
-	if ((iOri == 0) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) > 0))) flip = true;
-	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0))) flip = true;
-	if ((iOri == 1) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0))) flip = true;
+	if ((iOri == 0) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) > 0))) flip = true; //6/2018 : TODO, not sure if this is >= or >
+	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= required!
+	if ((iOri == 1) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0))) flip = true; //6/2018 : TODO, not sure if this is >= or >
  	if (flip) {
 	//if ((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0) {
 	//if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
@@ -3323,12 +3330,6 @@ int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
     }
     return 0;
 } //isSQ()
-
-int isSameFloatGE (float a, float b) {
-//Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
-    //return (a == b); //niave approach does not have any tolerance for rounding errors
-    return (fabs (a - b) <= 0.0001);
-}
 
 int isDICOMfile(const char * fname) { //0=NotDICOM, 1=DICOM, 2=Maybe(not Part 10 compliant)
     //Someday: it might be worthwhile to detect "IMGF" at offset 3228 to warn user if they attempt to convert Signa data
