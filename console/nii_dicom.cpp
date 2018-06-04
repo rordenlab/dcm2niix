@@ -1812,7 +1812,7 @@ int	kbval = 33; //V3: 27
             d.angulation[2] = cols[kAngulationAPs];
             d.angulation[3] = cols[kAngulationFHs];
 			d.sliceOrient = (int) cols[kSliceOrients];
-			printMessage(">>>> %d\n", d.sliceOrient);
+			//printMessage(">>>> %d\n", d.sliceOrient);
             d.TE = cols[kTEcho];
             d.echoNum = cols[kEcho];
             d.TI = cols[kInversionDelayMs];
