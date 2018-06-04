@@ -1488,38 +1488,49 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 #define	kImageType	4
 #define	kSequence	5
 #define	kIndex	6
-#define	kBitsPerVoxel	7
-#define	kXdim	9
-#define	kYdim	10
-#define	kRI	11
-#define	kRS	12
-#define	kSS	13
-#define	kAngulationAPs	16 //In V4, offcentre and Angulation labeled as y z x, but actually x y z!
-#define	kAngulationFHs	17
-#define	kAngulationRLs	18
-#define	kPositionAP	19
-#define	kPositionFH	20
-#define	kPositionRL	21
-#define	kThickmm	22
-#define	kGapmm	23
-#define kSliceOrients 25
-#define	kXmm	28
-#define	kYmm	29
-#define	kTEcho	30
-#define	kDynTime	31
-#define	kTriggerTime 32
-#define	kbval 33
+//V3 only identical for columns 1..6
+#define	kBitsPerVoxel 7 //V3: not per slice: "Image pixel size [8 or 16 bits]"
+#define	kXdim	9 //V3: not per slice: "Recon resolution (x, y)"
+#define	kYdim	10 //V3: not per slice: "Recon resolution (x, y)"
+int	kRI	= 11; //V3: 7
+int	kRS	= 12; //V3: 8
+int	kSS	= 13; //V3: 9
+int	kAngulationAPs = 16; //V3: 12
+int	kAngulationFHs = 17; //V3: 13
+int	kAngulationRLs = 18; //V3: 14
+int	kPositionAP	= 19; //V3: 15
+int	kPositionFH	= 20; //V3: 16
+int	kPositionRL	= 21; //V3: 17
+#define	kThickmm	22 //V3: not per slice: "Slice thickness [mm]"
+#define	kGapmm	23 //V3: not per slice: "Slice gap [mm]"
+int kSliceOrients = 25; //V3: 19
+int	kXmm = 28; //V3:  22
+int	kYmm = 29; //V3: 23
+int	kTEcho = 30; //V3: 24
+int	kDynTime = 31; //V3: 25
+int	kTriggerTime = 32; //V3: 26
+int	kbval = 33; //V3: 27
+//the following do not exist in V3
 #define	kInversionDelayMs 40
 #define	kbvalNumber 41
 #define	kGradientNumber 42
+//the following do not exist in V40 or earlier
 #define	kv1	47
 #define	kv2	45
 #define	kv3	46
+//the following do not exist in V41 or earlier
 #define	kASL	48
 #define kMaxImageType 4 //4 observed image types: real, imag, mag, phase (in theory also subsequent calculation such as B1)
     printWarning("dcm2niix PAR is not actively supported (hint: use dicm2nii)\n");
     if (isReadPhase) printWarning(" Reading phase images from PAR/REC\n");
     char buff[LINESZ];
+	//next values: PAR V3 only
+	int v3BitsPerVoxel = 16; //V3: not per slice: "Image pixel size [8 or 16 bits]"
+	int v3Xdim = 128; //not per slice: "Recon resolution (x, y)"
+	int v3Ydim	= 128; //V3: not per slice: "Recon resolution (x, y)"
+	float v3Thickmm	= 2.0; //V3: not per slice: "Slice thickness [mm]"
+	float v3Gapmm	= 0.0; //V3: not per slice: "Slice gap [mm]"
+	//from top of header
 	int maxNumberOfDiffusionValues = 1;
 	int maxNumberOfGradientOrients = 1;
 	int maxNumberOfCardiacPhases = 1;
@@ -1583,30 +1594,64 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             if (strcmp(Comment[1], "TRYOUT") == 0) {
                 //sscanf(buff, "# %s %s %s %s %s %s V%s\n", Comment[0], Comment[1], Comment[2], Comment[3],Comment[4], Comment[5],Comment[6]);
                 parVers = (int)round(atof(Comment[6])*10); //4.2 = 42 etc
-                if (parVers <= 39) {
+                if (parVers <= 29) {
                     printMessage("Unsupported old PAR version %0.2f (use dicm2nii)\n", parVers/10.0);
                     return d;
                     //nCols = 26; //e.g. PAR 3.0 has 26 relevant columns
-                } else if (parVers < 40)
-                    nCols = 32; //e.g PAR 3.0?
-                else if (parVers < 41)
-                	nCols = 41; //e.g PAR 4.0
+                } if (parVers < 40) {
+                    nCols = 29; // PAR 3.0?
+					kRI	= 7;
+					kRS	= 8;
+					kSS	= 9;
+					kAngulationAPs = 12;
+					kAngulationFHs = 13;
+					kAngulationRLs = 14;
+					kPositionAP	= 15;
+					kPositionFH	= 16;
+					kPositionRL	= 17;
+					kSliceOrients = 19;
+					kXmm = 22;
+					kYmm = 23;
+					kTEcho = 24;
+					kDynTime = 25;
+					kTriggerTime = 26;
+					kbval = 27;
+                } else if (parVers < 41)
+                	nCols = kv1; //e.g PAR 4.0
                 else if (parVers < 42)
-                    nCols = kv1; //e.g. PAR 4.1 - last column is final diffusion b-value
+                    nCols = kASL; //e.g. PAR 4.1 - last column is final diffusion b-value
                 else
                     nCols = kMaxCols; //e.g. PAR 4.2
             }
+            //the following do not exist in V3
             p = fgets (buff, LINESZ, fp);//get next line
             continue;
         } //process '#' comment
         if (buff[0] == '.') { //tag
-            char Comment[8][50];
-            for (int i = 0; i < 8; i++)
+            char Comment[9][50];
+            for (int i = 0; i < 9; i++)
             	strcpy(Comment[i], "");
-            sscanf(buff, ". %s %s %s %s %s %s %s %s\n", Comment[0], Comment[1],Comment[2], Comment[3], Comment[4], Comment[5], Comment[6], Comment[7]);
+            sscanf(buff, ". %s %s %s %s %s %s %s %s %s\n", Comment[0], Comment[1],Comment[2], Comment[3], Comment[4], Comment[5], Comment[6], Comment[7], Comment[8]);
             if ((strcmp(Comment[0], "Acquisition") == 0) && (strcmp(Comment[1], "nr") == 0)) {
                 d.acquNum = atoi( Comment[3]);
                 d.seriesNum = d.acquNum;
+            }
+            if ((strcmp(Comment[0], "Recon") == 0) && (strcmp(Comment[1], "resolution") == 0)) {
+                v3Xdim = (int) atoi(Comment[5]);
+                v3Ydim = (int) atoi(Comment[6]);
+                //printMessage("recon %d,%d\n", v3Xdim,v3Ydim);
+            }
+            if ((strcmp(Comment[1], "pixel") == 0) && (strcmp(Comment[2], "size") == 0)) {
+                v3BitsPerVoxel = (int) atoi(Comment[8]);
+                //printMessage("bits %d\n", v3BitsPerVoxel);
+            }
+            if ((strcmp(Comment[0], "Slice") == 0) && (strcmp(Comment[1], "gap") == 0)) {
+                v3Gapmm = (float) atof(Comment[4]);
+                //printMessage("gap %g\n", v3Gapmm);
+            }
+            if ((strcmp(Comment[0], "Slice") == 0) && (strcmp(Comment[1], "thickness") == 0)) {
+                v3Thickmm = (float) atof(Comment[4]);
+                //printMessage("thick %g\n", v3Thickmm);
             }
             if ((strcmp(Comment[0], "Repetition") == 0) && (strcmp(Comment[1], "time") == 0))
                 d.TR = (float) atof(Comment[4]);
@@ -1684,7 +1729,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
             }
             if ((strcmp(Comment[0], "Max.") == 0) && (strcmp(Comment[3], "diffusion") == 0)) {
                 maxNumberOfDiffusionValues = atoi(Comment[6]);
-                if (maxNumberOfDiffusionValues > 1) maxNumberOfDiffusionValues -= 1; //if two listed, one is B=0
+                //if (maxNumberOfDiffusionValues > 1) maxNumberOfDiffusionValues -= 1; //if two listed, one is B=0
             }
             if ((strcmp(Comment[0], "Max.") == 0) && (strcmp(Comment[3], "gradient") == 0)) {
                 maxNumberOfGradientOrients = atoi(Comment[6]);
@@ -1724,7 +1769,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         for (int i = 0; i <= nCols; i++)
             cols[i] = strtof(p, &p); // p+1 skip comma, read a float
 		//printMessage("xDim %dv%d yDim %dv%d bits  %dv%d\n", d.xyzDim[1],(int)cols[kXdim], d.xyzDim[2], (int)cols[kYdim], d.bitsAllocated, (int)cols[kBitsPerVoxel]);
-		if ((int)cols[kXdim] == 0) { //line does not contain attributes
+		if ((int)cols[kSlice] == 0) { //line does not contain attributes
 			p = fgets (buff, LINESZ, fp);//get next line
 			continue;
 		}
@@ -1734,17 +1779,24 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
         	isADC = true;
         	ADCwarning = true;
         }
-        /*if (isADC) {  //skip ADC/Isotropic volumes
-			p = fgets (buff, LINESZ, fp);//get next line
-			numSlice2Din++;
-			continue;
-		}*/
         if (slice == 1) {
-            d.xyzDim[1] = (int) cols[kXdim];
-			d.xyzDim[2] = (int) cols[kYdim];
             d.xyzMM[1] = cols[kXmm];
             d.xyzMM[2] = cols[kYmm];
-            d.xyzMM[3] = cols[kThickmm] + cols[kGapmm];
+            if (parVers < 40) { //v3 does things differently
+            	//cccc
+            	d.xyzDim[1] = v3Xdim;
+				d.xyzDim[2] = v3Ydim;
+            	d.xyzMM[3] = v3Thickmm + v3Gapmm;
+            	d.bitsAllocated = v3BitsPerVoxel;
+            	d.bitsStored = v3BitsPerVoxel;
+            } else {
+            	d.xyzDim[1] = (int) cols[kXdim];
+				d.xyzDim[2] = (int) cols[kYdim];
+            	d.xyzMM[3] = cols[kThickmm] + cols[kGapmm];
+            	d.bitsAllocated = (int) cols[kBitsPerVoxel];
+				d.bitsStored = (int) cols[kBitsPerVoxel];
+
+            }
             d.patientPosition[1] = cols[kPositionRL];
             d.patientPosition[2] = cols[kPositionAP];
             d.patientPosition[3] = cols[kPositionFH];
@@ -1754,16 +1806,16 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			d.sliceOrient = (int) cols[kSliceOrients];
             d.TE = cols[kTEcho];
 			d.TI = cols[kInversionDelayMs];
-			d.bitsAllocated = (int) cols[kBitsPerVoxel];
-			d.bitsStored = (int) cols[kBitsPerVoxel];
-            d.intenIntercept = cols[kRI];
+			d.intenIntercept = cols[kRI];
             d.intenScale = cols[kRS];
             d.intenScalePhilips = cols[kSS];
         } else {
-            if ((d.xyzDim[1] != cols[kXdim]) || (d.xyzDim[2] != cols[kYdim]) || (d.bitsAllocated != cols[kBitsPerVoxel]) ) {
-                printError("Slice dimensions or bit depth varies %s\n", parname);
-                printError("xDim %dv%d yDim %dv%d bits  %dv%d\n", d.xyzDim[1],(int)cols[kXdim], d.xyzDim[2], (int)cols[kYdim], d.bitsAllocated, (int)cols[kBitsPerVoxel]);
-                return d;
+            if (parVers >= 40) {
+				if ((d.xyzDim[1] != cols[kXdim]) || (d.xyzDim[2] != cols[kYdim]) || (d.bitsAllocated != cols[kBitsPerVoxel]) ) {
+					printError("Slice dimensions or bit depth varies %s\n", parname);
+					printError("xDim %dv%d yDim %dv%d bits  %dv%d\n", d.xyzDim[1],(int)cols[kXdim], d.xyzDim[2], (int)cols[kYdim], d.bitsAllocated, (int)cols[kBitsPerVoxel]);
+					return d;
+				}
             }
             //~
             /*if ((d.patientPositionSequentialRepeats == 0) && ((!isSameFloat(d.patientPosition[1],cols[kPositionRL])) ||
@@ -1810,21 +1862,38 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 			}
 			int volStep =  maxNumberOfDynamics;
 			int vol = ((int)cols[kDyn] - 1);
-			int gradDynVol = (int)cols[kGradientNumber] - 1;
-			if (gradDynVol < 0) gradDynVol = 0; //old PAREC without cols[kGradientNumber]
-			vol = vol + (volStep * (gradDynVol));
-			if (vol < 0) vol = 0;
-			volStep = volStep * maxNumberOfGradientOrients;
+			#ifdef old
+				int gradDynVol = (int)cols[kGradientNumber] - 1;
+				if (gradDynVol < 0) gradDynVol = 0; //old PAREC without cols[kGradientNumber]
+				vol = vol + (volStep * (gradDynVol));
+				if (vol < 0) vol = 0;
+				volStep = volStep * maxNumberOfGradientOrients;
+				int bval = (int)cols[kbvalNumber];
+				if (bval > 2) //b=0 is 0, b=1000 is 1, b=2000 is 2 - b=0 does not have multiple directions
+					bval = bval - 1;
+				else
+					bval = 1;
+				//if (slice == 1) printMessage("bVal %d bVec %d isADC %d nbVal %d nGrad %d\n",(int) cols[kbvalNumber], (int)cols[kGradientNumber], isADC, maxNumberOfDiffusionValues, maxNumberOfGradientOrients);
+				vol = vol  + (volStep * (bval- 1));
+				volStep = volStep * (maxNumberOfDiffusionValues-1);
+				if (isADC)
+					vol = volStep + (bval-1);
+			#else
+				if (maxNumberOfDiffusionValues > 1) {
+					int grad = (int)cols[kGradientNumber] - 1;
+					if (grad < 0) grad = 0; //old v4 does not have this tag
+					int bval = (int)cols[kbvalNumber] - 1;
+					if (bval < 0) bval = 0; //old v4 does not have this tag
+					if (isADC)
+						vol = vol + (volStep * maxNumberOfDiffusionValues * maxNumberOfGradientOrients) +bval;
+					else
+						vol = vol + (volStep * grad) + (bval * maxNumberOfGradientOrients);
 
-			int bval = (int)cols[kbvalNumber];
-			if (bval > 2) //b=0 is 0, b=1000 is 1, b=2000 is 2 - b=0 does not have multiple directions
-				bval = bval - 1;
-			else
-				bval = 1;
-			vol = vol  + (volStep * (bval- 1));
-			volStep = volStep * maxNumberOfDiffusionValues;
-			if (isADC)
-				vol = volStep + (bval-1);
+					volStep = volStep * (maxNumberOfDiffusionValues+1) * maxNumberOfGradientOrients;
+					//if (slice == 1) printMessage("vol %d step %d bVal %d bVec %d isADC %d nbVal %d nGrad %d\n", vol, volStep, (int) cols[kbvalNumber], (int)cols[kGradientNumber], isADC, maxNumberOfDiffusionValues, maxNumberOfGradientOrients);
+				}
+			#endif
+
 			vol = vol  + (volStep * ((int)cols[kEcho] - 1));
 			volStep = volStep * maxNumberOfEchoes;
 			vol = vol  + (volStep * ((int)cols[kCardiac] - 1));
