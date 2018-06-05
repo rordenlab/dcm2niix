@@ -2125,13 +2125,51 @@ int	kbval = 33; //V3: 27
     int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
     if (d.sliceOrient == kSliceOrientSag) iOri = 0; //for sagittal, slices are 1st dimension (i)
     if (d.sliceOrient == kSliceOrientCor) iOri = 1; //for coronal, slices are 2nd dimension (j)
-	//printMessage("<>\t%d\t%g\t%g\t%g\t->\t%g\t%g\t%g\t=\t%g\t%s\n",iOri,d.patientPosition[1],d.patientPosition[2],d.patientPosition[3],d.patientPositionLast[1],d.patientPositionLast[2],d.patientPositionLast[3],(d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]), parname);
+    if (d.xyzDim[3] > 1) { //detect and fix Philips Bug
+		//Est: assuming "image offcentre (ap,fh,rl in mm )" is correct
+		float stackOffcentreEst[4];
+		stackOffcentreEst[1] = (d.patientPosition[1]+d.patientPositionLast[1]) * 0.5;
+		stackOffcentreEst[2] = (d.patientPosition[2]+d.patientPositionLast[2]) * 0.5;
+		stackOffcentreEst[3] = (d.patientPosition[3]+d.patientPositionLast[3]) * 0.5;
+		//compute error using 3D pythagorean theorm
+		stackOffcentreEst[0] = sqrt(pow(stackOffcentreEst[1]-d.stackOffcentre[1],2)+pow(stackOffcentreEst[2]-d.stackOffcentre[2],2)+pow(stackOffcentreEst[3]-d.stackOffcentre[3],2)  );
+		//Est: assuming "image offcentre (ap,fh,rl in mm )" is stored in order rl,ap,fh
+		float stackOffcentreRev[4];
+		stackOffcentreRev[1] = (d.patientPosition[2]+d.patientPositionLast[2]) * 0.5;
+		stackOffcentreRev[2] = (d.patientPosition[3]+d.patientPositionLast[3]) * 0.5;
+		stackOffcentreRev[3] = (d.patientPosition[1]+d.patientPositionLast[1]) * 0.5;
+		//compute error using 3D pythagorean theorm
+		stackOffcentreRev[0] = sqrt(pow(stackOffcentreRev[1]-d.stackOffcentre[1],2)+pow(stackOffcentreRev[2]-d.stackOffcentre[2],2)+pow(stackOffcentreRev[3]-d.stackOffcentre[3],2)  );
+		//detect, report and fix error
+		if ((stackOffcentreEst[0] > 1.0) && (stackOffcentreRev[0] < stackOffcentreEst[0])) {
+			//error detected: the ">1.0" handles the low precision of the "Off Centre" values
+			printMessage("Order of 'image offcentre (ap,fh,rl in mm )' appears incorrect (assuming rl,ap,fh)\n");
+			printMessage(" err[ap,fh,rl]= %g (%g %g %g) \n",stackOffcentreEst[0],stackOffcentreEst[1],stackOffcentreEst[2],stackOffcentreEst[3]);
+			printMessage(" err[rl,ap,fh]= %g (%g %g %g) \n",stackOffcentreRev[0],stackOffcentreRev[1],stackOffcentreRev[2],stackOffcentreRev[3]);
+			printMessage(" orient\t%d\tOffCentre 1st->mid->nth\t%g\t%g\t%g\t->\t%g\t%g\t%g\t->\t%g\t%g\t%g\t=\t%g\t%s\n",iOri,
+				d.patientPosition[1],d.patientPosition[2],d.patientPosition[3],
+				d.stackOffcentre[1], d.stackOffcentre[2], d.stackOffcentre[3],
+				d.patientPositionLast[1],d.patientPositionLast[2],d.patientPositionLast[3],(d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]), parname);
+			//correct patientPosition
+			for (int i = 1; i < 4; i++)
+				stackOffcentreRev[i] = d.patientPosition[i];
+			d.patientPosition[1] = stackOffcentreRev[2];
+			d.patientPosition[2] = stackOffcentreRev[3];
+			d.patientPosition[3] = stackOffcentreRev[1];
+			//correct patientPositionLast
+			for (int i = 1; i < 4; i++)
+				stackOffcentreRev[i] = d.patientPositionLast[i];
+			d.patientPositionLast[1] = stackOffcentreRev[2];
+			d.patientPositionLast[2] = stackOffcentreRev[3];
+			d.patientPositionLast[3] = stackOffcentreRev[1];
+		} //if bug: report and fix
+	} //if 3D data
 	bool flip = false;
 	//assume head first supine
 	if ((iOri == 0) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) > 0))) flip = true; //6/2018 : TODO, not sure if this is >= or >
-	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= not <, see leslie_dti_3_1.PAR
 	if ((iOri == 1) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= not <, leslie_dti_6_1.PAR
- 	if (flip) {
+ 	if ((iOri == 2) && (((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) <= 0))) flip = true; //<= not <, see leslie_dti_3_1.PAR
+	if (flip) {
 	//if ((d.patientPosition[iOri+1] - d.patientPositionLast[iOri+1]) < 0) {
 	//if  (( (y.v[iOri]-R44.m[iOri][3])>0 ) == ( (y.v[iOri]-d.stackOffcentre[iOri+1])>0 ) ) {
 		d.patientPosition[1] = R44.m[0][3];
