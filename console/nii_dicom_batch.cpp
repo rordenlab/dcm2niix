@@ -909,14 +909,12 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	float phaseOversampling = 0.0;
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
-	#ifdef myDebug
 	if (d.phaseEncodingGE != kGE_PHASE_DIRECTION_UNKNOWN) { //only set for GE
 		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_BOTTOM_UP) fprintf(fp, "\t\"PhaseEncodingGE\": \"BottomUp\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_TOP_DOWN) fprintf(fp, "\t\"PhaseEncodingGE\": \"TopDown\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT_REV) fprintf(fp, "\t\"PhaseEncodingGE\": \"CenterOutReversed\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT) fprintf(fp, "\t\"PhaseEncodingGE\": \"CenterOut\",\n" );
 	}
-	#endif
 	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
 		printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");

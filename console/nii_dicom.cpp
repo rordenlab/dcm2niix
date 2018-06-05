@@ -4991,12 +4991,10 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kUserDefineDataGE: { //0043,102A
             	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
-            	#ifdef MY_DEBUG
-            	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
-            	#else
+            	#define MY_DEBUG_GE
+            	#ifdef MY_DEBUG_GE
+            	//int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
             	int isVerboseX = isVerbose;
-            	break; //This code is not ready for prime time: even the version check generates errors.
-            	#endif
             	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset+lPos, lLength);
             	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
             		printMessage(" GE header too small to be valid  (A)\n");
@@ -5017,48 +5015,67 @@ double TE = 0.0; //most recent echo time recorded
             		printMessage(" GE header too small to be valid  (B)\n");
             		break;
             	}
-            	size_t hdr = lPos+hdr_offset;
-            	float version = dcmFloat(4,&buffer[hdr],true);
+            	//size_t hdr = lPos+hdr_offset;
+            	float version = dcmFloat(4,&buffer[lPos + hdr_offset],true);
             	if (isVerboseX > 1) printMessage(" version %g\n", version);
             	if (version < 5.0 || version > 40.0) {
-    				printMessage(" GE header file format incorrect %g\n", version);
+    				//printMessage(" GE header file format incorrect %g\n", version);
     				break;
     			}
-    			if (version >= 26.0) {
-    				hdr += (19*4);
-					if (lLength < (hdr_offset+(19*4)+916)) { //minimum size is hdr_offset=0, read 0x0394
-						printMessage(" GE header too small to be valid (C)\n");
-						break;
-					}
+    			//char const *hdr = &buffer[lPos + hdr_offset];
+            	char *hdr = (char *)&buffer[lPos + hdr_offset];
+
+            	int epi_chk_off = 0x003a;
+    			int flag1_off   = 0x0030;
+    			int flag2_off   = 0x0394;
+
+    			if (version >= 25.002) {
+      				hdr       += 0x004c;
+      				flag2_off -= 0x008c;
     			}
+    			//check if EPI
+    			if (true) {
+      				int check = *(short const *)(hdr + epi_chk_off) & 0x800;
+     				if (check == 0) {
+						printf("%s: Warning: Data is not EPI\n", fname);
+						continue;
+      				}
+    			}
+
             	//Check for PE polarity
-				int flag1 = dcmInt(2,&buffer[hdr + 0x0030],true) & 0x0004;
+				int flag1 = *(short const *)(hdr + flag1_off) & 0x0004;
 				//Check for ky direction (view order)
-				int flag2 = dcmInt(2,&buffer[hdr + 0x0394],true);
+				int flag2 = *(int const *)(hdr + flag2_off);
 				if (isVerboseX > 1) printMessage(" flags %d %d\n", flag1, flag2);
-				if (flag2 == 0 || flag2 == 2) {
-				      if ((flag1 && !flag2) || (!flag1 && flag2)) {
-					    if (isVerboseX > 1) printMessage(" Bottom up\n");
-					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_BOTTOM_UP;
-				      }
-				      else {
-					    if (isVerboseX > 1) printMessage(" Top down\n");
-					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_TOP_DOWN;
-				      }
+				switch (flag2) {
+					case 0:
+					case 2:
+					  if ((flag1 && !flag2) || (!flag1 && flag2)) {
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_BOTTOM_UP;
+						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_BOTTOM_UP\n");
+
+					  }
+					  else {
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_TOP_DOWN;
+						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_TOP_DOWN\n");
+					  }
+					  break;
+
+					case 1:
+					  if (flag1) {
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
+						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_CENTER_OUT_REV\n");
+					  }
+					  else {
+						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT;
+						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_CENTER_OUT\n");
+					  }
+					  break;
+
+					default:
+					  if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_UNKNOWN\n");
 				}
-				else if (flag2 == 1) { /* Center out */
-				      if (flag1) {
-					    if (isVerboseX > 1) printMessage(" Center out, polarity reversed\n");
-					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
-				      }
-				      else {
-					    if (isVerboseX > 1) printMessage(" Center out, polarity normal\n");
-					    d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT;
-				      }
-				}
-				else {
-				      if (isVerboseX > 1) printMessage(" Unknown Ky encoding direction");
-				}
+				#endif
 				break;
             }
             case kEffectiveEchoSpacingGE:
