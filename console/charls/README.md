@@ -10,7 +10,8 @@ JPEG-LS is a low-complexity image compression standard that matches JPEG 2000 co
 
 [CharLS](https://github.com/team-charls/charls) is an optional module for dcm2niix. If included, it allows dcm2niix to handle the   [JPEG-LS transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The included code was downloaded from the CharLS website on 6 June 2018. To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as a few file sin the `charls` folder. Therefore, a minimal compile should look like this:
 
-```g++ -I. -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
+```
+g++ -I. -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
 ```
 You can use gdcmconv to compare the performance of the ancient JPEG-lossless (gdcmconv -J), JPEG-LS (gdcmconv -L) and JPEG2000-lossess (gdcmconv -K). Below is a sample test looking at 800 DICOM CT scans - with a raw size of 425mb which dcm2niix can convert in 1.6 seconds. The table shows that JPEG-LS reduces the file sizes to 137mb (0.39 original size), but that decompression takes 7.2 times longer. In contrast, the complicated JPEG2000 achieves only slightly better compression but is much slower to decompress.
 
