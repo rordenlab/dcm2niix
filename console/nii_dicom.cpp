@@ -1677,7 +1677,7 @@ int	kbval = 33; //V3: 27
                 strcat(d.patientID, Comment[4]);
                 strcat(d.patientID, Comment[5]);
                 strcat(d.patientID, Comment[6]);
-                strcat(d.patientID, Comment[9]);
+                strcat(d.patientID, Comment[7]);
                 cleanStr(d.patientID);
             }
             if ((strcmp(Comment[0], "Protocol") == 0) && (strcmp(Comment[1], "name") == 0)) {

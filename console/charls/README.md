@@ -12,6 +12,14 @@ JPEG-LS is a low-complexity image compression standard that matches JPEG 2000 co
 
 ```g++ -I. -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
 ```
+You can use gdcmconv to compare the performance of the ancient JPEG-lossless (gdcmconv -J), JPEG-LS (gdcmconv -L) and JPEG2000-lossess (gdcmconv -K). Below is a sample test looking at 800 DICOM CT scans - with a raw size of 425mb which dcm2niix can convert in 1.6 seconds. The table shows that JPEG-LS reduces the file sizes to 137mb (0.39 original size), but that decompression takes 7.2 times longer. In contrast, the complicated JPEG2000 achieves only slightly better compression but is much slower to decompress.
+
+| Tables                                    | Speed | Size  |
+| ----------------------------------------- | -----:| -----:|
+| Raw 1.2.840.10008.1.2.1                   |  1.00 |  1.0  |
+| JPEG-lossless 1.2.840.10008.1.2.4.70      |  0.39 |  5.6  |
+| JPEG-LS 1.2.840.10008.1.2.4.80            |  0.32 |  7.2  |
+| JPEG2000 lossless 1.2.840.10008.1.2.4.90  |  0.31 | 60.1  |
 
 ## Features
 
