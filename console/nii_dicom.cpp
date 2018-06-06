@@ -3292,6 +3292,53 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
  #endif
 #endif
 
+#ifdef myEnableJPEGLS //Support for JPEG-LS Transfer Syntaxes 1.2.840.10008.1.2.4.80 1.2.840.10008.1.2.4.81
+
+#include "charls/charls.h"
+#include "charls/publictypes.h"
+
+unsigned char * nii_loadImgJPEGLS(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
+
+	//load compressed data
+    FILE *file = fopen(imgname , "rb");
+	if (!file) {
+         printError("Unable to open %s\n", imgname);
+         return NULL;
+    }
+	fseek(file, 0, SEEK_END);
+	long fileLen=ftell(file);
+    if ((fileLen < 1) || (dcm.imageBytes < 1) || (fileLen < (dcm.imageBytes+dcm.imageStart))) {
+        printMessage("File not large enough to store image data: %s\n", imgname);
+        fclose(file);
+        return NULL;
+    }
+	fseek(file, (long) dcm.imageStart, SEEK_SET);
+	unsigned char *cImg = (unsigned char *)malloc(dcm.imageBytes); //compressed input
+    size_t  sz = fread(cImg, 1, dcm.imageBytes, file);
+	fclose(file);
+	//create buffer for uncompressed data
+	size_t imgsz = nii_ImgBytes(hdr);
+    unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
+	JlsParameters params = {};
+	using namespace charls;
+	if (JpegLsReadHeader(cImg, dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
+	//if(JpegLsReadHeader(cImg, dcm.imageBytes, &params) != OK ) {
+		printMessage("charls failed to read header.\n");
+		return NULL;
+	}
+  	// allowedlossyerror == 0 => Lossless
+  	//LossyFlag = params.allowedlossyerror!= 0;
+	//if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params) != OK ) {
+
+	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
+		free(bImg);
+		printMessage("charls failed to read image.\n");
+		return NULL;
+	}
+	return (bImg);
+}
+#endif
+
 unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
 //provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
     if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE) return NULL; //TOFU
@@ -3306,6 +3353,15 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     		if (hdr->datatype ==DT_RGB24) //convert to planar
         		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
         #endif
+    } else if (dcm.compressionScheme == kCompressJPEGLS) {
+    	#ifdef myEnableJPEGLS
+    		img = nii_loadImgJPEGLS(imgname, *hdr, dcm);
+    		if (hdr->datatype ==DT_RGB24) //convert to planar
+        		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
+    	#else
+        	printMessage("Software not compiled to decompress classic JPEG DICOM images\n");
+        	return NULL;
+    	#endif
     } else if (dcm.compressionScheme == kCompressPMSCT_RLE1) {
     	img = nii_loadImgPMSCT_RLE1(imgname, *hdr, dcm);
     } else if (dcm.compressionScheme == kCompressRLE) {
@@ -4223,9 +4279,13 @@ double TE = 0.0; //most recent echo time recorded
                     //printMessage("Ancient JPEG-lossless (SOF type 0xc3): please check conversion\n");
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0) {
                     d.compressionScheme = kCompressC3;
-                } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.80") == 0) {
-                    printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls or gdcmconv)\n",transferSyntax);
+                } else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.4.80") == 0)  || (strcmp(transferSyntax, "1.2.840.10008.1.2.4.81") == 0)){
+                    #ifdef myEnableJPEGLS
+                    d.compressionScheme = kCompressJPEGLS;
+                    #else
+                    printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls or gdcmconv, or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    #endif
                 } else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
                     d.compressionScheme = kCompressPMSCT_RLE1;
                     //printMessage("Unsupported transfer syntax '%s' (decode with rle2img)\n",transferSyntax);

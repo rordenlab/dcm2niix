@@ -56,6 +56,16 @@ By default, classic JPEG images will be decoded using the [compact NanoJPEG deco
 g++ -dead_strip -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -DmyTurboJPEG -I/opt/libjpeg-turbo/include /opt/libjpeg-turbo/lib/libturbojpeg.a
 ```
 
+##### JPEG-LS BUILD
+
+You can compile dcm2niix to convert DICOM images compressed with the [JPEG-LS](https://en.wikipedia.org/wiki/JPEG_2000) [transfer syntaxes 1.2.840.10008.1.2.4.80 and 1.2.840.10008.1.2.4.81](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Transfer_Syntaxes_and_Compressed_Images). Decoding this format is handled by the [CharLS library](https://github.com/team-charls/charls), which is included with dcm2niix in the `charls` folder. The included code was downloaded from the CharLS website on 6 June 2018. To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as a few file sin the `charls` folder. Therefore, a minimal compile should look like this:
+
+```g++ -I. -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
+```
+Alternatively, you can decompress an image in JPEG-LS to an uncompressed DICOM using [gdcmconv](https://github.com/malaterre/GDCM)(e.g. `gdcmconv -w 3691459 3691459.dcm`). Or you can use gdcmconv compress a DICOM to JPEG-LS (e.g. `gdcmconv -L 3691459 3691459.dcm`). Alternatively, the DCMTK tool [dcmcjpls](https://support.dcmtk.org/docs/dcmcjpls.html) provides JPEG-LS support.
+
+
+
 ##### JPEG2000 BUILD
 
 You can compile dcm2niix to convert DICOM images compressed with the [JPEG2000](https://en.wikipedia.org/wiki/JPEG_2000) [transfer syntaxes 1.2.840.10008.1.2.4.90 and 1.2.840.10008.1.2.4.91](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Transfer_Syntaxes_and_Compressed_Images). This is optional, as JPEG2000 is very rare in DICOMs (usually only created by the proprietary DCMJP2K or OsiriX). Due to the challenges discussed below this is a poor choice for archiving DICOM data. Rather than support conversion with dcm2niix, a better solution would be to use DCMJP2K to do a DICOM-to-DICOM conversion to a more widely supported transfer syntax. Unfortunately, JPEG2000 saw poor adoption as a general image format. This situation is unlikely to change, as JPEG2000 only offered incremental benefits over the simpler classic JPEG, and is outperformed by the more recent [HEIF](https://en.wikipedia.org/wiki/High_Efficiency_Image_File_Format). This has implications for DICOM, as there is little active development on libraries to decode JPEG2000. Indeed, the two popular open-source libraries that decode JPEG2000 have serious limitations for processing these images. Some JPEG2000 DICOM images can not be decoded by the default compilation of OpenJPEG library after version [2.1.0](https://github.com/uclouvain/openjpeg/issues/962). On the other hand, the Jasper library does not handle lossy [16-bit](https://en.wikipedia.org/wiki/JPEG_2000) images with good precision.

@@ -3,7 +3,8 @@
 4-Apr-2018
  - [Improved Philips PAR/REC support](https://github.com/rordenlab/dcm2niix/issues/171)
  - [Improved Philips Enhanced DICOM support](https://github.com/rordenlab/dcm2niix/issues/170)
- - GE and Philips data now report [PhaseEncodingAxis](https://github.com/rordenlab/dcm2niix/issues/163) instead of PhaseEncodingDirection (these DICOMs store the dimension, but not the polarity).
+ - GE and Philips data now report [PhaseEncodingAxis](https://github.com/rordenlab/dcm2niix/issues/163) instead of PhaseEncodingDirection (these DICOMs store the dimension, but not the polarity). Experimental reported of [phase encoding direction for GE](https://github.com/rordenlab/dcm2niix/issues/163).
+  - Support for [Philips-private-RLE](1.3.46.670589.33.1.4.1) transfer syntax.
 
 18-May-2017
  - [Improved Philips PAR/REC support](https://github.com/rordenlab/dcm2niix/issues/171)
