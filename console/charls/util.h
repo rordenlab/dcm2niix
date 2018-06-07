@@ -17,6 +17,15 @@
 // Use an uppercase alias for assert to make it clear that it is a pre-processor macro.
 #define ASSERT(t) assert(t)
 
+//https://github.com/team-charls/charls/issues/38
+#if __cplusplus == 201103L
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args)
+{
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+#endif
+
 // Only use __forceinline for the Microsoft C++ compiler in release mode (verified scenario)
 // Use the build-in optimizer for all other C++ compilers.
 // Note: usage of FORCE_INLINE may be reduced in the future as the latest generation of C++ compilers

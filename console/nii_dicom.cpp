@@ -5051,7 +5051,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kUserDefineDataGE: { //0043,102A
             	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
-            	#define MY_DEBUG_GE
+            	//#define MY_DEBUG_GE // <- uncomment this to use following code to infer GE phase encoding direction
             	#ifdef MY_DEBUG_GE
             	//int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
             	int isVerboseX = isVerbose;
@@ -5101,7 +5101,6 @@ double TE = 0.0; //most recent echo time recorded
 						continue;
       				}
     			}
-
             	//Check for PE polarity
 				int flag1 = *(short const *)(hdr + flag1_off) & 0x0004;
 				//Check for ky direction (view order)
