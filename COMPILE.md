@@ -2,6 +2,8 @@
 
 The README.md file describes the typical compilation of the software, using the `make` command to build the software. This document describes advanced methods for compiling and tuning the software.
 
+Beyond the complexity of compiling the software, the only downside to adding optional modules is that the dcm2niix executable size will require a tiny bit more disk space. For example, on MacOS the stripped basic executable is 238kb, miniz (GZip support) adds 18kb, NanoJPEG (lossy JPEG support) adds 13kb, CharLS (JPEG-LS support) adds 271kb, and OpenJPEG (JPEG2000 support) adds 192kb. So with all these features installed the executable weighs in at 732kb.
+
 ## Choosing your compiler
 
 The text below generally describes how to build dcm2niix using the [GCC](https://gcc.gnu.org) compiler using the `g++` command. However, the code is portable and you can use different compilers. For [clang/llvm](https://clang.llvm.org) compile using `clang++`.  If you have the [Intel C compiler](https://software.intel.com/en-us/c-compilers), you can substitute the `icc` command. The code is compatible with Microsoft's VS 2015 or later. For [Microsoft's C compiler](http://landinghub.visualstudio.com/visual-cpp-build-tools) you would use the `cl` command. In theory, the code should support other compilers, but this has not been tested. Be aware that if you do not have gcc installed the `g++` command may use a default to a compiler (e.g. clang). To check what compiler was used, run the dcm2niix software: it always reports the version and the compiler used for the build.

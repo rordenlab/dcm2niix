@@ -3113,7 +3113,7 @@ uint32_t rleInt(int lIndex, unsigned char lBuffer[], bool swap) {//read binary 3
 unsigned char * nii_loadImgPMSCT_RLE1(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
 //Transfer Syntax 1.3.46.670589.33.1.4.1 also handled by TomoVision and GDCM's rle2img
 //https://github.com/malaterre/GDCM/blob/a923f206060e85e8d81add565ae1b9dd7b210481/Examples/Cxx/rle2img.cxx
-//see rel2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
+//see rle2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
     if (dcm.imageBytes < 66 ) { //64 for header+ 2 byte minimum image
         printError("%d is not enough bytes for PMSCT_RLE1 compression '%s'\n", dcm.imageBytes, imgname);
         return NULL;
@@ -5547,6 +5547,6 @@ if (d.isHasPhase)
 
 struct TDICOMdata readDICOM(char * fname) {
     TDTI4D unused;
-    return readDICOMv(fname, false, 0, &unused);
+    return readDICOMv(fname, false, kCompressSupport, &unused);
 } // readDICOM()
 

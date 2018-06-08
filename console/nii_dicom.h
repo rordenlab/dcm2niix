@@ -38,7 +38,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMvers "v1.0.20180518" kDCMsuf kCCsuf
+#define kDCMvers "v1.0.20180606" kDCMsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
@@ -78,8 +78,17 @@ static const int kCompressYes = 1;
 static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
 static const int kCompressRLE = 4; //run length encoding
-static const int kCompressPMSCT_RLE1 = 5; //see rel2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
+static const int kCompressPMSCT_RLE1 = 5; //see rle2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
 static const int kCompressJPEGLS = 5; //LoCo JPEG-LS
+#ifdef myEnableJasper
+    static const int kCompressSupport = kCompressYes; //JASPER for JPEG2000
+#else
+    #ifdef myDisableOpenJPEG
+        static const int kCompressSupport = kCompressNone; //no decompressor
+    #else
+        static const int kCompressSupport = kCompressYes; //OPENJPEG for JPEG2000
+    #endif
+#endif
 
 // Maximum number of dimensions for .dimensionIndexValues, i.e. possibly the
 // number of axes in the output .nii.

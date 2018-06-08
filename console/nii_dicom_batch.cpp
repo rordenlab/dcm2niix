@@ -23,6 +23,8 @@
     #else
         #include <zlib.h>
     #endif
+#else
+	#undef MiniZ
 #endif
 #include "tinydir.h"
 #include "print.h"
@@ -3745,7 +3747,11 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isGz = false;
     opts->isSave3D = false;
     opts->dirSearchDepth = 5;
-    opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
+    #ifdef myDisableZLib
+    	opts->gzLevel = 6;
+    #else
+    	opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
+    #endif
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;
