@@ -6,13 +6,21 @@
 CharLS is a C++ implementation of the JPEG-LS standard for lossless and near-lossless image compression and decompression.
 JPEG-LS is a low-complexity image compression standard that matches JPEG 2000 compression ratios.
 
-# CharLS and dicm2niix
+# CharLS and dcm2niix
 
-[CharLS](https://github.com/team-charls/charls) is an optional module for dcm2niix. If included, it allows dcm2niix to handle the   [JPEG-LS transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The included code was downloaded from the CharLS website on 6 June 2018. To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as a few file sin the `charls` folder. You will also need to specify `-std=c++14` and use a compiler that supports c++14 or later. Therefore, a minimal compile should look like this:
+[CharLS](https://github.com/team-charls/charls) is an optional module for dcm2niix. If included, it allows dcm2niix to handle the [JPEG-LS transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The included code was downloaded from the CharLS website on 6 June 2018.
+
+It is worth noting that DICOM can specify three different [lossless forms of the JPEG](http://www.mccauslandcenter.sc.edu/crnl/tools/jpeg-formats) image standard. CharLS is used only for the JPEG-LS form (transfer syntaxes 1.2.840.10008.1.2.4.80/81; ISO/IEC 14495-1:1999 ITU-T.87). In contrast, dcm2niix uses bespoke code to handle the older JPEG-Lossless (1.2.840.10008.1.2.4.57/70; ISO/IEC 10918-1:1994 ITU-T.81). Finally, dcm2niix handles the very complex JPEG-2000 lossless (1.2.840.10008.1.2.4.90/91; ISO/IEC 15444-1:2004 ITU-T.800) using the [OpenJPEG](https://github.com/uclouvain/openjpeg) library.
+
+To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as a few file sin the `charls` folder. You will also need to specify `-std=c++14` and use a compiler that supports c++14 or later. Therefore, a minimal compile should look like this:
 
 `g++ -I. -std=c++14 -DmyEnableJPEGLS charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG`
 
-It is worth noting that DICOM can specify three different [lossless forms of the JPEG](http://www.mccauslandcenter.sc.edu/crnl/tools/jpeg-formats) image standard. CharLS is used only for the JPEG-LS form (transfer syntaxes 1.2.840.10008.1.2.4.80/81; ISO/IEC 14495-1:1999 ITU-T.87). In contrast, dcm2niix uses bespoke code to handle the older JPEG-Lossless (1.2.840.10008.1.2.4.57/70; ISO/IEC 10918-1:1994 ITU-T.81). Finally, dcm2niix handles the very complex JPEG-2000 lossless (1.2.840.10008.1.2.4.90/91; ISO/IEC 15444-1:2004 ITU-T.800) using the [OpenJPEG](https://github.com/uclouvain/openjpeg) library.
+The option `myEnableJPEGLS` specifies the latest version of CharLS (currently version 2). Alternatively, you can specify `myEnableJPEGLS1` to compile for  CharLS version 1. This older code is not included with dcm2niix, but you can  [download it from Github](https://github.com/team-charls/charls/tree/1.x-master). Note that CharLS version 1 is designed for c++03:
+
+`g++ -I. -std=c++03 -DmyEnableJPEGLS1  charls1/header.cpp charls1/jpegls.cpp charls1/jpegmarkersegment.cpp charls1/interface.cpp  charls1/jpegstreamwriter.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG`
+
+# JPEG-LS versus other lossless JPEG codecs
 
 You can use gdcmconv to compare the performance of the ancient JPEG-lossless (gdcmconv -J; default mode for dcmcjpeg), JPEG-LS (gdcmconv -L) and JPEG2000-lossess (gdcmconv -K). Below is a sample test looking at 800 DICOM CT scans - with a raw size of 425mb which dcm2niix can convert in 1.6 seconds. The table shows that JPEG-LS reduces the file sizes to 137mb (0.39 original size), but that decompression takes 7.2 times longer. In contrast, the complicated JPEG2000 achieves only slightly better compression but is much slower to decompress.
 
@@ -32,7 +40,7 @@ Below is a sample test looking at 1092 DICOM MRI scans with a Siemens Prisma wit
 | JPEG-LS 1.2.840.10008.1.2.4.80            |  0.60 |  7.7  |
 | JPEG2000 lossless 1.2.840.10008.1.2.4.90  |  0.61 | 71.6  |
 
-The tables above describe illustrate the speed for decompression. With respect to compression, the MRI images take 54 seconds to compress as JPEG-lossless, 72 seconds to compress as JPEG-LS and 212 seconds for JPEG-2000 lossless. These tests support the notion that JPEG-LS provides similar compression to JPEG2000 lossless with much faster compression and decompression.
+The tables above describe illustrate the speed for decompression. With respect to compression, the MRI images take 54 seconds to compress as JPEG-lossless, 72 seconds to compress as JPEG-LS and 212 seconds for JPEG2000 lossless. These tests support the notion that JPEG-LS provides similar compression to JPEG2000 lossless with much faster compression and decompression. In fairness, it should be noted that all these tests use open source OpenJPEG library for JPEG2000 compression and decompression. This library is known to be robust but [slow compared to proprietary libraries](https://blog.hexagongeospatial.com/jpeg2000-quirks/).
 
 ## Features
 

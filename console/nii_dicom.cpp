@@ -3292,13 +3292,19 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
  #endif
 #endif
 
-#ifdef myEnableJPEGLS //Support for JPEG-LS Transfer Syntaxes 1.2.840.10008.1.2.4.80 1.2.840.10008.1.2.4.81
+#if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1) //Support for JPEG-LS
+//JPEG-LS: Transfer Syntaxes 1.2.840.10008.1.2.4.80 1.2.840.10008.1.2.4.81
 
-#include "charls/charls.h"
+#ifdef myEnableJPEGLS1 //use CharLS v1.* requires c++03
+ //-std=c++03 -DmyEnableJPEGLS1  charls1/header.cpp charls1/jpegls.cpp charls1/jpegmarkersegment.cpp charls1/interface.cpp  charls1/jpegstreamwriter.cpp
+ #include "charls1/interface.h"
+#else //use latest release of CharLS: CharLS 2.x requires c++14
+ //-std=c++14 -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp
+ #include "charls/charls.h"
+#endif
 #include "charls/publictypes.h"
 
 unsigned char * nii_loadImgJPEGLS(char* imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
-
 	//load compressed data
     FILE *file = fopen(imgname , "rb");
 	if (!file) {
@@ -3308,7 +3314,7 @@ unsigned char * nii_loadImgJPEGLS(char* imgname, struct nifti_1_header hdr, stru
 	fseek(file, 0, SEEK_END);
 	long fileLen=ftell(file);
     if ((fileLen < 1) || (dcm.imageBytes < 1) || (fileLen < (dcm.imageBytes+dcm.imageStart))) {
-        printMessage("File not large enough to store image data: %s\n", imgname);
+        printMessage("File not large enough to store JPEG-LS data: %s\n", imgname);
         fclose(file);
         return NULL;
     }
@@ -3320,19 +3326,22 @@ unsigned char * nii_loadImgJPEGLS(char* imgname, struct nifti_1_header hdr, stru
 	size_t imgsz = nii_ImgBytes(hdr);
     unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
 	JlsParameters params = {};
+	#ifdef myEnableJPEGLS1
+	if(JpegLsReadHeader(cImg, dcm.imageBytes, &params) != OK ) {
+	#else
 	using namespace charls;
 	if (JpegLsReadHeader(cImg, dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
-	//if(JpegLsReadHeader(cImg, dcm.imageBytes, &params) != OK ) {
-		printMessage("charls failed to read header.\n");
+	#endif
+		printMessage("CharLS failed to read header.\n");
 		return NULL;
 	}
-  	// allowedlossyerror == 0 => Lossless
-  	//LossyFlag = params.allowedlossyerror!= 0;
-	//if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params) != OK ) {
-
-	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
+	#ifdef myEnableJPEGLS1
+	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params) != OK ) {
+	#else
+  	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
+	#endif
 		free(bImg);
-		printMessage("charls failed to read image.\n");
+		printMessage("CharLS failed to read image.\n");
 		return NULL;
 	}
 	return (bImg);
@@ -5053,8 +5062,8 @@ double TE = 0.0; //most recent echo time recorded
             	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
             	//#define MY_DEBUG_GE // <- uncomment this to use following code to infer GE phase encoding direction
             	#ifdef MY_DEBUG_GE
-            	//int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
-            	int isVerboseX = isVerbose;
+            	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
+            	//int isVerboseX = isVerbose;
             	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset+lPos, lLength);
             	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
             		printMessage(" GE header too small to be valid  (A)\n");
@@ -5084,27 +5093,29 @@ double TE = 0.0; //most recent echo time recorded
     			}
     			//char const *hdr = &buffer[lPos + hdr_offset];
             	char *hdr = (char *)&buffer[lPos + hdr_offset];
-
             	int epi_chk_off = 0x003a;
     			int flag1_off   = 0x0030;
     			int flag2_off   = 0x0394;
-
     			if (version >= 25.002) {
       				hdr       += 0x004c;
       				flag2_off -= 0x008c;
     			}
     			//check if EPI
     			if (true) {
-      				int check = *(short const *)(hdr + epi_chk_off) & 0x800;
+      				//int check = *(short const *)(hdr + epi_chk_off) & 0x800;
+      				int check =dcmInt(2,(unsigned char*)hdr + epi_chk_off,true) & 0x800;
      				if (check == 0) {
 						printf("%s: Warning: Data is not EPI\n", fname);
 						continue;
       				}
     			}
             	//Check for PE polarity
-				int flag1 = *(short const *)(hdr + flag1_off) & 0x0004;
+				// int flag1 = *(short const *)(hdr + flag1_off) & 0x0004;
 				//Check for ky direction (view order)
-				int flag2 = *(int const *)(hdr + flag2_off);
+				// int flag2 = *(int const *)(hdr + flag2_off);
+				int flag1 = dcmInt(2,(unsigned char*)hdr + flag1_off,true) & 0x0004;
+				//Check for ky direction (view order)
+				int flag2 = dcmInt(2,(unsigned char*)hdr + flag2_off,true);
 				if (isVerboseX > 1) printMessage(" flags %d %d\n", flag1, flag2);
 				switch (flag2) {
 					case 0:
@@ -5119,7 +5130,6 @@ double TE = 0.0; //most recent echo time recorded
 						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_TOP_DOWN\n");
 					  }
 					  break;
-
 					case 1:
 					  if (flag1) {
 						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
@@ -5130,7 +5140,6 @@ double TE = 0.0; //most recent echo time recorded
 						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_CENTER_OUT\n");
 					  }
 					  break;
-
 					default:
 					  if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_UNKNOWN\n");
 				}
