@@ -20,7 +20,7 @@ endif()
 
 set(PROGRAMS dcm2niix)
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     # using Clang
     add_definitions(-fno-caret-diagnostics)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
@@ -34,7 +34,7 @@ elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     endif()
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
     # using Intel C++
-elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC")
+elseif(MSVC)
     # using Visual Studio C++
     add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4018")   # '<': signed/unsigned mismatch
