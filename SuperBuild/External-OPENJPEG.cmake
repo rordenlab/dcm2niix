@@ -9,7 +9,7 @@ ExternalProject_Add(openjpeg
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-        -DCMAKE_INSTALL_PREFIX=${DEP_INSTALL_DIR}
+        -DCMAKE_INSTALL_PREFIX:PATH=${DEP_INSTALL_DIR}
 )
 
 set(OpenJPEG_DIR ${DEP_INSTALL_DIR}/lib/openjpeg-2.1)

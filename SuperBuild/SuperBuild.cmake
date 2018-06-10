@@ -36,7 +36,6 @@ if(USE_STATIC_RUNTIME)
     endif()
 endif()
 
-option(USE_SYSTEM_ZLIB "Use the system zlib" OFF)
 option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 
@@ -103,6 +102,20 @@ if(BATCH_VERSION)
     endif()
 endif()
 
+set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
+set_property(CACHE ZLIB_IMPLEMENTATION PROPERTY STRINGS  "Miniz;System;Cloudflare;Custom")
+if(${ZLIB_IMPLEMENTATION} STREQUAL "Cloudflare")
+    include(${CMAKE_SOURCE_DIR}/SuperBuild/External-CLOUDFLARE-ZLIB.cmake)
+    list(APPEND DEPENDENCIES zlib)
+    set(BUILD_CLOUDFLARE-ZLIB TRUE)
+    message("--     Will build cloudflare zlib from github")
+elseif(${ZLIB_IMPLEMENTATION} STREQUAL "Custom")
+    set(ZLIB_ROOT ${ZLIB_ROOT} CACHE PATH "Specify custom zlib root directory.")
+    if(NOT ZLIB_ROOT)
+        message(FATAL_ERROR "ZLIB_ROOT needs to be set to locate custom zlib!")
+    endif()
+endif()
+
 ExternalProject_Add(console
     DEPENDS ${DEPENDENCIES}
     DOWNLOAD_COMMAND ""
@@ -112,14 +125,15 @@ ExternalProject_Add(console
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}
-        -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
-        -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
-        -DCMAKE_VERBOSE_MAKEFILE=${CMAKE_VERBOSE_MAKEFILE}
+        -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
+        -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
+        -DCMAKE_CXX_FLAGS:STRING=${CMAKE_CXX_FLAGS}
+        -DCMAKE_VERBOSE_MAKEFILE:BOOL=${CMAKE_VERBOSE_MAKEFILE}
         -DUSE_STATIC_RUNTIME:BOOL=${USE_STATIC_RUNTIME}
-        -DUSE_SYSTEM_ZLIB:BOOL=${USE_SYSTEM_ZLIB}
         -DUSE_TURBOJPEG:BOOL=${USE_TURBOJPEG}
         -DUSE_JASPER:BOOL=${USE_JASPER}
+        -DZLIB_IMPLEMENTATION:STRING=${ZLIB_IMPLEMENTATION}
+        -DZLIB_ROOT:PATH=${ZLIB_ROOT}
          # OpenJPEG
         -DUSE_OPENJPEG:BOOL=${USE_OPENJPEG}
         -DOpenJPEG_DIR:PATH=${OpenJPEG_DIR}
