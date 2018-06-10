@@ -3363,12 +3363,12 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
         #endif
     } else if (dcm.compressionScheme == kCompressJPEGLS) {
-    	#ifdef myEnableJPEGLS
+    	#if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
     		img = nii_loadImgJPEGLS(imgname, *hdr, dcm);
     		if (hdr->datatype ==DT_RGB24) //convert to planar
         		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     	#else
-        	printMessage("Software not compiled to decompress classic JPEG DICOM images\n");
+        	printMessage("Software not compiled to decompress JPEG-LS DICOM images\n");
         	return NULL;
     	#endif
     } else if (dcm.compressionScheme == kCompressPMSCT_RLE1) {
@@ -4289,10 +4289,10 @@ double TE = 0.0; //most recent echo time recorded
                 } else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.70") == 0) {
                     d.compressionScheme = kCompressC3;
                 } else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.4.80") == 0)  || (strcmp(transferSyntax, "1.2.840.10008.1.2.4.81") == 0)){
-                    #ifdef myEnableJPEGLS
+                    #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
                     d.compressionScheme = kCompressJPEGLS;
                     #else
-                    printMessage("Unsupported transfer syntax '%s' (decode with dcmdjpls or gdcmconv, or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
+                    printMessage("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                     #endif
                 } else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
