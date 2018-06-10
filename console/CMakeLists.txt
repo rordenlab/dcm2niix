@@ -88,7 +88,7 @@ endif()
 
 option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
 if(USE_OPENJPEG)
-    set(OpenJPEG_DIR "${OpenJPEG_DIR}${OPENJPEG_DIR}" CACHE PATH "Path to yaml-cpp configuration file" FORCE)
+    set(OpenJPEG_DIR "${OpenJPEG_DIR}" CACHE PATH "Path to yaml-cpp configuration file" FORCE)
 
     find_package(OpenJPEG REQUIRED)
 
