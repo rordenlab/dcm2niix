@@ -20,11 +20,11 @@ endif()
 
 set(PROGRAMS dcm2niix)
 
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # using Clang
     add_definitions(-fno-caret-diagnostics)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     # using GCC
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 4.5.0))
         add_definitions(-Wno-unused-result)    # available since GCC 4.5.0
@@ -32,9 +32,9 @@ elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 4.8.0))
         add_definitions(-fno-diagnostics-show-caret)    # available since GCC 4.8.0
     endif()
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
+elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
     # using Intel C++
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC")
     # using Visual Studio C++
     add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4018")   # '<': signed/unsigned mismatch
