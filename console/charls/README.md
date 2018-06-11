@@ -20,11 +20,13 @@ The option `myEnableJPEGLS` specifies the latest version of CharLS (currently ve
 
 `g++ -I. -std=c++03 -DmyEnableJPEGLS1  charls1/header.cpp charls1/jpegls.cpp charls1/jpegmarkersegment.cpp charls1/interface.cpp  charls1/jpegstreamwriter.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG`
 
+Note that in these examples we have disabled OpenJPEG's JPEG2000 support. In reality, you will probably want to support both JPEG2000 and JPEG-LS, this will allow you to convert a broader range of images, and JPEG2000 includes lossy variations that do not have analogues for JPEG-LS. For details on adding the JPEG2000 module see this  [compile page](https://github.com/rordenlab/dcm2niix/blob/master/COMPILE.md).
+
 # JPEG-LS versus other lossless JPEG codecs
 
 You can use gdcmconv to compare the performance of the ancient JPEG-lossless (gdcmconv -J; default mode for dcmcjpeg), JPEG-LS (gdcmconv -L) and JPEG2000-lossess (gdcmconv -K). Below is a sample test looking at 800 DICOM CT scans - with a raw size of 425mb which dcm2niix can convert in 1.6 seconds. The table shows that JPEG-LS reduces the file sizes to 137mb (0.39 original size), but that decompression takes 7.2 times longer. In contrast, the complicated JPEG2000 achieves only slightly better compression but is much slower to decompress.
 
-| CT                                        | Speed | Size  |
+| CT                                        | Size  | Speed |
 | ----------------------------------------- | -----:| -----:|
 | Raw 1.2.840.10008.1.2.1                   |  1.00 |  1.0  |
 | JPEG-lossless 1.2.840.10008.1.2.4.70      |  0.37 |  6.4  |
@@ -33,7 +35,7 @@ You can use gdcmconv to compare the performance of the ancient JPEG-lossless (gd
 
 Below is a sample test looking at 1092 DICOM MRI scans with a Siemens Prisma with 16-bit output (many older systems use 12-bit output which would presumably provide more compression potential) - with a raw size of 425mb which dcm2niix can convert in 4.7 seconds. Note that the MRI scans show poorer compression for all techniques.
 
-| MRI                                       | Speed | Size  |
+| MRI                                       | Size  | Speed |
 | ----------------------------------------- | -----:| -----:|
 | Raw 1.2.840.10008.1.2.1                   |  1.00 |  1.0  |
 | JPEG-lossless 1.2.840.10008.1.2.4.70      |  0.65 |  5.0  |
