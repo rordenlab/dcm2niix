@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.11)
+cmake_minimum_required(VERSION 3.1)
 
 project(console)
 
@@ -113,9 +113,24 @@ else ()
     add_definitions(-DmyDisableOpenJPEG)
 endif()
 
+option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
+if(USE_JPEGLS)
+    add_definitions(-DmyEnableJPEGLS)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+    target_sources(dcm2niix
+        PRIVATE
+            charls/jpegls.cpp
+            charls/jpegmarkersegment.cpp
+            charls/interface.cpp
+            charls/jpegstreamwriter.cpp
+            charls/jpegstreamreader.cpp)
+endif()
+
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
 if(BATCH_VERSION)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    if(NOT USE_JPEGLS)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    endif()
 
     add_executable(dcm2niibatch
         main_console_batch.cpp
@@ -134,19 +149,16 @@ if(BATCH_VERSION)
     target_link_libraries(dcm2niibatch ${YAML_CPP_LIBRARIES})
 
     if(ZLIB_FOUND)
-        add_definitions(-DmyDisableMiniZ)
         target_include_directories(dcm2niibatch PRIVATE ${ZLIB_INCLUDE_DIRS})
         target_link_libraries(dcm2niibatch ${ZLIB_LIBRARIES})
     endif()
 
     if(TURBOJPEG_FOUND)
-        add_definitions(-DmyTurboJPEG)
         target_include_directories(dcm2niibatch PRIVATE ${TURBOJPEG_INCLUDEDIR})
         target_link_libraries(dcm2niibatch ${TURBOJPEG_LIBRARIES})
     endif()
 
     if(JASPER_FOUND)
-        add_definitions(-DmyEnableJasper)
         target_include_directories(dcm2niibatch PRIVATE ${JASPER_INCLUDE_DIR})
         target_link_libraries(dcm2niibatch ${JASPER_LIBRARIES})
     endif()
@@ -154,8 +166,16 @@ if(BATCH_VERSION)
     if(OPENJPEG_FOUND)
         target_include_directories(dcm2niibatch PRIVATE ${OPENJPEG_INCLUDE_DIRS})
         target_link_libraries(dcm2niibatch ${OPENJPEG_LIBRARIES})
-    else()
-        add_definitions(-DmyDisableOpenJPEG)
+    endif()
+
+    if(USE_JPEGLS)
+        target_sources(dcm2niibatch
+            PRIVATE
+                charls/jpegls.cpp
+                charls/jpegmarkersegment.cpp
+                charls/interface.cpp
+                charls/jpegstreamwriter.cpp
+                charls/jpegstreamreader.cpp)
     endif()
 
     list(APPEND PROGRAMS dcm2niibatch)
