@@ -13,6 +13,17 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 This software should run on macOS, Linux and Windows typically without requiring any other software. However, if you use dcm2niix to create gz-compressed images it will be faster if you have [pigz](https://github.com/madler/pigz) installed. You can get a version of both dcm2niix and pigz compiled for your operating system by downloading [MRIcroGL](https://www.nitrc.org/projects/mricrogl/).
 
+
+## Image Conversion and Compression
+
+DICOM provides many ways to store/compress image data, known as [transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The [COMPILE.md file describes details](./COMPILE.md) on how to enable different options to provide support for more formats.
+
+ - The base code includes support for raw, run-length encoded, and classic JPEG lossless decoding.
+ - Lossy JPEG is handled by the included [NanoJPEG](https://keyj.emphy.de/nanojpeg/). This support is modular: you can compile for [libjpeg-turbo](https://github.com/chris-allan/libjpeg-turbo) or disable it altogether.
+ - JPEG-LS lossless support is optional, and can be provided by using [CharLS](https://github.com/team-charls/charls).
+  - JPEG2000 lossy and lossless support is optional, and can be provided using [OpenJPEG](https://github.com/uclouvain/openjpeg) or [Jasper](https://www.ece.uvic.ca/~frodo/jasper/).
+ - GZ compression (e.g. creating .nii.gz images) is optional, and can be provided using either the included [miniz](https://github.com/richgel999/miniz) or the popular zlib. Of particular note, the [Cloudflare zlib](https://github.com/cloudflare/zlib) exploits modern hardware for very rapid compression. Alternatively, you can compile dcm2niix without a gzip compressor. Regardless of how you compile dcm2niix, it can use the external program [pigz](https://github.com/madler/pigz) for parallel compression.
+
 ## Versions
 
 [See the VERSIONS.md file for details on releases](./VERSIONS.md).
@@ -43,13 +54,13 @@ make
 
 In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
 
-**optional building with OpenJPEG:**
+**Advanced builds:**
 
-Support for JPEG2000 using OpenJPEG is optional. To build with OpenJPEG change the cmake command to `cmake -DUSE_OPENJPEG=ON ..`:
+As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000 as well as using the high performance Cloudflare zlib library. To build with these options simply request them when configuring cmake:
 
 ```bash
 mkdir build && cd build
-cmake -DUSE_OPENJPEG=ON ..
+cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_OPENJPEG=ON ..
 make
 ```
 
@@ -60,16 +71,6 @@ The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` 
 ### Building the command line version without cmake
 
 If you have any problems with the cmake build script described above or want to customize the software see the [COMPILE.md file for details on manual compilation](./COMPILE.md).
-
-## Image Conversion and Compression
-
-DICOM provides many ways to store/compress image data, known as [transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The [COMPILE.md file describes details](./COMPILE.md) on how to enable different options to provide support for more formats.
-
- - The base code includes support for raw, run-length encoded, and classic JPEG lossless decoding.
- - Lossy JPEG is handled by the included [NanoJPEG](https://keyj.emphy.de/nanojpeg/). This support is modular: you can compile for [libjpeg-turbo](https://github.com/chris-allan/libjpeg-turbo) or disable it altogether.
- - JPEG-LS lossless support is optional, and can be provided by using [CharLS](https://github.com/team-charls/charls).
-  - JPEG2000 lossy and lossless support is optional, and can be provided using [OpenJPEG](https://github.com/uclouvain/openjpeg) or [Jasper](https://www.ece.uvic.ca/~frodo/jasper/).
- - GZ compression (e.g. creating .nii.gz images) is optional, and can be provided using either the included [miniz](https://github.com/richgel999/miniz) or the popular zlib. Of particular note, the [Cloudflare zlib](https://github.com/cloudflare/zlib) exploits modern hardware for very rapid compression. Alternatively, you can compile dcm2niix without a gzip compressor. Regardless of how you compile dcm2niix, it can use the external program [pigz](https://github.com/madler/pigz) for parallel compression.
 
 ## Alternatives
 
