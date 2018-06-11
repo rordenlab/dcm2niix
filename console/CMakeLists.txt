@@ -116,6 +116,9 @@ endif()
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
 if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
+    if(MSVC)
+        add_definitions(-DCHARLS_STATIC)
+    endif()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
     target_sources(dcm2niix
         PRIVATE
