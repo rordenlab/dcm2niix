@@ -44,7 +44,7 @@ Ubuntu: `sudo apt-get install cmake pkg-config`
 
 MacOS: `brew install cmake pkg-config`
 
-**To build:**
+**Basic build:**
 ```bash
 mkdir build && cd build
 cmake ..
@@ -54,13 +54,13 @@ make
 
 In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
 
-**Advanced builds:**
+**Advanced build:**
 
-As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000 as well as using the high performance Cloudflare zlib library (just remember, this requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
+As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000, [JPEG-LS](https://github.com/team-charls/charls) (this option requires a  c++14 compiler), as well as using the high performance Cloudflare zlib library (this option requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
 
 ```bash
 mkdir build && cd build
-cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_OPENJPEG=ON ..
+cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
 make
 ```
 

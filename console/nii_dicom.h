@@ -17,13 +17,18 @@ extern "C" {
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
+ #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
+   #define kLSsuf " (JP-LS:CharLS)"
+ #else
+   #define kLSsuf ""
+ #endif
  #ifdef myEnableJasper
-  #define kDCMsuf " (JasPer build)"
+  #define kJP2suf " (JP2:JasPer)"
  #else
   #ifdef myDisableOpenJPEG
-    #define kDCMsuf ""
+    #define kJP2suf ""
   #else
-    #define kDCMsuf " (OpenJPEG build)"
+    #define kJP2suf " (JP2:OpenJPEG)"
   #endif
  #endif
 #if defined(__ICC) || defined(__INTEL_COMPILER)
@@ -38,7 +43,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMvers "v1.0.20180606" kDCMsuf kCCsuf
+#define kDCMvers "v1.0.20180606" kJP2suf kLSsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
