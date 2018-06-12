@@ -38,7 +38,7 @@ Command line usage is described in the [NITRC wiki](https://www.nitrc.org/plugin
 
 ### Build command line version with cmake (Linux, MacOS, Windows)
 
-`cmake` and `pkg-config` (optional) can be installed as follows:
+`cmake` (minimum required version: 3.1) and `pkg-config` (optional) can be installed as follows:
 
 Ubuntu: `sudo apt-get install cmake pkg-config`
 
