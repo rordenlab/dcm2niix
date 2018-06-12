@@ -3322,6 +3322,11 @@ unsigned char * nii_loadImgJPEGLS(char* imgname, struct nifti_1_header hdr, stru
 	unsigned char *cImg = (unsigned char *)malloc(dcm.imageBytes); //compressed input
     size_t  sz = fread(cImg, 1, dcm.imageBytes, file);
 	fclose(file);
+    if (sz < (size_t)dcm.imageBytes) {
+        printError("Only loaded %zu of %d bytes for %s\n", sz, dcm.imageBytes, imgname);
+        free(cImg);
+        return NULL;
+    }
 	//create buffer for uncompressed data
 	size_t imgsz = nii_ImgBytes(hdr);
     unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
@@ -4339,6 +4344,12 @@ double TE = 0.0; //most recent echo time recorded
                 	isMosaic = true;
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
+                //For Philips combinations see Table 3-28 Table 3-28: Valid combinations of Image Type applied values
+                //  http://incenter.medical.philips.com/doclib/enc/fetch/2000/4504/577242/577256/588723/5144873/5144488/5144982/DICOM_Conformance_Statement_Intera_R7%2c_R8_and_R9.pdf%3fnodeid%3d5147977%26vernum%3d-2
+                if((slen > 3) && (strstr(d.imageType, "_R_") != NULL) )
+                	d.isHasReal = true;
+                if((slen > 3) && (strstr(d.imageType, "_I_") != NULL) )
+                	d.isHasImaginary = true;
                 if((slen > 3) && (strstr(d.imageType, "_P_") != NULL) )
                 	d.isHasPhase = true;
 				if((slen > 6) && (strstr(d.imageType, "PHASE") != NULL) )
