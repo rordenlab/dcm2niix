@@ -18,8 +18,6 @@ if(NOT CMAKE_BUILD_TYPE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS  "Debug;Release;RelWithDebInfo;MinSizeRel")
 endif()
 
-set(PROGRAMS dcm2niix)
-
 if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     # using Clang
     add_definitions(-fno-caret-diagnostics)
@@ -32,8 +30,6 @@ elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 4.8.0))
         add_definitions(-fno-diagnostics-show-caret)    # available since GCC 4.8.0
     endif()
-elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
-    # using Intel C++
 elseif(MSVC)
     # using Visual Studio C++
     add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
@@ -50,6 +46,17 @@ elseif(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4996")   # 'access': The POSIX name for this item is deprecated
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:8388608")  # set "Stack Reserve Size" to 8MB (default value is 1MB)
 endif()
+
+# Compiler dependent flags
+include (CheckCXXCompilerFlag)
+if(UNIX)
+    check_cxx_compiler_flag(-msse2 HAS_SSE2)
+    if(HAS_SSE2)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 -mfpmath=sse")
+    endif()
+endif()
+
+set(PROGRAMS dcm2niix)
 
 add_executable(dcm2niix
     main_console.cpp
