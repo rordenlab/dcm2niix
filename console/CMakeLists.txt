@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 2.8.11)
 
 project(console)
 
@@ -58,7 +58,7 @@ endif()
 
 set(PROGRAMS dcm2niix)
 
-add_executable(dcm2niix
+set(DCM2NIIX_SRCS
     main_console.cpp
     nii_dicom.cpp
     jpg_0XC3.cpp
@@ -67,6 +67,25 @@ add_executable(dcm2niix
     nii_foreign.cpp
     nii_ortho.cpp
     nii_dicom_batch.cpp)
+
+option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
+if(USE_JPEGLS)
+    add_definitions(-DmyEnableJPEGLS)
+    if(MSVC)
+        add_definitions(-DCHARLS_STATIC)
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+
+    set(CHARLS_SRCS
+        charls/jpegls.cpp
+        charls/jpegmarkersegment.cpp
+        charls/interface.cpp
+        charls/jpegstreamwriter.cpp
+        charls/jpegstreamreader.cpp)
+    add_executable(dcm2niix ${DCM2NIIX_SRCS} ${CHARLS_SRCS})
+else()
+    add_executable(dcm2niix ${DCM2NIIX_SRCS})
+endif()
 
 set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
 set_property(CACHE ZLIB_IMPLEMENTATION PROPERTY STRINGS  "Miniz;System;Custom")
@@ -120,29 +139,9 @@ else ()
     add_definitions(-DmyDisableOpenJPEG)
 endif()
 
-option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
-if(USE_JPEGLS)
-    add_definitions(-DmyEnableJPEGLS)
-    if(MSVC)
-        add_definitions(-DCHARLS_STATIC)
-    endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-    target_sources(dcm2niix
-        PRIVATE
-            charls/jpegls.cpp
-            charls/jpegmarkersegment.cpp
-            charls/interface.cpp
-            charls/jpegstreamwriter.cpp
-            charls/jpegstreamreader.cpp)
-endif()
-
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
 if(BATCH_VERSION)
-    if(NOT USE_JPEGLS)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-    endif()
-
-    add_executable(dcm2niibatch
+    set(DCM2NIIBATCH_SRCS
         main_console_batch.cpp
         nii_dicom.cpp
         jpg_0XC3.cpp
@@ -151,6 +150,13 @@ if(BATCH_VERSION)
         nii_foreign.cpp
         nii_ortho.cpp
         nii_dicom_batch.cpp)
+
+    if(USE_JPEGLS)
+        add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS} ${CHARLS_SRCS})
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+        add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS})
+    endif()
 
     set(YAML-CPP_DIR ${YAML-CPP_DIR} CACHE PATH "Path to yaml-cpp configuration file" FORCE)
 
@@ -176,16 +182,6 @@ if(BATCH_VERSION)
     if(OPENJPEG_FOUND)
         target_include_directories(dcm2niibatch PRIVATE ${OPENJPEG_INCLUDE_DIRS})
         target_link_libraries(dcm2niibatch ${OPENJPEG_LIBRARIES})
-    endif()
-
-    if(USE_JPEGLS)
-        target_sources(dcm2niibatch
-            PRIVATE
-                charls/jpegls.cpp
-                charls/jpegmarkersegment.cpp
-                charls/interface.cpp
-                charls/jpegstreamwriter.cpp
-                charls/jpegstreamreader.cpp)
     endif()
 
     list(APPEND PROGRAMS dcm2niibatch)
