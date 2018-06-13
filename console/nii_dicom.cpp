@@ -4343,21 +4343,39 @@ double TE = 0.0; //most recent echo time recorded
                 if((slen > 5) && !strcmp(d.imageType + slen - 6, "MOSAIC") )
                 	isMosaic = true;
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
+                // sometime ComplexImageComponent 0008,9208 is missing - see ADNI data
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
                 //For Philips combinations see Table 3-28 Table 3-28: Valid combinations of Image Type applied values
                 //  http://incenter.medical.philips.com/doclib/enc/fetch/2000/4504/577242/577256/588723/5144873/5144488/5144982/DICOM_Conformance_Statement_Intera_R7%2c_R8_and_R9.pdf%3fnodeid%3d5147977%26vernum%3d-2
-                if((slen > 3) && (strstr(d.imageType, "_R_") != NULL) )
+                if((slen > 3) && (strstr(d.imageType, "_R_") != NULL) ) {
                 	d.isHasReal = true;
-                if((slen > 3) && (strstr(d.imageType, "_I_") != NULL) )
+                	isReal = true;
+                }
+                if((slen > 3) && (strstr(d.imageType, "_I_") != NULL) ) {
                 	d.isHasImaginary = true;
-                if((slen > 3) && (strstr(d.imageType, "_P_") != NULL) )
+                	isImaginary = true;
+                }
+                if((slen > 3) && (strstr(d.imageType, "_P_") != NULL) ) {
                 	d.isHasPhase = true;
-				if((slen > 6) && (strstr(d.imageType, "PHASE") != NULL) )
+                	isPhase = true;
+                }
+                if((slen > 6) && (strstr(d.imageType, "_REAL_") != NULL) ) {
+                	d.isHasReal = true;
+                	isReal = true;
+                }
+                if((slen > 11) && (strstr(d.imageType, "_IMAGINARY_") != NULL) ) {
+                	d.isHasImaginary = true;
+                	isImaginary = true;
+                }
+				if((slen > 6) && (strstr(d.imageType, "PHASE") != NULL) ) {
                 	d.isHasPhase = true;
+                	isPhase = true;
+                }
                 if((slen > 6) && (strstr(d.imageType, "DERIVED") != NULL) )
                 	d.isDerived = true;
                 //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )
                 //	d.isNonImage = true;
+                //not mutually exclusive: possible for Philips enhanced DICOM to store BOTH magnitude and phase in the same image
             	break;
             case kAcquisitionDate:
             	char acquisitionDateTxt[kDICOMStr];
@@ -4405,6 +4423,7 @@ double TE = 0.0; //most recent echo time recorded
                 isReal = false;
                 isImaginary = false;
                 isMagnitude = false;
+                //see Table C.8-85 http://dicom.nema.org/medical/Dicom/2017c/output/chtml/part03/sect_C.8.13.3.html
                 if ((buffer[lPos]=='R') && (toupper(buffer[lPos+1]) == 'E'))
                 	isReal = true;
                 if ((buffer[lPos]=='I') && (toupper(buffer[lPos+1]) == 'M'))
