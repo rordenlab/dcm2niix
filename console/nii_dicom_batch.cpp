@@ -2124,6 +2124,66 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     return EXIT_SUCCESS;
 }// nii_saveNII3D()
 
+void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr){
+    if (hdr->datatype != DT_INT16) return;
+    int dim3to7 = 1;
+    for (int i = 3; i < 8; i++)
+        if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
+    int nVox = hdr->dim[1]*hdr->dim[2]* dim3to7;
+    if (nVox < 1) return;
+    int16_t * img16 = (int16_t*) img;
+    int16_t max16 = img16[0];
+    int16_t min16 = max16;
+    //clock_t start = clock();
+    for (int i=0; i < nVox; i++) {
+        if (img16[i] < min16)
+            min16 = img16[i];
+        if (img16[i] > max16)
+            max16 = img16[i];
+    }
+    int kMx = 32000; //actually 32767 - maybe a bit of padding for interpolation ringing
+    bool isConvertToUint16 = true; //if false output is always same as input: INT16, if true and no negative values output will be UINT16
+    if ((isConvertToUint16) && (min16 >= 0))
+    	kMx = 64000;
+    int scale = kMx / (int)max16;
+	if (abs(min16) > max16)
+		scale = kMx / (int)abs(min16);
+	if (scale < 2) return; //already uses dynamic range
+    hdr->scl_slope = hdr->scl_slope/ scale;
+	if ((isConvertToUint16) && (min16 >= 0)) { //only positive values: save as UINT16 0..65535
+		hdr->datatype = DT_UINT16;
+		uint16_t * uimg16 = (uint16_t*) img;
+    	for (int i=0; i < nVox; i++)
+    		uimg16[i] = (int)img16[i] * scale;
+	} else {//includes negative values: save as INT16 -32768..32768
+		for (int i=0; i < nVox; i++)
+    		img16[i] = img16[i] * scale;
+	}
+    printMessage("Maximizing 16-bit range: raw %d..%d\n", min16, max16);
+}
+
+void nii_scale16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
+    if (hdr->datatype != DT_UINT16) return;
+    int dim3to7 = 1;
+    for (int i = 3; i < 8; i++)
+        if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
+    int nVox = hdr->dim[1]*hdr->dim[2]* dim3to7;
+    if (nVox < 1) return;
+    uint16_t * img16 = (uint16_t*) img;
+    uint16_t max16 = img16[0];
+    //clock_t start = clock();
+    for (int i=0; i < nVox; i++)
+        if (img16[i] > max16)
+            max16 = img16[i];
+    int kMx = 64000; //actually 65535 - maybe a bit of padding for interpolation ringing
+    int scale = kMx / (int)max16;
+	if (scale < 2) return; //already uses dynamic range
+	hdr->scl_slope = hdr->scl_slope/ scale;
+	for (int i=0; i < nVox; i++)
+    	img16[i] = img16[i] * scale;
+    printMessage("Maximizing 16-bit range: raw max %d\n", max16);
+}
+
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
     //default NIfTI 16-bit is signed, set to unusual 16-bit unsigned if required...
     if (hdr->datatype != DT_UINT16) return;
@@ -2889,9 +2949,14 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
     int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
-    if ((hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) nii_check16bitUnsigned(imgM, &hdr0);
-    printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
+    if ((opts.isMaximize16BitRange) && (hdr0.datatype == DT_INT16)) {
+    	nii_scale16bitSigned(imgM, &hdr0); //allow INT16 to use full dynamic range
+    } else if ((opts.isMaximize16BitRange) && (hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) {
+    	nii_scale16bitUnsigned(imgM, &hdr0); //allow UINT16 to use full dynamic range
+    } else if ((!opts.isMaximize16BitRange) && (hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned))
+    	nii_check16bitUnsigned(imgM, &hdr0); //save UINT16 as INT16 if we can do this losslessly
+    printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
     if (hdr0.dim[3] < 2)
@@ -3752,6 +3817,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     #else
     	opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
     #endif
+    opts->isMaximize16BitRange = false; //e.g. if INT16 image has range 0..500 scale to be 0..50000 with hdr.scl_slope =  hdr.scl_slope * 0.01
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;

@@ -280,7 +280,11 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                if ((strlen(argv[i-1]) > 2) && (argv[i-1][2] == 's')) {//"-is y"
+                	printf("Warning: integer scaling is an experimental feature\n");
+                	if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
+                		opts.isMaximize16BitRange = true;
+                } else if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isIgnoreDerivedAnd2D = false;
                 else
                     opts.isIgnoreDerivedAnd2D = true;
