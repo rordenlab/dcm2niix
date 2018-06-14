@@ -160,7 +160,11 @@ if(BATCH_VERSION)
 
     set(YAML-CPP_DIR ${YAML-CPP_DIR} CACHE PATH "Path to yaml-cpp configuration file" FORCE)
 
-    find_package(YAML-CPP REQUIRED)
+    # PkgConfig way found to provide more robust detection of yaml-cpp on older
+    # Debian/Ubuntu releases
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
+
     target_include_directories(dcm2niibatch PRIVATE ${YAML_CPP_INCLUDE_DIR})
     target_link_libraries(dcm2niibatch ${YAML_CPP_LIBRARIES})
 
