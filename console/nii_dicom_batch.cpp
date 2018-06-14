@@ -2206,7 +2206,6 @@ void nii_scale16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
     if (nVox < 1) return;
     uint16_t * img16 = (uint16_t*) img;
     uint16_t max16 = img16[0];
-    //clock_t start = clock();
     for (int i=0; i < nVox; i++)
         if (img16[i] > max16)
             max16 = img16[i];

@@ -271,10 +271,11 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
                     isSaveIni = true;
-                if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
+                if (((argv[i][0] == 'i') || (argv[i][0] == 'I')) && (!isResetDefaults)) {
                     isResetDefaults = true;
                     printf("Defaults reset\n");
                     setDefaultOpts(&opts, argv);
+                    i = 0; //re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
                 }
                 if (((argv[i][0] == 'o') || (argv[i][0] == 'O')) && (!isResetDefaults)) {
                 	//reset defaults - do not read, but do write defaults
