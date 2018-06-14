@@ -86,7 +86,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
      #define kQstr ""
     #endif
     printf("  -f : filename (%%a=antenna  (coil) number, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
-    printf("  -g : generate defaults file (y/n/o [o=only: reset and write defaults], default n)\n");
+    printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
     char max16Ch = 'n';
@@ -271,6 +271,11 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
                     isSaveIni = true;
+                if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
+                    isResetDefaults = true;
+                    printf("Defaults reset\n");
+                    setDefaultOpts(&opts, argv);
+                }
                 if (((argv[i][0] == 'o') || (argv[i][0] == 'O')) && (!isResetDefaults)) {
                 	//reset defaults - do not read, but do write defaults
                     isSaveIni = true;
