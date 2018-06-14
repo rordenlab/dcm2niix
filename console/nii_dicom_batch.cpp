@@ -2124,6 +2124,9 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     return EXIT_SUCCESS;
 }// nii_saveNII3D()
 
+/*
+//this version can convert INT16->UINT16
+// some were concerned about this https://github.com/rordenlab/dcm2niix/issues/198
 void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr){
     if (hdr->datatype != DT_INT16) return;
     int dim3to7 = 1;
@@ -2160,9 +2163,41 @@ void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr){
     		img16[i] = img16[i] * scale;
 	}
     printMessage("Maximizing 16-bit range: raw %d..%d\n", min16, max16);
+}*/
+
+void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr) {
+//lossless scaling of INT16 data: e.g. input with range -100...3200 and scl_slope=1
+//  will be stored as -1000...32000 with scl_slope 0.1
+    if (hdr->datatype != DT_INT16) return;
+    int dim3to7 = 1;
+    for (int i = 3; i < 8; i++)
+        if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
+    int nVox = hdr->dim[1]*hdr->dim[2]* dim3to7;
+    if (nVox < 1) return;
+    int16_t * img16 = (int16_t*) img;
+    int16_t max16 = img16[0];
+    int16_t min16 = max16;
+    for (int i=0; i < nVox; i++) {
+        if (img16[i] < min16)
+            min16 = img16[i];
+        if (img16[i] > max16)
+            max16 = img16[i];
+    }
+    int kMx = 32000; //actually 32767 - maybe a bit of padding for interpolation ringing
+    int scale = kMx / (int)max16;
+	if (abs(min16) > max16)
+		scale = kMx / (int)abs(min16);
+	if (scale < 2) return; //already uses dynamic range
+    hdr->scl_slope = hdr->scl_slope/ scale;
+	for (int i=0; i < nVox; i++)
+    	img16[i] = img16[i] * scale;
+    printMessage("Maximizing 16-bit range: raw %d..%d\n", min16, max16);
 }
 
+
 void nii_scale16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
+//lossless scaling of UINT16 data: e.g. input with range 0...3200 and scl_slope=1
+//  will be stored as 0...64000 with scl_slope 0.05
     if (hdr->datatype != DT_UINT16) return;
     int dim3to7 = 1;
     for (int i = 3; i < 8; i++)
@@ -3850,9 +3885,9 @@ void saveIniFile (struct TDCMopts opts) {
 	}
 	printMessage("Saving defaults to registry\n");
 	DWORD dwValue    = opts.isGz;
-	//RegSetValueEx(hKey,"isGZ", 0, REG_DWORD,reinterpret_cast<BYTE *>(&dwValue),sizeof(dwValue));
-	//RegSetValueExA(hKey, "isGZ", 0, REG_DWORD, (LPDWORD)&dwValue, sizeof(dwValue));
 	RegSetValueExA(hKey, "isGZ", 0, REG_DWORD, reinterpret_cast<BYTE *>(&dwValue), sizeof(dwValue));
+	dwValue    = opts.isMaximize16BitRange;
+	RegSetValueExA(hKey, "isMaximize16BitRange", 0, REG_DWORD, reinterpret_cast<BYTE *>(&dwValue), sizeof(dwValue));
 	RegSetValueExA(hKey,"filename",0, REG_SZ,(LPBYTE)opts.filename, strlen(opts.filename)+1);
 	RegCloseKey(hKey);
 } //saveIniFile()
@@ -3873,6 +3908,8 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
     //if(RegQueryValueExA(hKey,"isGZ", 0, (LPDWORD )&dwDataType, (&dwValue), &vSize) == ERROR_SUCCESS)
     if(RegQueryValueExA(hKey,"isGZ", 0, (LPDWORD )&dwDataType, reinterpret_cast<BYTE *>(&dwValue), &vSize) == ERROR_SUCCESS)
     	opts->isGz = dwValue;
+    if(RegQueryValueExA(hKey,"isMaximize16BitRange", 0, (LPDWORD )&dwDataType, reinterpret_cast<BYTE *>(&dwValue), &vSize) == ERROR_SUCCESS)
+    	opts->isMaximize16BitRange = dwValue;
     vSize = 512;
     char buffer[512];
     if(RegQueryValueExA(hKey,"filename", 0,NULL,(LPBYTE)buffer,&vSize ) == ERROR_SUCCESS )
@@ -3896,6 +3933,8 @@ void readIniFile (struct TDCMopts *opts, const char * argv[]) {
         //printMessage(">%s<->'%s'\n",Setting,Value);
         if ( strcmp(Setting,"isGZ") == 0 )
             opts->isGz = atoi(Value);
+        if ( strcmp(Setting,"isMaximize16BitRange") == 0 )
+            opts->isMaximize16BitRange = atoi(Value);
         else if ( strcmp(Setting,"isBIDS") == 0 )
             opts->isCreateBIDS = atoi(Value);
         else if ( strcmp(Setting,"filename") == 0 )
@@ -3910,6 +3949,7 @@ void saveIniFile (struct TDCMopts opts) {
     if (fp == NULL) return;
     printMessage("Saving defaults file %s\n", opts.optsname);
     fprintf(fp, "isGZ=%d\n", opts.isGz);
+    fprintf(fp, "isMaximize16BitRange=%d\n", opts.isMaximize16BitRange);
     fprintf(fp, "isBIDS=%d\n", opts.isCreateBIDS);
     fprintf(fp, "filename=%s\n", opts.filename);
     fclose(fp);

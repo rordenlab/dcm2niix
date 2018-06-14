@@ -89,6 +89,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -g : generate defaults file (y/n/o [o=only: reset and write defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
+    char max16Ch = 'n';
+    if (opts.isMaximize16BitRange) max16Ch = 'y';
+    printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n, default %c)\n", max16Ch);
     printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
     printf("  -n : only convert this series number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
     printf("  -o : output directory (omit to save to input folder)\n");
@@ -280,14 +283,17 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'i') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
-                if ((strlen(argv[i-1]) > 2) && (argv[i-1][2] == 's')) {//"-is y"
-                	printf("Warning: integer scaling is an experimental feature\n");
-                	if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
-                		opts.isMaximize16BitRange = true;
-                } else if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isIgnoreDerivedAnd2D = false;
                 else
                     opts.isIgnoreDerivedAnd2D = true;
+            } else if ((argv[i][1] == 'l') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isMaximize16BitRange = false;
+                else
+                    opts.isMaximize16BitRange = true;
             } else if ((argv[i][1] == 'm') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
