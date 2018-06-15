@@ -2165,6 +2165,13 @@ void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr){
     printMessage("Maximizing 16-bit range: raw %d..%d\n", min16, max16);
 }*/
 
+void nii_storeIntegerScaleFactor(int scale, struct nifti_1_header *hdr) {
+//appends NIfTI header description field with " isN" where N is integer scaling
+	char newstr[256];
+	sprintf(newstr, " is%d", scale);
+	if ((strlen(newstr)+strlen(hdr->descrip)) < 80)
+		strcat (hdr->descrip,newstr);
+}
 void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr) {
 //lossless scaling of INT16 data: e.g. input with range -100...3200 and scl_slope=1
 //  will be stored as -1000...32000 with scl_slope 0.1
@@ -2191,7 +2198,8 @@ void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr) {
     hdr->scl_slope = hdr->scl_slope/ scale;
 	for (int i=0; i < nVox; i++)
     	img16[i] = img16[i] * scale;
-    printMessage("Maximizing 16-bit range: raw %d..%d\n", min16, max16);
+    printMessage("Maximizing 16-bit range: raw %d..%d is%d\n", min16, max16, scale);
+    nii_storeIntegerScaleFactor(scale, hdr);
 }
 
 
@@ -2215,7 +2223,8 @@ void nii_scale16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){
 	hdr->scl_slope = hdr->scl_slope/ scale;
 	for (int i=0; i < nVox; i++)
     	img16[i] = img16[i] * scale;
-    printMessage("Maximizing 16-bit range: raw max %d\n", max16);
+    printMessage("Maximizing 16-bit range: raw max %d is%d\n", max16, scale);
+    nii_storeIntegerScaleFactor(scale, hdr);
 }
 
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr){

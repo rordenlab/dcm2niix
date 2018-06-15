@@ -8,6 +8,7 @@
  - Support for Philips Private RLE (1.3.46.670589.33.1.4.1) transfer syntax.
  - Optional support for JPEG-LS (1.2.840.10008.1.2.4.80/1.2.840.10008.1.2.4.81) transfer syntaxes (using [CharLS](https://github.com/team-charls/charls)). Requires c++14.
  - [Improved GE support](https://github.com/rordenlab/dcm2niix/issues/163)
+ - Optional [lossless integer scaling](https://github.com/rordenlab/dcm2niix/issues/198) for INT16 and UINT16 DICOM images that only use a fraction of the possible range.
 
 15-Dec-2017
  - Support [Siemens XA10 images](https://github.com/rordenlab/dcm2niix/pull/145).
