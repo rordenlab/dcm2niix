@@ -28,7 +28,7 @@ if(USE_STATIC_RUNTIME)
         mark_as_advanced(STATIC_LIBCXX)
         if(NOT STATIC_LIBCXX)
             unset(STATIC_LIBCXX CACHE)
-            # only on some Centos/Redhat systems
+            # Only on some Centos/Redhat systems
             message(FATAL_ERROR
                 "\"USE_STATIC_RUNTIME\" set to ON but \"libstdcxx.a\" not found! \
                  \"yum install libstdc++-static\" to resolve the error.")
@@ -91,7 +91,8 @@ if(BATCH_VERSION)
             pkg_check_modules(YAML-CPP yaml-cpp)
         endif()
 
-        if(YAML-CPP_FOUND)
+        # Build from github if not found or version < 0.5.3
+        if(YAML-CPP_FOUND AND NOT (YAML-CPP_VERSION VERSION_LESS "0.5.3"))
             set(YAML-CPP_DIR ${YAML-CPP_LIBDIR}/cmake/yaml-cpp CACHE PATH "Path to yaml-cpp configuration file"  FORCE)
             message("--     Using yaml-cpp library from ${YAML-CPP_DIR}")
         else()
