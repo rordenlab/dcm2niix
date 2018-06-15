@@ -15,8 +15,10 @@ matrix:
             - g++-5 # support c++14
       env:
          - MATRIX_EVAL="CC=gcc-5 && CXX=g++-5"
+         - TARGET=lnx
     - os: osx
       osx_image: xcode8.3 # Tracvis default: OS X 10.12.6 and Xcode 8.3.3
+      env: TARGET=mac
 
 before_install:
   - eval "${MATRIX_EVAL}"
