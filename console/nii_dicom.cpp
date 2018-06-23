@@ -1999,7 +1999,6 @@ int	kbval = 33; //V3: 27
     		maxVol = maxVol + 1;
     	}
     }
-
     if (d.CSA.numDti > 0) d.CSA.numDti = maxVol; //e.g. gradient 2 can skip B=0 but include isotropic
     //remove unused slices - this will happen if unless we have all 4 image types: real, imag, mag, phase
     if (numSlice2D > kMaxSlice2D) { //check again after reading, as top portion of header does not report image types or isotropics
@@ -3663,6 +3662,7 @@ struct TDCMdim { //DimensionIndexValues
   uint32_t dimIdx[MAX_NUMBER_OF_DIMENSIONS];
   uint32_t diskPos;
   float triggerDelayTime, TE, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
+  float V[4];
   bool isPhase;
   bool isReal;
   bool isImaginary;
@@ -3972,9 +3972,9 @@ double TE = 0.0; //most recent echo time recorded
     //float patientPositionPublic[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
-	struct TDTI philDTI[kMaxDTI4D];
-    for (int i = 0; i < kMaxDTI4D; i++)
-    	philDTI[i].V[0] = -1;
+	//struct TDTI philDTI[kMaxDTI4D];
+    //for (int i = 0; i < kMaxDTI4D; i++)
+    //	philDTI[i].V[0] = -1;
     //array for storing DimensionIndexValues
 	int numDimensionIndexValues = 0;
     TDCMdim dcmDim[kMaxSlice2D];
@@ -4077,6 +4077,7 @@ double TE = 0.0; //most recent echo time recorded
 			dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
 			dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
+			dcmDim[numDimensionIndexValues].V[0] = -1.0;
 			#ifdef MY_DEBUG
 			if (numDimensionIndexValues < 19) {
 				printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
@@ -4086,7 +4087,6 @@ double TE = 0.0; //most recent echo time recorded
 				//printMessage("B0= %g  num=%d\n", B0Philips, gradNum);
 			} else return d;
 			#endif
-			numDimensionIndexValues ++;
 			//next: add diffusion if reported
 			if (B0Philips >= 0.0) { //diffusion parameters
 				// Philips does not always provide 2005,1413 (MRImageGradientOrientationNumber) and sometimes after dimensionIndexValues
@@ -4117,7 +4117,7 @@ double TE = 0.0; //most recent echo time recorded
 					vFHPhilips = 0.0;
 				}
 				//if ((MRImageGradientOrientationNumber > 0) && ((gradNum != MRImageGradientOrientationNumber)) break;
-				if (gradNum < minGradNum) minGradNum = gradNum;
+				/*if (gradNum < minGradNum) minGradNum = gradNum;
 				if (gradNum >= maxGradNum) maxGradNum = gradNum;
 				if (gradNum >= kMaxDTI4D) {
 						printError("Number of DTI gradients exceeds 'kMaxDTI4D (%d).\n", kMaxDTI4D);
@@ -4127,7 +4127,11 @@ double TE = 0.0; //most recent echo time recorded
 					philDTI[gradNum].V[1] = vRLPhilips;
 					philDTI[gradNum].V[2] = vAPPhilips;
 					philDTI[gradNum].V[3] = vFHPhilips;
-				}
+				}*/
+				dcmDim[numDimensionIndexValues].V[0] = B0Philips;
+				dcmDim[numDimensionIndexValues].V[1] = vRLPhilips;
+				dcmDim[numDimensionIndexValues].V[2] = vAPPhilips;
+				dcmDim[numDimensionIndexValues].V[3] = vFHPhilips;
 				isPhilipsDerived = false;
 				//printMessage(" DimensionIndexValues grad %d b=%g vec=%gx%gx%g\n", gradNum, B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
 				//!!! 16032018 : next line as well as definition of B0Philips may need to be set to zero if Philips omits DiffusionBValue tag for B=0
@@ -4137,10 +4141,10 @@ double TE = 0.0; //most recent echo time recorded
 				vFHPhilips = 0.0;
 				//MRImageGradientOrientationNumber = 0;
 			}//diffusion parameters
-    		nDimIndxVal = -1; //we need DimensionIndexValues
+    		numDimensionIndexValues ++;
+			nDimIndxVal = -1; //we need DimensionIndexValues
     	} //record dimensionIndexValues slice information
     } //groupElement == kItemDelimitationTag : delimit item exits folder
-    //groupElement == kItemTag) ||
     if (groupElement == kItemTag) {
     	uint32_t slen = dcmInt(4,&buffer[lPos],d.isLittleEndian);
     	uint32_t kUndefinedLen = 0xFFFFFFFF;
@@ -5504,6 +5508,10 @@ if (d.isHasPhase)
 				dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
 				dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
 				dti4D->triggerDelayTime[i] =  dcmDim[j+(i * d.xyzDim[3])].triggerDelayTime;
+				dti4D->S[i].V[0] = dcmDim[j+(i * d.xyzDim[3])].V[0];
+				dti4D->S[i].V[1] = dcmDim[j+(i * d.xyzDim[3])].V[1];
+				dti4D->S[i].V[2] = dcmDim[j+(i * d.xyzDim[3])].V[2];
+				dti4D->S[i].V[3] = dcmDim[j+(i * d.xyzDim[3])].V[3];
 				if (dti4D->TE[i] != d.TE) isTEvaries = true;
 				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
 				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
@@ -5538,7 +5546,7 @@ if (d.isHasPhase)
 		philDTI[maxGradNum].V[3] = 0.0;
 		maxGradNum++;
 	}*/
-    if  ((minGradNum >= 1) && ((maxGradNum-minGradNum+1) == d.xyzDim[4])) {
+    /*if  ((minGradNum >= 1) && ((maxGradNum-minGradNum+1) == d.xyzDim[4])) {
     	//see ADNI DWI data for 018_S_4868 - the gradient numbers are in the range 2..37 for 36 volumes - no gradient number 1!
     	if (philDTI[minGradNum -1].V[0] >= 0) {
 			if (isVerbose)
@@ -5558,7 +5566,7 @@ if (d.isHasPhase)
 			}
 			d.CSA.numDti = maxGradNum - off;
 		}
-	}
+	}*/
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;

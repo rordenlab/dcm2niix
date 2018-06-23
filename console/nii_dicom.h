@@ -43,7 +43,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMvers "v1.0.20180614" kJP2suf kLSsuf kCCsuf
+#define kDCMvers "v1.0.20180622" kJP2suf kLSsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
