@@ -3929,8 +3929,8 @@ double TE = 0.0; //most recent echo time recorded
     int sliceNumberMrPhilips = 0;
     int numberOfFrames = 0;
     //int MRImageGradientOrientationNumber = 0;
-    int minGradNum = kMaxDTI4D + 1;
-    int maxGradNum = -1;
+    //int minGradNum = kMaxDTI4D + 1;
+    //int maxGradNum = -1;
     int numberOfDynamicScans = 0;
     uint32_t lLength;
     uint32_t groupElement;
@@ -4090,11 +4090,10 @@ double TE = 0.0; //most recent echo time recorded
 			//next: add diffusion if reported
 			if (B0Philips >= 0.0) { //diffusion parameters
 				// Philips does not always provide 2005,1413 (MRImageGradientOrientationNumber) and sometimes after dimensionIndexValues
-				int gradNum = 0;
+				/*int gradNum = 0;
 				for (int i = 0; i < ndim; i++)
 					if (d.dimensionIndexValues[i] > 0) gradNum = d.dimensionIndexValues[i];
 				if (gradNum <= 0) break;
-				/*
 				With Philips 51.0 both ADC and B=0 are saved as same direction, though they vary in another dimension
 				(0018,9075) CS [ISOTROPIC]
 				(0020,9157) UL 1\2\1\33 << ADC MAP
@@ -4104,7 +4103,7 @@ double TE = 0.0; //most recent echo time recorded
 				we could also increment gradNum for ADC if we wanted...
 				*/
 				if (isPhilipsDerived) {
-					gradNum ++;
+					//gradNum ++;
 					B0Philips = 2000.0;
 					vRLPhilips = 0.0;
 					vAPPhilips = 0.0;
