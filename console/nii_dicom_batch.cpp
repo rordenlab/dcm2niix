@@ -95,7 +95,7 @@ void dropFilenameFromPath(char *path) { //
         path[dirPath - path] = 0; // please make sure there is enough space in TargetDirectory
     if (strlen(path) == 0) { //file name did not specify path, assume relative path and return current working directory
     	//strcat (path,"."); //relative path - use cwd <- not sure if this works on Windows!
-    	char cwd[1024];
+    	char cwd[PATH_MAX];
    		char* ok = getcwd(cwd, sizeof(cwd));
    		if (ok !=NULL)
    			strcat (path,cwd);
@@ -1576,7 +1576,7 @@ bool niiExists(const char*pathoutname) {
 #endif
 
 int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts) {
-    char pth[1024] = {""};
+    char pth[PATH_MAX] = {""};
     if (strlen(opts.outdir) > 0) {
         strcpy(pth, opts.outdir);
         int w =access(pth,W_OK);
@@ -1591,9 +1591,9 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             }
         }
      }
-    char inname[1024] = {""};//{"test%t_%av"}; //% a = acquisition, %n patient name, %t time
+    char inname[PATH_MAX] = {""};//{"test%t_%av"}; //% a = acquisition, %n patient name, %t time
     strcpy(inname, opts.filename);
-    char outname[1024] = {""};
+    char outname[PATH_MAX] = {""};
     char newstr[256];
     if (strlen(inname) < 1) {
         strcpy(inname, "T%t_N%n_S%s");
@@ -1828,7 +1828,7 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
     strcpy(opts.indirParent,"myFolder");
-    char niiFilenameBase[1024] = {"/usr/myFolder/dicom.dcm"};
+    char niiFilenameBase[PATH_MAX] = {"/usr/myFolder/dicom.dcm"};
     nii_createFilename(d, niiFilenameBase, opts) ;
     strcpy(niiFilename,"Example output filename: '");
     strcat(niiFilename,niiFilenameBase);
@@ -2112,7 +2112,7 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     size_t imgsz = nii_ImgBytes(hdr1);
     size_t pos = 0;
     char fname[2048] = {""};
-    char zeroPad[1024] = {""};
+    char zeroPad[PATH_MAX] = {""};
 	double fnVol = nVol;
 	int zeroPadLen = (1 + log10( fnVol));
     sprintf(zeroPad,"%%s_%%0%dd",zeroPadLen);
@@ -3679,7 +3679,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 /* cleaner than findPigz - perhaps validate someday
  void findExe(char name[512], const char * argv[]) {
     if (is_exe(name)) return; //name exists as provided
-    char basename[1024];
+    char basename[PATH_MAX];
     strcpy(basename, name); //basename = source
     //check executable folder
     strcpy(name,argv[0]);
@@ -3768,7 +3768,7 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     } else
     	strcpy(opts->pigzname,".\\pigz"); //drop
     #else
-    char str[1024];
+    char str[PATH_MAX];
     //possible pigz names
     const char * nams[] = {
     "pigz",
@@ -3789,7 +3789,7 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
     "/usr/bin/",
 	};
 	#define n_pth (sizeof (pths) / sizeof (const char *))
-    char exepth[1024];
+    char exepth[PATH_MAX];
     strcpy(exepth,argv[0]);
     dropFilenameFromPath(exepth);//, opts.pigzname);
     char appendChar[2] = {"a"};
