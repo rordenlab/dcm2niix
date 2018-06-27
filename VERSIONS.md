@@ -1,8 +1,12 @@
 ## Versions
 
+22-June-2018
+ - [https://github.com/rordenlab/dcm2niix/issues/201](fix issues where 6-June-2018 release could save Enhanced DICOM Philips bvec/bval with different order than .nii images).
+
 6-June-2018
  - [Improved Philips PAR/REC support](https://github.com/rordenlab/dcm2niix/issues/171)
- - [Improved Philips Enhanced DICOM support](https://github.com/rordenlab/dcm2niix/issues/170) including saving different [real, imaginary, magnitude and phase images in a single DICOM file](https://github.com/rordenlab/dcm2niix/issues/189).
+ - [Improved Philips Enhanced
+ DICOM support](https://github.com/rordenlab/dcm2niix/issues/170) including saving different [real, imaginary, magnitude and phase images in a single DICOM file](https://github.com/rordenlab/dcm2niix/issues/189).
  - GE and Philips data now report [PhaseEncodingAxis](https://github.com/rordenlab/dcm2niix/issues/163) instead of PhaseEncodingDirection (these DICOMs store the dimension, but not the polarity).
  - Experimental detection of [phase encoding direction for GE](https://github.com/rordenlab/dcm2niix/issues/163). To enable compile with "MY_DEBUG_GE" flag.
  - Support for Philips Private RLE (1.3.46.670589.33.1.4.1) transfer syntax.
