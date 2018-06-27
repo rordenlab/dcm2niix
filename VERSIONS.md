@@ -1,7 +1,7 @@
 ## Versions
 
 22-June-2018
- - [https://github.com/rordenlab/dcm2niix/issues/201](fix issues where 6-June-2018 release could save Enhanced DICOM Philips bvec/bval with different order than .nii images).
+ - [fix issues where 6-June-2018 release could save Enhanced DICOM Philips bvec/bval with different order than .nii images](https://github.com/rordenlab/dcm2niix/issues/201).
 
 6-June-2018
  - [Improved Philips PAR/REC support](https://github.com/rordenlab/dcm2niix/issues/171)
