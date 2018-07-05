@@ -171,6 +171,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
 
     size_t nii_ImgBytes(struct nifti_1_header hdr);
     int isSameFloatGE (float a, float b);
+    void getFileName( char *pathParent, const char *path);
     struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
     struct TDICOMdata readDICOM(char * fname);
     struct TDICOMdata clear_dicom_data();

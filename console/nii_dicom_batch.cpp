@@ -111,22 +111,6 @@ void dropTrailingFileSep(char *path) { //
    	path[len] = '\0';
 }
 
-void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
-{
-    const char *filename = strrchr(path, '/'); //UNIX
-    if (filename == 0) {
-       filename = strrchr(path, '\\'); //Windows
-       if (filename == NULL) filename = strrchr(path, ':'); //Windows
-     }
-    //const char *filename = strrchr(path, kPathSeparator); //x
-    if (filename == NULL) {//no path separator
-        strcpy(pathParent,path);
-        return;
-    }
-    filename++;
-    strcpy(pathParent,filename);
-}
-
 bool is_fileexists(const char * filename) {
     FILE * fp = NULL;
     if ((fp = fopen(filename, "r"))) {
@@ -1655,7 +1639,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 	printWarning("Unable to append protocol name (0018,1030) to filename (it is empty).\n");
             }
             if (f == 'R') {
-                sprintf(newstr, "%ld", dcm.imageNum);
+                sprintf(newstr, "%d", dcm.imageNum);
                 strcat (outname,newstr);
             }
 
