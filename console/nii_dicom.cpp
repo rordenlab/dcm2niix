@@ -681,6 +681,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.patientID, "");
     strcpy(d.imageType,"");
     strcpy(d.imageComments, "");
+    strcpy(d.imageBaseName, "");
     strcpy(d.studyDate, "");
     strcpy(d.studyTime, "");
     strcpy(d.protocolName, "");
@@ -3668,6 +3669,22 @@ struct TDCMdim { //DimensionIndexValues
   bool isImaginary;
 };
 
+void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
+{
+    const char *filename = strrchr(path, '/'); //UNIX
+    if (filename == 0) {
+       filename = strrchr(path, '\\'); //Windows
+       if (filename == NULL) filename = strrchr(path, ':'); //Windows
+     }
+    //const char *filename = strrchr(path, kPathSeparator); //x
+    if (filename == NULL) {//no path separator
+        strcpy(pathParent,path);
+        return;
+    }
+    filename++;
+    strcpy(pathParent,filename);
+}
+
 int compareTDCMdim(void const *item1, void const *item2) {
 	struct TDCMdim const *dcm1 = (const struct TDCMdim *)item1;
 	struct TDCMdim const *dcm2 = (const struct TDCMdim *)item2;
@@ -4781,7 +4798,7 @@ double TE = 0.0; //most recent echo time recorded
 					dcmStr (lLength, &buffer[lPos], matStr);
 					char* pPosition = strchr(matStr, 'I');
 					if (pPosition != NULL)
-						printWarning("interpolated data may exhibit Gibbs ringing and be unsuitable for dwidenoise/mrdegibbs.\n");
+						printWarning("interpolated data may exhibit Gibbs ringing and be unsuitable for dwidenoise/mrdegibbs. %s\n", fname);
             	}
                break; }
             case kCoilSiemens : {
@@ -5103,9 +5120,13 @@ double TE = 0.0; //most recent echo time recorded
             		break;
             	}
             	//debug code to export binary data
-            	// FILE *pFile = fopen("ge.bin", "wb");
-				// fwrite(&buffer[lPos], 1, lLength, pFile);
-            	// fclose (pFile);
+				/*
+            	char str[kDICOMStr];
+        		sprintf(str, "%s_ge.bin",fname);
+            	FILE *pFile = fopen(str, "wb");
+				fwrite(&buffer[lPos], 1, lLength, pFile);
+            	fclose (pFile);
+            	*/
             	if ((size_t)(lPos + lLength) > MaxBufferSz) {
             		//we could re-read the buffer in this case, however in practice GE headers are concise so we never see this issue
             		printMessage(" GE header overflows buffer\n");
@@ -5133,6 +5154,9 @@ double TE = 0.0; //most recent echo time recorded
       				hdr       += 0x004c;
       				flag2_off -= 0x008c;
     			}
+    			//int seqOrInter =dcmInt(2,(unsigned char*)(hdr + flag1_off-638),true);
+    			//int seqOrInter2 =dcmInt(2,(unsigned char*)(hdr + flag2_off-638),true);
+     			//printf("%d %d<<<\n", seqOrInter,seqOrInter2);
     			//check if EPI
     			if (true) {
       				//int check = *(short const *)(hdr + epi_chk_off) & 0x800;
@@ -5582,6 +5606,7 @@ if (d.isHasPhase)
     	// for examples see https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
     	d.seriesNum += (philMRImageDiffBValueNumber*1000);
     }
+    getFileName(d.imageBaseName, fname);
     if (multiBandFactor > d.CSA.multiBandFactor)
     	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header
     #ifndef myLoadWholeFileToReadHeader
