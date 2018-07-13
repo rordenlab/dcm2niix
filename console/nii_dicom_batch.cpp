@@ -1712,6 +1712,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcat (outname,newstr);
         isEchoReported = true;
     }
+    if (dcm.isNonParallelSlices) {
+        sprintf(newstr, "_i%05d", dcm.imageNum);
+        strcat (outname,newstr);
+    }
     if ((!isSeriesReported) && (!isEchoReported) && (dcm.echoNum > 1)) { //last resort: user provided no method to disambiguate echo number in filename
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
@@ -2715,7 +2719,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage("Ignoring localizer (sequence %s) of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
-    if ((opts.isIgnoreDerivedAnd2D) && (nConvert < 2) && (dcmList[indx].xyzDim[3] < 2)) {
+    if ((opts.isIgnoreDerivedAnd2D) && (nConvert < 2) && (dcmList[indx].CSA.mosaicSlices < 2) && (dcmList[indx].xyzDim[3] < 2)) {
     	printMessage("Ignoring 2D image of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
@@ -3242,7 +3246,7 @@ TWarnings setWarnings() {
 	return r;
 }
 
-bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho) {
+bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho, bool *isNonParallelSlices) {
     //returns true if d1 and d2 should be stacked together as a single output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
@@ -3252,12 +3256,6 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
 	if (d1.seriesNum != d2.seriesNum) return false;
 	#ifdef mySegmentByAcq
     if (d1.acquNum != d2.acquNum) return false;
-    #else
-    if (d1.acquNum != d2.acquNum) {
-        if (!warnings->acqNumVaries)
-        	printMessage("slices stacked despite varying acquisition numbers (if this is not desired please recompile)\n");
-        warnings->acqNumVaries = true;
-    }
     #endif
 	if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
         if (!warnings->bitDepthVaries)
@@ -3309,12 +3307,18 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if ((!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) ||  !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
     		!isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) ||  !isSameFloatGE(d1.orient[6], d2.orient[6]) ) ) {
-        if (!warnings->orientVaries)
-        	printMessage("slices not stacked: orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
+        if ((!warnings->orientVaries) && (!d1.isNonParallelSlices))
+        	printMessage("slices not stacked: orientation varies (vNav or localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
                d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6],
                d2.orient[1], d2.orient[2], d2.orient[3],d2.orient[4], d2.orient[5], d2.orient[6]);
         warnings->orientVaries = true;
+        *isNonParallelSlices = true;
         return false;
+    }
+    if (d1.acquNum != d2.acquNum) {
+        if (!warnings->acqNumVaries)
+        	printMessage("slices stacked despite varying acquisition numbers (if this is not desired recompile with 'mySegmentByAcq')\n");
+        warnings->acqNumVaries = true;
     }
     return true;
 }// isSameSet()
@@ -3646,8 +3650,8 @@ int nii_loadDir(struct TDCMopts* opts) {
             bool matched = false;
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
-                bool isMultiEchoUnused;
-                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused)) {
+                bool isMultiEchoUnused, isNonParallelSlices;
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused, &isNonParallelSlices)) {
                     opts->series[j].files.push_back(nameList.str[i]);
                     matched = true;
                     break;
@@ -3671,21 +3675,26 @@ int nii_loadDir(struct TDCMopts* opts) {
 			int nConvert = 0;
 			struct TWarnings warnings = setWarnings();
 			bool isMultiEcho = false;
+			bool isNonParallelSlices = false;
 			for (int j = i; j < (int)nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho ) )
+				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices ) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
 			isMultiEcho = false;
+			isNonParallelSlices = false;
 			for (int j = i; j < (int)nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho)) {
+				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices)) {
                     dcmList[j].converted2NII = 1; //do not reprocess repeats
                     fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 					nConvert++;
 				} else {
 					dcmList[i].isMultiEcho = isMultiEcho;
 					dcmList[j].isMultiEcho = isMultiEcho;
+					dcmList[i].isNonParallelSlices = isNonParallelSlices;
+					dcmList[j].isNonParallelSlices = isNonParallelSlices;
+
 				}
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
 			//dcmList[dcmSort[0].indx].isMultiEcho = isMultiEcho;
