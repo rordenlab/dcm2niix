@@ -1085,6 +1085,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     lPos += 8; //skip 8 bytes of data, 32-bit lnTag plus 77 00 00 0
     TCSAtag tagCSA;
     TCSAitem itemCSA;
+    bool is3D = false;
     int itemsOK;
     float lFloats[7];
     for (int lT = 1; lT <= lnTag; lT++) {
@@ -1135,6 +1136,8 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 CSA->sliceMeasurementDuration = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
+            else if ((strcmp(tagCSA.name, "Actual3DImaPartNumber") == 0) && (tagCSA.nitems > 0)  )
+            	is3D = true;
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
 				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
@@ -1155,10 +1158,10 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 int maxTimeIndex = minTimeIndex;
                 minTimeValue = sliceTimes[1];
                 maxTimeValue = minTimeValue;
-                if (isVerbose)
+                if ((isVerbose) && (!is3D))
                     printMessage("   sliceTimes %g\t", sliceTimes[1]);
 				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-                    if (isVerbose)
+                    if ((isVerbose) && (!is3D))
                         printMessage("%g\t",  sliceTimes[z]);
                     if (sliceTimes[z] == 0)
                     	nTimeZero++;
@@ -1172,7 +1175,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                     }
                     if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
 				}
-                if (isVerbose)
+                if ((isVerbose) && (!is3D))
                     printMessage("\n");
                 CSA->slice_start = minTimeIndex -1;
                 CSA->slice_end = maxTimeIndex -1;
@@ -1194,13 +1197,13 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                      [sliceTimesNS addObject:[NSNumber numberWithFloat:sliceTimes[z]]];
                      NSLog(@" Warning: unable to determine slice order for %lu slice mosaic: %@",(unsigned long)[sliceTimesNS count],sliceTimesNS );
                      */
-                    printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
+                    if (!is3D)
+                    	printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
                 }
                 if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
                 	if (isVerbose)
                 		printMessage(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
                 	CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
-
                 }
 //#ifdef _MSC_VER
 				free(sliceTimes);
@@ -1225,7 +1228,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 
 //int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose) {
 int readProtocolDataBlockGE(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose) {
-
 	return EXIT_SUCCESS;
 }
 
@@ -3851,6 +3853,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
+#define  kRawDataRunNumberGE  0x0019+(0x10a2<< 16 ) //SL
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
@@ -3932,6 +3935,7 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
+	int rawDataRunNumberGE = 0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
     int sqDepth00189114 = -1;
@@ -4567,6 +4571,11 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                break;
+            case kRawDataRunNumberGE :
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+                rawDataRunNumberGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kStudyInstanceUID : // 0020, 000D
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
@@ -5381,6 +5390,13 @@ double TE = 0.0; //most recent echo time recorded
         d.locationsInAcquisition = locationsInAcquisitionPhilips;
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
+    //if (rawDataRunNumberGE > 0) {
+    //	do something profound
+    //}
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
+    	//printMessage("Please number of slices, discrepancy between tags (0054,0081; 0020,1002; 0021,104F)\n");
+    	d.locationsInAcquisition = locationsInAcquisitionGE;
+    }
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;
     if (d.zSpacing > 0)

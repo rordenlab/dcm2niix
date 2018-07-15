@@ -1586,6 +1586,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     bool isCoilReported = false;
     bool isEchoReported = false;
     bool isSeriesReported = false;
+    bool isImageNumReported = false;
     while (pos < strlen(inname)) {
         if (inname[pos] == '%') {
             if (pos > start) {
@@ -1641,6 +1642,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'R') {
                 sprintf(newstr, "%d", dcm.imageNum);
                 strcat (outname,newstr);
+                isImageNumReported = true;
             }
 
             if (f == 'Q')
@@ -1690,6 +1692,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                     char zeroPad[12] = {""};
                     sprintf(zeroPad,"%%0%dd",f - '0');
                     sprintf(newstr, zeroPad, dcm.imageNum);
+                    isImageNumReported = true;
                     strcat (outname,newstr);
                     pos++; // e.g. %3f requires extra increment: skip both number and following character
                 }
@@ -1712,7 +1715,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcat (outname,newstr);
         isEchoReported = true;
     }
-    if (dcm.isNonParallelSlices) {
+    if ((dcm.isNonParallelSlices) && (!isImageNumReported)) {
         sprintf(newstr, "_i%05d", dcm.imageNum);
         strcat (outname,newstr);
     }
