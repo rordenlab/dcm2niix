@@ -3685,7 +3685,8 @@ void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then
         return;
     }
     filename++;
-    strcpy(pathParent,filename);
+    strncpy(pathParent,filename, kDICOMStr-1);
+    //strcpy(pathParent,filename); //<- this can cause overflow if filename longer than kDICOMStr
 }
 
 int compareTDCMdim(void const *item1, void const *item2) {
@@ -3853,7 +3854,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
-#define  kRawDataRunNumberGE  0x0019+(0x10a2<< 16 ) //SL
+//#define  kRawDataRunNumberGE  0x0019+(0x10a2<< 16 ) //SL
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
@@ -3935,7 +3936,6 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
-	int rawDataRunNumberGE = 0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
     int sqDepth00189114 = -1;
@@ -4572,11 +4572,17 @@ double TE = 0.0; //most recent echo time recorded
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-            case kRawDataRunNumberGE :
-            	if (d.manufacturer != kMANUFACTURER_GE)
-            		break;
-                rawDataRunNumberGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-                break;
+            //GE bug: multiple echos can create identical instance numbers
+            //  in theory, one could detect as kRawDataRunNumberGE varies
+            //  sliceN of echoE will have the same value for all timepoints
+            //  this value does not appear indexed
+            //  different echoes record same echo time.
+            //  use multiEchoSortGEDICOM.py to salvage
+            //case kRawDataRunNumberGE :
+            //	if (d.manufacturer != kMANUFACTURER_GE)
+            //		break;
+            //    d.rawDataRunNumberGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            //    break;
             case kStudyInstanceUID : // 0020, 000D
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
@@ -5390,9 +5396,6 @@ double TE = 0.0; //most recent echo time recorded
         d.locationsInAcquisition = locationsInAcquisitionPhilips;
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
-    //if (rawDataRunNumberGE > 0) {
-    //	do something profound
-    //}
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
     	//printMessage("Please number of slices, discrepancy between tags (0054,0081; 0020,1002; 0021,104F)\n");
     	d.locationsInAcquisition = locationsInAcquisitionGE;
@@ -5414,7 +5417,6 @@ double TE = 0.0; //most recent echo time recorded
         printMessage("Please check voxel size\n");
         d.xyzMM[1] = d.xyzMM[2];
     }
-
     if ((d.xyzMM[3] < FLT_EPSILON)) {
         printMessage("Unable to determine slice thickness: please check voxel size\n");
         d.xyzMM[3] = 1.0;
@@ -5472,7 +5474,6 @@ if (d.isHasPhase)
 
 		d.xyzDim[3] = d.numberOfDynamicScans;
 	}*/
-
 	if (numberOfFrames == 0) numberOfFrames = d.xyzDim[3];
 	if ((locationsInAcquisitionPhilips > 0) && ((d.xyzDim[3] % locationsInAcquisitionPhilips) == 0)) {
 		d.xyzDim[4] = d.xyzDim[3] / locationsInAcquisitionPhilips;
@@ -5504,7 +5505,6 @@ if (d.isHasPhase)
         //if (d.CSA.dtiV[0] > 0)
         //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
-
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
     	if (isVerbose > 1) { //
