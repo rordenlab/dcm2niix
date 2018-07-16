@@ -2234,6 +2234,7 @@ void nii_scale16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int 
     nii_storeIntegerScaleFactor(scale, hdr);
 }
 
+#define UINT16_TO_INT16_IF_LOSSLESS
 #ifdef UINT16_TO_INT16_IF_LOSSLESS
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int isVerbose){
     //default NIfTI 16-bit is signed, set to unusual 16-bit unsigned if required...
@@ -2250,8 +2251,9 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int 
         if (img16[i] > max16)
             max16 = img16[i];
     //printMessage("max16= %d vox=%d %fms\n",max16, nVox, ((double)(clock()-start))/1000);
-    if ((max16 > 32767) && (isVerbose > 0)) {
-        printMessage("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
+    if (max16 > 32767) {
+        if (isVerbose > 0)
+        	printMessage("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
     }
     else
         hdr->datatype = DT_INT16;
