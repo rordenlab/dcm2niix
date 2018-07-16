@@ -2234,6 +2234,7 @@ void nii_scale16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int 
     nii_storeIntegerScaleFactor(scale, hdr);
 }
 
+#ifdef UINT16_TO_INT16_IF_LOSSLESS
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int isVerbose){
     //default NIfTI 16-bit is signed, set to unusual 16-bit unsigned if required...
     if (hdr->datatype != DT_UINT16) return;
@@ -2255,6 +2256,13 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int 
     else
         hdr->datatype = DT_INT16;
 } //nii_check16bitUnsigned()
+#else
+void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int isVerbose){
+    if (hdr->datatype != DT_UINT16) return;
+	if (isVerbose < 1) return;
+	printMessage("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
+}
+#endif
 
 int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[]) {
     //Siemens CT bug: when a user draws an open object graphics object onto a 2D slice this is appended as an additional image,
