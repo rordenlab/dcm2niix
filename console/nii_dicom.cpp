@@ -1363,6 +1363,9 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
     h->dim[2] = d.xyzDim[2];
     h->dim[3] = d.xyzDim[3];
     h->dim[4] = d.xyzDim[4];
+    h->dim[5] = 1;
+    h->dim[6] = 1;
+    h->dim[7] = 1;
     if (h->dim[4] < 2)
         h->dim[0] = 3;
     else
