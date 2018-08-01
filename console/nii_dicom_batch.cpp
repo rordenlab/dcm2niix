@@ -3166,6 +3166,23 @@ void fillTDCMsort(struct TDCMsort& tdcmref, const uint64_t indx, const struct TD
   tdcmref.img = ((uint64_t)dcmdata.seriesNum << 32) + dcmdata.imageNum;
   for(int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
     tdcmref.dimensionIndexValues[i] = dcmdata.dimensionIndexValues[i];
+  //lines below added to cope with extreme anonymization
+  // https://github.com/rordenlab/dcm2niix/issues/211
+  if (tdcmref.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] != 0) return;
+  //Since dimensionIndexValues are indexed from 1, 0 indicates unused
+  // we leverage this as a hail mary attempt to distinguish images with identical series and instance numbers
+  //See Correction Number CP-1242:
+  //  "Clarify in the description of dimension indices ... start from 1"
+  //  0008,0032 stored as HHMMSS.FFFFFF, there are 86400000 ms per day
+  //  dimensionIndexValues stored as uint32, so encode acquisition time in ms
+  uint32_t h = trunc(dcmdata.acquisitionTime / 10000.0);
+  double tm = dcmdata.acquisitionTime - (h * 10000.0);
+  uint32_t m = trunc(tm / 100.0);
+  tm = tm - (m * 100.0);
+  uint32_t ms = round(tm * 1000);
+  ms += (h * 3600000) + (m * 60000);
+  //printf("HHMMSS.FFFF %.5f ->  %d  ms\n",  dcmdata.acquisitionTime, ms);
+  tdcmref.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = ms;
 } // fillTDCMsort()
 
 int compareTDCMsort(void const *item1, void const *item2) {
@@ -3707,7 +3724,6 @@ int nii_loadDir(struct TDCMopts* opts) {
 					dcmList[j].isMultiEcho = isMultiEcho;
 					dcmList[i].isNonParallelSlices = isNonParallelSlices;
 					dcmList[j].isNonParallelSlices = isNonParallelSlices;
-
 				}
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
 			//dcmList[dcmSort[0].indx].isMultiEcho = isMultiEcho;

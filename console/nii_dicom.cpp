@@ -5271,7 +5271,7 @@ double TE = 0.0; //most recent echo time recorded
                 	int imgBytes = (d.xyzDim[1] * d.xyzDim[2] * int(d.bitsAllocated / 8));
                 	if (imgBytes == lLength)
                 		isIconImageSequence = false;
-					if (sqDepth < 1) printWarning("Assuming 7FE0,0010 to an icon not the main image\n");
+					if (sqDepth < 1) printWarning("Assuming 7FE0,0010 refers to an icon not the main image\n");
 
                 }
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
