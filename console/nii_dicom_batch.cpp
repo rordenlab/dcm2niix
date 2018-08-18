@@ -458,7 +458,7 @@ void readKeyStr(const char * key,  char * buffer, int remLength, char* outStr) {
   	tmpstr[1] = 0;
   	bool isQuote = false;
 	while( ( i < remLength) && (keyPos[i] != 0x0A) ) {
-		if ((isQuote) && (keyPos[i] != '"') && (outLen < kDICOMStr)) {
+		if ((isQuote) && (keyPos[i] != '"') && (outLen < kDICOMStrLarge)) {
 			tmpstr[0] = keyPos[i];
 			strcat (outStr, tmpstr);
   			outLen ++;
@@ -501,7 +501,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoenixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char * protocolName) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*delayTimeInTR = 0.0;
@@ -519,6 +519,7 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
  	strcpy(coilElements, "");
  	strcpy(pulseSequenceDetails, "");
  	strcpy(fmriExternalInfo, "");
+ 	strcpy(wipMemBlock, "");
  	strcpy(protocolName, "");
  	if ((csaOffset < 0) || (csaLength < 8)) return;
 	FILE * pFile = fopen ( filename, "rb" );
@@ -547,10 +548,16 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 	if (keyPos) {
 		//We could detect multi-echo MPRAGE here, e.g. "lContrasts	 = 	4"- but ideally we want an earlier detection
 		csaLengthTrim -= (keyPos-bufferTrim);
+		//FmriExternalInfo listed AFTER AscConvEnd and uses different delimiter ||
+		// char keyStrExt[] = "FmriExternalInfo";
+		// readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
+		#define myCropAtAscConvEnd
+		#ifdef myCropAtAscConvEnd
 		char keyStrEnd[] = "### ASCCONV END";
 		char *keyPosEnd = (char *)memmem(keyPos, csaLengthTrim, keyStrEnd, strlen(keyStrEnd));
 		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
+		#endif
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
@@ -573,8 +580,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		readKeyStr(keyStrCS,  keyPos, csaLengthTrim, coilElements);
 		char keyStrSeq[] = "tSequenceFileName";
 		readKeyStr(keyStrSeq,  keyPos, csaLengthTrim, pulseSequenceDetails);
-		char keyStrExt[] = "FmriExternalInfo";
-		readKeyStr(keyStrExt,  keyPos, csaLengthTrim, fmriExternalInfo);
+		char keyStrWipMemBlock[] = "sWipMemBlock.tFree";
+		readKeyStr(keyStrWipMemBlock,  keyPos, csaLengthTrim, wipMemBlock);
 		char keyStrPn[] = "tProtocolName";
 		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
 		char keyStrDelay[] = "lDelayTimeInTR";
@@ -914,8 +921,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
 		float delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
-		char protocolName[kDICOMStr], fmriExternalInfo[kDICOMStr], coilID[kDICOMStr], consistencyInfo[kDICOMStr], coilElements[kDICOMStr], pulseSequenceDetails[kDICOMStr];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName);
+		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (partialFourier == 1) pf = 0.5; // 4/8
@@ -953,6 +960,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
 		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
+		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
 		if (strlen(d.protocolName) < 1)  //insert protocol name if it exists in CSA but not DICOM header: https://github.com/nipy/heudiconv/issues/80
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
@@ -3644,7 +3652,7 @@ int nii_loadDir(struct TDCMopts* opts) {
         if ((dcmList[i].imageNum > 0) && (opts->isRenameNotConvert > 0)) { //use imageNum instead of isValid to convert non-images (kWaveformSq will have instance number but is not a valid image)
         	char outname[PATH_MAX] = {""};
         	nii_createFilename(dcmList[i], outname, *opts);
-        	copyFile (nameList.str[i], outname); //xxxxx
+        	copyFile (nameList.str[i], outname);
         	if (opts->isVerbose > 0)
         		printf("Renaming %s -> %s\n", nameList.str[i], outname);
         	dcmList[i].isValid = false;
