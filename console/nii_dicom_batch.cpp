@@ -1572,14 +1572,19 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcpy(pth, opts.outdir);
         int w =access(pth,W_OK);
         if (w != 0) {
-            if (getcwd(pth, sizeof(pth)) != NULL) {
-            w =access(pth,W_OK);
-            if (w != 0) {
-            	printError("You do not have write permissions for the directory %s\n",opts.outdir);
-                return EXIT_FAILURE;
-            }
-            printWarning("%s write permission denied. Saving to working directory %s \n", opts.outdir, pth);
-            }
+			if (getcwd(pth, sizeof(pth)) != NULL) {
+				#ifdef USE_CWD_IF_OUTDIR_NO_WRITE //optional: fall back to current working directory
+				w =access(pth,W_OK);
+				if (w != 0) {
+					printError("You do not have write permissions for the directory %s\n",opts.outdir);
+					return EXIT_FAILURE;
+				}
+				printWarning("%s write permission denied. Saving to working directory %s \n", opts.outdir, pth);
+				#else
+				printError("You do not have write permissions for the directory %s\n",opts.outdir);
+				return EXIT_FAILURE;
+				#endif
+			}
         }
      }
     char inname[PATH_MAX] = {""};//{"test%t_%av"}; //% a = acquisition, %n patient name, %t time
@@ -3741,7 +3746,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 				//nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 				nConvert = removeDuplicates(nConvert, dcmSort);
 			int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
-            if (ret == EXIT_SUCCESS)
+			if (ret == EXIT_SUCCESS)
             	nConvertTotal += nConvert;
             else
             	convertError = true;
