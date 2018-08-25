@@ -778,7 +778,8 @@ struct TDICOMdata clear_dicom_data() {
     d.isExplicitVR = true;
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
-    d.phaseEncodingGE = kGE_PHASE_DIRECTION_UNKNOWN;
+    d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
+    d.sliceOrderGE = kGE_SLICE_ORDER_UNKNOWN;
     d.rtia_timerGE = 0.0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -5182,7 +5183,7 @@ double TE = 0.0; //most recent echo time recorded
       				//int check = *(short const *)(hdr + epi_chk_off) & 0x800;
       				int check =dcmInt(2,(unsigned char*)hdr + epi_chk_off,true) & 0x800;
      				if (check == 0) {
-						printf("%s: Warning: Data is not EPI\n", fname);
+						if (isVerboseX > 1) printMessage("%s: Warning: Data is not EPI\n", fname);
 						continue;
       				}
     			}
@@ -5190,36 +5191,19 @@ double TE = 0.0; //most recent echo time recorded
 				// int flag1 = *(short const *)(hdr + flag1_off) & 0x0004;
 				//Check for ky direction (view order)
 				// int flag2 = *(int const *)(hdr + flag2_off);
-				int flag1 = dcmInt(2,(unsigned char*)hdr + flag1_off,true) & 0x0004;
+				int phasePolarityFlag = dcmInt(2,(unsigned char*)hdr + flag1_off,true) & 0x0004;
 				//Check for ky direction (view order)
-				int flag2 = dcmInt(2,(unsigned char*)hdr + flag2_off,true);
-				if (isVerboseX > 1) printMessage(" flags %d %d\n", flag1, flag2);
-				switch (flag2) {
-					case 0:
-					case 2:
-					  if ((flag1 && !flag2) || (!flag1 && flag2)) {
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_BOTTOM_UP;
-						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_BOTTOM_UP\n");
-
-					  }
-					  else {
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_TOP_DOWN;
-						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_TOP_DOWN\n");
-					  }
-					  break;
-					case 1:
-					  if (flag1) {
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT_REV;
-						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_CENTER_OUT_REV\n");
-					  }
-					  else {
-						d.phaseEncodingGE = kGE_PHASE_DIRECTION_CENTER_OUT;
-						if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_CENTER_OUT\n");
-					  }
-					  break;
-					default:
-					  if (isVerboseX > 1) printMessage(" GE_PHASE_DIRECTION_UNKNOWN\n");
-				}
+				int sliceOrderFlag = dcmInt(2,(unsigned char*)hdr + flag2_off,true);
+				if (isVerboseX > 1)
+					printMessage(" GE phasePolarity/sliceOrder flags %d %d\n", phasePolarityFlag, sliceOrderFlag);
+				if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
+					d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+				if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+					d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+				if (sliceOrderFlag == kGE_SLICE_ORDER_TOP_DOWN)
+					d.sliceOrderGE = kGE_SLICE_ORDER_TOP_DOWN;
+				if (sliceOrderFlag == kGE_SLICE_ORDER_BOTTOM_UP)
+					d.sliceOrderGE = kGE_SLICE_ORDER_BOTTOM_UP;
 				#endif
 				break;
             }

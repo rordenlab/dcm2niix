@@ -903,12 +903,13 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
 	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
-	// what we thought was phase encoding is slice direction? Rename variables if confirmed
-	if (d.phaseEncodingGE != kGE_PHASE_DIRECTION_UNKNOWN) { //only set for GE
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_BOTTOM_UP) fprintf(fp, "\t\"SliceDirectionGE\": \"BottomUp\",\n" );
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_TOP_DOWN) fprintf(fp, "\t\"SliceDirectionGE\": \"TopDown\",\n" );
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT_REV) fprintf(fp, "\t\"SliceDirectionGE\": \"CenterOutReversed\",\n" );
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT) fprintf(fp, "\t\"SliceDirectionGE\": \"CenterOut\",\n" );
+	if (d.phaseEncodingGE != kGE_PHASE_ENCODING_POLARITY_UNKNOWN) { //only set for GE
+		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Unflipped\",\n" );
+		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n" );
+	}
+	if (d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) { //only set for GE
+		if (d.sliceOrderGE == kGE_SLICE_ORDER_TOP_DOWN) fprintf(fp, "\t\"SliceOrderGE\": \"TopDown\",\n" );
+		if (d.sliceOrderGE == kGE_SLICE_ORDER_BOTTOM_UP) fprintf(fp, "\t\"SliceOrderGE\": \"BottomUp\",\n" );
 	}
 	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
@@ -1042,8 +1043,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
 	int phPos = d.CSA.phaseEncodingDirectionPositive;
-	if (viewOrderGE > -1)
-		phPos = viewOrderGE;
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+		phPos = 1;
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
+		phPos = 0;
 	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos < 0)) {
 		//when phase encoding axis is known but we do not know phase encoding polarity
 		// https://github.com/rordenlab/dcm2niix/issues/163
@@ -1060,16 +1063,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 				fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
 		else
 			fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
-		//these next lines temporary while we understand GE
-		if (viewOrderGE > -1) {
-			fprintf(fp, "\",\n");
-			if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
-				fprintf(fp, "\t\"ProbablePhaseEncodingDirection\": \"j");
-			else if (d.phaseEncodingRC == 'R')
-					fprintf(fp, "\t\"ProbablePhaseEncodingDirection\": \"i");
-			else
-				fprintf(fp, "\t\"ProbablePhaseEncodingDirection\": \"?");
-		}
 		//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
 		//However, DICOM and NIfTI are reversed in the j (ROW) direction
 		//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
@@ -1085,7 +1078,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing GE >>>>
-	if ((d.phaseEncodingGE != kGE_PHASE_DIRECTION_UNKNOWN) &&(d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) &&(d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
@@ -1093,7 +1086,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 				//do not flip
 				//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
 				//if (d.CSA.protocolSliceNumber1 < 0)
-				if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_TOP_DOWN)
+				if (d.sliceOrderGE == kGE_SLICE_ORDER_TOP_DOWN)
 					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1)-i]); //images flipped in z dimenions
 				else
 					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
@@ -3008,7 +3001,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) ) {
     		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
-    		printWarning("GE slices flipped: check slice timing\n"); //>>>
+    		//printWarning("GE slices flipped: check slice timing\n"); //>>>
     	}
     }
     // skip converting if user has specified one or more series, but has not specified this one

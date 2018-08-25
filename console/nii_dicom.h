@@ -66,11 +66,16 @@ static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Phili
 #define kMODALITY_US  5
 
 //GE phase encoding
-#define kGE_PHASE_DIRECTION_UNKNOWN  0
-#define kGE_PHASE_DIRECTION_BOTTOM_UP  1
-#define kGE_PHASE_DIRECTION_TOP_DOWN  2
-#define kGE_PHASE_DIRECTION_CENTER_OUT_REV  3
-#define kGE_PHASE_DIRECTION_CENTER_OUT  4
+#define kGE_PHASE_ENCODING_POLARITY_UNKNOWN  -1
+#define kGE_PHASE_ENCODING_POLARITY_UNFLIPPED  0
+#define kGE_PHASE_ENCODING_POLARITY_FLIPPED  4
+#define kGE_SLICE_ORDER_UNKNOWN -1
+#define kGE_SLICE_ORDER_TOP_DOWN  0
+#define kGE_SLICE_ORDER_BOTTOM_UP  2
+
+
+//#define kGE_PHASE_DIRECTION_CENTER_OUT_REV  3
+//#define kGE_PHASE_DIRECTION_CENTER_OUT  4
 
 #define kEXIT_NO_VALID_FILES_FOUND  2
 static const int kSliceOrientUnknown = 0;
@@ -148,7 +153,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     struct TDICOMdata {
         long seriesNum;
         int xyzDim[5];
-        int phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, coilNum, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, compressionScheme;
+        int sliceOrderGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, coilNum, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, compressionScheme;
         float patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
