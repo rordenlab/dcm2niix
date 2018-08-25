@@ -779,6 +779,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
     d.phaseEncodingGE = kGE_PHASE_DIRECTION_UNKNOWN;
+    d.rtia_timerGE = 0.0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
     d.patientWeight = 0.0;
@@ -1828,8 +1829,7 @@ int	kbval = 33; //V3: 27
             d.angulation[2] = cols[kAngulationAPs];
             d.angulation[3] = cols[kAngulationFHs];
 			d.sliceOrient = (int) cols[kSliceOrients];
-			//printMessage(">>>> %d\n", d.sliceOrient);
-            d.TE = cols[kTEcho];
+			d.TE = cols[kTEcho];
             d.echoNum = cols[kEcho];
             d.TI = cols[kInversionDelayMs];
 			d.intenIntercept = cols[kRI];
@@ -4697,7 +4697,8 @@ double TE = 0.0; //most recent echo time recorded
             case kRTIA_timer:
             	if (d.manufacturer != kMANUFACTURER_GE) break;
             	//see dicm2nii slice timing from 0021,105E DS RTIA_timer
-                // =  dcmStrFloat(lLength, &buffer[lPos]); //RefAcqTimes = t/10; end % in ms
+                d.rtia_timerGE =  dcmStrFloat(lLength, &buffer[lPos]); //RefAcqTimes = t/10; end % in ms
+                //printf("%s\t%g\n", fname, d.rtia_timerGE);
                 break;
             case kProtocolDataBlockGE :
             	if (d.manufacturer != kMANUFACTURER_GE) break;
@@ -5129,9 +5130,9 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kUserDefineDataGE: { //0043,102A
             	if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128)) break;
-            	//#define MY_DEBUG_GE // <- uncomment this to use following code to infer GE phase encoding direction
+            	#define MY_DEBUG_GE // <- uncomment this to use following code to infer GE phase encoding direction
             	#ifdef MY_DEBUG_GE
-            	int isVerboseX = 2; //for debugging only - in standard release we will enable user defined "isVerbose"
+            	int isVerboseX = isVerbose; //for debugging only - in standard release we will enable user defined "isVerbose"
             	//int isVerboseX = isVerbose;
             	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset+lPos, lLength);
             	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394

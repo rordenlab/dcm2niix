@@ -869,7 +869,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t\"PhilipsRWVSlope\": %g,\n", d.RWVScale );
 		fprintf(fp, "\t\"PhilipsRWVIntercept\": %g,\n", d.RWVIntercept );
 	}
-	if ((d.intenScalePhilips != 0) || (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
+	if ((d.intenScalePhilips != 0) && (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
 		fprintf(fp, "\t\"PhilipsRescaleSlope\": %g,\n", d.intenScale );
 		fprintf(fp, "\t\"PhilipsRescaleIntercept\": %g,\n", d.intenIntercept );
 		fprintf(fp, "\t\"PhilipsScaleSlope\": %g,\n", d.intenScalePhilips );
@@ -1105,8 +1105,22 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		}
 		fprintf(fp, "\t],\n");
 	}
+	//Slice Timing GE >>>>
+	if ((d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
+   		fprintf(fp, "\t\"SliceTiming\": [\n");
+   		for (int i = 0; i < h->dim[3]; i++) {
+				if (i != 0)
+					fprintf(fp, ",\n");
+				if (d.CSA.protocolSliceNumber1 < 0)
+					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1)-i]); //images flipped in z dimenions
+				else
+					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
+			}
+		fprintf(fp, "\t],\n");
+	}
+
 	//Slice Timing Siemens
-	if (d.CSA.sliceTiming[0] >= 0.0) {
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		if (d.CSA.protocolSliceNumber1 > 1) {
    			//https://github.com/rordenlab/dcm2niix/issues/40
@@ -2803,7 +2817,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
-            //next: detect if ANY file flagged as echo vaies
+            //next: detect if ANY file flagged as echo varies
             for (int i = 0; i < nConvert; i++)
             	if (dcmList[dcmSort[i].indx].isMultiEcho)
             		dcmList[indx0].isMultiEcho = true;
@@ -2930,7 +2944,23 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
-    if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
+    //GE check slice timing >>>
+	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		//ignore bogus values of first volume https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/6
+		int j = hdr0.dim[3];
+		//since first volume is bogus, we define the volume start time as the first slice in the second volume
+		float minTime = dcmList[dcmSort[j].indx].rtia_timerGE;
+		for (int v = 0; v < hdr0.dim[3]; v++)
+			if (dcmList[dcmSort[v+j].indx].rtia_timerGE < minTime)
+				minTime = dcmList[dcmSort[v+j].indx].rtia_timerGE;
+		//compare all slice times in 2nd volume to start time for this volume
+		for (int v = 0; v < hdr0.dim[3]; v++) {
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
+			//printf("%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
+		}
+		dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
+	}
+	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
     	int nVol = 0;
     	for (int v = 0; v < inVol; v++)
@@ -2994,6 +3024,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
+    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) ) {
+    		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
+    		printWarning("GE slices flipped: check slice timing\n"); //>>>
+    	}
     }
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) {
