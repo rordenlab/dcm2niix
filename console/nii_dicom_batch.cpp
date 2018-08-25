@@ -902,11 +902,13 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	float phaseOversampling = 0.0;
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
+	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
+	// what we thought was phase encoding is slice direction? Rename variables if confirmed
 	if (d.phaseEncodingGE != kGE_PHASE_DIRECTION_UNKNOWN) { //only set for GE
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_BOTTOM_UP) fprintf(fp, "\t\"PhaseEncodingGE\": \"BottomUp\",\n" );
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_TOP_DOWN) fprintf(fp, "\t\"PhaseEncodingGE\": \"TopDown\",\n" );
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT_REV) fprintf(fp, "\t\"PhaseEncodingGE\": \"CenterOutReversed\",\n" );
-		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT) fprintf(fp, "\t\"PhaseEncodingGE\": \"CenterOut\",\n" );
+		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_BOTTOM_UP) fprintf(fp, "\t\"SliceDirectionGE\": \"BottomUp\",\n" );
+		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_TOP_DOWN) fprintf(fp, "\t\"SliceDirectionGE\": \"TopDown\",\n" );
+		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT_REV) fprintf(fp, "\t\"SliceDirectionGE\": \"CenterOutReversed\",\n" );
+		if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_CENTER_OUT) fprintf(fp, "\t\"SliceDirectionGE\": \"CenterOut\",\n" );
 	}
 	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
@@ -1082,36 +1084,16 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
-	// Slice Timing GE
-	if ((sliceOrderGE > -1) && (h->dim[3] > 1) && (h->dim[4] > 1) && (d.TR > 0)) { //
-		//Warning: not correct for multiband sequences... not sure how these are stored
-		//Warning: will not create correct times for sparse acquisitions where DelayTimeInTR > 0
-		float t = d.TR/ (float)h->dim[3] ;
-		fprintf(fp, "\t\"ProbableSliceTiming\": [\n");
-		if (sliceOrderGE == 1) {//interleaved ascending
-			for (int i = 0; i < h->dim[3]; i++) {
-				if (i != 0)
-					fprintf(fp, ",\n");
-				int s = (i / 2);
-				if ((i % 2) != 0) s += (h->dim[3]+1)/2;
-				fprintf(fp, "\t\t%g", 	(float) s * t / 1000.0 );
-			}
-		} else { //sequential ascending
-			for (int i = 0; i < h->dim[3]; i++) {
-				if (i != 0)
-					fprintf(fp, ",\n");
-				fprintf(fp, "\t\t%g", 	(float) i * t / 1000.0 );
-			}
-		}
-		fprintf(fp, "\t],\n");
-	}
 	//Slice Timing GE >>>>
-	if ((d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.phaseEncodingGE != kGE_PHASE_DIRECTION_UNKNOWN) &&(d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
 					fprintf(fp, ",\n");
-				if (d.CSA.protocolSliceNumber1 < 0)
+				//do not flip
+				//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
+				//if (d.CSA.protocolSliceNumber1 < 0)
+				if (d.phaseEncodingGE == kGE_PHASE_DIRECTION_TOP_DOWN)
 					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1)-i]); //images flipped in z dimenions
 				else
 					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
