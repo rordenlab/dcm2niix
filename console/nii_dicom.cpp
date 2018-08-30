@@ -827,6 +827,17 @@ void dcmStrDigitsOnly(char* lStr) {
             lStr[i] = ' ';
 }
 
+// Karl Malbrain's compact CRC-32. See "A compact CCITT crc16 and crc32 C implementation that balances processor cache usage against speed": http://www.geocities.com/malbrain/
+uint32_t mz_crc32(unsigned char *ptr, uint32_t buf_len)
+{
+  static const uint32_t s_crc32[16] = { 0, 0x1db71064, 0x3b6e20c8, 0x26d930ac, 0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
+    0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c, 0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c };
+  uint32_t crcu32 = 0;
+  if (!ptr) return crcu32;
+  crcu32 = ~crcu32; while (buf_len--) { uint8_t b = *ptr++; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b & 0xF)]; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b >> 4)]; }
+  return ~crcu32;
+}
+
 void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false) {
     if (lLength < 1) return;
 //#ifdef _MSC_VER
@@ -3993,6 +4004,7 @@ double TE = 0.0; //most recent echo time recorded
     bool isReal = false;
     bool isImaginary = false;
     bool isMagnitude = false;
+    d.seriesNum = -1;
     float patientPositionPrivate[4] = {NAN, NAN, NAN, NAN};
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     //float patientPositionPublic[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
@@ -4632,7 +4644,6 @@ double TE = 0.0; //most recent echo time recorded
             	break;
             case kSeriesNum:
                 d.seriesNum =  dcmStrInt(lLength, &buffer[lPos]);
-
                 break;
             case kAcquNum:
                 d.acquNum = dcmStrInt(lLength, &buffer[lPos]);
@@ -5611,6 +5622,8 @@ if (d.isHasPhase)
     	// for examples see https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
     	d.seriesNum += (philMRImageDiffBValueNumber*1000);
     }
+    if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
+		d.seriesNum = abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     getFileName(d.imageBaseName, fname);
     if (multiBandFactor > d.CSA.multiBandFactor)
     	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header
