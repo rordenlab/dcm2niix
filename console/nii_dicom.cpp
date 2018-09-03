@@ -3583,19 +3583,19 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
 } //set_directionality0018_9075()
 
 void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
-    //int dcmStrInt (int lByteLength, unsigned char lBuffer[]) {//read float stored as a string
-    ptvd->_dtiV[0] = dcmStrInt(lLength, inbuf);
-    if (ptvd->_dtiV[0] > 10000)
-    	printWarning("GE B-Value implausible. see https://github.com/rordenlab/dcm2niix/issues/149\n");
+    //see Series 16 https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/ge-mr750-dwi-b-vals#table b750 = 1000000750\8\0\0 b1500 = 1000001500\8\0\0
+    int bVal = dcmStrInt(lLength, inbuf);
+    bVal = (bVal % 10000);
+    ptvd->_dtiV[0] = bVal;
+    //printf("(0043,1039) '%s' Slop_int_6 -->%d  \n", inbuf, bVal);
     //dd.CSA.numDti = 1;   // Always true for GE.
-
     _update_tvd(ptvd);
 } //set_bValGE()
 
 // axis: 0 -> x, 1 -> y , 2 -> z
 void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf, const int axis){
     ptvd->_dtiV[axis + 1] = dcmStrFloat(lLength, inbuf);
-
+	//printf("(0019,10bb..d) v[%d]=%g\n", axis, ptvd->_dtiV[axis + 1]);
     _update_tvd(ptvd);
 }//set_diffusion_directionGE()
 

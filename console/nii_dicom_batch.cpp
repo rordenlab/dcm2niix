@@ -222,11 +222,17 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
         float vLen = sqrt( (vx[i].V[1]*vx[i].V[1])
                           + (vx[i].V[2]*vx[i].V[2])
                           + (vx[i].V[3]*vx[i].V[3]));
-        if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
+         if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
             for (int v= 1; v < 4; v++)
                 vx[i].V[v] = 0.0f;
             continue; //do not normalize or reorient 0 vectors
         }
+        if ((vLen > 0.03) && (vLen < 0.097)) {
+        	//bVal scaled by norm(g)^2 https://github.com/rordenlab/dcm2niix/issues/163
+        	float bVal = vx[i].V[0] * (vLen * vLen);
+        	printf("GE BVal scaled %g -> %g\n", vx[i].V[0], bVal);
+        	vx[i].V[0] = bVal;
+       	}
         if (!col) { //rows need to be swizzled
         	//see Stanford dataset Ax_DWI_Tetrahedral_7 unable to resolve between possible solutions
         	// http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
@@ -2925,15 +2931,21 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 		int j = hdr0.dim[3];
 		//since first volume is bogus, we define the volume start time as the first slice in the second volume
 		float minTime = dcmList[dcmSort[j].indx].rtia_timerGE;
-		for (int v = 0; v < hdr0.dim[3]; v++)
+		float maxTime = minTime;
+		for (int v = 0; v < hdr0.dim[3]; v++) {
 			if (dcmList[dcmSort[v+j].indx].rtia_timerGE < minTime)
 				minTime = dcmList[dcmSort[v+j].indx].rtia_timerGE;
-		//compare all slice times in 2nd volume to start time for this volume
-		for (int v = 0; v < hdr0.dim[3]; v++) {
-			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
-			//printf("%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
+			if (dcmList[dcmSort[v+j].indx].rtia_timerGE > maxTime)
+				maxTime = dcmList[dcmSort[v+j].indx].rtia_timerGE;
 		}
-		dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
+		//compare all slice times in 2nd volume to start time for this volume
+		if (maxTime != minTime) {
+			for (int v = 0; v < hdr0.dim[3]; v++) {
+				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
+				printf("%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
+			}
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
+		}
 	}
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
