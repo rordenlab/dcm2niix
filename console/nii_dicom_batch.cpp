@@ -227,7 +227,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
                 vx[i].V[v] = 0.0f;
             continue; //do not normalize or reorient 0 vectors
         }
-        if ((vLen > 0.03) && (vLen < 0.097)) {
+        if ((vLen > 0.03) && (vLen < 0.97)) {
         	//bVal scaled by norm(g)^2 https://github.com/rordenlab/dcm2niix/issues/163
         	float bVal = vx[i].V[0] * (vLen * vLen);
         	printf("GE BVal scaled %g -> %g\n", vx[i].V[0], bVal);
