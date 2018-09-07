@@ -5630,7 +5630,7 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
-    //printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
+	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
     return d;
 } // readDICOM()
 

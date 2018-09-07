@@ -1475,6 +1475,7 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
     if ( isNanPosition(d1) ||  isNanPosition(d2))
         return d1.xyzMM[3];
     float tilt = 1.0;
+    //printMessage("0020,0032 %g %g %g -> %g %g %g\n",d1.patientPosition[1],d1.patientPosition[2],d1.patientPosition[3],d2.patientPosition[1],d2.patientPosition[2],d2.patientPosition[3]);
     if (d1.gantryTilt != 0)
         tilt = (float) cos(d1.gantryTilt  * M_PI/180); //for CT scans with gantry tilt, we need to compute distance between slices, not distance along bed
     return tilt * sqrt( sqr(d1.patientPosition[1]-d2.patientPosition[1])+
@@ -2860,7 +2861,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						printMessage("instance=[");
 						for (int i = 0; i < nConvert; i++) {
 							printMessage(" %d", dcmList[dcmSort[i].indx].imageNum);
-
 						}
 						printMessage("]\n");
                     } //imageNum not sequential
@@ -2878,9 +2878,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[4] = nConvert;
                 hdr0.dim[0] = 4;
             }
+            if ((dx > 0) && (!isSameFloatGE(dx, hdr0.pixdim[3])))
+            	hdr0.pixdim[3] = dx;
             dcmList[dcmSort[0].indx].xyzMM[3] = dx; //16Sept2014 : correct DICOM for true distance between slice centers:
             // e.g. MCBI Siemens ToF 0018:0088 reports 16mm SpacingBetweenSlices, but actually 0.5mm
-            if (dx > 0) hdr0.pixdim[3] = dx;
         } else if (hdr0.dim[4] < 2) {
             hdr0.dim[4] = nConvert;
             hdr0.dim[0] = 4;
@@ -3168,8 +3169,26 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 			dti4D->gradDynVol[i] = series;
 		}
 	}
+	//bvec/bval saved for each series (real, phase, magnitude, imaginary) https://github.com/rordenlab/dcm2niix/issues/219
+	TDTI4D dti4Ds;
+	dti4Ds = *dti4D;
+	bool isHasDti = (dcmList[indx].CSA.numDti > 0);
+	if ((isHasDti) && (dcmList[indx].CSA.numDti == dcmList[indx].xyzDim[4])) {
+		int nDti = 0;
+		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
+			if (dti4D->gradDynVol[i] == 1) {
+				dti4Ds.S[nDti].V[0] = dti4Ds.S[i].V[0];
+				dti4Ds.S[nDti].V[1] = dti4Ds.S[i].V[1];
+				dti4Ds.S[nDti].V[2] = dti4Ds.S[i].V[2];
+				dti4Ds.S[nDti].V[3] = dti4Ds.S[i].V[3];
+				nDti++;
+			}
+		}
+		dcmList[indx].CSA.numDti = nDti;
+	}
+	//save each series
 	for (int s = 1; s <= series; s++) {
-		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
+		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
 			 if (dti4D->gradDynVol[i] == s) {
 			 	//dti4D->gradDynVol[i] = s;
 				//nVol ++;
@@ -3186,8 +3205,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
 				break;
-			 }
-		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, s);
+			}
+		}
+		if (s > 1) dcmList[indx].CSA.numDti = 0; //only save bvec for first type (magnitude)
+		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, &dti4Ds, s);
         if (ret2 != EXIT_SUCCESS) ret = ret2; //return EXIT_SUCCESS only if ALL are successful
 	}
     return ret;
