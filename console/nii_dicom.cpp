@@ -4458,12 +4458,12 @@ double TE = 0.0; //most recent echo time recorded
             	dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
             	break;
             case kComplexImageComponent:
-                // Disabling kComplexImageComponent because sometimes it is
-                // wrong, possibly due to munging by XNAT. dcm2niix will also
-                // get the complex image component from (0008, 0008) ImageType,
-                // but since this, (0008, 9208), comes later, it would override
-                // ImageType.
-                break; 
+                // // Disabling kComplexImageComponent because sometimes it is
+                // // wrong, possibly due to munging by XNAT. dcm2niix will also
+                // // get the complex image component from (0008, 0008) ImageType,
+                // // but since this, (0008, 9208), comes later, it would override
+                // // ImageType.
+                // break; 
                 if (is2005140FSQ) break; //see Maastricht DICOM data for magnitude data with this field set as REAL!  https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
                 if (lLength < 2) break;
                 isPhase = false;
