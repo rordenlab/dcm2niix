@@ -230,7 +230,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
         if ((vLen > 0.03) && (vLen < 0.97)) {
         	//bVal scaled by norm(g)^2 https://github.com/rordenlab/dcm2niix/issues/163
         	float bVal = vx[i].V[0] * (vLen * vLen);
-        	printf("GE BVal scaled %g -> %g\n", vx[i].V[0], bVal);
+        	printMessage("GE BVal scaled %g -> %g\n", vx[i].V[0], bVal);
         	vx[i].V[0] = bVal;
        	}
         if (!col) { //rows need to be swizzled
@@ -1099,7 +1099,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			}
 		fprintf(fp, "\t],\n");
 	}
-
 	//Slice Timing Siemens
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
@@ -2929,6 +2928,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     //GE check slice timing >>>
 	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		//ignore bogus values of first volume https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/6
+		// this necessarily requires at last two volumes, hence dim[4] > 1
 		int j = hdr0.dim[3];
 		//since first volume is bogus, we define the volume start time as the first slice in the second volume
 		float minTime = dcmList[dcmSort[j].indx].rtia_timerGE;
@@ -2943,7 +2943,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 		if (maxTime != minTime) {
 			for (int v = 0; v < hdr0.dim[3]; v++) {
 				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
-				printf("%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
+				//printf("%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
 			}
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
 		}
@@ -3701,7 +3701,7 @@ int nii_loadDir(struct TDCMopts* opts) {
         	nii_createFilename(dcmList[i], outname, *opts);
         	copyFile (nameList.str[i], outname);
         	if (opts->isVerbose > 0)
-        		printf("Renaming %s -> %s\n", nameList.str[i], outname);
+        		printMessage("Renaming %s -> %s\n", nameList.str[i], outname);
         	dcmList[i].isValid = false;
         }
         if ((dcmList[i].isValid) && ((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately

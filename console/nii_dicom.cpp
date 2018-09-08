@@ -5622,6 +5622,8 @@ if (d.isHasPhase)
     	// for examples see https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
     	d.seriesNum += (philMRImageDiffBValueNumber*1000);
     }
+    if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
 		d.seriesNum = abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     getFileName(d.imageBaseName, fname);
