@@ -5195,7 +5195,7 @@ double TE = 0.0; //most recent echo time recorded
       				int check =dcmInt(2,(unsigned char*)hdr + epi_chk_off,true) & 0x800;
      				if (check == 0) {
 						if (isVerboseX > 1) printMessage("%s: Warning: Data is not EPI\n", fname);
-						continue;
+						break;
       				}
     			}
             	//Check for PE polarity
@@ -5396,8 +5396,8 @@ double TE = 0.0; //most recent echo time recorded
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
-    	//printMessage("Please number of slices, discrepancy between tags (0054,0081; 0020,1002; 0021,104F)\n");
-    	d.locationsInAcquisition = locationsInAcquisitionGE;
+    	//printMessage("Check number of slices, discrepancy between tags (0054,0081; 0020,1002; 0021,104F)\n");
+    	if (d.locationsInAcquisition < locationsInAcquisitionGE) d.locationsInAcquisition = locationsInAcquisitionGE;
     }
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;
