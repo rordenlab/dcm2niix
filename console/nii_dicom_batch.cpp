@@ -788,6 +788,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		case kMANUFACTURER_TOSHIBA:
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 			break;
+		case kMANUFACTURER_UIH:
+			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
+			break;
 	};
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
@@ -3512,7 +3515,7 @@ int removeDuplicates(int nConvert, struct TDCMsort dcmSort[]){
         }
     }
     if (nDuplicates > 0)
-        printMessage("%d images have identical time, series, acquisition and image values. DUPLICATES REMOVED.\n", nDuplicates);
+        printMessage("%d images have identical time, series, acquisition and instance values. DUPLICATES REMOVED.\n", nDuplicates);
     return nConvert - nDuplicates;
 }// removeDuplicates()
 
@@ -3532,7 +3535,7 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
         }
     }
     if (nDuplicates > 0)
-        printMessage("%d images have identical time, series, acquisition and image values. Duplicates removed.\n", nDuplicates);
+        printMessage("%d images have identical time, series, acquisition and instance values. Duplicates removed.\n", nDuplicates);
     return nConvert - nDuplicates;
 }// removeDuplicatesVerbose()
 

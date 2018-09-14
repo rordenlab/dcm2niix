@@ -503,7 +503,7 @@ mat44 xform_mat(struct TDICOMdata d) {
 		R44.m[1][3] = offset.v[1];
 		R44.m[2][3] = offset.v[2];
 		//R44.m[3][3] = offset.v[3];
-		if (sign(d.CSA.sliceNormV[iSL]) != sign(cosSL)) {
+		if  (sign(d.CSA.sliceNormV[iSL]) != sign(cosSL)) {
 			R44.m[0][2] = -R44.m[0][2];
 			R44.m[1][2] = -R44.m[1][2];
 			R44.m[2][2] = -R44.m[2][2];
@@ -556,7 +556,9 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
     	}
     	return Q44;
     }
-    if (d.CSA.mosaicSlices > 1) {
+    if ((d.manufacturer == kMANUFACTURER_UIH) && (d.CSA.mosaicSlices > 1) ) {
+		printWarning("UIH Grid to matrix transform unknown\n");
+    } else if (d.CSA.mosaicSlices > 1) {
         double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
         double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
         double lFactorY = (d.xyzDim[2] -(d.xyzDim[2]/nRowCol)   )/2.0;
@@ -567,6 +569,7 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
             for (int r=0; r<4; r++)
                 Q44.m[c][r] = -Q44.m[c][r];
         mat33 Q;
+
         LOAD_MAT33(Q, d.orient[1], d.orient[4],d.CSA.sliceNormV[1],
                    d.orient[2],d.orient[5],d.CSA.sliceNormV[2],
                    d.orient[3],d.orient[6],d.CSA.sliceNormV[3]);
@@ -781,6 +784,7 @@ struct TDICOMdata clear_dicom_data() {
     d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
     d.sliceOrderGE = kGE_SLICE_ORDER_UNKNOWN;
     d.rtia_timerGE = 0.0;
+    d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
     d.patientWeight = 0.0;
@@ -1019,6 +1023,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
         ret = kMANUFACTURER_PHILIPS;
     if ((toupper(cString[0])== 'T') && (toupper(cString[1])== 'O'))
         ret = kMANUFACTURER_TOSHIBA;
+    if ((toupper(cString[0])== 'U') && (toupper(cString[1])== 'I'))
+        ret = kMANUFACTURER_UIH;
 //#ifdef _MSC_VER
 	free(cString);
 //#endif
@@ -3802,7 +3808,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kAcquisitionDate 0x0008+(0x0022 << 16 )
 #define  kAcquisitionDateTime 0x0008+(0x002A << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
-#define  kAcquisitionTime 0x0008+(0x0032 << 16 )
+#define  kAcquisitionTime 0x0008+(0x0032 << 16 ) //TM
+#define  kContentTime 0x0008+(0x0033 << 16 ) //TM
 #define  kModality 0x0008+(0x0060 << 16 ) //CS
 #define  kManufacturer 0x0008+(0x0070 << 16 )
 #define  kInstitutionName 0x0008+(0x0080 << 16 )
@@ -3919,6 +3926,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 // #define  kSeriesType  0x0054+(0x1000 << 16 )
 #define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
 #define  kPETImageIndex  0x0054+(0x1330<< 16 )
+#define  kNumberOfImagesInGridUIH  0x0065+(0x1050<< 16 ) //DS
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
@@ -3951,6 +3959,7 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
+	double contentTime = 0.0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
     int sqDepth00189114 = -1;
@@ -4484,6 +4493,11 @@ double TE = 0.0; //most recent echo time recorded
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
                 break;
+            case kContentTime :
+                char contentTimeTxt[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], contentTimeTxt);
+                contentTime = atof(contentTimeTxt);
+                break;
             case kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
                 break;
@@ -4723,6 +4737,11 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kPETImageIndex :
             	PETImageIndex = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	break;
+            case kNumberOfImagesInGridUIH :
+            	if (d.manufacturer != kMANUFACTURER_UIH) break;
+            	d.numberOfImagesInGridUIH =  dcmStrFloat(lLength, &buffer[lPos]);
+            	d.CSA.mosaicSlices = d.numberOfImagesInGridUIH;
             	break;
             case kBitsAllocated :
                 d.bitsAllocated = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -5622,6 +5641,9 @@ if (d.isHasPhase)
     	// for examples see https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
     	d.seriesNum += (philMRImageDiffBValueNumber*1000);
     }
+    //if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
+    //	long timeCRC = abs( (long)mz_crc32((unsigned char*) &contentTime, sizeof(double)));
+    //}
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
