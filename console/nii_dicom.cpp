@@ -16,7 +16,7 @@
 	#include <unistd.h>
 #endif
 //#include <time.h> //clock()
-#ifndef HAVE_R
+#ifndef USING_R
 #include "nifti1.h"
 #endif
 #include "print.h"
@@ -34,7 +34,7 @@
 #include <stdint.h>
 #include "nifti1_io_core.h"
 
-#ifdef HAVE_R
+#ifdef USING_R
   #undef isnan
   #define isnan ISNAN
 #endif
@@ -644,7 +644,11 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         sprintf(dtxt, ";mb=%d", d.CSA.multiBandFactor);
         strcat(txt,dtxt);
     }
-    snprintf(h->descrip,80, "%s",txt);
+    // GCC 8 warns about truncation using snprintf; using strncpy instead seems to keep it happy
+    // snprintf(h->descrip,80, "%s",txt);
+    strncpy(h->descrip, txt, 79);
+    h->descrip[79] = '\0';
+    
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%.23s",d.imageComments);
     return headerDcm2NiiSForm(d,d2, h, isVerbose);
@@ -2701,9 +2705,9 @@ unsigned char * nii_reorderSlicesX(unsigned char* bImg, struct nifti_1_header *h
 		int fromSlice = dti4D->sliceOrder[i];
 		//if (i < 10) printMessage(" ===> Moving slice from/to positions\t%d\t%d\n", i, toSlice);
 		//printMessage(" ===> Moving slice from/to positions\t%d\t%d\n", fromSlice, i);
-		if ((i < 0) || (fromSlice >= dim3to7))
+		if ((i < 0) || (fromSlice >= dim3to7)) {
 			printError("Re-ordered slice out-of-volume %d\n", fromSlice);
-		else if (i != fromSlice) {
+		} else if (i != fromSlice) {
 			uint64_t inPos = fromSlice * sliceBytes;
 			uint64_t outPos = i * sliceBytes;
 			memcpy( &bImg[outPos], &outImg[inPos], sliceBytes);
@@ -3713,6 +3717,21 @@ void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then
     //strcpy(pathParent,filename); //<- this can cause overflow if filename longer than kDICOMStr
 }
 
+#ifdef USING_R
+
+// True iff dcm1 sorts *before* dcm2
+bool compareTDCMdim (const TDCMdim &dcm1, const TDCMdim &dcm2) {
+    for (int i=MAX_NUMBER_OF_DIMENSIONS-1; i >=0; i--){
+        if(dcm1.dimIdx[i] < dcm2.dimIdx[i])
+            return true;
+        else if(dcm1.dimIdx[i] > dcm2.dimIdx[i])
+            return false;
+    }
+    return false;
+} //compareTDCMdim()
+
+#else
+
 int compareTDCMdim(void const *item1, void const *item2) {
 	struct TDCMdim const *dcm1 = (const struct TDCMdim *)item1;
 	struct TDCMdim const *dcm2 = (const struct TDCMdim *)item2;
@@ -3726,6 +3745,8 @@ int compareTDCMdim(void const *item1, void const *item2) {
 	}
 	return 0;
 } //compareTDCMdim()
+
+#endif // USING_R
 
 struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 	struct TDICOMdata d = clear_dicom_data();
@@ -4032,7 +4053,12 @@ double TE = 0.0; //most recent echo time recorded
     //	philDTI[i].V[0] = -1;
     //array for storing DimensionIndexValues
 	int numDimensionIndexValues = 0;
+#ifdef USING_R
+    // Allocating a large array on the stack, as below, vexes valgrind and may cause overflow
+    std::vector<TDCMdim> dcmDim(kMaxSlice2D);
+#else
     TDCMdim dcmDim[kMaxSlice2D];
+#endif
     for (int i = 0; i < kMaxSlice2D; i++) {
     	dcmDim[i].diskPos = i;
     	for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++)
@@ -5582,7 +5608,11 @@ if (d.isHasPhase)
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
     	//sort dimensions
-    	qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
+#ifdef USING_R
+        std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
+#else
+        qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
+#endif
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
 		for (int i = 0; i < numberOfFrames; i++)

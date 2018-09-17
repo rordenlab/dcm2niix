@@ -4,7 +4,7 @@
 #ifndef _NIFTI_IO_CORE_HEADER_
 #define _NIFTI_IO_CORE_HEADER_
 
-#ifdef HAVE_R
+#ifdef USING_R
 #define STRICT_R_HEADERS
 #include "RNifti.h"
 #endif
@@ -17,7 +17,7 @@ extern "C" {
 
 #include <string.h>
 
-#ifndef HAVE_R
+#ifndef USING_R
 typedef struct {                   /** 4x4 matrix struct **/
     float m[3][3] ;
 } mat33 ;

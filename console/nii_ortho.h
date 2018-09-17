@@ -5,7 +5,7 @@
 extern "C" {
 #endif
     
-#ifndef HAVE_R
+#ifndef USING_R
 #include "nifti1.h"
 #endif
     
