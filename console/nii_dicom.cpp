@@ -5238,14 +5238,14 @@ double TE = 0.0; //most recent echo time recorded
     			//char const *hdr = &buffer[lPos + hdr_offset];
             	char *hdr = (char *)&buffer[lPos + hdr_offset];
             	int epi_chk_off = 0x003a;
-    			int flag1_off   = 0x0030;
-    			int flag2_off   = 0x0394;
+    			int pepolar_off   = 0x0030;
+    			int kydir_off   = 0x0394;
     			if (version >= 25.002) {
       				hdr       += 0x004c;
-      				flag2_off -= 0x008c;
+      				kydir_off -= 0x008c;
     			}
-    			//int seqOrInter =dcmInt(2,(unsigned char*)(hdr + flag1_off-638),true);
-    			//int seqOrInter2 =dcmInt(2,(unsigned char*)(hdr + flag2_off-638),true);
+    			//int seqOrInter =dcmInt(2,(unsigned char*)(hdr + pepolar_off-638),true);
+    			//int seqOrInter2 =dcmInt(2,(unsigned char*)(hdr + kydir_off-638),true);
      			//printf("%d %d<<<\n", seqOrInter,seqOrInter2);
     			//check if EPI
     			if (true) {
@@ -5257,12 +5257,12 @@ double TE = 0.0; //most recent echo time recorded
       				}
     			}
             	//Check for PE polarity
-				// int flag1 = *(short const *)(hdr + flag1_off) & 0x0004;
+				// int flag1 = *(short const *)(hdr + pepolar_off) & 0x0004;
 				//Check for ky direction (view order)
-				// int flag2 = *(int const *)(hdr + flag2_off);
-				int phasePolarityFlag = dcmInt(2,(unsigned char*)hdr + flag1_off,true) & 0x0004;
+				// int flag2 = *(int const *)(hdr + kydir_off);
+				int phasePolarityFlag = dcmInt(2,(unsigned char*)hdr + pepolar_off,true) & 0x0004;
 				//Check for ky direction (view order)
-				int sliceOrderFlag = dcmInt(2,(unsigned char*)hdr + flag2_off,true);
+				int sliceOrderFlag = dcmInt(2,(unsigned char*)hdr + kydir_off,true);
 				if (isVerboseX > 1)
 					printMessage(" GE phasePolarity/sliceOrder flags %d %d\n", phasePolarityFlag, sliceOrderFlag);
 				if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
