@@ -5269,11 +5269,11 @@ double TE = 0.0; //most recent echo time recorded
                 printMessage(" GE phasePolarity flags %d %d\n", pepolarFlag, kyDirFlag);
                 if ((pepolarFlag && kyDirFlag) || (!pepolarFlag && !kyDirFlag)) {
                         if (isVerboseX > 1) printMessage(" Bottom up\n");
-                            d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+                            d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
                       }
                 else {
                         if (isVerboseX > 1) printMessage(" Top down\n");
-                        d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+                        d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
                  }
 				#endif
 				break;
