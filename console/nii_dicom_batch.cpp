@@ -264,7 +264,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
     // requires PatientPosition 0018,5100 is HFS (head first supine)
-    if ((d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
+    if ((d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
         ; //participant was head first supine
@@ -912,6 +912,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
 	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
+	json_Str(fp, "\t\"PhaseEncodingDirectionDisplayed\": \"%s\",\n", d.phaseEncodingDirectionDisplayedUIH);
 	if (d.phaseEncodingGE != kGE_PHASE_ENCODING_POLARITY_UNKNOWN) { //only set for GE
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Unflipped\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n" );
@@ -1086,6 +1087,19 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
+	//Slice Timing UIH >>>>
+	if ((d.manufacturer == kMANUFACTURER_UIH) && (d.CSA.sliceTiming[0] >= 0.0)) {
+   		fprintf(fp, "\t\"SliceTiming\": [\n");
+   		for (int i = 0; i < h->dim[3]; i++) {
+				if (i != 0)
+					fprintf(fp, ",\n");
+				if (d.CSA.protocolSliceNumber1 < 0)
+					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1) - i]);
+				else
+					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
+			}
+		fprintf(fp, "\t],\n");
+	}
 	//Slice Timing GE >>>>
 	if ((d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) &&(d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
@@ -1319,7 +1333,8 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
 		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
-		if (isADCnotDTI(vx[i])) {
+		//Philips includes derived isotropic images
+		if ((dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS) && (isADCnotDTI(vx[i]))) {
             *numADC = *numADC + 1;
             bvals[i] = kADCval;
             //printMessage("+++bxyz %d\n",i);
@@ -2703,6 +2718,18 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
 		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
 	}
+	if (d->manufacturer == kMANUFACTURER_UIH) {
+		maxT = 0;
+		for (int i = 0; i < kMaxEPI3D; i++) {
+			if (d->CSA.sliceTiming[i] < 0.0) break;
+			d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - minT;
+			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
+			if (d->CSA.sliceTiming[i] > maxT)
+				maxT = d->CSA.sliceTiming[i];
+			//printf("::>>>%g\n", d->CSA.sliceTiming[i]);
+		}
+		//t = (t - min(t)) * 24 * 3600 * 1000; % day to ms
+	}
 	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
 	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
@@ -2928,6 +2955,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
+    //UIH 2D slice timing
+	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		for (int v = 0; v < hdr0.dim[3]; v++)
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime;
+	}
     //GE check slice timing >>>
 	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		//ignore bogus values of first volume https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/6
@@ -3015,10 +3047,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
-    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) ) {
+    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) )
     		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
-    		//printWarning("GE slices flipped: check slice timing\n"); //>>>
-    	}
+    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) )
+    		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
     }
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) {

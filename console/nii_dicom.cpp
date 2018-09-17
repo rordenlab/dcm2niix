@@ -556,9 +556,9 @@ mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
     	}
     	return Q44;
     }
-    if ((d.manufacturer == kMANUFACTURER_UIH) && (d.CSA.mosaicSlices > 1) ) {
-		printWarning("UIH Grid to matrix transform unknown\n");
-    } else if (d.CSA.mosaicSlices > 1) {
+    //next line only for Siemens mosaic: ignore for UIH grid
+	//	https://github.com/xiangruili/dicm2nii/commit/47ad9e6d9bc8a999344cbd487d602d420fb1509f
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.mosaicSlices > 1)) {
         double nRowCol = ceil(sqrt((double) d.CSA.mosaicSlices));
         double lFactorX = (d.xyzDim[1] -(d.xyzDim[1]/nRowCol)   )/2.0;
         double lFactorY = (d.xyzDim[2] -(d.xyzDim[2]/nRowCol)   )/2.0;
@@ -674,7 +674,9 @@ struct TDICOMdata clear_dicom_data() {
     }
     for (int i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i)
       d.dimensionIndexValues[i] = 0;
-    d.CSA.sliceTiming[0] = -1.0f; //impossible value denotes not known
+    //d.CSA.sliceTiming[0] = -1.0f; //impossible value denotes not known
+    for (int z = 0; z < kMaxEPI3D; z++)
+    	d.CSA.sliceTiming[z] = -1.0;
     d.CSA.numDti = 0;
     for (int i=0; i < 5; i++)
         d.xyzDim[i] = 1;
@@ -685,6 +687,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.imageType,"");
     strcpy(d.imageComments, "");
     strcpy(d.imageBaseName, "");
+    strcpy(d.phaseEncodingDirectionDisplayedUIH, "");
     strcpy(d.studyDate, "");
     strcpy(d.studyTime, "");
     strcpy(d.protocolName, "");
@@ -3926,7 +3929,11 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 // #define  kSeriesType  0x0054+(0x1000 << 16 )
 #define  kDoseCalibrationFactor  0x0054+(0x1322<< 16 )
 #define  kPETImageIndex  0x0054+(0x1330<< 16 )
+#define  kPEDirectionDisplayedUIH  0x0065+(0x1005<< 16 )//SH
+#define  kDiffusion_bValueUIH  0x0065+(0x1009<< 16 ) //FD
 #define  kNumberOfImagesInGridUIH  0x0065+(0x1050<< 16 ) //DS
+#define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
+#define  kDiffusionGradientDirectionUIH  0x0065+(0x1037<< 16 ) //FD
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
@@ -3962,6 +3969,7 @@ double TE = 0.0; //most recent echo time recorded
 	double contentTime = 0.0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
+	int acquisitionTimesUIH = 0;
     int sqDepth00189114 = -1;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
@@ -4492,6 +4500,11 @@ double TE = 0.0; //most recent echo time recorded
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
+                if (d.manufacturer != kMANUFACTURER_UIH) break;
+                //UIH slice timing
+                d.CSA.sliceTiming[acquisitionTimesUIH] = d.acquisitionTime;
+                //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesUIH]);
+                acquisitionTimesUIH ++;
                 break;
             case kContentTime :
                 char contentTimeTxt[kDICOMStr];
@@ -4738,11 +4751,38 @@ double TE = 0.0; //most recent echo time recorded
             case kPETImageIndex :
             	PETImageIndex = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
             	break;
+            case kPEDirectionDisplayedUIH :
+            	if (d.manufacturer != kMANUFACTURER_UIH) break;
+            	dcmStr (lLength, &buffer[lPos], d.phaseEncodingDirectionDisplayedUIH);
+            	break;
+            case kDiffusion_bValueUIH : {
+            	if (d.manufacturer != kMANUFACTURER_UIH) break;
+            	float v[4];
+            	dcmMultiFloatDouble(lLength, &buffer[lPos], 1, v, d.isLittleEndian);
+            	d.CSA.dtiV[0] = v[0];
+            	d.CSA.numDti = 1;
+            	//printf("%d>>>%g\n", lPos, v[0]);
+            	break; }
             case kNumberOfImagesInGridUIH :
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	d.numberOfImagesInGridUIH =  dcmStrFloat(lLength, &buffer[lPos]);
             	d.CSA.mosaicSlices = d.numberOfImagesInGridUIH;
             	break;
+            case kDiffusionGradientDirectionUIH : { //0065,1037
+            //0.03712929804225321\-0.5522387869760447\-0.8328587749392602
+            	if (d.manufacturer != kMANUFACTURER_UIH) break;
+            	float v[4];
+            	dcmMultiFloatDouble(lLength, &buffer[lPos], 3, v, d.isLittleEndian);
+				//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
+                //printf(">>>%g %g %g\n", v[0], v[1], v[2]);
+                d.CSA.dtiV[1] = v[0];
+                d.CSA.dtiV[2] = v[1];
+                d.CSA.dtiV[3] = v[2];
+                	//vRLPhilips = v[0];
+					//vAPPhilips = v[1];
+					//vFHPhilips = v[2];
+            	break; }
+
             case kBitsAllocated :
                 d.bitsAllocated = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
@@ -5654,6 +5694,7 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
+	//printf("%g\t\t%g\t%g\t%g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
     return d;
 } // readDICOM()
