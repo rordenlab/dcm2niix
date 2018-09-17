@@ -785,7 +785,6 @@ struct TDICOMdata clear_dicom_data() {
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
     d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
-    d.sliceOrderGE = kGE_SLICE_ORDER_UNKNOWN;
     d.rtia_timerGE = 0.0;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
@@ -5270,10 +5269,17 @@ double TE = 0.0; //most recent echo time recorded
 					d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
 				if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
 					d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
-				if (sliceOrderFlag == kGE_SLICE_ORDER_TOP_DOWN)
-					d.sliceOrderGE = kGE_SLICE_ORDER_TOP_DOWN;
-				if (sliceOrderFlag == kGE_SLICE_ORDER_BOTTOM_UP)
-					d.sliceOrderGE = kGE_SLICE_ORDER_BOTTOM_UP;
+				if (sliceOrderFlag == kGE_SLICE_ORDER_BOTTOM_UP) {
+					//https://cfmriweb.ucsd.edu/Howto/3T/operatingtips.html
+					if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+						d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+					else
+						d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+				}
+				//if (sliceOrderFlag == kGE_SLICE_ORDER_TOP_DOWN)
+				//	d.sliceOrderGE = kGE_SLICE_ORDER_TOP_DOWN;
+				//if (sliceOrderFlag == kGE_SLICE_ORDER_BOTTOM_UP)
+				//	d.sliceOrderGE = kGE_SLICE_ORDER_BOTTOM_UP;
 				#endif
 				break;
             }

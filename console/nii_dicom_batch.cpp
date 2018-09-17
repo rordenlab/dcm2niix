@@ -917,10 +917,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Unflipped\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n" );
 	}
-	if (d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) { //only set for GE
-		if (d.sliceOrderGE == kGE_SLICE_ORDER_TOP_DOWN) fprintf(fp, "\t\"SliceOrderGE\": \"TopDown\",\n" );
-		if (d.sliceOrderGE == kGE_SLICE_ORDER_BOTTOM_UP) fprintf(fp, "\t\"SliceOrderGE\": \"BottomUp\",\n" );
-	}
+	//if (d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) { //only set for GE
+	//	if (d.sliceOrderGE == kGE_SLICE_ORDER_TOP_DOWN) fprintf(fp, "\t\"SliceOrderGE\": \"TopDown\",\n" );
+	//	if (d.sliceOrderGE == kGE_SLICE_ORDER_BOTTOM_UP) fprintf(fp, "\t\"SliceOrderGE\": \"BottomUp\",\n" );
+	//}
 	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
 		printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
@@ -1087,30 +1087,14 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "-");
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
-	//Slice Timing UIH >>>>
-	if ((d.manufacturer == kMANUFACTURER_UIH) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	//Slice Timing UIH or GE >>>>
+	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE)) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
 					fprintf(fp, ",\n");
 				if (d.CSA.protocolSliceNumber1 < 0)
 					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1) - i]);
-				else
-					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
-			}
-		fprintf(fp, "\t],\n");
-	}
-	//Slice Timing GE >>>>
-	if ((d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) &&(d.manufacturer == kMANUFACTURER_GE) && (d.CSA.sliceTiming[0] >= 0.0)) {
-   		fprintf(fp, "\t\"SliceTiming\": [\n");
-   		for (int i = 0; i < h->dim[3]; i++) {
-				if (i != 0)
-					fprintf(fp, ",\n");
-				//do not flip
-				//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
-				//if (d.CSA.protocolSliceNumber1 < 0)
-				if (d.sliceOrderGE == kGE_SLICE_ORDER_TOP_DOWN)
-					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1)-i]); //images flipped in z dimenions
 				else
 					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
 			}
@@ -2976,13 +2960,22 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 		}
 		//compare all slice times in 2nd volume to start time for this volume
 		if (maxTime != minTime) {
-			for (int v = 0; v < hdr0.dim[3]; v++) {
+			for (int v = 0; v < hdr0.dim[3]; v++)
 				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
-				//printf("%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
-			}
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
-		}
-	}
+			if (opts.isVerbose > 1) {
+				printf("GE slice timing\n");
+				printf("\tTime\tX\tY\tZ\tInstance\n");
+				for (int v = 0; v < hdr0.dim[3]; v++) {
+					if (v == (hdr0.dim[3]-1))
+						printf("...\n");
+					if ((v < 4) || (v == (hdr0.dim[3]-1)))
+						printf("\t%g\t%g\t%g\t%g\t%d\n", dcmList[dcmSort[0].indx].CSA.sliceTiming[v], dcmList[dcmSort[v+j].indx].patientPosition[1], dcmList[dcmSort[v+j].indx].patientPosition[2], dcmList[dcmSort[v+j].indx].patientPosition[3], dcmList[dcmSort[v+j].indx].imageNum);
+
+				} //for v
+			} //verbose > 1
+		} //if maxTime != minTIme
+	} //if GE slice timing
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
     	int nVol = 0;
