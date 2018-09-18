@@ -1055,9 +1055,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	int phPos = d.CSA.phaseEncodingDirectionPositive;
 	//next two conditionals updated: make GE match Siemens
 	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
-		phPos = 0;
-	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
 		phPos = 1;
+    if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
+        phPos = 0;
 	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos < 0)) {
 		//when phase encoding axis is known but we do not know phase encoding polarity
 		// https://github.com/rordenlab/dcm2niix/issues/163
