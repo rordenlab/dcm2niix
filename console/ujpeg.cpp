@@ -347,9 +347,19 @@ NJ_FORCE_INLINE unsigned char njClip(const int x) {
 #define W6 1108
 #define W7 565
 
+#ifdef USING_R
+NJ_INLINE int shiftLeft(int i, int p) {
+    unsigned u = *(unsigned *)(&i);
+    u <<= p;
+    return int(u);
+}
+#else
+#define shiftLeft(i,p) (i) << (p)
+#endif
+
 NJ_INLINE void njRowIDCT(int* blk) {
     int x0, x1, x2, x3, x4, x5, x6, x7, x8;
-    if (!((x1 = blk[4] << 11)
+    if (!((x1 = shiftLeft(blk[4], 11))
         | (x2 = blk[6])
         | (x3 = blk[2])
         | (x4 = blk[1])
@@ -357,10 +367,10 @@ NJ_INLINE void njRowIDCT(int* blk) {
         | (x6 = blk[5])
         | (x7 = blk[3])))
     {
-        blk[0] = blk[1] = blk[2] = blk[3] = blk[4] = blk[5] = blk[6] = blk[7] = blk[0] << 3;
+        blk[0] = blk[1] = blk[2] = blk[3] = blk[4] = blk[5] = blk[6] = blk[7] = shiftLeft(blk[0], 3);
         return;
     }
-    x0 = (blk[0] << 11) + 128;
+    x0 = shiftLeft(blk[0], 11) + 128;
     x8 = W7 * (x4 + x5);
     x4 = x8 + (W1 - W7) * x4;
     x5 = x8 - (W1 + W7) * x5;
@@ -394,7 +404,7 @@ NJ_INLINE void njRowIDCT(int* blk) {
 
 NJ_INLINE void njColIDCT(const int* blk, unsigned char *out, int stride) {
     int x0, x1, x2, x3, x4, x5, x6, x7, x8;
-    if (!((x1 = blk[8*4] << 8)
+    if (!((x1 = shiftLeft(blk[8*4], 8))
         | (x2 = blk[8*6])
         | (x3 = blk[8*2])
         | (x4 = blk[8*1])
@@ -409,7 +419,7 @@ NJ_INLINE void njColIDCT(const int* blk, unsigned char *out, int stride) {
         }
         return;
     }
-    x0 = (blk[0] << 8) + 8192;
+    x0 = shiftLeft(blk[0], 8) + 8192;
     x8 = W7 * (x4 + x5) + 4;
     x4 = (x8 + (W1 - W7) * x4) >> 3;
     x5 = (x8 - (W1 + W7) * x5) >> 3;
@@ -449,14 +459,14 @@ static int njShowBits(int bits) {
     if (!bits) return 0;
     while (nj.bufbits < bits) {
         if (nj.size <= 0) {
-            nj.buf = (nj.buf << 8) | 0xFF;
+            nj.buf = shiftLeft(nj.buf, 8) | 0xFF;
             nj.bufbits += 8;
             continue;
         }
         newbyte = *nj.pos++;
         nj.size--;
         nj.bufbits += 8;
-        nj.buf = (nj.buf << 8) | newbyte;
+        nj.buf = shiftLeft(nj.buf, 8) | newbyte;
         if (newbyte == 0xFF) {
             if (nj.size) {
                 unsigned char marker = *nj.pos++;
@@ -470,7 +480,7 @@ static int njShowBits(int bits) {
                         if ((marker & 0xF8) != 0xD0)
                             nj.error = NJ_SYNTAX_ERROR;
                         else {
-                            nj.buf = (nj.buf << 8) | marker;
+                            nj.buf = shiftLeft(nj.buf, 8) | marker;
                             nj.bufbits += 8;
                         }
                 }
@@ -556,16 +566,16 @@ NJ_INLINE void njDecodeSOF(void) {
         c = nj.comp;
         c->ssx = c->ssy = ssxmax = ssymax = 1;
     }
-    nj.mbsizex = ssxmax << 3;
-    nj.mbsizey = ssymax << 3;
+    nj.mbsizex = shiftLeft(ssxmax, 3);
+    nj.mbsizey = shiftLeft(ssymax, 3);
     nj.mbwidth = (nj.width + nj.mbsizex - 1) / nj.mbsizex;
     nj.mbheight = (nj.height + nj.mbsizey - 1) / nj.mbsizey;
     for (i = 0, c = nj.comp;  i < nj.ncomp;  ++i, ++c) {
         c->width = (nj.width * c->ssx + ssxmax - 1) / ssxmax;
         c->height = (nj.height * c->ssy + ssymax - 1) / ssymax;
-        c->stride = nj.mbwidth * c->ssx << 3;
+        c->stride = nj.mbwidth * shiftLeft(c->ssx, 3);
         if (((c->width < 3) && (c->ssx != ssxmax)) || ((c->height < 3) && (c->ssy != ssymax))) njThrow(NJ_UNSUPPORTED);
-        if (!(c->pixels = (unsigned char*) njAllocMem(c->stride * nj.mbheight * c->ssy << 3))) njThrow(NJ_OUT_OF_MEM);
+        if (!(c->pixels = (unsigned char*) njAllocMem(c->stride * nj.mbheight * shiftLeft(c->ssy, 3)))) njThrow(NJ_OUT_OF_MEM);
     }
     if (nj.ncomp == 3) {
         nj.rgb = (unsigned char*) njAllocMem(nj.width * nj.height * nj.ncomp);
@@ -595,7 +605,7 @@ NJ_INLINE void njDecodeDHT(void) {
             currcnt = counts[codelen - 1];
             if (!currcnt) continue;
             if (nj.length < currcnt) njThrow(NJ_SYNTAX_ERROR);
-            remain -= currcnt << (16 - codelen);
+            remain -= shiftLeft(currcnt, 16 - codelen);
             if (remain < 0) njThrow(NJ_SYNTAX_ERROR);
             for (i = 0;  i < currcnt;  ++i) {
                 unsigned char code = nj.pos[i];
@@ -651,7 +661,7 @@ static int njGetVLC(nj_vlc_code_t* vlc, unsigned char* code) {
     if (!bits) return 0;
     value = njGetBits(bits);
     if (value < (1 << (bits - 1)))
-        value += ((-1) << bits) + 1;
+        value += shiftLeft(-1, bits) + 1;
     return value;
 }
 
@@ -697,7 +707,7 @@ NJ_INLINE void njDecodeScan(void) {
         for (i = 0, c = nj.comp;  i < nj.ncomp;  ++i, ++c)
             for (sby = 0;  sby < c->ssy;  ++sby)
                 for (sbx = 0;  sbx < c->ssx;  ++sbx) {
-                    njDecodeBlock(c, &c->pixels[((mby * c->ssy + sby) * c->stride + mbx * c->ssx + sbx) << 3]);
+                    njDecodeBlock(c, &c->pixels[shiftLeft((mby * c->ssy + sby) * c->stride + mbx * c->ssx + sbx, 3)]);
                     njCheckError();
                 }
         if (++mbx >= nj.mbwidth) {

@@ -1,4 +1,4 @@
-#ifndef HAVE_R
+#ifndef USING_R
 #include "nifti1.h"
 #endif
 #include "nifti1_io_core.h"

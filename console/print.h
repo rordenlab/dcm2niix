@@ -8,7 +8,7 @@
 #ifndef _R_PRINT_H_
 	#define _R_PRINT_H_
 	#include <stdarg.h>
-	#ifdef HAVE_R
+	#ifdef USING_R
 		#define R_USE_C99_IN_CXX
 		#include <R_ext/Print.h>
 		#define printMessage(...) { Rprintf("[dcm2niix info] "); Rprintf(__VA_ARGS__); }
@@ -48,5 +48,5 @@
 		// #define printError(...) ({ printMessage("Error: "); printMessage(__VA_ARGS__);})
 		#define printWarning(...) do {printMessage("Warning: "); printMessage(__VA_ARGS__);} while(0)
 
-	#endif //HAVE_R
+	#endif //USING_R
 #endif //_R_PRINT_H_
