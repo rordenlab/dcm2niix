@@ -1319,12 +1319,19 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 		bvals[i] = vx[i].V[0];
 		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
 		//Philips includes derived isotropic images
-		if ((dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS) && (isADCnotDTI(vx[i]))) {
+		if (((dcmList[indx0].manufacturer == kMANUFACTURER_GE) || (dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
             *numADC = *numADC + 1;
             bvals[i] = kADCval;
             //printMessage("+++bxyz %d\n",i);
         }
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
+	}
+	if (*numADC == numDti ) {
+		//all isotropic/ADC images - no valid bvecs
+		*numADC = 0;
+		free(bvals);
+		free(vx);
+		return NULL;
 	}
 	if (*numADC > 0) {
 		// DWIs (i.e. short diffusion scans with too few directions to
