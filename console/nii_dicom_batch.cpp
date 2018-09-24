@@ -2964,6 +2964,14 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			for (int v = 0; v < hdr0.dim[3]; v++)
 				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
+			//detect multi-band
+			int nZero = 0;
+			for (int v = 0; v < hdr0.dim[3]; v++)
+				if (isSameFloatGE(dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]], 0.0))
+					nZero ++;
+			if ((nZero > 1) && (nZero < hdr0.dim[3]) && ((hdr0.dim[3] % nZero) == 0))
+				dcmList[dcmSort[0].indx].CSA.multiBandFactor = nZero;
+			//report timines
 			if (opts.isVerbose > 1) {
 				printf("GE slice timing\n");
 				printf("\tTime\tX\tY\tZ\tInstance\n");

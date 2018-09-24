@@ -648,7 +648,7 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
     // snprintf(h->descrip,80, "%s",txt);
     strncpy(h->descrip, txt, 79);
     h->descrip[79] = '\0';
-    
+
     if (strlen(d.imageComments) > 0)
         snprintf(h->aux_file,24,"%.23s",d.imageComments);
     return headerDcm2NiiSForm(d,d2, h, isVerbose);
@@ -3893,9 +3893,9 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
-#define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS
-#define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS
-#define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS
+#define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS phase diffusion direction
+#define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS frequency diffusion direction
+#define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS slice diffusion direction
 #define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
