@@ -2305,6 +2305,84 @@ int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
 }
 
+unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
+    //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
+    if (opts.isOnlyBIDS) return im;
+    if (gantryTiltDeg == 0.0) return im;
+    struct nifti_1_header hdrIn = *hdr;
+    int nVox2DIn = hdrIn.dim[1]*hdrIn.dim[2];
+    if ((nVox2DIn < 1) || (hdrIn.dim[0] != 3) || (hdrIn.dim[3] < 3)) return im;
+    if (hdrIn.datatype != DT_FLOAT32) {
+        printMessage("Only able to correct gantry tilt for 16-bit integer or 32-bit float data with at least 3 slices.");
+        return im;
+    }
+    printMessage("Gantry Tilt Correction is new: please validate conversions\n");
+    float GNTtanPx = tan(gantryTiltDeg / (180/M_PI))/hdrIn.pixdim[2]; //tangent(degrees->radian)
+    //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
+    // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
+    // also validated with actual data...
+    if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
+        GNTtanPx = - GNTtanPx;
+    else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
+        GNTtanPx = - GNTtanPx;
+    else if (manufacturer == kMANUFACTURER_GE)
+        ; //do nothing
+    else
+    	if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
+    // printMessage("gantry tilt pixels per mm %g\n",GNTtanPx);
+    float * imIn32 = ( float*) im;
+	//create new output image: larger due to skew
+	// compute how many pixels slice must be extended due to skew
+    int s = hdrIn.dim[3] - 1; //top slice
+    float maxSliceMM = fabs(s * hdrIn.pixdim[3]);
+    if (sliceMMarray != NULL) maxSliceMM = fabs(sliceMMarray[s]);
+    int pxOffset = ceil(fabs(GNTtanPx*maxSliceMM));
+    // printMessage("Tilt extends slice by %d pixels", pxOffset);
+	hdr->dim[2] = hdr->dim[2] + pxOffset;
+	int nVox2D = hdr->dim[1]*hdr->dim[2];
+	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 4);// *4 as 32-bits per voxel, sizeof(float) );
+	float * imOut32 = ( float*) imOut;
+	//set surrounding voxels to darkest observed value
+	float minVoxVal = imIn32[0];
+	for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
+		if (imIn32[v] < minVoxVal)
+			minVoxVal = imIn32[v];
+	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
+		imOut32[v] = minVoxVal;
+	//copy skewed voxels
+	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
+		float sliceMM = s * hdrIn.pixdim[3];
+		if (sliceMMarray != NULL) sliceMM = sliceMMarray[s]; //variable slice thicknesses
+		//sliceMM -= mmMidZ; //adjust so tilt relative to middle slice
+		if (GNTtanPx < 0)
+			sliceMM -= maxSliceMM;
+		float Offset = GNTtanPx*sliceMM;
+		float fracHi =  ceil(Offset) - Offset; //ceil not floor since rI=r-Offset not rI=r+Offset
+		float fracLo = 1.0f - fracHi;
+		for (int r = 0; r < hdr->dim[2]; r++) { //for each row of output
+			float rI = (float)r - Offset; //input row
+			if ((rI >= 0.0) && (rI < hdrIn.dim[2])) {
+				int rLo = floor(rI);
+				int rHi = rLo + 1;
+				if (rHi >= hdrIn.dim[2]) rHi = rLo;
+				rLo = (rLo * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row below
+				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row above
+				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
+				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
+					imOut32[rOut+c] = round( ( ((float)imIn32[rLo+c])*fracLo) + ((float)imIn32[rHi+c])*fracHi);
+				} //for c (each column)
+			} //rI (input row) in range
+		} //for r (each row)
+	} //for s (each slice)*/
+	free(im);
+	if (sliceMMarray != NULL) return imOut; //we will save after correcting for variable slice thicknesses
+    char niiFilenameTilt[2048] = {""};
+    strcat(niiFilenameTilt,niiFilename);
+    strcat(niiFilenameTilt,"_Tilt");
+    nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts);
+    return imOut;
+}// nii_saveNII3DtiltFloat32()
+
 unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
     if (opts.isOnlyBIDS) return im;
@@ -2312,6 +2390,8 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     struct nifti_1_header hdrIn = *hdr;
     int nVox2DIn = hdrIn.dim[1]*hdrIn.dim[2];
     if ((nVox2DIn < 1) || (hdrIn.dim[0] != 3) || (hdrIn.dim[3] < 3)) return im;
+    if (hdrIn.datatype == DT_FLOAT32)
+        return nii_saveNII3DtiltFloat32(niiFilename, hdr, im, opts, sliceMMarray, gantryTiltDeg, manufacturer);
     if (hdrIn.datatype != DT_INT16) {
         printMessage("Only able to correct gantry tilt for 16-bit integer data with at least 3 slices.");
         return im;
@@ -2383,14 +2463,15 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     return imOut;
 }// nii_saveNII3Dtilt()
 
+
 int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
     //convert image with unequal slice distances to equal slice distances
     //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
     if ((nVox2D < 1) || (hdr.dim[0] != 3) ) return EXIT_FAILURE;
-    if ((hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
-        printMessage("Only able to make equidistant slices from 3D 8,16,24-bit volumes with at least 3 slices.");
+    if ((hdr.datatype !=  DT_FLOAT32) && (hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
+        printMessage("Only able to make equidistant slices from 8,16,24-bit integer or 32-bit float data with at least 3 slices.");
         return EXIT_FAILURE;
     }
     float mn = sliceMMarray[1] - sliceMMarray[0];
@@ -2423,7 +2504,36 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
         hdrX.srow_z[2] = hdr.srow_z[2] * Scale;
     }
     unsigned char *imX;
-    if (hdr.datatype == DT_INT16) {
+    if (hdr.datatype == DT_FLOAT32) {
+        float * im32 = ( float*) im;
+        imX = (unsigned char *)malloc( (nVox2D * slices)  *  4);//sizeof(float)
+        float * imX32 = ( float*) imX;
+        for (int s=0; s < slices; s++) {
+            float sliceXmm = s * mn; //distance from first slice
+            int sliceXi = (s * nVox2D);//offset for this slice
+            int sHi = 0;
+            while ((sHi < (hdr.dim[3] - 1) ) && (sliceMMarray[sHi] < sliceXmm))
+                sHi += 1;
+            int sLo = sHi - 1;
+            if (sLo < 0) sLo = 0;
+            float mmHi = sliceMMarray[sHi];
+            float mmLo = sliceMMarray[sLo];
+            sLo = sLo * nVox2D;
+            sHi = sHi * nVox2D;
+            if ((mmHi == mmLo) || (sliceXmm > mmHi)) { //select only from upper slice TPX
+                //for (int v=0; v < nVox2D; v++)
+                //    imX16[sliceXi+v] = im16[sHi+v];
+                memcpy(&imX32[sliceXi], &im32[sHi], nVox2D* sizeof(float)); //memcpy( dest, src, bytes)
+
+            } else {
+                float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
+                float fracLo = 1.0 - fracHi;
+                //weight between two slices
+                for (int v=0; v < nVox2D; v++)
+                    imX32[sliceXi+v] = round( ( (float)im32[sLo+v]*fracLo) + (float)im32[sHi+v]*fracHi);
+            }
+        }
+    } else if (hdr.datatype == DT_INT16) {
         short * im16 = ( short*) im;
         imX = (unsigned char *)malloc( (nVox2D * slices)  *  2);//sizeof( short) );
         short * imX16 = ( short*) imX;
