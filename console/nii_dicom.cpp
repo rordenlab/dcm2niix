@@ -2283,20 +2283,24 @@ size_t nii_ImgBytes(struct nifti_1_header hdr) {
 } //nii_ImgBytes()
 
 //unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, int nMosaicSlices, int ProtocolSliceNumber1) {
-unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, int nMosaicSlices) {
+unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, int nMosaicSlices, bool isUIH) {
     //demosaic http://nipy.org/nibabel/dicom/dicom_mosaic.html
     if (nMosaicSlices < 2) return inImg;
     //Byte inImg[ [img length] ];
     //[img getBytes:&inImg length:[img length]];
-    int nRowCol = (int) ceil(sqrt((double) nMosaicSlices));
-    int colBytes = hdr->dim[1]/nRowCol * hdr->bitpix/8;
+    int nCol = (int) ceil(sqrt((double) nMosaicSlices));
+    int nRow = nCol;
+    //n.b. Siemens store 20 images as 5x5 grid, UIH as 5rows, 4 Col https://github.com/rordenlab/dcm2niix/issues/225
+    if (isUIH)
+    	nRow = ceil(nMosaicSlices/nCol);
+    int colBytes = hdr->dim[1]/nCol * hdr->bitpix/8;
     int lineBytes = hdr->dim[1] * hdr->bitpix/8;
-    int rowBytes = hdr->dim[1] * hdr->dim[2]/nRowCol * hdr->bitpix/8;
+    int rowBytes = hdr->dim[1] * hdr->dim[2]/nRow * hdr->bitpix/8;
     int col = 0;
     int row = 0;
     int lOutPos = 0;
-    hdr->dim[1] = hdr->dim[1]/nRowCol;
-    hdr->dim[2] = hdr->dim[2]/nRowCol;
+    hdr->dim[1] = hdr->dim[1]/nCol;
+    hdr->dim[2] = hdr->dim[2]/nRow;
     hdr->dim[3] = nMosaicSlices;
     size_t imgsz = nii_ImgBytes(*hdr);
     unsigned char *outImg = (unsigned char *)malloc(imgsz);
@@ -2308,26 +2312,11 @@ unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, i
             lOutPos +=colBytes;
         }
         col ++;
-        if (col >= nRowCol) {
+        if (col >= nCol) {
             row ++;
             col = 0;
         } //start new column
     } //for m = each mosaic slice
-    /* //we now provide a warning once per series rather than once per volume (see nii_dicom_batch)
-    if (ProtocolSliceNumber1 > 1) {
-        printWarning("Weird CSA 'ProtocolSliceNumber': SPATIAL AND DTI TRANSFORMS UNTESTED\n");
-    }*/
-    /*if ((ProtocolSliceNumber1 > 1) && (hdr->dim[3] > 1)) { //exceptionally rare: reverse order of slices - now handled in matrix...
-     int sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
-     memcpy(&inImg[0], &outImg[0],sliceBytes*hdr->dim[3]); //copy data with reversed order dest, src, bytes
-     int lOutPos = sliceBytes * (hdr->dim[3]-1);
-     int lPos = 0;
-     for (int m=0; m < nMosaicSlices; m++) {
-     memcpy( &outImg[lOutPos], &inImg[lPos], sliceBytes);
-     lPos += sliceBytes;
-     lOutPos -= sliceBytes;
-     }
-     }*/
     free(inImg);
     return outImg;
 } // nii_demosaic()
@@ -3439,7 +3428,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB);//do this BEFORE Y-Flip, or RGB order can be flipped
     dcm.isPlanarRGB = true;
     if (dcm.CSA.mosaicSlices > 1) {
-        img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices); //, dcm.CSA.protocolSliceNumber1);
+        img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, (dcm.manufacturer == kMANUFACTURER_UIH)); //, dcm.CSA.protocolSliceNumber1);
         /* we will do this in nii_dicom_batch #ifdef obsolete_mosaic_flip
          img = nii_flipImgY(img, hdr);
          #endif*/
@@ -3860,6 +3849,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kZThick  0x0018+(0x0050 << 16 )
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
+#define  kTriggerTime  0x0018+(0x1060 << 16 ) //DS
 //#define  kEffectiveTE  0x0018+(0x9082 << 16 )
 const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kTI  0x0018+(0x0082 << 16) // Inversion time
@@ -4779,6 +4769,7 @@ double TE = 0.0; //most recent echo time recorded
             case kPEDirectionDisplayedUIH :
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	dcmStr (lLength, &buffer[lPos], d.phaseEncodingDirectionDisplayedUIH);
+            	printf("---> %s\n", d.phaseEncodingDirectionDisplayedUIH);
             	break;
             case kDiffusion_bValueUIH : {
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
@@ -4825,6 +4816,12 @@ double TE = 0.0; //most recent echo time recorded
             	if (d.TE <= 0.0)
             		d.TE = TE;
             	break;
+           /* case kTriggerTime: {
+				//untested method to detect slice timing for GE PSD “epi” with multiphase option
+				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
+            	float triggerTime =  dcmStrFloat(lLength, &buffer[lPos]);
+            	printf('%g\n', triggerTime);
+            	break;}*/
             case kEffectiveTE : {
             	TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	if (d.TE <= 0.0)

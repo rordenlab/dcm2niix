@@ -370,7 +370,8 @@ NJ_INLINE void njRowIDCT(int* blk) {
         blk[0] = blk[1] = blk[2] = blk[3] = blk[4] = blk[5] = blk[6] = blk[7] = shiftLeft(blk[0], 3);
         return;
     }
-    x0 = shiftLeft(blk[0], 11) + 128;
+    x0 = shiftLeft(blk[0], 11);
+    x0 += 128;
     x8 = W7 * (x4 + x5);
     x4 = x8 + (W1 - W7) * x4;
     x5 = x8 - (W1 + W7) * x5;
@@ -419,7 +420,8 @@ NJ_INLINE void njColIDCT(const int* blk, unsigned char *out, int stride) {
         }
         return;
     }
-    x0 = shiftLeft(blk[0], 8) + 8192;
+    x0 = shiftLeft(blk[0], 8);
+    x0 += 8192;
     x8 = W7 * (x4 + x5) + 4;
     x4 = (x8 + (W1 - W7) * x4) >> 3;
     x5 = (x8 - (W1 + W7) * x5) >> 3;

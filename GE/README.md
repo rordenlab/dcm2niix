@@ -1,124 +1,31 @@
 ## About
 
-dcm2niix attempts to convert GE DICOM format images to NIfTI.
+dcm2niix attempts to convert GE DICOM format images to NIfTI. The current generation DICOM files generated be GE equipment is quite impoverished relative to other vendors. Therefore, the amount of information dcm2niix is able to extract is relatively limited. Hopefully, in the future GE will provide more details that are critical for brain scientists.
 
 ## Diffusion Tensor Notes
 
 As noted by Jaemin Shin (GE), the GE convention for reported diffusion gradient direction has always been in “MR physics” logical coordinate, i.e Freq (X), Phase (Y), Slice (Z). Note that this is neither “with reference to the scanner bore” (like Siemens or Philips) nor “with reference to the imaging plane” (as expected by FSL tools). This is the main source of confusion. This explains why the dcm2niix function geCorrectBvecs() checks whether the DICOM tag In-plane Phase Encoding Direction (0018,1312) is 'ROW' or 'COL'. In addition, it will generate the warning 'reorienting for ROW phase-encoding untested' if you acquire DTI data with the phase encoding in the ROW direction. If you do test this feature, please report your findings as a Github issue.
 
-## dcm2niix Notes
+## Slice Timing
 
-In addition to reading the
+Knowing the relative timing of the acquisition for each 2D slice in a 3D volume is useful for [slice time correction](https://www.mccauslandcenter.sc.edu/crnl/tools/stc) of both fMRI and DTI data. Unfortunately, current GE software does not provide a consistent way to record this.
 
+[Some sequences](https://afni.nimh.nih.gov/afni/community/board/read.php?1,154006) encode the RTIA Timer (0021,105E) element. For example, [this dataset DV24](https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/ge-mr750-slice-timing) includes timing data, while [this DV26 dataset does not](https://github.com/neurolabusc/dcm_qa_nih). Even with the sequences that do encode the RTIA Timer, there is some debate regarding the accuracy of this element. In the example listed, the slice times are clearly wrong in the first volume. Therefore, dcm2niix always estimates slice times based on the 2nd volume in a time series.
 
-In addition to the public DICOM tags, dcm2niix attempts to decode the proprietary GE Protocol Data Block (0025,101B). This is essentially a [GZip format](http://www.onicos.com/staff/iz/formats/gzip.html) file embedded inside the DICOM header. Here are comments regarding the usage of this data block:
+In theory, fMRI acquired using GE product sequence (PSD) “epi” with the multiphase option will store slice timing in the Trigger Time (DICOM 0018,1060) element. The current version of dcm2niix ignores this field, as no examples are available. In contrast, the popular PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics) does not save slice timing.
 
- - The VIEWORDER tag is used to set the polarity of the BIDS tag PhaseEncodingDirection, with VIEWORDER of 1 suggesting bottom up phase encoding.
- - The SLICEORDER tag is used to set the SliceTiming for the BIDS tag PhaseEncodingDirection, with a SLICEORDER of 1 suggesting interleaved acquisition. Note that current versions of dcm2niix do not detect multiband for GE datasets. Therefore, the slice timing reported in the BIDS header will be incorrect for multiband acquisitions.
- - There are reports that newer versions of GE equipement (e.g. DISCOVERY MR750 / 24\MX\MR Software release:DV24.0_R01_1344.a) are now storing an [XML](https://groups.google.com/forum/#!msg/comp.protocols.dicom/mxnCkv8A-i4/W_uc6SxLwHQJ) file within the Protocolo Data Block (compressed). Since the developers of dcm2niix have not had access to any of these files, dcm2niix should generate a warning when it encounters any of these images.
+## User Define Data GE  (0043,102A)
 
-```
-POSITION "Supine"
-ENTRY "Head First"
-CLINICALCOIL "C-GE_32Ch Head"
-COIL "32Ch Head"
-COILCOMPONENT "32 Ch Head Coil"
-PLANE "AXIAL"
-SEDESC "Axial rsfMRI (Eyes Open)"
-HOS "0"
-IMODE "2D"
-PSEQ "Gradient Echo"
-IOPT "MPh, EPI"
-PLUG "9"
-IEC_ACCEPT "ON"
-FILTCHOICE "None"
-BWRT "-1"
-TRICKSIMG "1"
-TAG_SPACE "7"
-TAG_TYPE "None"
-USERCV0 "1.00"
-USERCV_MASK "1"
-USERCV_MASK2 "0"
-NUMBVALUE "1"
-REOPT "1"
-FLIPANG "90"
-TE "30.0"
-NECHO "1"
-TR "3000.0"
-NUMSHOTS "1"
-BPMMODE "0"
-AUTOTRGTYPE "0"
-INITSTATE "0"
-PSDTRIG "0"
-SLICEORDER "1"
-VIEWORDER "1"
-TRREST "0"
-TRACTIVE "0"
-SLPERLOC "200"
-ACQORDER "0"
-DELACQ "Minimum"
-DELACQNOAV "2"
-SEPSERIES "0"
-AUTOTRIGWIN "0"
-FOV "22.0"
-SLTHICK "3.4"
-SPC "0.0"
-GRXOPT "0"
-SLOC1 "R0.5"
-SLOC2 "A27.0"
-SLOC3 "I63.3"
-ELOC1 "R0.5"
-ELOC2 "A27.0"
-ELOC3 "S96.5"
-FOVCNT1 "R0.5"
-FOVCNT2 "A27.0"
-NOSLC "48"
-SL3PLANE "0"
-SL3PLANE1 "0"
-SL3PLANE2 "0"
-SL3PLANE3 "0"
-SPCPERPLANE1 "0.0"
-SPCPERPLANE2 "0.0"
-SPCPERPLANE3 "0.0"
-MATRIXX "64"
-MATRIXY "64"
-SWAPPF "R/L"
-NEX "1.00"
-CONTRAST "No"
-CONTAM "Yes   "
-TBLDELTA "0.00"
-PHASEFOV "1.00"
-AUTOSHIM "Off"
-PHASECORR "Yes"
-PAUSEDELMASKACQ "1"
-GRIP_SLGROUP1 "0.500000 26.985256 16.641255 0.000000 0.000000 1.000000 0.000000 1.000000 0.000000 1.000000 0.000000 0.000000 48 0.000000 1 0.000000 0"
-GRIP_NUMSLGROUPS "1"
-GRIP_TRACKER "0"
-GRIP_SPECTRO "0"
-GRIP_NUMPSCVOL "0"
-GRIP_PSCVOL1 "0"
-GRIP_PSCVOL2 "0"
-GRIP_PSCVOLFOV "0.000000"
-GRIP_PSCVOLTHICK "0.000000"
-GRIP_IRBAND_A "0"
-GRIP_IRBAND_B "0"
-AUTOSUBOPTIONS "0"
-AUTOSCIC "0"
-AUTOVOICE "0"
-PRESETDELAY "0.0"
-MASKPHASE "0"
-MASKPAUSE "0"
-GRXLOCSAVE "0"
-AUTOCOIL "0"
-ONETOUCHREG "0"
-TEMPORALPHASES "4"
-MEGFREQ "60"
-DRIVERAMP "50"
-MEGDIR "4"
-DRIVERFREQ "60"
-RFDRIVEMODE "Quadrature"
-INRANGETR "0"
-NAVPSCPAUSE "0"
-EXCITATIONMODE "Selective"
-ANATOMY "SRT%5CNone%5CT-A0100"
-```
+This private element of the DICOM header is used to determine the phase encoding polarity. Specifically, we need to know the "Ky traversal direction" (top-down, or bottom up) and the phase encoding polarity. Unfortunately, this data is stored in a complicated, proprietary structure, that has changed with different releases of GE software. [Click here to see the definition for this structure](https://github.com/ScottHaileRobertson/GE-MRI-Tools/blob/master/GePackage/%2BGE/%2BPfile/%2BHeader/%2BRDB15/rdbm.h).
+
+## Total Readout Time
+
+One often wants to determine [echo spacing, bandwidth, ](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Total readout time is influence by parallel acceleration factor, bandwidth, number of EPI lines, and partial Fourier. Not all of these parameters are available from the GE DICOM images, so a user needs to check the scanner console.
+
+## GE Protocol Data Block
+
+In addition to the public DICOM tags, previous versions of dcm2niix attempted to decode the proprietary GE Protocol Data Block (0025,101B). This is essentially a [GZip format](http://www.onicos.com/staff/iz/formats/gzip.html) file embedded inside the DICOM header. Unfortunately, this data seems to be [unreliable](https://github.com/rordenlab/dcm2niix/issues/163) and therefore this strategy is not used anymore. The notes below regarding the usage of this data block are provided for historical purposes.
+
+ - The VIEWORDER tag is used to set the polarity of the BIDS tag PhaseEncodingDirection, with VIEWORDER of 1 suggesting bottom up phase encoding. Unfortunately, users can separately reverse the phase encoding direction making this tag unreliable.
+ - The SLICEORDER tag could be used to set the SliceTiming for the BIDS tag PhaseEncodingDirection, with a SLICEORDER of 1 suggesting interleaved acquisition.
+ - There are reports that newer versions of GE equipement (e.g. DISCOVERY MR750 / 24\MX\MR Software release:DV24.0_R01_1344.a) are now storing an [XML](https://groups.google.com/forum/#!msg/comp.protocols.dicom/mxnCkv8A-i4/W_uc6SxLwHQJ) file within the Protocolo Data Block (compressed). In theory this might also provide useful information.
