@@ -2292,7 +2292,8 @@ unsigned char * nii_demosaic(unsigned char* inImg, struct nifti_1_header *hdr, i
     int nRow = nCol;
     //n.b. Siemens store 20 images as 5x5 grid, UIH as 5rows, 4 Col https://github.com/rordenlab/dcm2niix/issues/225
     if (isUIH)
-    	nRow = ceil(nMosaicSlices/nCol);
+    	nRow = ceil((float)nMosaicSlices/(float)nCol);
+    //printf("%d = %dx%d\n", nMosaicSlices, nCol, nRow);
     int colBytes = hdr->dim[1]/nCol * hdr->bitpix/8;
     int lineBytes = hdr->dim[1] * hdr->bitpix/8;
     int rowBytes = hdr->dim[1] * hdr->dim[2]/nRow * hdr->bitpix/8;
@@ -4518,7 +4519,7 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.manufacturer != kMANUFACTURER_UIH) break;
                 //UIH slice timing
                 d.CSA.sliceTiming[acquisitionTimesUIH] = d.acquisitionTime;
-                //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesUIH]);
+                //printf("UIHsliceTime\t%s\t%0.8f\n", acquisitionTimeTxt, d.CSA.sliceTiming[acquisitionTimesUIH]);
                 acquisitionTimesUIH ++;
                 break;
             case kContentTime :
@@ -4769,7 +4770,6 @@ double TE = 0.0; //most recent echo time recorded
             case kPEDirectionDisplayedUIH :
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	dcmStr (lLength, &buffer[lPos], d.phaseEncodingDirectionDisplayedUIH);
-            	printf("---> %s\n", d.phaseEncodingDirectionDisplayedUIH);
             	break;
             case kDiffusion_bValueUIH : {
             	if (d.manufacturer != kMANUFACTURER_UIH) break;

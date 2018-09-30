@@ -283,10 +283,8 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
                           + (vx[i].V[2]*vx[i].V[2])
                           + (vx[i].V[3]*vx[i].V[3]));
         if ((vx[i].V[0] <= FLT_EPSILON)|| (vLen <= FLT_EPSILON) ) { //bvalue=0
-            if (vx[i].V[0] > FLT_EPSILON)
-                printWarning("Volume %d appears to be an ADC map (non-zero b-value with zero vector length)\n", i);
-            //for (int v= 0; v < 4; v++)
-            //    vx[i].V[v] =0.0f;
+            if (vx[i].V[0] > 5.0) //Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
+                printWarning("Volume %d appears to be derived image ADC/Isotropic (non-zero b-value with zero vector length)\n", i);
             continue; //do not normalize or reorient b0 vectors
         }//if bvalue=0
         vec3 bvecs_old =setVec3(vx[i].V[1],vx[i].V[2],vx[i].V[3]);
@@ -398,28 +396,6 @@ const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
 }
 //n.b. memchr returns "const void *" not "void *" for Windows C++ https://msdn.microsoft.com/en-us/library/d7zdhf37.aspx
 #endif //for systems without memmem
-
-/*int readKeyX(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
-	int ret = 0;
-	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
-	printWarning("<><><>\n");
-	if (!keyPos) return 0;
-	printWarning("<><> %d\n", strlen(keyPos));
-	int i = (int)strlen(key);
-	int numDigits = 0;
-	while( ( i< remLength) && (numDigits >= 0) ) {
-		printMessage("%c", keyPos[i]);
-		if( keyPos[i] >= '0' && keyPos[i] <= '9' ) {
-			ret = (10 * ret) + keyPos[i] - '0';
-			numDigits ++;
-		} else if (numDigits > 0)
-			numDigits = -1;
-		i++;
-	}
-	printWarning("---> %d\n", ret);
-	return ret;
-} //readKey()
-*/
 
 int readKey(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
 	int ret = 0;
@@ -2783,6 +2759,7 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 }// nii_saveCrop()
 
 float dicomTimeToSec (float dicomTime) {
+//convert HHMMSS to seconds, 135300.024 -> 135259.731 are 0.293 sec apart
 	char acqTimeBuf[64];
 	snprintf(acqTimeBuf, sizeof acqTimeBuf, "%+013.5f", (double)dicomTime);
 	int ahour,amin;
@@ -2813,6 +2790,19 @@ void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 //detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
+	int nSlices = 0;
+	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
+		nSlices++;
+	if (nSlices < 1) return;
+	if (d->manufacturer == kMANUFACTURER_UIH) {//convert HHMMSS to Sec
+		for (int i = 0; i < nSlices; i++)
+			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
+		float minT = d->CSA.sliceTiming[0];
+		for (int i = 0; i < nSlices; i++)
+			if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
+		for (int i = 0; i < nSlices; i++)
+			d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - minT;
+	}
 	float minT = d->CSA.sliceTiming[0];
 	float maxT = minT;
 	for (int i = 0; i < kMaxEPI3D; i++) {
@@ -2820,18 +2810,9 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
 		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
 	}
-	if (d->manufacturer == kMANUFACTURER_UIH) {
-		maxT = 0;
-		for (int i = 0; i < kMaxEPI3D; i++) {
-			if (d->CSA.sliceTiming[i] < 0.0) break;
-			d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - minT;
+	if (d->manufacturer == kMANUFACTURER_UIH) //convert HHMMSS to Sec
+		for (int i = 0; i < kMaxEPI3D; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
-			if (d->CSA.sliceTiming[i] > maxT)
-				maxT = d->CSA.sliceTiming[i];
-			//printf("::>>>%g\n", d->CSA.sliceTiming[i]);
-		}
-		//t = (t - min(t)) * 24 * 3600 * 1000; % day to ms
-	}
 	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
 	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
