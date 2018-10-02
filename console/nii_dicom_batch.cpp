@@ -751,6 +751,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			break;
 	};
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
+	//Imaging Frequency (0018,0084) can be useful https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
+	//however, sometimes stored inconsistently https://github.com/rordenlab/dcm2niix/issues/225
+	// json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
 	switch (d.manufacturer) {
 		case kMANUFACTURER_SIEMENS:
 			fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
@@ -765,7 +768,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
 			break;
 		case kMANUFACTURER_UIH:
-			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
+			fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n" );
 			break;
 	};
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
@@ -1022,8 +1025,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// FSL definition is start of first line until start of last line.
 	// Other than the use of (n-1), the value is basically just 1.0/bandwidthPerPixelPhaseEncode.
     // https://github.com/rordenlab/dcm2niix/issues/130
-    if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
+    if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0) && (d.manufacturer != kMANUFACTURER_UIH))
 	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
+    if (d.manufacturer == kMANUFACTURER_UIH) //https://github.com/rordenlab/dcm2niix/issues/225
+    	json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
     json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth );
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
@@ -2798,8 +2803,23 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
 		float minT = d->CSA.sliceTiming[0];
-		for (int i = 0; i < nSlices; i++)
+		float maxT = minT;
+		for (int i = 0; i < nSlices; i++) {
 			if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
+			if (d->CSA.sliceTiming[i] < maxT) maxT = d->CSA.sliceTiming[i];
+		}
+		float kMidnightSec = 86400;
+		float kNoonSec = 43200;
+		if ((maxT - minT) > kNoonSec) { //volume started before midnight but ended next day!
+			//identify and fix 'Cinderella error' where clock resets at midnight: untested
+			printWarning("UIH acquisition crossed midnight: check slice timing\n");
+			for (int i = 0; i < nSlices; i++)
+				if (d->CSA.sliceTiming[i] > kNoonSec) d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - kMidnightSec;
+						minT = d->CSA.sliceTiming[0];
+			for (int i = 0; i < nSlices; i++)
+				if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
+
+		}
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - minT;
 	}
