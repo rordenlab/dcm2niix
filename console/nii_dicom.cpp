@@ -791,7 +791,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
     d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
-    d.rtia_timerGE = 0.0;
+    d.rtia_timerGE = -1.0;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -3877,7 +3877,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
-#define  kAcquisitionDuration  0x0018+(0x9073<< 16 ) //FD
+#define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
 #define  kDiffusion_bValue  0x0018+uint32_t(0x9087<< 16 ) // FD
@@ -3984,7 +3984,7 @@ double TE = 0.0; //most recent echo time recorded
 	double contentTime = 0.0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
-	int acquisitionTimesUIH = 0;
+	int acquisitionTimesGE_UIH = 0;
     int sqDepth00189114 = -1;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
@@ -4522,9 +4522,8 @@ double TE = 0.0; //most recent echo time recorded
                 d.acquisitionTime = atof(acquisitionTimeTxt);
                 if (d.manufacturer != kMANUFACTURER_UIH) break;
                 //UIH slice timing
-                d.CSA.sliceTiming[acquisitionTimesUIH] = d.acquisitionTime;
-                //printf("UIHsliceTime\t%s\t%0.8f\n", acquisitionTimeTxt, d.CSA.sliceTiming[acquisitionTimesUIH]);
-                acquisitionTimesUIH ++;
+                d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.acquisitionTime;
+                acquisitionTimesGE_UIH ++;
                 break;
             case kContentTime :
                 char contentTimeTxt[kDICOMStr];
@@ -4827,12 +4826,14 @@ double TE = 0.0; //most recent echo time recorded
             case kImagingFrequency :
             	d.imagingFrequency = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-           /* case kTriggerTime: {
+           	case kTriggerTime:
 				//untested method to detect slice timing for GE PSD “epi” with multiphase option
 				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
-            	float triggerTime =  dcmStrFloat(lLength, &buffer[lPos]);
-            	printf('%g\n', triggerTime);
-            	break;}*/
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
+                //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
+				acquisitionTimesGE_UIH ++;
+            	break;
             case kEffectiveTE : {
             	TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	if (d.TE <= 0.0)
@@ -5729,9 +5730,9 @@ if (d.isHasPhase)
     //	long timeCRC = abs( (long)mz_crc32((unsigned char*) &contentTime, sizeof(double)));
     //}
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
-    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = (uint32_t)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
-		d.seriesNum = abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
+		d.seriesNum = (long)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     getFileName(d.imageBaseName, fname);
     if (multiBandFactor > d.CSA.multiBandFactor)
     	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header

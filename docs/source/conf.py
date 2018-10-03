@@ -302,7 +302,7 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('dcm2niix', 'dcm2niix', u'DICOM to NifTI converter',
-     ['This manual was developed and is maintained by Ghislain Antony Vaillant <ghisvail@gmail.com>'], 1),
+     ['This manual was developed by Ghislain Antony Vaillant and is maintained by the community'], 1),
     ('dcm2niibatch', 'dcm2niibatch', u'DICOM to NifTI batch converter',
      ['This manual was developed and is maintained by Benjamin Irving <mail@birving.com>'], 1)
 ]

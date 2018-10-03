@@ -12,7 +12,7 @@ Knowing the relative timing of the acquisition for each 2D slice in a 3D volume 
 
 [Some sequences](https://afni.nimh.nih.gov/afni/community/board/read.php?1,154006) encode the RTIA Timer (0021,105E) element. For example, [this dataset DV24](https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/ge-mr750-slice-timing) includes timing data, while [this DV26 dataset does not](https://github.com/neurolabusc/dcm_qa_nih). Even with the sequences that do encode the RTIA Timer, there is some debate regarding the accuracy of this element. In the example listed, the slice times are clearly wrong in the first volume. Therefore, dcm2niix always estimates slice times based on the 2nd volume in a time series.
 
-In theory, fMRI acquired using GE product sequence (PSD) “epi” with the multiphase option will store slice timing in the Trigger Time (DICOM 0018,1060) element. The current version of dcm2niix ignores this field, as no examples are available. In contrast, the popular PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics) does not save slice timing.
+In general, fMRI acquired using GE product sequence (PSD) “epi” with the multiphase option will store slice timing in the Trigger Time (DICOM 0018,1060) element. The current version of dcm2niix ignores this field, as no examples are available. In contrast, the popular PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics) does not save this tag (though in some cases it saves the RTIA Timer). Examples are [available](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Slice_timing_correction) for both the “epiRT” and “epi” sequences.
 
 ## User Define Data GE  (0043,102A)
 

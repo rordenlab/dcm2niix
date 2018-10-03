@@ -2822,7 +2822,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		}
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - minT;
-	}
+	} //UIH: HHMMSS -> Sec
 	float minT = d->CSA.sliceTiming[0];
 	float maxT = minT;
 	for (int i = 0; i < kMaxEPI3D; i++) {
@@ -3064,7 +3064,27 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime;
 	}
     //GE check slice timing >>>
+    bool GEsliceTiming_x0018x1060 = false;
 	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		//GE: 1st method for "epi" PSD
+		GEsliceTiming_x0018x1060 = true;
+		for (int v = 0; v < hdr0.dim[3]; v++) {
+			if (dcmList[dcmSort[v].indx].CSA.sliceTiming[0] < 0)
+				GEsliceTiming_x0018x1060 = false;
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0] / 1000.0; //ms -> sec
+		}
+		//0018,1060 provides time at end of acquisition, not start...
+		if (GEsliceTiming_x0018x1060) {
+			float minT = dcmList[dcmSort[0].indx].CSA.sliceTiming[0];
+			for (int v = 0; v < hdr0.dim[3]; v++)
+				if (dcmList[dcmSort[0].indx].CSA.sliceTiming[v] < minT)
+					minT = dcmList[dcmSort[0].indx].CSA.sliceTiming[v];
+			for (int v = 0; v < hdr0.dim[3]; v++)
+				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[0].indx].CSA.sliceTiming[v] - minT;
+		} //adjust: first slice is time = 0.0
+	} //GE slice timing from 0018,1060
+	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (!GEsliceTiming_x0018x1060) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		//GE: 2nd method for "epiRT" PSD
 		//ignore bogus values of first volume https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/6
 		// this necessarily requires at last two volumes, hence dim[4] > 1
 		int j = hdr0.dim[3];
@@ -3102,7 +3122,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				} //for v
 			} //verbose > 1
 		} //if maxTime != minTIme
-	} //if GE slice timing
+	} //GE slice timing from 0021,105E
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
     	int nVol = 0;
