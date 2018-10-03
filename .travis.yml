@@ -24,12 +24,14 @@ before_install:
   - eval "${MATRIX_EVAL}"
   - git submodule update --init --depth=3 dcm_qa
   - git submodule update --init --depth=3 dcm_qa_nih
+  - git submodule update --init --depth=3 dcm_qa_uih
 
 script:
   - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=true -DZLIB_IMPLEMENTATION=Cloudflare .. && make && cd -
   - export PATH=$PWD/build/bin:$PATH
   - cd dcm_qa && ./batch.sh && cd -
   - cd dcm_qa_nih && ./batch.sh && cd -
+  - cd dcm_qa_uih && ./batch.sh && cd -
 
 before_deploy:
   - export DATE=`date +%-d-%b-%Y`

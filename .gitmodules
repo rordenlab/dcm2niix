@@ -4,3 +4,6 @@
 [submodule "dcm_qa_nih"]
 	path = dcm_qa_nih
 	url = http://github.com/neurolabusc/dcm_qa_nih
+[submodule "dcm_qa_uih"]
+	path = dcm_qa_uih
+	url = http://github.com/neurolabusc/dcm_qa_uih
