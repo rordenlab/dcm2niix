@@ -714,6 +714,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.studyID, "");
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
+    strcpy(d.coilName, "");
     d.phaseEncodingLines = 0;
     //~ d.patientPositionSequentialRepeats = 0;
     //~ d.patientPositionRepeats = 0;
@@ -749,7 +750,7 @@ struct TDICOMdata clear_dicom_data() {
     d.protocolBlockStartGE = 0;
     d.protocolBlockLengthGE = 0;
     d.phaseEncodingSteps = 0;
-    d.coilNum = 0;
+    d.coilCrc = 0;
     d.accelFactPE = 0.0;
     //d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
@@ -4929,15 +4930,21 @@ double TE = 0.0; //most recent echo time recorded
             case kCoilSiemens : {
                 if (d.manufacturer == kMANUFACTURER_SIEMENS) {
                     //see if image from single coil "H12" or an array "HEA;HEP"
-                    char coilStr[kDICOMStr];
-                    dcmStr (lLength, &buffer[lPos], coilStr);
-                    if (strlen(coilStr) < 1) break;
-                    if (coilStr[0] == 'C') break; //kludge as Nova 32-channel defaults to "C:A32" https://github.com/rordenlab/dcm2niix/issues/187
-                    char *ptr;
-                    dcmStrDigitsOnly(coilStr);
-                    d.coilNum = (int)strtol(coilStr, &ptr, 10);
-                    if (*ptr != '\0')
-                        d.coilNum = 0;
+                    //char coilStr[kDICOMStr];
+                    //int coilNum;
+                    dcmStr (lLength, &buffer[lPos], d.coilName);
+                    if (strlen(d.coilName) < 1) break;
+                    //printf("-->%s\n", coilStr);
+                    //d.coilName = coilStr;
+                    //if (coilStr[0] == 'C') break; //kludge as Nova 32-channel defaults to "C:A32" https://github.com/rordenlab/dcm2niix/issues/187
+                    //char *ptr;
+                    //dcmStrDigitsOnly(coilStr);
+                    //coilNum = (int)strtol(coilStr, &ptr, 10);
+                    d.coilCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.coilName, strlen(d.coilName)));
+
+                    //printf("%d:%s\n", d.coilNum, coilStr);
+                    //if (*ptr != '\0')
+                    //    d.coilNum = 0;
                 }
                 break; }
             case kImaPATModeText : { //e.g. Siemens iPAT x2 listed as "p2"
@@ -5600,7 +5607,7 @@ if (d.isHasPhase)
         if (!isnan(patientPositionEndPhilips[1]))
         	printMessage(" patient position end (0020,0032)\t%g\t%g\t%g\n", patientPositionEndPhilips[1],patientPositionEndPhilips[2],patientPositionEndPhilips[3]);
         printMessage(" orient (0020,0037)\t%g\t%g\t%g\t%g\t%g\t%g\n", d.orient[1],d.orient[2],d.orient[3], d.orient[4],d.orient[5],d.orient[6]);
-        printMessage(" acq %d img %d ser %ld dim %dx%dx%dx%d mm %gx%gx%g offset %d loc %d valid %d ph %d mag %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3], d.xyzDim[4],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilNum, d.TE, d.TR);
+        printMessage(" acq %d img %d ser %ld dim %dx%dx%dx%d mm %gx%gx%g offset %d loc %d valid %d ph %d mag %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3], d.xyzDim[4],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilCrc, d.TE, d.TR);
         //if (d.CSA.dtiV[0] > 0)
         //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }

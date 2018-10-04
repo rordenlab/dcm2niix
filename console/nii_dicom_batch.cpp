@@ -333,7 +333,7 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fprintf(fp, "%s\tField Strength:\t%g\tProtocolName:\t%s\tScanningSequence00180020:\t%s\tTE:\t%g\tTR:\t%g\tSeriesNum:\t%ld\tAcquNum:\t%d\tImageNum:\t%d\tImageComments:\t%s\tDateTime:\t%f\tName:\t%s\tConvVers:\t%s\tDoB:\t%s\tGender:\t%c\tAge:\t%s\tDimXYZT:\t%d\t%d\t%d\t%d\tCoil:\t%d\tEchoNum:\t%d\tOrient(6)\t%g\t%g\t%g\t%g\t%g\t%g\tbitsAllocated\t%d\tInputName\t%s\n",
       pathoutname, d.fieldStrength, d.protocolName, d.scanningSequence, d.TE, d.TR, d.seriesNum, d.acquNum, d.imageNum, d.imageComments,
       d.dateTime, d.patientName, kDCMvers, d.patientBirthDate, d.patientSex, d.patientAge, h->dim[1], h->dim[2], h->dim[3], h->dim[4],
-            d.coilNum,d.echoNum, d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
+            d.coilCrc,d.echoNum, d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
             d.bitsAllocated, dcmname);
     fclose(fp);
 }// nii_SaveText()
@@ -950,6 +950,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
+		strcpy(d.coilName, "");
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
 		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
 		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
@@ -1596,10 +1598,9 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             pos++; //extra increment: skip both % and following character
             char f = 'P';
             if (pos < strlen(inname)) f = toupper(inname[pos]);
-        	if ((f == 'A') && (dcm.coilNum > 0)) {
+        	if (f == 'A')  {
         		isCoilReported = true;
-                sprintf(newstr, "%02d", dcm.coilNum);
-                strcat (outname,newstr);
+                strcat (outname,dcm.coilName);
             }
             if (f == 'B') strcat (outname,dcm.imageBaseName);
             if (f == 'C') strcat (outname,dcm.imageComments);
@@ -1705,9 +1706,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         newstr[pos - start] = '\0';
         strcat (outname,newstr);
     }
-    if (!isCoilReported && (dcm.coilNum > 1)) {
-        sprintf(newstr, "_c%d", dcm.coilNum);
-        strcat (outname,newstr);
+    if ((!isCoilReported) && (dcm.isCoilVaries)) {
+        //sprintf(newstr, "_c%d", dcm.coilNum);
+        //strcat (outname,newstr);
+        strcat (outname, "_c");
+        strcat (outname,dcm.coilName);
     }
     if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
         sprintf(newstr, "_e%d", dcm.echoNum);
@@ -2931,6 +2934,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
+            //next: detect if ANY file flagged as coil varies
+            for (int i = 0; i < nConvert; i++)
+            	if (dcmList[dcmSort[i].indx].isCoilVaries)
+            		dcmList[indx0].isCoilVaries = true;
             //next: detect if ANY file flagged as echo varies
             for (int i = 0; i < nConvert; i++)
             	if (dcmList[dcmSort[i].indx].isMultiEcho)
@@ -3550,7 +3557,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         *isMultiEcho = true;
         return false;
     }
-    if (d1.coilNum != d2.coilNum) {
+    if (d1.coilCrc != d2.coilCrc) {
         if (!warnings->coilVaries)
         	printMessage("slices not stacked: coil varies\n");
         warnings->coilVaries = true;
@@ -3955,6 +3962,8 @@ int nii_loadDir(struct TDCMopts* opts) {
 					dcmList[j].isMultiEcho = isMultiEcho;
 					dcmList[i].isNonParallelSlices = isNonParallelSlices;
 					dcmList[j].isNonParallelSlices = isNonParallelSlices;
+					dcmList[i].isCoilVaries = warnings.coilVaries;
+					dcmList[j].isCoilVaries = warnings.coilVaries;
 				}
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
 			//dcmList[dcmSort[0].indx].isMultiEcho = isMultiEcho;

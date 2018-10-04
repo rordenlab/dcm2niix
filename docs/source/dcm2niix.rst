@@ -34,7 +34,7 @@ Options
 -f <format>     Format string for the output filename(s). The following
                 specifiers are supported:
 
-                - %a, antenna (coil) number
+                - %a, antenna (coil) name
                 - %b, basename (filename of 1st DICOM file)
                 - %c, comments
                 - %d, description
