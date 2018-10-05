@@ -752,8 +752,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	};
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
 	//Imaging Frequency (0018,0084) can be useful https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
-	//however, sometimes stored inconsistently https://github.com/rordenlab/dcm2niix/issues/225
-	// json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
+	// however, sometimes stored inconsistently https://github.com/rordenlab/dcm2niix/issues/225
+	json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
 	switch (d.manufacturer) {
 		case kMANUFACTURER_SIEMENS:
 			fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
@@ -3536,12 +3536,14 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         warnings->bitDepthVaries = true;
         return false;
     }
+    #ifndef myIgnoreStudyTime
     if (!isSameFloatDouble(d1.dateTime, d2.dateTime)) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
     		printMessage("slices not stacked: Study Date/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
     	warnings->dateTimeVaries = true;
     	return false;
     }
+    #endif
     if (opts->isForceStackSameSeries) {
     	if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum))
     		*isMultiEcho = true;
