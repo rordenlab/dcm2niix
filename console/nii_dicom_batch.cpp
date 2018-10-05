@@ -949,7 +949,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
-		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		if (strcmp(coilElements,d.coilName) != 0)
+			json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
 		strcpy(d.coilName, "");
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
@@ -2934,6 +2935,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
+            //next: detect if ANY file flagged as non-parallel slices
+            for (int i = 0; i < nConvert; i++)
+            	if (dcmList[dcmSort[i].indx].isNonParallelSlices)
+            		dcmList[indx0].isNonParallelSlices = true;
             //next: detect if ANY file flagged as coil varies
             for (int i = 0; i < nConvert; i++)
             	if (dcmList[dcmSort[i].indx].isCoilVaries)
@@ -3958,13 +3963,19 @@ int nii_loadDir(struct TDCMopts* opts) {
                     fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 					nConvert++;
 				} else {
-					dcmList[i].isMultiEcho = isMultiEcho;
-					dcmList[j].isMultiEcho = isMultiEcho;
-					dcmList[i].isNonParallelSlices = isNonParallelSlices;
-					dcmList[j].isNonParallelSlices = isNonParallelSlices;
-					dcmList[i].isCoilVaries = warnings.coilVaries;
-					dcmList[j].isCoilVaries = warnings.coilVaries;
-				}
+					if (isNonParallelSlices) {
+						dcmList[i].isNonParallelSlices = true;
+						dcmList[j].isNonParallelSlices = true;
+					}
+					if (isMultiEcho) {
+						dcmList[i].isMultiEcho = true;
+						dcmList[j].isMultiEcho = true;
+					}
+					if (warnings.coilVaries) {
+						dcmList[i].isCoilVaries = true;
+						dcmList[j].isCoilVaries = true;
+					}
+				} //unable to stack images: mark files that may need file name dis-ambiguation
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
 			//dcmList[dcmSort[0].indx].isMultiEcho = isMultiEcho;
 			if (opts->isVerbose)
