@@ -949,9 +949,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		if (strcmp(coilElements,d.coilName) != 0)
-			json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
-		json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
+			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
 		strcpy(d.coilName, "");
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
 		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
