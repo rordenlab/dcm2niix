@@ -274,7 +274,7 @@ int main(int argc, const char * argv[])
                     isSaveIni = true;
                 if (((argv[i][0] == 'i') || (argv[i][0] == 'I')) && (!isResetDefaults)) {
                     isResetDefaults = true;
-                    printf("Defaults reset\n");
+                    printf("Defaults ignored\n");
                     setDefaultOpts(&opts, argv);
                     i = 0; //re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
                 }

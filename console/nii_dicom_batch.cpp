@@ -2935,18 +2935,19 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
-            //next: detect if ANY file flagged as non-parallel slices
-            for (int i = 0; i < nConvert; i++)
-            	if (dcmList[dcmSort[i].indx].isNonParallelSlices)
-            		dcmList[indx0].isNonParallelSlices = true;
-            //next: detect if ANY file flagged as coil varies
-            for (int i = 0; i < nConvert; i++)
-            	if (dcmList[dcmSort[i].indx].isCoilVaries)
-            		dcmList[indx0].isCoilVaries = true;
-            //next: detect if ANY file flagged as echo varies
-            for (int i = 0; i < nConvert; i++)
-            	if (dcmList[dcmSort[i].indx].isMultiEcho)
-            		dcmList[indx0].isMultiEcho = true;
+            //next options removed: featuresnow thoroughly detected in nii_loadDir()
+            // //next: detect if ANY file flagged as non-parallel slices
+			// for (int i = 0; i < nConvert; i++)
+			// 	if (dcmList[dcmSort[i].indx].isNonParallelSlices)
+			// 		dcmList[indx0].isNonParallelSlices = true;
+			// //next: detect if ANY file flagged as coil varies
+			// for (int i = 0; i < nConvert; i++)
+			// 	if (dcmList[dcmSort[i].indx].isCoilVaries)
+			// 		dcmList[indx0].isCoilVaries = true;
+			// //next: detect if ANY file flagged as echo varies
+			// for (int i = 0; i < nConvert; i++)
+			// 	if (dcmList[dcmSort[i].indx].isMultiEcho)
+			// 		dcmList[indx0].isMultiEcho = true;
             //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
     		if (dcmList[indx0].modality == kMODALITY_PT) {
 				bool trVaries = false;

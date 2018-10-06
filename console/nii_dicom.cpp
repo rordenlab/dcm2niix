@@ -787,6 +787,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isResampled = false; //assume data not resliced to remove gantry tilt problems
     d.isLocalizer = false;
     d.isNonParallelSlices = false;
+    d.isCoilVaries = false;
     d.compressionScheme = 0; //none
     d.isExplicitVR = true;
     d.isLittleEndian = true; //DICOM initially always little endian
