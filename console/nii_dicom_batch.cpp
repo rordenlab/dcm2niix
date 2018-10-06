@@ -1626,6 +1626,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                     strcat (outname,"GE");
                 else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
                     strcat (outname,"To");
+                else if (dcm.manufacturer == kMANUFACTURER_UIH)
+                	strcat (outname,"UI");
                 else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
                     strcat (outname,"Ph");
                 else if (dcm.manufacturer == kMANUFACTURER_SIEMENS)
@@ -1674,6 +1676,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 					strcat (outname,"Siemens");
 				else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
 					strcat (outname,"Toshiba");
+				else if (dcm.manufacturer == kMANUFACTURER_UIH)
+					strcat (outname,"UIH");
 				else
 					strcat (outname,"NA");
 			}
@@ -2868,6 +2872,18 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     uint64_t indx1 = indx0;
+    if ((dcmList[indx].isXA10A) && (dcmList[indx].CSA.mosaicSlices < 1)) {
+    	printMessage("Siemens XA10 Mosaics are not primary images and lack vital data.\n");
+    	printMessage(" See https://github.com/rordenlab/dcm2niix/issues/236\n");
+    	#ifdef mySaveXA10Mosaics
+		int n;
+		printMessage("INPUT REQUIRED FOR %s\n", dcmList[indx].imageBaseName);
+		printMessage("PLEASE ENTER NUMBER OF SLICES IN MOSAIC:\n");
+		scanf ("%d",&n);
+		for (int i = 0; i < nConvert; i++)
+			dcmList[dcmSort[i].indx].CSA.mosaicSlices = n;
+		#endif
+    }
     if (nConvert > 1) indx1 = dcmSort[1].indx;
     if (opts.isIgnoreDerivedAnd2D && dcmList[indx].isDerived) {
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
@@ -3538,7 +3554,13 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         return false;
     }
     #ifndef myIgnoreStudyTime
-    if (!isSameFloatDouble(d1.dateTime, d2.dateTime)) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
+    bool isSameSeriesUID = false;
+    if ((d1.isXA10A) && (d2.isXA10A) && (strlen(d1.seriesInstanceUID)> 1) && (strlen(d2.seriesInstanceUID)> 1)) {
+    	//kludge XA10A 0008,0030 incorrect https://github.com/rordenlab/dcm2niix/issues/236
+		if (strcmp(d1.seriesInstanceUID, d2.seriesInstanceUID) == 0)
+			isSameSeriesUID = true;
+    }
+    if ((!isSameSeriesUID) && (!isSameFloatDouble(d1.dateTime, d2.dateTime)) ) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
     		printMessage("slices not stacked: Study Date/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
     	warnings->dateTimeVaries = true;

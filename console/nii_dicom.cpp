@@ -772,6 +772,7 @@ struct TDICOMdata clear_dicom_data() {
     d.is2DAcq = false; //
     d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.isSegamiOasis = false; //these images do not store spatial coordinates
+    d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
     d.triggerDelayTime = 0.0;
     d.RWVScale = 0.0;
     d.RWVIntercept = 0.0;
@@ -3817,7 +3818,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
-//#define  kImplementationVersionName 0x0002+(0x0013 << 16)
+#define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
@@ -4408,6 +4409,13 @@ double TE = 0.0; //most recent echo time recorded
 				if((slen < 6) || (strstr(impTxt, "OSIRIX") == NULL) ) break;
                 printError("OSIRIX Detected\n");
             	break; }*/
+            case kImplementationVersionName: {
+            	char impTxt[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], impTxt);
+                int slen = (int) strlen(impTxt);
+				if((slen < 5) || (strstr(impTxt, "XA10A") == NULL) ) break;
+                d.isXA10A = true;
+            	break; }
             case kSourceApplicationEntityTitle: {
             	char saeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], saeTxt);
@@ -4415,13 +4423,20 @@ double TE = 0.0; //most recent echo time recorded
 				if((slen < 5) || (strstr(saeTxt, "oasis") == NULL) ) break;
                 d.isSegamiOasis = true;
             	break; }
-            case kImageTypeTag:
+            case kImageTypeTag: {
             	dcmStr (lLength, &buffer[lPos], d.imageType);
                 int slen;
                 slen = (int) strlen(d.imageType);
 				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
                 if((slen > 5) && !strcmp(d.imageType + slen - 6, "MOSAIC") )
                 	isMosaic = true;
+                //const char* prefix = "MOSAIC";
+                const char *pos = strstr(d.imageType, "MOSAIC");
+                //const char p = (const char *) d.imageType;
+                //p = (const char) strstr(d.imageType, "MOSAIC");
+                //const char* p = strstr(d.imageType, "MOSAIC");
+                if (pos != NULL)
+    				isMosaic = true;
                 //isNonImage 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
                 // sometime ComplexImageComponent 0008,9208 is missing - see ADNI data
                 // attempt to detect non-images, see https://github.com/scitran/data/blob/a516fdc39d75a6e4ac75d0e179e18f3a5fc3c0af/scitran/data/medimg/dcm/mr/siemens.py
@@ -4456,7 +4471,7 @@ double TE = 0.0; //most recent echo time recorded
                 //if((slen > 4) && (strstr(typestr, "DIS2D") != NULL) )
                 //	d.isNonImage = true;
                 //not mutually exclusive: possible for Philips enhanced DICOM to store BOTH magnitude and phase in the same image
-            	break;
+            	break; }
             case kAcquisitionDate:
             	char acquisitionDateTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionDateTxt);
@@ -5545,10 +5560,13 @@ double TE = 0.0; //most recent echo time recorded
     }
     if ((numberOfImagesInMosaic > 1) && (d.CSA.mosaicSlices < 1))
     	d.CSA.mosaicSlices = numberOfImagesInMosaic;
+    if (d.isXA10A) d.manufacturer = kMANUFACTURER_SIEMENS; //XA10A mosaics omit Manufacturer 0008,0070!
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (isMosaic) && (d.CSA.mosaicSlices < 1) && (d.phaseEncodingSteps > 0) && ((d.xyzDim[1] % d.phaseEncodingSteps) == 0) && ((d.xyzDim[2] % d.phaseEncodingSteps) == 0) ) {
     	d.CSA.mosaicSlices = (d.xyzDim[1] / d.phaseEncodingSteps) * (d.xyzDim[2] / d.phaseEncodingSteps);
     	printWarning("Mosaic inferred without CSA header (check number of slices and spatial orientation)\n");
     }
+    if ((d.isXA10A) && (isMosaic) && (d.CSA.mosaicSlices < 1))
+    	d.CSA.mosaicSlices = -1; //mark as bogus DICOM
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
     	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
     if ((d.manufacturer == kMANUFACTURER_GE) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE

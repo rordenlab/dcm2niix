@@ -164,7 +164,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         char imageComments[kDICOMStrLarge];
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
-        bool isCoilVaries, isNonParallelSlices, isSegamiOasis, isScaleOrTEVaries,  isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
+        bool isCoilVaries, isNonParallelSlices, isSegamiOasis, isXA10A, isScaleOrTEVaries,  isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
     };
 
