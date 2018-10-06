@@ -299,7 +299,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     } //for each direction
     if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
        printWarning("Saving %d DTI gradients. Validate vectors (matrix had a negative determinant).\n", d->CSA.numDti); //perhaps Siemens sagittal
-    } else if ( d->sliceOrient == kSliceOrientTra) {
+    } else if (( d->sliceOrient == kSliceOrientTra) || (d->manufacturer == kMANUFACTURER_UIH)) {
         printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
     } else if ( d->sliceOrient == kSliceOrientUnknown) {
     	printWarning("Saving %d DTI gradients. Validate vectors (image slice orientation not reported, e.g. 2001,100B).\n", d->CSA.numDti);
@@ -752,8 +752,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	};
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
 	//Imaging Frequency (0018,0084) can be useful https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
-	// however, sometimes stored inconsistently https://github.com/rordenlab/dcm2niix/issues/225
-	json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
+	// however, UIH stores 128176031 not 128.176031 https://github.com/rordenlab/dcm2niix/issues/225
+	if (d.imagingFrequency < 9000000)
+		json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
 	switch (d.manufacturer) {
 		case kMANUFACTURER_SIEMENS:
 			fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
@@ -1073,6 +1074,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\",\n");
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing UIH or GE >>>>
+	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
 	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE)) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
@@ -1086,26 +1088,19 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		fprintf(fp, "\t],\n");
 	}
 	//Slice Timing Siemens
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((!d.isXA10A) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		if (d.CSA.protocolSliceNumber1 > 1) {
    			//https://github.com/rordenlab/dcm2niix/issues/40
    			//equivalent to dicm2nii "s.SliceTiming = s.SliceTiming(end:-1:1);"
-   			int mx = 0;
-   			for (int i = 0; i < kMaxEPI3D; i++) {
+			for (int i = (h->dim[3]-1); i >= 0; i--) {
 				if (d.CSA.sliceTiming[i] < 0.0) break;
-				mx++;
-			}
-			mx--;
-			for (int i = mx; i >= 0; i--) {
-				if (d.CSA.sliceTiming[i] < 0.0) break;
-				if (i != mx)
+				if (i != (h->dim[3]-1))
 					fprintf(fp, ",\n");
 				fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
 			}
    		} else {
-			for (int i = 0; i < kMaxEPI3D; i++) {
-				if (d.CSA.sliceTiming[i] < 0.0) break;
+			for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
 					fprintf(fp, ",\n");
 				fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
@@ -2807,7 +2802,9 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
 		nSlices++;
 	if (nSlices < 1) return;
-	if (d->manufacturer == kMANUFACTURER_UIH) {//convert HHMMSS to Sec
+	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
+	if (d->isXA10A) isSliceTimeHHMMSS = true;
+	if (isSliceTimeHHMMSS) {//convert HHMMSS to Sec
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
 		float minT = d->CSA.sliceTiming[0];
@@ -2820,7 +2817,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		float kNoonSec = 43200;
 		if ((maxT - minT) > kNoonSec) { //volume started before midnight but ended next day!
 			//identify and fix 'Cinderella error' where clock resets at midnight: untested
-			printWarning("UIH acquisition crossed midnight: check slice timing\n");
+			printWarning("XA10A/UIH acquisition crossed midnight: check slice timing\n");
 			for (int i = 0; i < nSlices; i++)
 				if (d->CSA.sliceTiming[i] > kNoonSec) d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - kMidnightSec;
 						minT = d->CSA.sliceTiming[0];
@@ -2830,7 +2827,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		}
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - minT;
-	} //UIH: HHMMSS -> Sec
+	} //XA10/UIH: HHMMSS -> Sec
 	float minT = d->CSA.sliceTiming[0];
 	float maxT = minT;
 	for (int i = 0; i < kMaxEPI3D; i++) {
@@ -2838,7 +2835,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
 		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
 	}
-	if (d->manufacturer == kMANUFACTURER_UIH) //convert HHMMSS to Sec
+	if (isSliceTimeHHMMSS) //convert HHMMSS to Sec
 		for (int i = 0; i < kMaxEPI3D; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
 	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
@@ -2872,7 +2869,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     uint64_t indx1 = indx0;
-    if ((dcmList[indx].isXA10A) && (dcmList[indx].CSA.mosaicSlices < 1)) {
+    if ((dcmList[indx].isXA10A) && (dcmList[indx].CSA.mosaicSlices < 0)) {
     	printMessage("Siemens XA10 Mosaics are not primary images and lack vital data.\n");
     	printMessage(" See https://github.com/rordenlab/dcm2niix/issues/236\n");
     	#ifdef mySaveXA10Mosaics
@@ -2945,6 +2942,14 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
+            } else if ((dcmList[indx0].isXA10A) && (nConvert > nAcq) && (nAcq > 1) ) {
+            	nAcq -= 1;
+                hdr0.dim[3] = nConvert/nAcq;
+                hdr0.dim[4] = nAcq;
+                hdr0.dim[0] = 4;
+                if ((nAcq > 1) && (nConvert != nAcq)) {
+                    printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): converting only complete volumes.\n", nConvert, nAcq, hdr0.dim[4]);
+                }
             } else {
                 hdr0.dim[3] = nConvert;
                 if ((nAcq > 1) && (nConvert != nAcq)) {
@@ -3087,8 +3092,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
-    //UIH 2D slice timing
-	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+    //XA10/UIH 2D slice timing
+	bool isXA2D = ((dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].isXA10A) );
+	if (((isXA2D) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH)) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		for (int v = 0; v < hdr0.dim[3]; v++)
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime;
 	}
@@ -3536,31 +3542,39 @@ TWarnings setWarnings() {
 	return r;
 }
 
-bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho, bool *isNonParallelSlices) {
+bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho, bool *isNonParallelSlices, bool *isCoilVaries) {
     //returns true if d1 and d2 should be stacked together as a single output
     if (!d1.isValid) return false;
     if (!d2.isValid) return false;
     if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
     if (d1.isDerived != d2.isDerived) return false; //do not stack raw and derived image types
     if (d1.manufacturer != d2.manufacturer) return false; //do not stack data from different vendors
-	if (d1.seriesNum != d2.seriesNum) return false;
+	if ((d1.isXA10A) && (d2.isXA10A) && (d1.seriesNum > 1000) && (d2.seriesNum > 1000)) {
+		//kludge XA10A (0020,0011) increments [16001, 16002, ...] https://github.com/rordenlab/dcm2niix/issues/236
+		//images from series 16001,16002 report different study times (0008,0030)!
+		if ((d1.seriesNum / 1000) != (d2.seriesNum / 1000)) return false;
+	} else if (d1.seriesNum != d2.seriesNum) return false;
 	#ifdef mySegmentByAcq
     if (d1.acquNum != d2.acquNum) return false;
     #endif
-	if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
+    bool isSameStudyInstanceUID = false;
+    if ((strlen(d1.studyInstanceUID)> 1) && (strlen(d2.studyInstanceUID)> 1)) {
+    	if (strcmp(d1.studyInstanceUID, d2.studyInstanceUID) == 0)
+			isSameStudyInstanceUID = true;
+    }
+    bool isSameTime = isSameFloatDouble(d1.dateTime, d2.dateTime);
+    if ((isSameStudyInstanceUID) && (d1.isXA10A) && (d2.isXA10A))
+		isSameTime = true; //kludge XA10A 0008,0030 incorrect https://github.com/rordenlab/dcm2niix/issues/236
+    if ((!isSameStudyInstanceUID) && (!isSameTime))
+        return false;
+    if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
         if (!warnings->bitDepthVaries)
         	printMessage("slices not stacked: dimensions or bit-depth varies\n");
         warnings->bitDepthVaries = true;
         return false;
     }
     #ifndef myIgnoreStudyTime
-    bool isSameSeriesUID = false;
-    if ((d1.isXA10A) && (d2.isXA10A) && (strlen(d1.seriesInstanceUID)> 1) && (strlen(d2.seriesInstanceUID)> 1)) {
-    	//kludge XA10A 0008,0030 incorrect https://github.com/rordenlab/dcm2niix/issues/236
-		if (strcmp(d1.seriesInstanceUID, d2.seriesInstanceUID) == 0)
-			isSameSeriesUID = true;
-    }
-    if ((!isSameSeriesUID) && (!isSameFloatDouble(d1.dateTime, d2.dateTime)) ) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
+    if (!isSameTime) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
     		printMessage("slices not stacked: Study Date/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
     	warnings->dateTimeVaries = true;
@@ -3591,6 +3605,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         if (!warnings->coilVaries)
         	printMessage("slices not stacked: coil varies\n");
         warnings->coilVaries = true;
+        *isCoilVaries = true;
         return false;
     }
     if ((strlen(d1.protocolName) < 1) && (strlen(d2.protocolName) < 1)) {
@@ -3948,8 +3963,8 @@ int nii_loadDir(struct TDCMopts* opts) {
             bool matched = false;
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
-                bool isMultiEchoUnused, isNonParallelSlices;
-                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused, &isNonParallelSlices)) {
+                bool isMultiEchoUnused, isNonParallelSlices, isCoilVaries;
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused, &isNonParallelSlices, &isCoilVaries)) {
                     opts->series[j].files.push_back(nameList.str[i]);
                     matched = true;
                     break;
@@ -3968,22 +3983,24 @@ int nii_loadDir(struct TDCMopts* opts) {
     } else {
 #endif
     //3: stack DICOMs with the same Series
+    struct TWarnings warnings = setWarnings();
     for (int i = 0; i < (int)nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
 			int nConvert = 0;
-			struct TWarnings warnings = setWarnings();
 			bool isMultiEcho = false;
 			bool isNonParallelSlices = false;
+			bool isCoilVaries = false;
 			for (int j = i; j < (int)nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices ) )
+				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries) )
 					nConvert++;
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
 			isMultiEcho = false;
 			isNonParallelSlices = false;
+			isCoilVaries = false;
 			for (int j = i; j < (int)nDcm; j++)
-				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices)) {
+				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries)) {
                     dcmList[j].converted2NII = 1; //do not reprocess repeats
                     fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 					nConvert++;
@@ -3996,7 +4013,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 						dcmList[i].isMultiEcho = true;
 						dcmList[j].isMultiEcho = true;
 					}
-					if (warnings.coilVaries) {
+					if (isCoilVaries) {
 						dcmList[i].isCoilVaries = true;
 						dcmList[j].isCoilVaries = true;
 					}

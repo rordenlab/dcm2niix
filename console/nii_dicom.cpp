@@ -4537,6 +4537,7 @@ double TE = 0.0; //most recent echo time recorded
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
+                //printf("%s\n", acquisitionTimeTxt);
                 if (d.manufacturer != kMANUFACTURER_UIH) break;
                 //UIH slice timing
                 d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.acquisitionTime;
@@ -4600,6 +4601,9 @@ double TE = 0.0; //most recent echo time recorded
             }
             case kSoftwareVersions : {
             	dcmStr (lLength, &buffer[lPos], d.softwareVersions);
+            	int slen = (int) strlen(d.softwareVersions);
+				if((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL) ) break;
+                d.isXA10A = true;
             	break;
             }
             case kProtocolName : {
@@ -5567,6 +5571,8 @@ double TE = 0.0; //most recent echo time recorded
     }
     if ((d.isXA10A) && (isMosaic) && (d.CSA.mosaicSlices < 1))
     	d.CSA.mosaicSlices = -1; //mark as bogus DICOM
+    if ((!d.isXA10A) && (isMosaic) && (d.CSA.mosaicSlices < 1)) //See Erlangen Vida dataset - never reports "XA10" but mosaics have no attributes
+    	printWarning("0008,0008=MOSAIC but number of slices not specified: %s\n", fname);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
     	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
     if ((d.manufacturer == kMANUFACTURER_GE) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
