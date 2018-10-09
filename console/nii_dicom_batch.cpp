@@ -1712,7 +1712,12 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcat (outname, "_c");
         strcat (outname,dcm.coilName);
     }
+    // myMultiEchoFilenameSkipEcho1 https://github.com/rordenlab/dcm2niix/issues/237
+    #ifdef myMultiEchoFilenameSkipEcho1
     if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
+    #else
+    if ((!isEchoReported) && (dcm.isMultiEcho)) { //multiple echoes saved as same series
+    #endif
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
         isEchoReported = true;
@@ -1747,16 +1752,27 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
-    #if defined(_WIN64) || defined(_WIN32) //https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
+    // https://github.com/rordenlab/dcm2niix/issues/237
+    #ifdef myOsSpecificFilenameMask
+     #define kMASK_WINDOWS_SPECIAL_CHARACTERS 0
+    #else
+     #define kMASK_WINDOWS_SPECIAL_CHARACTERS 1
+    #endif
+    #if defined(_WIN64) || defined(_WIN32) || defined(kMASK_WINDOWS_SPECIAL_CHARACTERS)//https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
     for (size_t pos = 0; pos<strlen(outname); pos ++)
         if ((outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
             || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
             || (outname[pos] == '^')
             || (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
             outname[pos] = '_';
+	#if defined(_WIN64) || defined(_WIN32)
+		const char kForeignPathSeparator ='/';
+	#else
+		const char kForeignPathSeparator ='\\';
+	#endif
     for (int pos = 0; pos<strlen(outname); pos ++)
-        if (outname[pos] == '/')
-        	outname[pos] = kPathSeparator; //for Windows, convert "/" to "\"
+        if (outname[pos] == kForeignPathSeparator)
+        	outname[pos] = kPathSeparator; //e.g. for Windows, convert "/" to "\"
     #else
     for (size_t pos = 0; pos<strlen(outname); pos ++)
         if (outname[pos] == ':') //not allowed by MacOS
@@ -2957,18 +2973,18 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 }
             }
             //next options removed: featuresnow thoroughly detected in nii_loadDir()
-            // //next: detect if ANY file flagged as non-parallel slices
-			// for (int i = 0; i < nConvert; i++)
-			// 	if (dcmList[dcmSort[i].indx].isNonParallelSlices)
-			// 		dcmList[indx0].isNonParallelSlices = true;
-			// //next: detect if ANY file flagged as coil varies
-			// for (int i = 0; i < nConvert; i++)
-			// 	if (dcmList[dcmSort[i].indx].isCoilVaries)
-			// 		dcmList[indx0].isCoilVaries = true;
-			// //next: detect if ANY file flagged as echo varies
-			// for (int i = 0; i < nConvert; i++)
-			// 	if (dcmList[dcmSort[i].indx].isMultiEcho)
-			// 		dcmList[indx0].isMultiEcho = true;
+			//next: detect if ANY file flagged as non-parallel slices
+			for (int i = 0; i < nConvert; i++)
+			  if (dcmList[dcmSort[i].indx].isNonParallelSlices)
+				dcmList[indx0].isNonParallelSlices = true;
+			//next: detect if ANY file flagged as coil varies
+			for (int i = 0; i < nConvert; i++)
+				if (dcmList[dcmSort[i].indx].isCoilVaries)
+					dcmList[indx0].isCoilVaries = true;
+			//next: detect if ANY file flagged as echo varies
+			for (int i = 0; i < nConvert; i++)
+				if (dcmList[dcmSort[i].indx].isMultiEcho)
+					dcmList[indx0].isMultiEcho = true;
             //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
     		if (dcmList[indx0].modality == kMODALITY_PT) {
 				bool trVaries = false;

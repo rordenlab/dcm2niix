@@ -43,14 +43,9 @@ In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 
 
 ## Special Characters
 
-[Some characters are not permitted](https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names) in filenames. The following characters will be replaced with underscorces (`_`). For example, if you are using Windows and saving a file with the protocol name `MyLab:MyT1` this will appear as `MyLab_MyT1`. Note that this means file naming might be slightly different for Windows than Unix.
+[Some characters are not permitted](https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names) in filenames. The following characters will be replaced with underscorces (`_`). Note that the forbidden characters vary between operating systems (Linux only forbids the forward slash, MacOS forbids forward slash and colon, while Windows forbids any of the characters listed below). To ensure that files can be easily copied between file systems, [dcm2niix restricts filenames to characters allowed by Windows](https://github.com/rordenlab/dcm2niix/issues/237).
 
-### Unix
-```
-/ (forward slash)
-```
-
-### Windows
+### List of Forbidden Charasters (based on Windows)
 ```
 < (less than)
 > (greater than)
