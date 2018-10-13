@@ -269,8 +269,8 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
         ; //participant was head first supine
     else {
-        printMessage("Siemens/Philips DTI directions require head first supine acquisition\n");
-        return;
+        printMessage("Check Siemens/Philips bvecs: expected Patient Position (0018,5100) to be 'HFS' not '%s'\n", d->patientOrient);
+        //return; //see https://github.com/rordenlab/dcm2niix/issues/238
     }
     vec3 read_vector = setVec3(d->orient[1],d->orient[2],d->orient[3]);
     vec3 phase_vector = setVec3(d->orient[4],d->orient[5],d->orient[6]);
@@ -299,13 +299,10 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     } //for each direction
     if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
        printWarning("Saving %d DTI gradients. Validate vectors (matrix had a negative determinant).\n", d->CSA.numDti); //perhaps Siemens sagittal
-    } else if (( d->sliceOrient == kSliceOrientTra) || (d->manufacturer == kMANUFACTURER_UIH)) {
+    } else if (( d->sliceOrient == kSliceOrientTra) || (d->manufacturer != kMANUFACTURER_PHILIPS)) {
         printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
-    } else if ( d->sliceOrient == kSliceOrientUnknown) {
+    } else if ( d->sliceOrient == kSliceOrientUnknown)
     	printWarning("Saving %d DTI gradients. Validate vectors (image slice orientation not reported, e.g. 2001,100B).\n", d->CSA.numDti);
-    } else {
-        printWarning("Saving %d DTI gradients. Validate vectors (images are not axial slices).\n", d->CSA.numDti);
-    }
 }// siemensPhilipsCorrectBvecs()
 
 bool isNanPosition(struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
@@ -880,7 +877,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     	json_Float(fp, "\t\"SpacingBetweenSlices\": %g,\n", d.zSpacing);
     }
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR );
-	if (d.echoNum > 1) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
+	if ((d.echoNum > 1) || (d.isMultiEcho)) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
@@ -2973,19 +2970,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 }
             }
             //next options removed: featuresnow thoroughly detected in nii_loadDir()
-			//next: detect if ANY file flagged as non-parallel slices
-			for (int i = 0; i < nConvert; i++)
-			  if (dcmList[dcmSort[i].indx].isNonParallelSlices)
-				dcmList[indx0].isNonParallelSlices = true;
-			//next: detect if ANY file flagged as coil varies
-			for (int i = 0; i < nConvert; i++)
-				if (dcmList[dcmSort[i].indx].isCoilVaries)
-					dcmList[indx0].isCoilVaries = true;
-			//next: detect if ANY file flagged as echo varies
-			for (int i = 0; i < nConvert; i++)
-				if (dcmList[dcmSort[i].indx].isMultiEcho)
-					dcmList[indx0].isMultiEcho = true;
-            //next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
+			for (int i = 0; i < nConvert; i++) { //make sure 1st volume describes shared features
+				if (dcmList[dcmSort[i].indx].isCoilVaries) dcmList[indx0].isCoilVaries = true;
+				if (dcmList[dcmSort[i].indx].isMultiEcho) dcmList[indx0].isMultiEcho = true;
+			  	if (dcmList[dcmSort[i].indx].isNonParallelSlices) dcmList[indx0].isNonParallelSlices = true;
+			  	if (dcmList[dcmSort[i].indx].isHasPhase) dcmList[indx0].isHasPhase = true;
+				if (dcmList[dcmSort[i].indx].isHasReal) dcmList[indx0].isHasReal = true;
+				if (dcmList[dcmSort[i].indx].isHasImaginary) dcmList[indx0].isHasImaginary = true;
+			}
+			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
     		if (dcmList[indx0].modality == kMODALITY_PT) {
 				bool trVaries = false;
 				bool dayVaries = false;
