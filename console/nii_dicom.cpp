@@ -3928,6 +3928,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kIsSigned 0x0028+(0x0103 << 16 )
 #define  kIntercept 0x0028+(0x1052 << 16 )
 #define  kSlope 0x0028+(0x1053 << 16 )
+//#define  kSpectroscopyDataPointColumns 0x0028+(0x9002 << 16 ) //IS
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
 #define  kCSASeriesHeaderInfo 0x0029+(0x1020 << 16 )
@@ -3976,6 +3977,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kMRImageDiffBValueNumber 0x2005+(0x1412 << 16) //IS
 //#define  kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define  kWaveformSq 0x5400+(0x0100 << 16)
+#define  kSpectroscopyData 0x5600+(0x0020 << 16) //OF
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
@@ -4927,6 +4929,9 @@ double TE = 0.0; //most recent echo time recorded
             case kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
+            //case kSpectroscopyDataPointColumns :
+           	//	d.xyzDim[4] =  dcmInt(4,&buffer[lPos],d.isLittleEndian);
+			//	break;
             case kPhilipsSlope :
                 if ((lLength == 4) && (d.manufacturer == kMANUFACTURER_PHILIPS))
                     d.intenScalePhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5234,6 +5239,10 @@ double TE = 0.0; //most recent echo time recorded
                 d.imageStart = 1; //abort!!!
                 printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
                 break;
+            case kSpectroscopyData: //kSpectroscopyDataPointColumns
+            	printMessage("Skipping Spectroscopy DICOM '%s'\n", fname);
+                d.imageStart = (int)lPos + (int)lFileOffset;
+                break;
             case kCSAImageHeaderInfo:
             	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose); //, dti4D);
                 if (!d.isHasPhase)
@@ -5535,6 +5544,8 @@ double TE = 0.0; //most recent echo time recorded
         printMessage("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionNum, d.xyzDim[3]); //Philips reported different positions for each slice!
     if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
     	d.isValid = true;
+    //if ((d.imageStart > 144) && (d.xyzDim[1] >= 1) && (d.xyzDim[2] >= 1) && (d.xyzDim[4] > 1)) //Spectroscopy
+    //	d.isValid = true;
     if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
     	printMessage("Please check voxel size\n");
         d.xyzMM[2] = d.xyzMM[1];

@@ -185,6 +185,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //COL then if swap the x and y value and reverse the sign on the z value.
     //If the phase encoding is not COL, then just reverse the sign on the x value.
     if (d->manufacturer != kMANUFACTURER_GE) return;
+
     if (d->CSA.numDti < 1) return;
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
         ; //participant was head first supine
@@ -266,6 +267,16 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     // requires PatientPosition 0018,5100 is HFS (head first supine)
     if ((d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
+    if (d->manufacturer == kMANUFACTURER_UIH) {
+    	for (int i = 0; i < d->CSA.numDti; i++) {
+    		vx[i].V[2] = -vx[i].V[2];
+    		for (int v= 0; v < 4; v++)
+            	if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
+		}
+    	//for (int i = 0; i < 3; i++)
+    	//	printf("%g %g %g\n", vx[i].V[1], vx[i].V[2], vx[i].V[3]);
+    	return;
+    } //https://github.com/rordenlab/dcm2niix/issues/225
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
         ; //participant was head first supine
     else {
@@ -2961,7 +2972,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
                 if ((nAcq > 1) && (nConvert != nAcq)) {
-                    printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): converting only complete volumes.\n", nConvert, nAcq, hdr0.dim[4]);
+                    printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): converting only complete volumes.\n", nConvert, nAcq);
                 }
             } else {
                 hdr0.dim[3] = nConvert;
