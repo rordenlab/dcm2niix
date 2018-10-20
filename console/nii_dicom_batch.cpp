@@ -976,6 +976,18 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
 				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
 		}
+	} else { //e.g. Siemens Vida does not have CSA header, but has many attributes
+		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
+		if (strcmp(d.coilElements,d.coilName) != 0)
+			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
+		if ((d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 0)) {
+			float pF = (float)d.phaseEncodingLines;
+			if (d.accelFactPE > 1)
+				pF = pF / (float)d.accelFactPE; //estimate: not sure if we round up or down
+			pF = (float)d.echoTrainLength / pF;
+			if (pF < 1.0) //e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
+				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+		} //compute partial Fourier: not reported in XA10, so infer
 	}
 	#endif
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
@@ -1083,7 +1095,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE)) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
@@ -2827,7 +2839,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		nSlices++;
 	if (nSlices < 1) return;
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
-	if (d->isXA10A) isSliceTimeHHMMSS = true;
+	//if (d->isXA10A) isSliceTimeHHMMSS = true; //for XA10 use TimeAfterStart 0x0021,0x1104 -> Siemens de-identification can corrupt acquisition ties https://github.com/rordenlab/dcm2niix/issues/236
 	if (isSliceTimeHHMMSS) {//convert HHMMSS to Sec
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
@@ -2841,7 +2853,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		float kNoonSec = 43200;
 		if ((maxT - minT) > kNoonSec) { //volume started before midnight but ended next day!
 			//identify and fix 'Cinderella error' where clock resets at midnight: untested
-			printWarning("XA10A/UIH acquisition crossed midnight: check slice timing\n");
+			printWarning("UIH acquisition crossed midnight: check slice timing\n");
 			for (int i = 0; i < nSlices; i++)
 				if (d->CSA.sliceTiming[i] > kNoonSec) d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - kMidnightSec;
 						minT = d->CSA.sliceTiming[0];
@@ -3112,9 +3124,27 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
-    //XA10/UIH 2D slice timing
-	bool isXA2D = ((dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].isXA10A) );
-	if (((isXA2D) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH)) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+    //Siemens XA10 slice timing - first https://github.com/rordenlab/dcm2niix/issues/240
+	if (((dcmList[dcmSort[0].indx].isXA10A)) && (nConvert == (hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		float mn = dcmList[dcmSort[1].indx].CSA.sliceTiming[0];
+		for (int v = 0; v < hdr0.dim[3]; v++) {
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[1].indx].CSA.sliceTiming[v];
+			if (dcmList[dcmSort[0].indx].CSA.sliceTiming[v] < mn) mn = dcmList[dcmSort[0].indx].CSA.sliceTiming[v];
+		}
+		if (mn < 0.0) mn = 0.0;
+		int mb = 0;
+		for (int v = 0; v < hdr0.dim[3]; v++) {
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] -= mn;
+			if (isSameFloatGE(dcmList[dcmSort[0].indx].CSA.sliceTiming[v], 0.0)) mb ++;
+		}
+		if ((dcmList[dcmSort[0].indx].CSA.multiBandFactor < 2) && (mb > 1))
+			dcmList[dcmSort[0].indx].CSA.multiBandFactor = mb;
+		//for (int v = 0; v < hdr0.dim[3]; v++)
+		//	printf("XA10sliceTiming\t%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
+
+	}
+	//UIH 2D slice timing
+	if (((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH)) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		for (int v = 0; v < hdr0.dim[3]; v++)
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime;
 	}

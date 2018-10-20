@@ -613,7 +613,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
         if ((d.isDerived) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
            printMessage("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
         } else {
-            printMessage("Unable to determine spatial orientation: 0020,0037 missing!\n");
+            printMessage("Unable to determine spatial orientation: 0020,0037 missing (Type 1 attribute: not a valid DICOM) Series %d\n", d.seriesNum);
         }
     }
     mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir, isVerbose);
@@ -715,6 +715,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
     strcpy(d.coilName, "");
+    strcpy(d.coilElements, "");
     d.phaseEncodingLines = 0;
     //~ d.patientPositionSequentialRepeats = 0;
     //~ d.patientPositionRepeats = 0;
@@ -3875,6 +3876,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kRadionuclidePositronFraction  0x0018+(0x1076<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kXRayExposure  0x0018+(0x1152  << 16 )
+#define  kReceiveCoilName  0x0018+(0x1250  << 16 ) // SH
 #define  kAcquisitionMatrix  0x0018+(0x1310  << 16 ) //US
 #define  kFlipAngle  0x0018+(0x1314  << 16 )
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
@@ -3888,6 +3890,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
 #define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
+#define  kMRAcquisitionPhaseEncodingStepsInPlane  0x0018+uint32_t(0x9231<< 16 ) //US
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
@@ -3913,18 +3916,28 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
-#define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )// 'SS' 'LocationsInAcquisitionGE'
-#define  kRTIA_timer 0x0021+(0x105E<< 16 )// 'DS'
-#define  kProtocolDataBlockGE 0x0025+(0x101B<< 16 )// 'OB'
+//Private Group 21 as Used by Siemens:
+#define  kPATModeText 0x0021+(0x1009<< 16 )//LO, see kImaPATModeText
+#define  kTimeAfterStart 0x0021+(0x1104<< 16 )//DS
+#define  kPhaseEncodingDirectionPositive 0x0021+(0x111C<< 16 )//IS
+#define  kRealDwellTime 0x0021+(0x1142<< 16 )//IS
+#define  kBandwidthPerPixelPhaseEncode21 0x0021+(0x1153<< 16 )//FD
+#define  kCoilElements 0x0021+(0x114F<< 16 )//LO
+
+//g21
+//Private Group 21 as used by GE:
+#define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )//SS 'LocationsInAcquisitionGE'
+#define  kRTIA_timer 0x0021+(0x105E<< 16 )//DS
+#define  kProtocolDataBlockGE 0x0025+(0x101B<< 16 )//OB
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
 #define  kPlanarRGB 0x0028+(0x0006 << 16 )
 #define  kDim3 0x0028+(0x0008 << 16 ) //number of frames - for Philips this is Dim3*Dim4
 #define  kDim2 0x0028+(0x0010 << 16 )
 #define  kDim1 0x0028+(0x0011 << 16 )
-#define  kXYSpacing  0x0028+(0x0030 << 16 ) //'0028' '0030' 'DS' 'PixelSpacing'
+#define  kXYSpacing  0x0028+(0x0030 << 16 ) //DS 'PixelSpacing'
 #define  kBitsAllocated 0x0028+(0x0100 << 16 )
-#define  kBitsStored 0x0028+(0x0101 << 16 )//'0028' '0101' 'US' 'BitsStored'
+#define  kBitsStored 0x0028+(0x0101 << 16 )//US 'BitsStored'
 #define  kIsSigned 0x0028+(0x0103 << 16 )
 #define  kIntercept 0x0028+(0x1052 << 16 )
 #define  kSlope 0x0028+(0x1053 << 16 )
@@ -3954,6 +3967,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
 #define  kDiffusionGradientDirectionUIH  0x0065+(0x1037<< 16 ) //FD
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
+#define  kElscintIcon 0x07a3+(0x10ce << 16 ) //see kGeiisFlag and https://github.com/rordenlab/dcm2niix/issues/239
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
@@ -4539,9 +4553,8 @@ double TE = 0.0; //most recent echo time recorded
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
-                //printf("%s\n", acquisitionTimeTxt);
                 if (d.manufacturer != kMANUFACTURER_UIH) break;
-                //UIH slice timing
+                //UIH slice timing- do not use for Siemens as Siemens de-identification can corrupt this field https://github.com/rordenlab/dcm2niix/issues/236
                 d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.acquisitionTime;
                 acquisitionTimesGE_UIH ++;
                 break;
@@ -4630,6 +4643,9 @@ double TE = 0.0; //most recent echo time recorded
             case kMREchoSequence :
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
             	sqDepth00189114 = sqDepth - 1;
+            	break;
+            case kMRAcquisitionPhaseEncodingStepsInPlane :
+            		d.phaseEncodingLines =  dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
             	break;
             case kNumberOfImagesInMosaic :
             	if (d.manufacturer == kMANUFACTURER_SIEMENS)
@@ -4776,6 +4792,50 @@ double TE = 0.0; //most recent echo time recorded
             case kImageComments:
                 dcmStr (lLength, &buffer[lPos], d.imageComments, true);
                 break;
+            //group 21: siemens
+            //g21
+			case kPATModeText : { //e.g. Siemens iPAT x2 listed as "p2"
+            	char accelStr[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], accelStr);
+                char *ptr;
+                dcmStrDigitsOnlyKey('p', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
+                d.accelFactPE = (float)strtof(accelStr, &ptr);
+                if (*ptr != '\0')
+                	d.accelFactPE = 0.0;
+                //between slice accel
+                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStrDigitsOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
+                multiBandFactor = (int)strtol(accelStr, &ptr, 10);
+                if (*ptr != '\0')
+                	multiBandFactor = 0.0;
+                //printMessage("p%gs%d\n",  d.accelFactPE, multiBandFactor);
+				break; }
+			case kTimeAfterStart:
+				if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+				if (acquisitionTimesGE_UIH >= kMaxEPI3D) break;
+				d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
+                //printf("%d %g\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
+				acquisitionTimesGE_UIH ++;
+            	break;
+            case kPhaseEncodingDirectionPositive: {
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	int ph = dcmStrInt(lLength, &buffer[lPos]);
+            	if (ph == 1) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+            	if (ph == 0) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+            	break; }
+			case kRealDwellTime :
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
+            	break;
+            case kBandwidthPerPixelPhaseEncode21:
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+                d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+                break;
+			case kCoilElements:
+				if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	dcmStr (lLength, &buffer[lPos], d.coilElements);
+				break;
+            //group 21: GE
             case kLocationsInAcquisitionGE:
                 locationsInAcquisitionGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
@@ -4926,6 +4986,11 @@ double TE = 0.0; //most recent echo time recorded
             		d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 }
             	break;
+            case kReceiveCoilName :
+                dcmStr (lLength, &buffer[lPos], d.coilName);
+                if (strlen(d.coilName) < 1) break;
+                d.coilCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.coilName, strlen(d.coilName)));
+				break;
             case kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -4986,8 +5051,7 @@ double TE = 0.0; //most recent echo time recorded
                 multiBandFactor = (int)strtol(accelStr, &ptr, 10);
                 if (*ptr != '\0')
                 	multiBandFactor = 0.0;
-                //printMessage("p%gs%d\n",  d.accelFactPE, multiBandFactor);
-				break; }
+                break; }
             case kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
@@ -5061,6 +5125,10 @@ double TE = 0.0; //most recent echo time recorded
                 else
                     d.sliceOrient = kSliceOrientTra; //transverse (axial)
                 break; }
+            case kElscintIcon :
+            	printWarning("Assuming icon SQ 07a3,10ce.\n");
+                isIconImageSequence = true;
+            	break;
 			case kPMSCT_RLE1 :
 				if (d.compressionScheme != kCompressPMSCT_RLE1) break;
 				d.imageStart = (int)lPos + (int)lFileOffset;
