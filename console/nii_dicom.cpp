@@ -3920,7 +3920,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kPATModeText 0x0021+(0x1009<< 16 )//LO, see kImaPATModeText
 #define  kTimeAfterStart 0x0021+(0x1104<< 16 )//DS
 #define  kPhaseEncodingDirectionPositive 0x0021+(0x111C<< 16 )//IS
-#define  kRealDwellTime 0x0021+(0x1142<< 16 )//IS
+//#define  kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define  kBandwidthPerPixelPhaseEncode21 0x0021+(0x1153<< 16 )//FD
 #define  kCoilElements 0x0021+(0x114F<< 16 )//LO
 
@@ -4820,13 +4820,13 @@ double TE = 0.0; //most recent echo time recorded
             case kPhaseEncodingDirectionPositive: {
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
             	int ph = dcmStrInt(lLength, &buffer[lPos]);
-            	if (ph == 1) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
-            	if (ph == 0) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+            	if (ph == 0) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+            	if (ph == 1) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
             	break; }
-			case kRealDwellTime :
-            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
-            	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
-            	break;
+			//case kRealDwellTime : //https://github.com/rordenlab/dcm2niix/issues/240
+            //	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            //	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
+            //	break;
             case kBandwidthPerPixelPhaseEncode21:
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
