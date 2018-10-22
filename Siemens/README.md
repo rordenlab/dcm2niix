@@ -4,7 +4,7 @@ dcm2niix attempts to convert Siemens DICOM format images to NIfTI. This page des
 
 ## Vida XA10A
 
-The Siemens Vida introduced the new [XA10A DICOM format](https://github.com/rordenlab/dcm2niix/issues/236). Note that the mosaics are considered secondary capture images intended for quality assurance only. Users should avoid generating XA10A mosaics. The non-mosaic 2D enhanced DICOMs are compact and efficient, but do not include the rich information included in prior generations (such as the CSA header). Therefore, dcm2niix will generate more sparse BIDS files for XA10A systems than other Siemens equipment.
+The Siemens Vida introduced the new [XA10A DICOM format](https://github.com/rordenlab/dcm2niix/issues/236). Note that the mosaics are considered secondary capture images intended for quality assurance only. Users should avoid generating XA10A mosaics. The non-mosaic 2D enhanced DICOMs are compact and efficient, but do not include the rich information included in prior generations (such as the CSA header). Therefore, dcm2niix will generate more sparse BIDS files for XA10A systems than other Siemens equipment. For Vida specific details see issue 240](https://github.com/rordenlab/dcm2niix/issues/240).
 
 ## CSA Header
 

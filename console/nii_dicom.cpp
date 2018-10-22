@@ -3883,6 +3883,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
+//#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
 #define  kDiffusion_bValue  0x0018+uint32_t(0x9087<< 16 ) // FD
@@ -3923,7 +3924,6 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define  kBandwidthPerPixelPhaseEncode21 0x0021+(0x1153<< 16 )//FD
 #define  kCoilElements 0x0021+(0x114F<< 16 )//LO
-
 //g21
 //Private Group 21 as used by GE:
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )//SS 'LocationsInAcquisitionGE'
@@ -4632,6 +4632,12 @@ double TE = 0.0; //most recent echo time recorded
             	//n.b. used differently by different vendors https://github.com/rordenlab/dcm2niix/issues/225
             	d.acquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
+            //in theory, 0018,9074 could provide XA10 slice time information, but scrambled by XA10 de-identification: better to use 0021,1104
+            //case kFrameAcquisitionDateTime: {
+            //	char dateTime[kDICOMStr];
+            //	dcmStr (lLength, &buffer[lPos], dateTime);
+            //	printf("%s\n", dateTime);
+            //}
             case kDiffusionDirectionality : {// 0018, 9075
                 set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
                 if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 10)) break;

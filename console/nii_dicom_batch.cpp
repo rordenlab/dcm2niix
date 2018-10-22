@@ -894,7 +894,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
     json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
-	float pf = 1.0f; //partial fourier
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
 	int viewOrderGE = -1;
@@ -921,6 +920,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		float pf = 1.0f; //partial fourier
 		float delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
@@ -981,11 +981,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		if (strcmp(d.coilElements,d.coilName) != 0)
 			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
 		if ((d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 0)) {
-			float pF = (float)d.phaseEncodingLines;
+			float pf = (float)d.phaseEncodingLines;
 			if (d.accelFactPE > 1)
-				pF = pF / (float)d.accelFactPE; //estimate: not sure if we round up or down
-			pF = (float)d.echoTrainLength / pF;
-			if (pF < 1.0) //e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
+				pf = (float)pf / (float)d.accelFactPE; //estimate: not sure if we round up or down
+			pf = (float)d.echoTrainLength / (float)pf;
+			if (pf < 1.0) //e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
 				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
 		} //compute partial Fourier: not reported in XA10, so infer
 	}
@@ -3124,9 +3124,17 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
-    //Siemens XA10 slice timing - first https://github.com/rordenlab/dcm2niix/issues/240
+    //Siemens XA10 slice timing
+    // Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
+    // an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
+    if ((dcmList[dcmSort[0].indx].isXA10A) && (hdr0.dim[4] < 2))
+    	dcmList[dcmSort[0].indx].CSA.sliceTiming[0] = -1.0; //XA10A slice timing often not correct for 1st volume
 	if (((dcmList[dcmSort[0].indx].isXA10A)) && (nConvert == (hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		float mn = dcmList[dcmSort[1].indx].CSA.sliceTiming[0];
+		//for (int v = 0; v < hdr0.dim[4]; v++)
+		//	for (int z = 0; z < hdr0.dim[3]; z++)
+		//		printf("%g\n",dcmList[dcmSort[v].indx].CSA.sliceTiming[z]);
+		//get slice timing from second volume
 		for (int v = 0; v < hdr0.dim[3]; v++) {
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[1].indx].CSA.sliceTiming[v];
 			if (dcmList[dcmSort[0].indx].CSA.sliceTiming[v] < mn) mn = dcmList[dcmSort[0].indx].CSA.sliceTiming[v];
@@ -3141,7 +3149,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			dcmList[dcmSort[0].indx].CSA.multiBandFactor = mb;
 		//for (int v = 0; v < hdr0.dim[3]; v++)
 		//	printf("XA10sliceTiming\t%d\t%g\n", v, dcmList[dcmSort[0].indx].CSA.sliceTiming[v]);
-
 	}
 	//UIH 2D slice timing
 	if (((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH)) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
