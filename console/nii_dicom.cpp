@@ -819,6 +819,26 @@ struct TDICOMdata clear_dicom_data() {
     return d;
 } //clear_dicom_data()
 
+int isdigitdot(int c) { //returns true if digit or '.'
+	if (c == '.') return 1;
+	return isdigit(c);
+}
+
+void dcmStrDigitsDotOnlyKey(char key, char* lStr) {
+    //e.g. string "F:2.50" returns 2.50 if key==":"
+    size_t len = strlen(lStr);
+    if (len < 1) return;
+    bool isKey = false;
+    for (int i = 0; i < (int) len; i++) {
+        if (!isdigitdot(lStr[i]) ) {
+            isKey =  (lStr[i] == key);
+            lStr[i] = ' ';
+
+        } else if (!isKey)
+        	lStr[i] = ' ';
+    }
+} //dcmStrDigitsOnlyKey()
+
 void dcmStrDigitsOnlyKey(char key, char* lStr) {
     //e.g. string "p2s3" returns 2 if key=="p" and 3 if key=="s"
     size_t len = strlen(lStr);
@@ -3966,6 +3986,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kPETImageIndex  0x0054+(0x1330<< 16 )
 #define  kPEDirectionDisplayedUIH  0x0065+(0x1005<< 16 )//SH
 #define  kDiffusion_bValueUIH  0x0065+(0x1009<< 16 ) //FD
+#define  kParallelInformationUIH  0x0065+(0x100D<< 16 ) //SH
 #define  kNumberOfImagesInGridUIH  0x0065+(0x1050<< 16 ) //DS
 #define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
 #define  kDiffusionGradientDirectionUIH  0x0065+(0x1037<< 16 ) //FD
@@ -4889,6 +4910,14 @@ double TE = 0.0; //most recent echo time recorded
             	d.CSA.numDti = 1;
             	//printf("%d>>>%g\n", lPos, v[0]);
             	break; }
+            case kParallelInformationUIH: {//SENSE factor (0065,100d) SH [F:2S]
+            	if (d.manufacturer != kMANUFACTURER_UIH) break;
+            	char accelStr[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], accelStr);
+                char *ptr;
+                dcmStrDigitsDotOnlyKey(':', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
+				d.accelFactPE = atof(accelStr);
+                break; }
             case kNumberOfImagesInGridUIH :
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	d.numberOfImagesInGridUIH =  dcmStrFloat(lLength, &buffer[lPos]);

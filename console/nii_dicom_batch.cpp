@@ -980,15 +980,16 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
 		if (strcmp(d.coilElements,d.coilName) != 0)
 			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
-		if ((d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 1)) {
-			//ETL is > 1, as some GE files list 1, as an example see series mr_0005 in dcm_qa_nih
-			float pf = (float)d.phaseEncodingLines;
-			if (d.accelFactPE > 1)
-				pf = (float)pf / (float)d.accelFactPE; //estimate: not sure if we round up or down
-			pf = (float)d.echoTrainLength / (float)pf;
-			if (pf < 1.0) //e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
-				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+		if ((!d.is3DAcq) && (d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 1)) {
+				//ETL is > 1, as some GE files list 1, as an example see series mr_0005 in dcm_qa_nih
+				float pf = (float)d.phaseEncodingLines;
+				if (d.accelFactPE > 1)
+					pf = (float)pf / (float)d.accelFactPE; //estimate: not sure if we round up or down
+				pf = (float)d.echoTrainLength / (float)pf;
+				if (pf < 1.0) //e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
+					fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
 		} //compute partial Fourier: not reported in XA10, so infer
+		//printf("PhaseLines=%d EchoTrainLength=%d  SENSE=%g\n", d.phaseEncodingLines, d.echoTrainLength, d.accelFactPE); //n.b. we can not distinguish pF from SENSE/GRAPPA for UIH
 	}
 	#endif
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
@@ -1018,7 +1019,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
-    if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
+    if ((!d.is3DAcq) && (d.accelFactPE > 1.0)) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
 	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the
