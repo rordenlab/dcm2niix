@@ -1037,6 +1037,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
         ret = kMANUFACTURER_TOSHIBA;
     if ((toupper(cString[0])== 'U') && (toupper(cString[1])== 'I'))
         ret = kMANUFACTURER_UIH;
+    if ((toupper(cString[0])== 'B') && (toupper(cString[1])== 'R'))
+        ret = kMANUFACTURER_BRUKER;
 //#ifdef _MSC_VER
 	free(cString);
 //#endif
@@ -3914,6 +3916,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
+#define  kFrameContentSequence 0x0020+uint32_t(0x9111<< 16 ) //SQ
 #define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
@@ -4041,6 +4044,7 @@ double TE = 0.0; //most recent echo time recorded
     int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
     int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
     bool isOrient = false;
+    bool isDcm4Che = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
     bool isSwitchToBigEndian = false;
@@ -4130,12 +4134,13 @@ double TE = 0.0; //most recent echo time recorded
     	is2005140FSQ = false;
     	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
     	//if we leave the folder MREchoSequence 0018,9114
-
-    	if (( nDimIndxVal > 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (sqDepth00189114 >= sqDepth)) {
+    	if (( nDimIndxVal > 0) && ((isDcm4Che) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
     		sqDepth00189114 = -1; //triggered
+    		//printf("%d--->\n", inStackPositionNumber);
 			if (inStackPositionNumber > 0) {
 				//for images without SliceNumberMrPhilips (2001,100A)
 				int sliceNumber = inStackPositionNumber;
+				//printf("%d>>>>>>\n", sliceNumber);
 				if ((sliceNumber == 1) && (!isnan(patientPosition[1])) ) {
 					for (int k = 0; k < 4; k++)
 						patientPositionStartPhilips[k] = patientPosition[k];
@@ -4429,8 +4434,10 @@ double TE = 0.0; //most recent echo time recorded
             	char impTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], impTxt);
                 int slen = (int) strlen(impTxt);
+				if ((slen > 5) && (strstr(impTxt, "dcm4che") != NULL) )
+					isDcm4Che = true;
 				if((slen < 5) || (strstr(impTxt, "XA10A") == NULL) ) break;
-                d.isXA10A = true;
+				d.isXA10A = true;
             	break; }
             case kSourceApplicationEntityTitle: {
             	char saeTxt[kDICOMStr];
@@ -4647,6 +4654,7 @@ double TE = 0.0; //most recent echo time recorded
                 	isPhilipsDerived = true;
                 break; }
             case kMREchoSequence :
+            	if (isDcm4Che) break;
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
             	sqDepth00189114 = sqDepth - 1;
             	break;
@@ -4749,10 +4757,16 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.imageNum < 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image again in 2001,9000, which can lead to duplicates
 				break;
 			case kInStackPositionNumber:
-				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+				if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (!isDcm4Che)) break;
 				inStackPositionNumber = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+				//printf("<%d>\n",inStackPositionNumber);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
+			case kFrameContentSequence :
+            	if (!isDcm4Che) break; //see https://github.com/rordenlab/dcm2niix/issues/241
+            	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
+            	sqDepth00189114 = sqDepth - 1;
+            	break;
 			case kTriggerDelayTime: { //0x0020+uint32_t(0x9153<< 16 ) //FD
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				//if (isVerbose < 2) break;

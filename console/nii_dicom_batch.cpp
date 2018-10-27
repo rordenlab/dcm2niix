@@ -701,6 +701,7 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	return EXIT_SUCCESS;
 }
 #endif //myReadGeProtocolBlock()
+
 void json_Str(FILE *fp, const char *sLabel, char *sVal) {
 	if (strlen(sVal) < 1) return;
 	//fprintf(fp, sLabel, sVal );
@@ -764,6 +765,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (d.imagingFrequency < 9000000)
 		json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
 	switch (d.manufacturer) {
+		case kMANUFACTURER_BRUKER:
+			fprintf(fp, "\t\"Manufacturer\": \"Bruker\",\n" );
+			break;
 		case kMANUFACTURER_SIEMENS:
 			fprintf(fp, "\t\"Manufacturer\": \"Siemens\",\n" );
 			break;
@@ -900,14 +904,10 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	int sliceOrderGE = -1;
 	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
 	json_Str(fp, "\t\"PhaseEncodingDirectionDisplayed\": \"%s\",\n", d.phaseEncodingDirectionDisplayedUIH);
-	if (d.phaseEncodingGE != kGE_PHASE_ENCODING_POLARITY_UNKNOWN) { //only set for GE
+	if ((d.manufacturer == kMANUFACTURER_GE) && (d.phaseEncodingGE != kGE_PHASE_ENCODING_POLARITY_UNKNOWN)) { //only set for GE
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Unflipped\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n" );
 	}
-	//if (d.sliceOrderGE != kGE_SLICE_ORDER_UNKNOWN) { //only set for GE
-	//	if (d.sliceOrderGE == kGE_SLICE_ORDER_TOP_DOWN) fprintf(fp, "\t\"SliceOrderGE\": \"TopDown\",\n" );
-	//	if (d.sliceOrderGE == kGE_SLICE_ORDER_BOTTOM_UP) fprintf(fp, "\t\"SliceOrderGE\": \"BottomUp\",\n" );
-	//}
 	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
 		printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
@@ -1637,7 +1637,9 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'L') //"L"ocal Institution-generated description or classification of the Procedure Step that was performed.
                 strcat (outname,dcm.procedureStepDescription);
             if (f == 'M') {
-                if (dcm.manufacturer == kMANUFACTURER_GE)
+                if (dcm.manufacturer == kMANUFACTURER_BRUKER)
+                    strcat (outname,"Br");
+                else if (dcm.manufacturer == kMANUFACTURER_GE)
                     strcat (outname,"GE");
                 else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
                     strcat (outname,"To");
@@ -1683,7 +1685,9 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     			#endif
 			}
 			if (f == 'V') {
-				if (dcm.manufacturer == kMANUFACTURER_GE)
+				if (dcm.manufacturer == kMANUFACTURER_BRUKER)
+					strcat (outname,"Bruker");
+				else if (dcm.manufacturer == kMANUFACTURER_GE)
 					strcat (outname,"GE");
 				else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
 					strcat (outname,"Philips");
