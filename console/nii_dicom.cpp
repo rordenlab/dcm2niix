@@ -4066,6 +4066,7 @@ double TE = 0.0; //most recent echo time recorded
     int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
     bool isOrient = false;
     bool isDcm4Che = false;
+    bool isMoCo = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
     bool isSwitchToBigEndian = false;
@@ -4471,6 +4472,18 @@ double TE = 0.0; //most recent echo time recorded
             	dcmStr (lLength, &buffer[lPos], d.imageType);
                 int slen;
                 slen = (int) strlen(d.imageType);
+				if((slen > 5) && strstr(d.imageType, "_MOCO_") ) {
+                	//d.isDerived = true; //this would have 'i- y' skip MoCo images
+                	isMoCo = true;
+                }
+				if((slen > 5) && strstr(d.imageType, "_ADC_") )
+                	d.isDerived = true;
+				if((slen > 5) && strstr(d.imageType, "_TRACEW_") )
+                	d.isDerived = true;
+				if((slen > 5) && strstr(d.imageType, "_TRACE_") )
+                	d.isDerived = true;
+				if((slen > 5) && strstr(d.imageType, "_FA_") )
+                	d.isDerived = true;
 				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
                 if((slen > 5) && !strcmp(d.imageType + slen - 6, "MOSAIC") )
                 	isMosaic = true;
@@ -5707,6 +5720,8 @@ double TE = 0.0; //most recent echo time recorded
 		strcpy(d.protocolName, d.seriesDescription);
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
+	if ((strlen(d.protocolName) > 1) && (isMoCo))
+		strcat (d.protocolName,"_MoCo"); //disambiguate MoCo https://github.com/neurolabusc/MRIcroGL/issues/31
     if ((strlen(d.protocolName) < 1) && (strlen(d.sequenceName) > 1) && (d.manufacturer != kMANUFACTURER_SIEMENS))
 		strcpy(d.protocolName, d.sequenceName); //protocolName (0018,1030) optional, sequence name (0018,0024) is not a good substitute for Siemens as it can vary per volume: *ep_b0 *ep_b1000#1, *ep_b1000#2, etc https://www.nitrc.org/forum/forum.php?thread_id=8771&forum_id=4703
 	//     if (!isOrient) {
