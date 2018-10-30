@@ -142,6 +142,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     uint16_t SOFxdim = 0;
     // long SOSarrayPos; //SOFarrayPos
     int lnHufTables = 0;
+    int lFrameCount = 1;
     const int kmaxFrames = 4;
     struct HufTables l[kmaxFrames+1];
     do { //read each marker in the header
@@ -180,7 +181,6 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
             }
         } else if (btMarkerType == 0xC4) {//if SOF marker else if define-Huffman-tables marker (DHT)
             if (verbose) printMessage(" [Huffman Length %d]\n", lSegmentLength);
-            int lFrameCount = 1;
             do {
                 uint8_t DHTnLi = readByte(lRawRA, &lRawPos, lRawSz ); //we read but ignore DHTtcth.
                 #pragma unused(DHTnLi) //we need to increment the input file position, but we do not care what the value is
@@ -325,8 +325,9 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
     } //For each frame, e.g. once each for Red/Green/Blue
     //NEXT: some RGB images use only a single Huffman table for all 3 colour planes. In this case, replicate the correct values
     if (lnHufTables < SOFnf) { //use single Hufman table for each frame
-        for (int lFrameCount = 2; lFrameCount <= SOFnf; lFrameCount++) {
-            l[lFrameCount] = l[1];
+        for (int lFrameCount = lnHufTables+1; lFrameCount <= SOFnf; lFrameCount++) {
+            l[lFrameCount] = l[lnHufTables];
+
         } //for each frame
     } // if lnHufTables < SOFnf
     //NEXT: uncompress data: different loops for different predictors
