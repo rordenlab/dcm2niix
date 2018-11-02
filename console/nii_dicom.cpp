@@ -3912,6 +3912,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusionOrientation  0x0018+uint32_t(0x9089<< 16 ) // FD, seen in enhanced
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
+#define  kImagingFrequency2 0x0018+uint32_t(0x9098 << 16 ) //FD
 #define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
 #define  kMRAcquisitionPhaseEncodingStepsInPlane  0x0018+uint32_t(0x9231<< 16 ) //US
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
@@ -3941,13 +3942,14 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
 //Private Group 21 as Used by Siemens:
+#define  kSequenceVariant21 0x0021+(0x105B<< 16 )//CS
 #define  kPATModeText 0x0021+(0x1009<< 16 )//LO, see kImaPATModeText
 #define  kTimeAfterStart 0x0021+(0x1104<< 16 )//DS
 #define  kPhaseEncodingDirectionPositive 0x0021+(0x111C<< 16 )//IS
 //#define  kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define  kBandwidthPerPixelPhaseEncode21 0x0021+(0x1153<< 16 )//FD
 #define  kCoilElements 0x0021+(0x114F<< 16 )//LO
-//g21
+#define  kAcquisitionMatrixText21  0x0021+(0x1158 << 16 ) //SH
 //Private Group 21 as used by GE:
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )//SS 'LocationsInAcquisitionGE'
 #define  kRTIA_timer 0x0021+(0x105E<< 16 )//DS
@@ -4065,7 +4067,7 @@ double TE = 0.0; //most recent echo time recorded
     int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
     int encapsulatedDataImageStart = 0; //position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
     bool isOrient = false;
-    bool isDcm4Che = false;
+    //bool isDcm4Che = false;
     bool isMoCo = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
@@ -4156,7 +4158,7 @@ double TE = 0.0; //most recent echo time recorded
     	is2005140FSQ = false;
     	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
     	//if we leave the folder MREchoSequence 0018,9114
-    	if (( nDimIndxVal > 0) && ((isDcm4Che) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
+    	if (( nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
     		sqDepth00189114 = -1; //triggered
     		//printf("%d--->\n", inStackPositionNumber);
 			if (inStackPositionNumber > 0) {
@@ -4456,8 +4458,8 @@ double TE = 0.0; //most recent echo time recorded
             	char impTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], impTxt);
                 int slen = (int) strlen(impTxt);
-				if ((slen > 5) && (strstr(impTxt, "dcm4che") != NULL) )
-					isDcm4Che = true;
+				//if ((slen > 5) && (strstr(impTxt, "dcm4che") != NULL) )
+				//	isDcm4Che = true;
 				if((slen < 5) || (strstr(impTxt, "XA10A") == NULL) ) break;
 				d.isXA10A = true;
             	break; }
@@ -4688,7 +4690,7 @@ double TE = 0.0; //most recent echo time recorded
                 	isPhilipsDerived = true;
                 break; }
             case kMREchoSequence :
-            	if (isDcm4Che) break;
+            	if (d.manufacturer != kMANUFACTURER_BRUKER) break;
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
             	sqDepth00189114 = sqDepth - 1;
             	break;
@@ -4791,13 +4793,13 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.imageNum < 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image again in 2001,9000, which can lead to duplicates
 				break;
 			case kInStackPositionNumber:
-				if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (!isDcm4Che)) break;
+				if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
 				inStackPositionNumber = dcmInt(4,&buffer[lPos],d.isLittleEndian);
 				//printf("<%d>\n",inStackPositionNumber);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
 			case kFrameContentSequence :
-            	if (!isDcm4Che) break; //see https://github.com/rordenlab/dcm2niix/issues/241
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //see https://github.com/rordenlab/dcm2niix/issues/241
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
             	sqDepth00189114 = sqDepth - 1;
             	break;
@@ -5070,7 +5072,9 @@ double TE = 0.0; //most recent echo time recorded
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
                 d.zThick = d.xyzMM[3];
                 break;
-             case kAcquisitionMatrixText : {
+            case kAcquisitionMatrixText21:
+				//fall through to kAcquisitionMatrixText
+            case kAcquisitionMatrixText : {
                if (d.manufacturer == kMANUFACTURER_SIEMENS) {
 					char matStr[kDICOMStr];
 					dcmStr (lLength, &buffer[lPos], matStr);
@@ -5143,6 +5147,8 @@ double TE = 0.0; //most recent echo time recorded
                 dcmStr (lLength, &buffer[lPos], d.scanningSequence);
                 break;
             }
+            case kSequenceVariant21 :
+            	//fall through...
             case kSequenceVariant : {
                 dcmStr (lLength, &buffer[lPos], d.sequenceVariant);
                 break;
@@ -5280,6 +5286,9 @@ double TE = 0.0; //most recent echo time recorded
 			//case kSliceNumberMrPhilips :
 			//	sliceNumberMrPhilips3D = dcmStrInt(lLength, &buffer[lPos]);
 			//	break;
+            case kImagingFrequency2 :
+            	d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	break;
             case kSliceNumberMrPhilips : {
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
@@ -5916,7 +5925,7 @@ if (d.isHasPhase)
 	#endif
 	//printf("%g\t\t%g\t%g\t%g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
-    return d;
+	return d;
 } // readDICOM()
 
 struct TDICOMdata readDICOM(char * fname) {
