@@ -613,7 +613,7 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2,  struct nifti_
         if ((d.isDerived) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
            printMessage("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
         } else {
-            printMessage("Unable to determine spatial orientation: 0020,0037 missing (Type 1 attribute: not a valid DICOM) Series %d\n", d.seriesNum);
+            printMessage("Unable to determine spatial orientation: 0020,0037 missing (Type 1 attribute: not a valid DICOM) Series %ld\n", d.seriesNum);
         }
     }
     mat44 Q44 = set_nii_header_x(d, d2, h, &sliceDir, isVerbose);
@@ -1211,10 +1211,10 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 int maxTimeIndex = minTimeIndex;
                 minTimeValue = sliceTimes[1];
                 maxTimeValue = minTimeValue;
-                if ((isVerbose) && (!is3D))
+                if (isVerbose)
                     printMessage("   sliceTimes %g\t", sliceTimes[1]);
 				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-                    if ((isVerbose) && (!is3D))
+                    if (isVerbose)
                         printMessage("%g\t",  sliceTimes[z]);
                     if (sliceTimes[z] == 0)
                     	nTimeZero++;
@@ -1228,7 +1228,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                     }
                     if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
 				}
-                if ((isVerbose) && (!is3D))
+                if (isVerbose)
                     printMessage("\n");
                 CSA->slice_start = minTimeIndex -1;
                 CSA->slice_end = maxTimeIndex -1;
@@ -1250,13 +1250,13 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                      [sliceTimesNS addObject:[NSNumber numberWithFloat:sliceTimes[z]]];
                      NSLog(@" Warning: unable to determine slice order for %lu slice mosaic: %@",(unsigned long)[sliceTimesNS count],sliceTimesNS );
                      */
-                    if (!is3D)
-                    	printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
+                    printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
                 }
                 if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
                 	if (isVerbose)
                 		printMessage(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
                 	CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
+
                 }
 //#ifdef _MSC_VER
 				free(sliceTimes);
@@ -4799,7 +4799,7 @@ double TE = 0.0; //most recent echo time recorded
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
 			case kFrameContentSequence :
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //see https://github.com/rordenlab/dcm2niix/issues/241
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //see https://github.com/rordenlab/dcm2niix/issues/241
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
             	sqDepth00189114 = sqDepth - 1;
             	break;
@@ -5785,7 +5785,7 @@ if (d.isHasPhase)
         if (!isnan(patientPositionEndPhilips[1]))
         	printMessage(" patient position end (0020,0032)\t%g\t%g\t%g\n", patientPositionEndPhilips[1],patientPositionEndPhilips[2],patientPositionEndPhilips[3]);
         printMessage(" orient (0020,0037)\t%g\t%g\t%g\t%g\t%g\t%g\n", d.orient[1],d.orient[2],d.orient[3], d.orient[4],d.orient[5],d.orient[6]);
-        printMessage(" acq %d img %d ser %ld dim %dx%dx%dx%d mm %gx%gx%g offset %d loc %d valid %d ph %d mag %d nDTI %d 3d %d bits %d littleEndian %d echo %d coil %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3], d.xyzDim[4],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilCrc, d.TE, d.TR);
+        printMessage(" acq %d img %d ser %ld dim %dx%dx%dx%d mm %gx%gx%g offset %d loc %d valid %d ph %d mag %d nDTI %d 3d %d bits %d littleEndian %d echo %d coilCRC %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3], d.xyzDim[4],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilCrc, d.TE, d.TR);
         //if (d.CSA.dtiV[0] > 0)
         //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }

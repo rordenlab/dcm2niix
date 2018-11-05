@@ -2887,7 +2887,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	//check if 2nd image has valud slice timing
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
-	for (int i = 0; i < kMaxEPI3D; i++) {
+	for (int i = 0; i < nSlices; i++) {
 		//if (d1->CSA.sliceTiming[i] < 0.0) break;
 		if (d1->CSA.sliceTiming[i] < minT1) minT1 = d1->CSA.sliceTiming[i];
 		if (d1->CSA.sliceTiming[i] > maxT1) maxT1 = d1->CSA.sliceTiming[i];
