@@ -4160,11 +4160,11 @@ double TE = 0.0; //most recent echo time recorded
     	//if we leave the folder MREchoSequence 0018,9114
     	if (( nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
     		sqDepth00189114 = -1; //triggered
-    		//printf("%d--->\n", inStackPositionNumber);
+    		//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 			if (inStackPositionNumber > 0) {
 				//for images without SliceNumberMrPhilips (2001,100A)
 				int sliceNumber = inStackPositionNumber;
-				//printf("%d>>>>>>\n", sliceNumber);
+				//printf("slice %d \n", sliceNumber);
 				if ((sliceNumber == 1) && (!isnan(patientPosition[1])) ) {
 					for (int k = 0; k < 4; k++)
 						patientPositionStartPhilips[k] = patientPosition[k];
@@ -4617,7 +4617,7 @@ double TE = 0.0; //most recent echo time recorded
                 dcmStr (lLength, &buffer[lPos], aotTxt);
                 int slen = (int) strlen(aotTxt);
 				if((slen < 9) || (strstr(aotTxt, "QUADRUPED") == NULL) ) break;
-                printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly");
+                printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
             	break; }
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
@@ -5148,6 +5148,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             }
             case kSequenceVariant21 :
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break; //see GE dataset in dcm_qa_nih
             	//fall through...
             case kSequenceVariant : {
                 dcmStr (lLength, &buffer[lPos], d.sequenceVariant);
@@ -5806,12 +5807,14 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
+    	if (d.manufacturer != kMANUFACTURER_BRUKER) { //only single sample Bruker - perhaps use 0020,9057 to identify if space or time is 3rd dimension
     	//sort dimensions
 #ifdef USING_R
         std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
 #else
         qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 #endif
+		}
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
 		for (int i = 0; i < numberOfFrames; i++)

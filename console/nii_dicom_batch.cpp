@@ -2888,12 +2888,16 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
 	for (int i = 0; i < kMaxEPI3D; i++) {
-		if (d1->CSA.sliceTiming[i] < 0.0) break;
+		//if (d1->CSA.sliceTiming[i] < 0.0) break;
 		if (d1->CSA.sliceTiming[i] < minT1) minT1 = d1->CSA.sliceTiming[i];
 		if (d1->CSA.sliceTiming[i] > maxT1) maxT1 = d1->CSA.sliceTiming[i];
 	}
+	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
+		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
+		return;
+	}
 	if ((minT1 == maxT1) || (maxT1 >= d->TR)) { //both first and second image corrupted
-		printWarning("CSA slice timing appears corrupted (range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
+		printWarning("CSA slice timing appears corrupted (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
 		return;
 	}
 	//1st image corrupted, but 2nd looks ok - substitute values from 2nd image
