@@ -5677,7 +5677,7 @@ double TE = 0.0; //most recent echo time recorded
     }
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;
-    if (d.zSpacing > 0)
+    if (d.zSpacing > 0.0)
     	d.xyzMM[3] = d.zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
     //printMessage("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionNum,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3]))
@@ -5863,7 +5863,16 @@ if (d.isHasPhase)
 					printMessage(" %d TE=%g Slope=%g Inter=%g PhilipsScale=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[i], dti4D->intenIntercept[i], dti4D->intenScalePhilips[i], dti4D->isPhase[i] );
 			}
 		}
-    }
+		if ((d.xyzDim[3] == maxInStackPositionNumber) && (maxInStackPositionNumber > 1) &&  (d.zSpacing <= 0.0)) {
+			float dx =  sqrt( pow(d.patientPosition[1]-d.patientPositionLast[1],2)+
+                pow(d.patientPosition[2]-d.patientPositionLast[2],2)+
+                pow(d.patientPosition[3]-d.patientPositionLast[3],2));
+            dx = dx / (maxInStackPositionNumber - 1);
+			if (dx > 0.0)
+				d.xyzMM[3] = dx;
+		} //d.zSpacing <= 0.0: Bruker does not populate 0018,0088 https://github.com/rordenlab/dcm2niix/issues/241
+    } //if numDimensionIndexValues > 1 : enhanced DICOM
+
     /* //Attempt to append ADC
     printMessage("CXC grad %g %d %d\n", philDTI[0].V[0], maxGradNum, d.xyzDim[4]);
 	if ((maxGradNum > 1) && ((maxGradNum+1) == d.xyzDim[4]) ) {
