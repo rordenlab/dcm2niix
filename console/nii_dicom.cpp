@@ -5868,7 +5868,7 @@ if (d.isHasPhase)
                 pow(d.patientPosition[2]-d.patientPositionLast[2],2)+
                 pow(d.patientPosition[3]-d.patientPositionLast[3],2));
             dx = dx / (maxInStackPositionNumber - 1);
-			if (dx > 0.0)
+			if ((dx > 0.0) && (!isSameFloatGE(dx, d.xyzMM[3])) ) //patientPosition has some rounding error
 				d.xyzMM[3] = dx;
 		} //d.zSpacing <= 0.0: Bruker does not populate 0018,0088 https://github.com/rordenlab/dcm2niix/issues/241
     } //if numDimensionIndexValues > 1 : enhanced DICOM
@@ -5935,7 +5935,7 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
-	//printf("%g\t\t%g\t%g\t%g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
+	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	return d;
 } // readDICOM()

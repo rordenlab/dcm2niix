@@ -233,8 +233,11 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
         	float bVal = vx[i].V[0] * (vLen * vLen);
         	printMessage("GE BVal scaled %g -> %g\n", vx[i].V[0], bVal);
         	vx[i].V[0] = bVal;
+        	vx[i].V[1] = vx[i].V[1]/vLen;
+        	vx[i].V[2] = vx[i].V[2]/vLen;
+        	vx[i].V[3] = vx[i].V[3]/vLen;
        	}
-        if (!col) { //rows need to be swizzled
+       	if (!col) { //rows need to be swizzled
         	//see Stanford dataset Ax_DWI_Tetrahedral_7 unable to resolve between possible solutions
         	// http://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
             float swap = vx[i].V[1];
@@ -1316,18 +1319,26 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	float kADCval = maxB0 + 1; //mark as unusual
     *numADC = 0;
 	bvals = (float *) malloc(numDti * sizeof(float));
+	int numGEwarn = 0;
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
 		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
 		//Philips includes derived isotropic images
-		if (((dcmList[indx0].manufacturer == kMANUFACTURER_GE) || (dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
+		//if (((dcmList[indx0].manufacturer == kMANUFACTURER_GE) || (dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
+        if (((dcmList[indx0].manufacturer == kMANUFACTURER_GE)) && (isADCnotDTI(vx[i]))) {
+            numGEwarn += 1;
+            vx[i].V[0] = 0;
+        } //see issue 245
+        if (((dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
             *numADC = *numADC + 1;
             bvals[i] = kADCval;
             //printMessage("+++bxyz %d\n",i);
         }
         bvals[i] = bvals[i] + (0.5 * i/numDti); //add a small bias so ties are kept in sequential order
 	}
-	if (*numADC == numDti ) {
+	if (numGEwarn > 0)
+		printWarning("Some images had bval>0 but bvec=0 (either Trace or b=0, see issue 245)\n");
+	if ((*numADC == numDti) || (numGEwarn  == numDti)) {
 		//all isotropic/ADC images - no valid bvecs
 		*numADC = 0;
 		free(bvals);
