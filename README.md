@@ -34,7 +34,18 @@ Command line usage is described in the [NITRC wiki](https://www.nitrc.org/plugin
 
 [See the BATCH.md file for instructions on using the batch processing version](./BATCH.md).
 
-## Build
+## Install
+
+There are a couple ways to install dcm2niix
+ - [Github Releases](https://github.com/rordenlab/dcm2niix/releases) provides the latest compiled executables. This is an excellent option for MacOS and Windows users. However, the provided Linux executable requires a recent version of Linux, so the provided Unix executable is not suitable for all distributions.
+ - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a holy build box, so it should run on any Linux distribution.
+ - If you have a MacOS computer with Homebrew you can run `brew install dcm2niix`.
+ - If you have Conda, [`conda install -c conda-forge dcm2niix`](https://anaconda.org/conda-forge/dcm2niix) on Linux, MacOS or Windows.
+ - On Debian Linux computers you can run `sudo apt-get install dcm2niix`.
+
+## Build from source
+
+It is often easier to download and install a precompiled version. However, you can also build from source.
 
 ### Build command line version with cmake (Linux, MacOS, Windows)
 
@@ -46,6 +57,8 @@ MacOS: `brew install cmake pkg-config`
 
 **Basic build:**
 ```bash
+git clone https://github.com/rordenlab/dcm2niix.git
+cd dcm2niix
 mkdir build && cd build
 cmake ..
 make
@@ -59,9 +72,7 @@ In rare case if cmake fails with the message like `"Generator: execution of make
 As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000, [JPEG-LS](https://github.com/team-charls/charls) (this option requires a  c++14 compiler), as well as using the high performance Cloudflare zlib library (this option requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
 
 ```bash
-mkdir build && cd build
 cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
-make
 ```
 
 **optional batch processing version:**

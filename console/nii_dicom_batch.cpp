@@ -801,6 +801,13 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 		//Next lines directly reveal patient identity
 		json_Str(fp, "\t\"PatientName\": \"%s\",\n", d.patientName);
 		json_Str(fp, "\t\"PatientID\": \"%s\",\n", d.patientID);
+		if (strlen(d.patientBirthDate) == 8) { //DICOM DA YYYYMMDD -> ISO 8601 "YYYY-MM-DD"
+			int ayear,amonth,aday;
+			sscanf(d.patientBirthDate, "%4d%2d%2d", &ayear, &amonth, &aday);
+			fprintf(fp, "\t\"PatientBirthDate\": ");
+			fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
+			fprintf(fp, "-%02d-%02d\",\n", amonth, aday);
+		}
 		if (d.patientSex != '?') fprintf(fp, "\t\"PatientSex\": \"%c\",\n",  d.patientSex);
 		json_Float(fp, "\t\"PatientWeight\": %g,\n", d.patientWeight);
 		//d.patientBirthDate //convert from DICOM  YYYYMMDD to JSON

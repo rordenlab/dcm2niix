@@ -4069,6 +4069,7 @@ double TE = 0.0; //most recent echo time recorded
     bool isOrient = false;
     //bool isDcm4Che = false;
     bool isMoCo = false;
+    bool isInterpolated = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
     bool isSwitchToBigEndian = false;
@@ -5080,7 +5081,7 @@ double TE = 0.0; //most recent echo time recorded
 					dcmStr (lLength, &buffer[lPos], matStr);
 					char* pPosition = strchr(matStr, 'I');
 					if (pPosition != NULL)
-						printWarning("interpolated data may exhibit Gibbs ringing and be unsuitable for dwidenoise/mrdegibbs. %s\n", fname);
+						isInterpolated = true;
             	}
                break; }
             case kCoilSiemens : {
@@ -5414,7 +5415,7 @@ double TE = 0.0; //most recent echo time recorded
             	#define MY_DEBUG_GE // <- uncomment this to use following code to infer GE phase encoding direction
             	#ifdef MY_DEBUG_GE
             	int isVerboseX = isVerbose; //for debugging only - in standard release we will enable user defined "isVerbose"
-            	//int isVerboseX = isVerbose;
+            	//int isVerboseX = 2;
             	if (isVerboseX > 1) printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset+lPos, lLength);
             	if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
             		printMessage(" GE header too small to be valid  (A)\n");
@@ -5925,6 +5926,8 @@ if (d.isHasPhase)
     //if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
     //	long timeCRC = abs( (long)mz_crc32((unsigned char*) &contentTime, sizeof(double)));
     //}
+    if ((isInterpolated) && (d.imageNum <= 1))
+    	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = (uint32_t)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
