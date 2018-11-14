@@ -185,7 +185,6 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     //COL then if swap the x and y value and reverse the sign on the z value.
     //If the phase encoding is not COL, then just reverse the sign on the x value.
     if (d->manufacturer != kMANUFACTURER_GE) return;
-
     if (d->CSA.numDti < 1) return;
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
         ; //participant was head first supine
@@ -219,6 +218,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     printMessage("Saving %d DTI gradients. GE Reorienting %s : please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->CSA.numDti, d->protocolName, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
 	if (!col)
 		printMessage(" reorienting for ROW phase-encoding untested.\n");
+	bool scaledBValWarning = false;
     for (int i = 0; i < d->CSA.numDti; i++) {
         float vLen = sqrt( (vx[i].V[1]*vx[i].V[1])
                           + (vx[i].V[2]*vx[i].V[2])
@@ -231,7 +231,10 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
         if ((vLen > 0.03) && (vLen < 0.97)) {
         	//bVal scaled by norm(g)^2 https://github.com/rordenlab/dcm2niix/issues/163
         	float bVal = vx[i].V[0] * (vLen * vLen);
-        	printMessage("GE BVal scaled %g -> %g\n", vx[i].V[0], bVal);
+        	if (!scaledBValWarning) {
+        		printMessage("GE BVal scaling (e.g. %g -> %g s/mm^2)\n", vx[i].V[0], bVal);
+        		scaledBValWarning = true;
+        	}
         	vx[i].V[0] = bVal;
         	vx[i].V[1] = vx[i].V[1]/vLen;
         	vx[i].V[2] = vx[i].V[2]/vLen;
@@ -1327,6 +1330,7 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     *numADC = 0;
 	bvals = (float *) malloc(numDti * sizeof(float));
 	int numGEwarn = 0;
+	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0) ;
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
 		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
@@ -1334,7 +1338,12 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 		//if (((dcmList[indx0].manufacturer == kMANUFACTURER_GE) || (dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
         if (((dcmList[indx0].manufacturer == kMANUFACTURER_GE)) && (isADCnotDTI(vx[i]))) {
             numGEwarn += 1;
-            vx[i].V[0] = 0;
+            if (isGEADC) { //e.g. GE Trace where bval=900, bvec=0,0,0
+            	*numADC = *numADC + 1;
+            	//printWarning("GE ADC volume %d\n", i+1);
+            	bvals[i] = kADCval;
+            } else
+            	vx[i].V[0] = 0; //e.g. GE raw B=0 where bval=900, bvec=0,0,0
         } //see issue 245
         if (((dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
             *numADC = *numADC + 1;
@@ -2950,7 +2959,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
-    if ((opts.isIgnoreDerivedAnd2D) && ((dcmList[indx].isLocalizer) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) ) {
+    if ((opts.isIgnoreDerivedAnd2D) && ((dcmList[indx].isLocalizer)  || (strcmp(dcmList[indx].sequenceName, "_tfl2d1")== 0) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1")== 0)) ) {
     	printMessage("Ignoring localizer (sequence %s) of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }

@@ -794,6 +794,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isExplicitVR = true;
     d.isLittleEndian = true; //DICOM initially always little endian
     d.converted2NII = 0;
+    d.numberOfDiffusionDirectionGE = -1;
     d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
     d.rtia_timerGE = -1.0;
     d.numberOfImagesInGridUIH = 0;
@@ -3917,6 +3918,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kMRAcquisitionPhaseEncodingStepsInPlane  0x0018+uint32_t(0x9231<< 16 ) //US
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
+#define  kNumberOfDiffusionDirectionGE 0x0019+(0x10E0<< 16) ///DS NumberOfDiffusionDirection:UserData24
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS phase diffusion direction
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS frequency diffusion direction
@@ -3963,14 +3965,15 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kXYSpacing  0x0028+(0x0030 << 16 ) //DS 'PixelSpacing'
 #define  kBitsAllocated 0x0028+(0x0100 << 16 )
 #define  kBitsStored 0x0028+(0x0101 << 16 )//US 'BitsStored'
-#define  kIsSigned 0x0028+(0x0103 << 16 )
+#define  kIsSigned 0x0028+(0x0103 << 16 ) //PixelRepresentation
 #define  kIntercept 0x0028+(0x1052 << 16 )
 #define  kSlope 0x0028+(0x1053 << 16 )
 //#define  kSpectroscopyDataPointColumns 0x0028+(0x9002 << 16 ) //IS
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
 #define  kCSASeriesHeaderInfo 0x0029+(0x1020 << 16 )
-    //#define  kObjectGraphics  0x0029+(0x1210 << 16 )    //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
+#define  kStudyComments 0x0032+(0x4000<< 16 )//LT StudyComments
+//#define  kObjectGraphics  0x0029+(0x1210 << 16 )    //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
 #define  kProcedureStepDescription 0x0040+(0x0254 << 16 )
 #define  kRealWorldIntercept  0x0040+uint32_t(0x9224 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
@@ -4705,6 +4708,11 @@ double TE = 0.0; //most recent echo time recorded
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
+            case kNumberOfDiffusionDirectionGE : {
+				if (d.manufacturer != kMANUFACTURER_GE) break;
+            	float f = dcmStrFloat(lLength, &buffer[lPos]);
+            	d.numberOfDiffusionDirectionGE = round(f);
+            	break; }
             case kLastScanLoc :
                 d.lastScanLoc = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -5510,6 +5518,12 @@ double TE = 0.0; //most recent echo time recorded
                     //geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not re-use pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
                 }
                 break;
+            case kStudyComments: {
+            	//char commentStr[kDICOMStr];
+                //dcmStr (lLength, &buffer[lPos], commentStr);
+                //printf(">> %s\n", commentStr);
+                break;
+			}
             case kProcedureStepDescription:
                 dcmStr (lLength, &buffer[lPos], d.procedureStepDescription);
                 break;
