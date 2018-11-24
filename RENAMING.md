@@ -1,0 +1,27 @@
+## About
+
+dcm2niix is primarily designed to convert DICOM images into NIfTI images. However, it does include a primitive ability to organize and rename DICOM images without converting them. This can be useful, as DICOM images are often stored with random file names that make it difficult to recognize the images.
+
+## Limitation
+
+dcm2niix renames and copies the DICOM images, but the current version does not copy or create a new [DICOMDIR](http://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_F.2.2.2.html) file. Most users ignore these files. However, you should not use this featire if you wish to preserve your DICOMDIR files.
+
+Note that this feature only copies your DICOM images with a new filename. It does not modify the contents of the DICOM header. This means it will not compress or anonymize your files. Free tools for these functions include (dcmcjpeg)[https://dicom.offis.de/dcmtk.php.en], [gdcmanon](http://gdcm.sourceforge.net/html/gdcmanon.html) and [gdcmconv](http://gdcm.sourceforge.net/html/gdcmconv.html).
+
+In addition, this tool assumes that the DICOM images can be uniquely identified by the filenaming argument you provide.
+
+## Usage
+
+The command line argument `-r y` instructs dcm2niix to rename your DICOM files rather than convert them. It does not delete your DICOM images, but rather creates a copy with the organization specified by the [filenaming argument `-f`](FILENAMING.md). Here is an example where the DICOM images will be sorted into folders, with the folder name reflecting the study time (`%t`) and series number (`%s`), each DICOM image will be named based on the image number (`%r`) which will be padded with zeros to fill 5 characters.
+  - `dcm2niix -r y -f %t_%s/%5r.dcm -o ~/out ~/in`
+
+Therefore, the 9th DICOM image from series 3 acquired on 4 February 2012 would be saved as ~/out/20120204084424_3/00009.dcm.
+
+## Alternatives
+
+An advantage of using dcm2niix is simplicity: it is a free, single file executable that you can [download](https://github.com/rordenlab/dcm2niix/releases) that is available for MacOS, Linux and Windows that you can run from the command line. On the other hand, this simplicity means it is fairly inflexible. You may want to consider a DICOM renamer built in your favorite scripting language.
+
+ - [dicom-rename is a Python script](https://github.com/joshy/dicom-rename).
+ - [dicomsort is a Python script](https://github.com/pieper/dicomsort).
+ - [rename_dir is a Matlab script that requires the proprietary Image Processing Toolbox](https://gist.github.com/htygithub/ad3597577e1de004e9f5).
+ - [dicm2nii includes the Matlab script rename_dicm that does not require any additional toolboxes](https://github.com/xiangruili/dicm2nii).

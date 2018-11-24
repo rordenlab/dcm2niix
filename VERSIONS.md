@@ -1,7 +1,14 @@
 ## Versions
 
+14-November-2018
+ - [GE images provide more BIDS tags](https://github.com/rordenlab/dcm2niix/issues/163).
+ - [Bruker enhanced DICOM support](https://github.com/rordenlab/dcm2niix/issues/241).
+ - [Siemens Vida XA10 support](https://github.com/rordenlab/dcm2niix/issues/240). Note that Vida DICOM data is crippled [if the user exports as mosaics or anonymized/reduced](https://github.com/rordenlab/dcm2niix/issues/236).
+ - [UIH enhanced DICOM support](https://github.com/rordenlab/dcm2niix/issues/225).
+ - New DICOM [renaming](RENAMING.md) feature.
+
 22-June-2018
- - [fix issues where 6-June-2018 release could save Enhanced DICOM Philips bvec/bval with different order than .nii images](https://github.com/rordenlab/dcm2niix/issues/201).
+ - [Fix issues where 6-June-2018 release could save Enhanced DICOM Philips bvec/bval with different order than .nii images](https://github.com/rordenlab/dcm2niix/issues/201).
 
 6-June-2018
  - [Improved Philips PAR/REC support](https://github.com/rordenlab/dcm2niix/issues/171)

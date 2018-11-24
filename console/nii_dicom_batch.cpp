@@ -1330,7 +1330,7 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     *numADC = 0;
 	bvals = (float *) malloc(numDti * sizeof(float));
 	int numGEwarn = 0;
-	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0) ;
+	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0);
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
 		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
