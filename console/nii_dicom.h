@@ -43,7 +43,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMvers "v1.0.20181114 " kJP2suf kLSsuf kCCsuf
+#define kDCMvers "v1.0.20181125 " kJP2suf kLSsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
@@ -155,7 +155,8 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     struct TDICOMdata {
         long seriesNum;
         int xyzDim[5];
-        int numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, coilCrc, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, compressionScheme;
+        uint32_t coilCrc;
+        int numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, compressionScheme;
         float imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)

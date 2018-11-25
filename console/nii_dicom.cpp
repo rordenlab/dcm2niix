@@ -1472,10 +1472,10 @@ mat33 nifti_mat33_reorder_cols( mat33 m, ivec3 v ) {
 void changeExt (char *file_name, const char* ext) {
     char *p_extension;
     p_extension = strrchr(file_name, '.');
+    //if ((p_extension >  file_name) && (strlen(ext) < 1))
+    //	p_extension--;
     if (p_extension)
-    {
         strcpy(++p_extension, ext);
-    }
 } //changeExt()
 
 void cleanStr(char* lOut) {
@@ -4938,7 +4938,7 @@ double TE = 0.0; //most recent echo time recorded
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	char accelStr[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], accelStr);
-                char *ptr;
+                //char *ptr;
                 dcmStrDigitsDotOnlyKey(':', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
 				d.accelFactPE = atof(accelStr);
                 break; }
