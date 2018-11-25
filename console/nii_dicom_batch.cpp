@@ -744,8 +744,6 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	siemensCsaAscii(filename,  d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
-	//printWarning(">>>>%s\n",filename);
-	//printWarning(">>>>%s\n", protocolName);
 }
 
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
@@ -1790,7 +1788,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         isEchoReported = true;
     }
     if ((dcm.isNonParallelSlices) && (!isImageNumReported)) {
-        sprintf(newstr, "_i%05d", dcm.imageNum);
+    	sprintf(newstr, "_i%05d", dcm.imageNum);
         strcat (outname,newstr);
     }
     if ((!isSeriesReported) && (!isEchoReported) && (dcm.echoNum > 1)) { //last resort: user provided no method to disambiguate echo number in filename
@@ -3043,7 +3041,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 }
             }
-            //next options removed: featuresnow thoroughly detected in nii_loadDir()
+            //next options removed: features now thoroughly detected in nii_loadDir()
 			for (int i = 0; i < nConvert; i++) { //make sure 1st volume describes shared features
 				if (dcmList[dcmSort[i].indx].isCoilVaries) dcmList[indx0].isCoilVaries = true;
 				if (dcmList[dcmSort[i].indx].isMultiEcho) dcmList[indx0].isMultiEcho = true;
@@ -3915,22 +3913,22 @@ int copyFile (char * src_path, char * dst_path) {
 	unsigned char buffer[BUFFSIZE];
     FILE *fin = fopen(src_path, "rb");
     if (fin == NULL) {
-    	printf("Unable to open input %s\n", src_path);
+    	printError("Check file permissions: Unable to open input %s\n", src_path);
     	return EXIT_FAILURE;
     }
     if (is_fileexists(dst_path)) {
-    	printf("Skipping existing file %s\n", dst_path);
+    	printError("File naming conflict. Existing file %s\n", dst_path);
     	return EXIT_FAILURE;
     }
 	FILE *fou = fopen(dst_path, "wb");
     if (fou == NULL) {
-        printf("Unable to open output %s\n", dst_path);
+        printError("Check file permission. Unable to open output %s\n", dst_path);
     	return EXIT_FAILURE;
     }
     size_t bytes;
     while ((bytes = fread(buffer, 1, BUFFSIZE, fin)) != 0) {
         if(fwrite(buffer, 1, bytes, fou) != bytes) {
-        	 printf("Unable to write %zu bytes to output %s\n", bytes, dst_path);
+        	printError("Unable to write %zu bytes to output %s\n", bytes, dst_path);
             return EXIT_FAILURE;
         }
     }
@@ -4021,6 +4019,8 @@ int nii_loadDir(struct TDCMopts* opts) {
     int nConvertTotal = 0;
     bool compressionWarning = false;
     bool convertError = false;
+    bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
+	if (isDcmExt) opts->filename[strlen(opts->filename) - 4] = 0; // "%s_%r.dcm" -> "%s_%r"
     for (int i = 0; i < (int)nDcm; i++ ) {
     	if ((isExt(nameList.str[i], ".par")) && (isDICOMfile(nameList.str[i]) < 1)) {
 			strcpy(opts->indir, nameList.str[i]); //set to original file name, not path
@@ -4036,8 +4036,14 @@ int nii_loadDir(struct TDCMopts* opts) {
         //~ if ((dcmList[i].isValid) &&((dcmList[i].totalSlicesIn4DOrder != NULL) ||(dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
         if ((dcmList[i].imageNum > 0) && (opts->isRenameNotConvert > 0)) { //use imageNum instead of isValid to convert non-images (kWaveformSq will have instance number but is not a valid image)
         	char outname[PATH_MAX] = {""};
+        	if (dcmList[i].echoNum > 1) dcmList[i].isMultiEcho = true; //last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
         	nii_createFilename(dcmList[i], outname, *opts);
-        	copyFile (nameList.str[i], outname);
+        	if (isDcmExt) strcat (outname,".dcm");
+        	int ret = copyFile (nameList.str[i], outname);
+        	if (ret != EXIT_SUCCESS) {
+        		printError("Unable to rename all DICOM images.\n");
+        		return ret;
+        	}
         	if (opts->isVerbose > 0)
         		printMessage("Renaming %s -> %s\n", nameList.str[i], outname);
         	dcmList[i].isValid = false;
@@ -4106,10 +4112,10 @@ int nii_loadDir(struct TDCMopts* opts) {
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
-			isMultiEcho = false;
-			isNonParallelSlices = false;
-			isCoilVaries = false;
-			for (int j = i; j < (int)nDcm; j++)
+			for (int j = i; j < (int)nDcm; j++) {
+				isMultiEcho = false;
+				isNonParallelSlices = false;
+				isCoilVaries = false;
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries)) {
                     dcmList[j].converted2NII = 1; //do not reprocess repeats
                     fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
@@ -4127,7 +4133,9 @@ int nii_loadDir(struct TDCMopts* opts) {
 						dcmList[i].isCoilVaries = true;
 						dcmList[j].isCoilVaries = true;
 					}
+
 				} //unable to stack images: mark files that may need file name dis-ambiguation
+			}
 			qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
 			//dcmList[dcmSort[0].indx].isMultiEcho = isMultiEcho;
 			if (opts->isVerbose)
