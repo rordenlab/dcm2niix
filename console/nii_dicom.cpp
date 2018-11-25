@@ -4938,7 +4938,7 @@ double TE = 0.0; //most recent echo time recorded
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	char accelStr[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], accelStr);
-                char *ptr;
+                //char *ptr;
                 dcmStrDigitsDotOnlyKey(':', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
 				d.accelFactPE = atof(accelStr);
                 break; }

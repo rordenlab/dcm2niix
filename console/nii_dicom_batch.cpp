@@ -734,6 +734,20 @@ void json_Float(FILE *fp, const char *sLabel, float sVal) {
 	fprintf(fp, sLabel, sVal );
 } //json_Float
 
+void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
+	//tools like gdcmanon strip protocol name (0018,1030) but for Siemens we can recover it from CSASeriesHeaderInfo (0029,1020)
+	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
+	if (strlen(d->protocolName) > 0) return;
+	int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+	float pf = 1.0f; //partial fourier
+	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
+	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+	siemensCsaAscii(filename,  d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	strcpy(d->protocolName, protocolName);
+	//printWarning(">>>>%s\n",filename);
+	//printWarning(">>>>%s\n", protocolName);
+}
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
@@ -3283,6 +3297,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	free(img4D);
     	saveAs3D = false;
     }
+    if (strlen(dcmList[dcmSort[0].indx].protocolName) < 1)
+    	rescueProtocolName(&dcmList[dcmSort[0].indx], nameList->str[dcmSort[0].indx]);
     char pathoutname[2048] = {""};
     if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
         free(imgM);
