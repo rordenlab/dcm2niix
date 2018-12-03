@@ -1644,6 +1644,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     bool isCoilReported = false;
     bool isEchoReported = false;
     bool isSeriesReported = false;
+    bool isAcquisitionReported = false;
     bool isImageNumReported = false;
     while (pos < strlen(inname)) {
         if (inname[pos] == '%') {
@@ -1718,12 +1719,19 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,newstr);
             }
 			if (f == 'U') {
-				#ifdef mySegmentByAcq
-				sprintf(newstr, "%d", dcm.acquNum);
-				strcat (outname,newstr);
-				#else
-    			printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
-    			#endif
+				if (opts.isRenameNotConvert) {
+					sprintf(newstr, "%d", dcm.acquNum);
+					strcat (outname,newstr);
+					isAcquisitionReported = true;
+				} else {
+					#ifdef mySegmentByAcq
+					sprintf(newstr, "%d", dcm.acquNum);
+					strcat (outname,newstr);
+					isAcquisitionReported = true;
+					#else
+					printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
+					#endif
+    			}
 			}
 			if (f == 'V') {
 				if (dcm.manufacturer == kMANUFACTURER_BRUKER)
@@ -1787,12 +1795,13 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcat (outname,newstr);
         isEchoReported = true;
     }
-    if ((dcm.isNonParallelSlices) && (!isImageNumReported)) {
-    	sprintf(newstr, "_i%05d", dcm.imageNum);
-        strcat (outname,newstr);
-    }
     if ((!isSeriesReported) && (!isEchoReported) && (dcm.echoNum > 1)) { //last resort: user provided no method to disambiguate echo number in filename
         sprintf(newstr, "_e%d", dcm.echoNum);
+        strcat (outname,newstr);
+        isEchoReported = true;
+    }
+    if ((dcm.isNonParallelSlices) && (!isImageNumReported)) {
+    	sprintf(newstr, "_i%05d", dcm.imageNum);
         strcat (outname,newstr);
     }
     /*if (dcm.maxGradDynVol > 0) { //Philips segmented
@@ -2170,13 +2179,13 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
         		CloseHandle(ProcessInfo.hThread);
         		CloseHandle(ProcessInfo.hProcess);
     		} else
-    			printMessage("compression failed %s\n",command);
+    			printMessage("Compression failed %s\n",command);
     	#else //if win else linux
         int ret = system(command);
         if (ret == -1)
         	printWarning("Failed to execute: %s\n",command);
         #endif //else linux
-        printMessage("compress: %s\n",command);
+        printMessage("Compress: %s\n",command);
     }
     return EXIT_SUCCESS;
 }// nii_saveNII()
@@ -3633,7 +3642,7 @@ int isSameFloatDouble (double a, double b) {
 }
 
 struct TWarnings { //generate a warning only once per set
-        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, phaseVaries, coilVaries, nameVaries, nameEmpty, orientVaries;
+        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
 };
 
 TWarnings setWarnings() {
@@ -3644,6 +3653,8 @@ TWarnings setWarnings() {
 	r.phaseVaries = false;
 	r.echoVaries = false;
 	r.coilVaries = false;
+	r.seriesUidVaries = false;
+	r.forceStackSeries = false;
 	r.nameVaries = false;
 	r.nameEmpty = false;
 	r.orientVaries = false;
@@ -3657,7 +3668,19 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
     if (d1.isDerived != d2.isDerived) return false; //do not stack raw and derived image types
     if (d1.manufacturer != d2.manufacturer) return false; //do not stack data from different vendors
-	if ((d1.isXA10A) && (d2.isXA10A) && (d1.seriesNum > 1000) && (d2.seriesNum > 1000)) {
+	bool isForceStackSeries = false;
+	if ((d1.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d1.protocolName, d2.protocolName) == 0) && (strlen(d1.softwareVersions) > 4) && (strlen(d1.sequenceName) > 4) && (strlen(d2.sequenceName) > 4))  {
+		if (strstr(d1.sequenceName, "_ep_b") && strstr(d2.sequenceName, "_ep_b") && (strstr(d1.softwareVersions, "VB13") || strstr(d1.softwareVersions, "VB12"))  ) {
+			//Siemens B12/B13 users with a "DWI" but not "DTI" license would ofter create multi-series acquisitions
+			if (!warnings->forceStackSeries)
+        		printMessage("diffusion images stacked despite varying series number (early Siemens DTI).\n");
+        	warnings->forceStackSeries = true;
+        	isForceStackSeries = true;
+		}
+	}
+	if (isForceStackSeries)
+		;
+	else if ((d1.isXA10A) && (d2.isXA10A) && (d1.seriesNum > 1000) && (d2.seriesNum > 1000)) {
 		//kludge XA10A (0020,0011) increments [16001, 16002, ...] https://github.com/rordenlab/dcm2niix/issues/236
 		//images from series 16001,16002 report different study times (0008,0030)!
 		if ((d1.seriesNum / 1000) != (d2.seriesNum / 1000)) return false;
@@ -3673,8 +3696,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     bool isSameTime = isSameFloatDouble(d1.dateTime, d2.dateTime);
     if ((isSameStudyInstanceUID) && (d1.isXA10A) && (d2.isXA10A))
 		isSameTime = true; //kludge XA10A 0008,0030 incorrect https://github.com/rordenlab/dcm2niix/issues/236
-    if ((!isSameStudyInstanceUID) && (!isSameTime))
-        return false;
+    if ((!isSameStudyInstanceUID) && (!isSameTime)) return false;
     if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
         if (!warnings->bitDepthVaries)
         	printMessage("slices not stacked: dimensions or bit-depth varies\n");
@@ -3740,6 +3762,12 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         if (!warnings->acqNumVaries)
         	printMessage("slices stacked despite varying acquisition numbers (if this is not desired recompile with 'mySegmentByAcq')\n");
         warnings->acqNumVaries = true;
+    }
+    if ((!isForceStackSeries) && (d1.seriesUidCrc != d2.seriesUidCrc)) {
+        if (!warnings->seriesUidVaries)
+        	printMessage("slices not stacked: series instance UID varies (duplicates all other properties)\n");
+        warnings->seriesUidVaries = true;
+        return false;
     }
     return true;
 }// isSameSet()
@@ -3914,11 +3942,16 @@ int copyFile (char * src_path, char * dst_path) {
     FILE *fin = fopen(src_path, "rb");
     if (fin == NULL) {
     	printError("Check file permissions: Unable to open input %s\n", src_path);
-    	return EXIT_FAILURE;
+    	return EXIT_SUCCESS;
     }
     if (is_fileexists(dst_path)) {
-    	printError("File naming conflict. Existing file %s\n", dst_path);
-    	return EXIT_FAILURE;
+    	if (true) {
+    		printWarning("Naming conflict: skipping existing %s\n", dst_path);
+    		return EXIT_SUCCESS;
+    	} else {
+    		printError("File naming conflict. Existing file %s\n", dst_path);
+    		return EXIT_FAILURE;
+    	}
     }
 	FILE *fou = fopen(dst_path, "wb");
     if (fou == NULL) {

@@ -752,6 +752,7 @@ struct TDICOMdata clear_dicom_data() {
     d.protocolBlockLengthGE = 0;
     d.phaseEncodingSteps = 0;
     d.coilCrc = 0;
+    d.seriesUidCrc = 0;
     d.accelFactPE = 0.0;
     //d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
@@ -4752,6 +4753,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kSeriesInstanceUID : // 0020, 000E
             	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
+            	d.seriesUidCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
                 break;
             case kImagePositionPatient : {
                 if (is2005140FSQ) {
