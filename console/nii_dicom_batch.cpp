@@ -2264,6 +2264,20 @@ void nii_storeIntegerScaleFactor(int scale, struct nifti_1_header *hdr) {
 	if ((strlen(newstr)+strlen(hdr->descrip)) < 80)
 		strcat (hdr->descrip,newstr);
 }
+
+void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr) {
+//https://github.com/rordenlab/dcm2niix/issues/251
+    if (hdr->datatype != DT_INT16) return;
+    int dim3to7 = 1;
+    for (int i = 3; i < 8; i++)
+        if (hdr->dim[i] > 1) dim3to7 = dim3to7 * hdr->dim[i];
+    int nVox = hdr->dim[1]*hdr->dim[2]* dim3to7;
+    if (nVox < 1) return;
+	int16_t * img16 = (int16_t*) img;
+    for (int i=0; i < nVox; i++)
+    	img16[i] = img16[i] & 4095; //12 bit data ranges from 0..4095, any other values are overflow
+}
+
 void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr, int isVerbose) {
 //lossless scaling of INT16 data: e.g. input with range -100...3200 and scl_slope=1
 //  will be stored as -1000...32000 with scl_slope 0.1
@@ -3373,6 +3387,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 	int numADC = 0;
     int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
+    if ((dcmList[dcmSort[0].indx].bitsStored == 12) && (dcmList[dcmSort[0].indx].bitsAllocated == 16))
+    	nii_mask12bit(imgM, &hdr0);
     if ((opts.isMaximize16BitRange) && (hdr0.datatype == DT_INT16)) {
     	nii_scale16bitSigned(imgM, &hdr0, opts.isVerbose); //allow INT16 to use full dynamic range
     } else if ((opts.isMaximize16BitRange) && (hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned)) {
