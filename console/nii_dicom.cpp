@@ -1140,7 +1140,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     lPos += 8; //skip 8 bytes of data, 32-bit lnTag plus 77 00 00 0
     TCSAtag tagCSA;
     TCSAitem itemCSA;
-    bool is3D = false;
+    //bool is3D = false;
     int itemsOK;
     float lFloats[7];
     for (int lT = 1; lT <= lnTag; lT++) {
@@ -1191,8 +1191,8 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 CSA->sliceMeasurementDuration = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
-            else if ((strcmp(tagCSA.name, "Actual3DImaPartNumber") == 0) && (tagCSA.nitems > 0)  )
-            	is3D = true;
+            //else if ((strcmp(tagCSA.name, "Actual3DImaPartNumber") == 0) && (tagCSA.nitems > 0)  )
+            //	is3D = true;
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
 				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
@@ -1280,12 +1280,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     if (CSA->protocolSliceNumber1 > 1) CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
     return EXIT_SUCCESS;
 } // readCSAImageHeader()
-
-//int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose) {
-int readProtocolDataBlockGE(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose) {
-	return EXIT_SUCCESS;
-}
-
 
 void dcmMultiShorts (int lByteLength, unsigned char lBuffer[], int lnShorts, uint16_t *lShorts, bool littleEndian) {
 //read array of unsigned shorts US http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
@@ -1630,7 +1624,7 @@ int	kbval = 33; //V3: 27
     int patientPositionNumPhilips = 0;
     d.isValid = false;
     const int kMaxCols = 49;
-    float *cols = (float *)malloc(sizeof(float) * kMaxCols);
+    float *cols = (float *)malloc(sizeof(float) * (kMaxCols+1));
     for (int i = 0; i < kMaxCols; i++)
     	cols[i] = 0.0; //old versions of PAR do not fill all columns - beware of buffer overflow
     char *p = fgets (buff, LINESZ, fp);
@@ -2080,7 +2074,7 @@ int	kbval = 33; //V3: 27
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
         d.isValid = false;
     }
-	d.isScaleOrTEVaries = true;
+    d.isScaleOrTEVaries = true;
 	if (numSlice2D > kMaxSlice2D) {
 		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
 		dti4D->sliceOrder[0] = -1;
@@ -2134,6 +2128,11 @@ int	kbval = 33; //V3: 27
         printWarning("PAR/REC dataset includes derived (isotropic, ADC, etc) map(s) that could disrupt analysis. Please remove volume and ensure vectors are reported correctly\n");
     if (isIntenScaleVaries)
        printWarning("Intensity slope/intercept varies between slices! [check resulting images]\n");
+    if ((isVerbose) && (d.isValid)) {
+		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n",
+            		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
+    		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
+    }
     printMessage("Done reading PAR header version %.1f, with %d slices\n", (float)parVers/10, numSlice2D);
 	//see Xiangrui Li 's dicm2nii (also BSD license)
 	// http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
@@ -2557,7 +2556,7 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
          imgszRead = round(imgsz * 0.75);
     FILE *file = fopen(imgname , "rb");
 	if (!file) {
-         printError("Unable to open %s\n", imgname);
+         printError("Unable to open '%s'\n", imgname);
          return NULL;
     }
 	fseek(file, 0, SEEK_END);
@@ -3303,10 +3302,11 @@ unsigned char * nii_loadImgRLE(char* imgname, struct nifti_1_header hdr, struct 
 		if  ((dcm.samplesPerPixel == 1) && (littleEndianPlatform())) //endian, except for RGB
 			vx = (bytesPerSample-1) - i;
 		while (vx < imgsz) {
-			int8_t n = cImg[offset];
+			int8_t n = (int8_t)cImg[offset];
 			offset++;
 			//http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_G.3.html
-			if ((n >= 0) && (n <= 127)) { //literal bytes
+			//if ((n >= 0) && (n <= 127)) { //not needed: int8_t always <=127
+			if (n >= 0) { //literal bytes
 				int reps = 1 + (int)n;
 				for (int r = 0; r < reps; r++) {
 					int8_t v = cImg[offset];
@@ -3776,7 +3776,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     strcpy(d.sequenceName, ""); //erase dummy with empty
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 	dti4D->sliceOrder[0] = -1;
-    struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
+	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
     struct stat s;
     if( stat(fname,&s) == 0 ) {
         if( !(s.st_mode & S_IFREG) ){
@@ -3852,7 +3852,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kAcquisitionDateTime 0x0008+(0x002A << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 ) //TM
-#define  kContentTime 0x0008+(0x0033 << 16 ) //TM
+//#define  kContentTime 0x0008+(0x0033 << 16 ) //TM
 #define  kModality 0x0008+(0x0060 << 16 ) //CS
 #define  kManufacturer 0x0008+(0x0070 << 16 )
 #define  kInstitutionName 0x0008+(0x0080 << 16 )
@@ -4030,7 +4030,7 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
-	double contentTime = 0.0;
+	//double contentTime = 0.0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
 	int acquisitionTimesGE_UIH = 0;
@@ -4606,11 +4606,11 @@ double TE = 0.0; //most recent echo time recorded
                 d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.acquisitionTime;
                 acquisitionTimesGE_UIH ++;
                 break;
-            case kContentTime :
-                char contentTimeTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], contentTimeTxt);
-                contentTime = atof(contentTimeTxt);
-                break;
+            //case kContentTime :
+            //    char contentTimeTxt[kDICOMStr];
+            //    dcmStr (lLength, &buffer[lPos], contentTimeTxt);
+            //    contentTime = atof(contentTimeTxt);
+            //    break;
             case kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
                 break;

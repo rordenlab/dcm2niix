@@ -664,7 +664,6 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	}
 	uint32_t unCmpSz = ((uint32_t)pCmp[cmpSz-4])+((uint32_t)pCmp[cmpSz-3] << 8)+((uint32_t)pCmp[cmpSz-2] << 16)+((uint32_t)pCmp[cmpSz-1] << 24);
 	//printf(">> %d %d %zu %zu %zu\n", isFNAME, isFCOMMENT, cmpSz, unCmpSz, hdrSz);
-
 	z_stream s;
 	memset (&s, 0, sizeof (z_stream));
 	#ifdef myDisableMiniZ
@@ -739,7 +738,7 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 	if (strlen(d->protocolName) > 0) return;
 	int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
-	float pf = 1.0f; //partial fourier
+	//float pf = 1.0f; //partial fourier
 	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	siemensCsaAscii(filename,  d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
@@ -925,8 +924,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
-	int viewOrderGE = -1;
-	int sliceOrderGE = -1;
 	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
 	json_Str(fp, "\t\"PhaseEncodingDirectionDisplayed\": \"%s\",\n", d.phaseEncodingDirectionDisplayedUIH);
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.phaseEncodingGE != kGE_PHASE_ENCODING_POLARITY_UNKNOWN)) { //only set for GE
@@ -935,6 +932,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	}
 	#ifdef myReadGeProtocolBlock
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
+		int viewOrderGE = -1;
+		int sliceOrderGE = -1;
 		printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
 		int ok = geProtocolBlock(filename, d.protocolBlockStartGE, d.protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE);
 		if (ok != EXIT_SUCCESS)
@@ -1086,10 +1085,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// Phase encoding polarity
 	int phPos = d.CSA.phaseEncodingDirectionPositive;
 	//next two conditionals updated: make GE match Siemens
-	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
-		phPos = 1;
-    if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
-        phPos = 0;
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) phPos = 1;
+    if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) phPos = 0;
 	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos < 0)) {
 		//when phase encoding axis is known but we do not know phase encoding polarity
 		// https://github.com/rordenlab/dcm2niix/issues/163
@@ -1644,7 +1641,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     bool isCoilReported = false;
     bool isEchoReported = false;
     bool isSeriesReported = false;
-    bool isAcquisitionReported = false;
+    //bool isAcquisitionReported = false;
     bool isImageNumReported = false;
     while (pos < strlen(inname)) {
         if (inname[pos] == '%') {
@@ -1722,12 +1719,12 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 				if (opts.isRenameNotConvert) {
 					sprintf(newstr, "%d", dcm.acquNum);
 					strcat (outname,newstr);
-					isAcquisitionReported = true;
+					//isAcquisitionReported = true;
 				} else {
 					#ifdef mySegmentByAcq
 					sprintf(newstr, "%d", dcm.acquNum);
 					strcat (outname,newstr);
-					isAcquisitionReported = true;
+					//isAcquisitionReported = true;
 					#else
 					printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
 					#endif
@@ -3199,8 +3196,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     //Siemens XA10 slice timing
     // Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
     // an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
-    if ((dcmList[dcmSort[0].indx].isXA10A) && (hdr0.dim[4] < 2))
+    if ((dcmList[dcmSort[0].indx].isXA10A) && (hdr0.dim[4] < 2)) {
     	dcmList[dcmSort[0].indx].CSA.sliceTiming[0] = -1.0; //XA10A slice timing often not correct for 1st volume
+	}
 	if (((dcmList[dcmSort[0].indx].isXA10A)) && (nConvert == (hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		float mn = dcmList[dcmSort[1].indx].CSA.sliceTiming[0];
 		//for (int v = 0; v < hdr0.dim[4]; v++)
@@ -3788,11 +3786,20 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     return true;
 }// isSameSet()
 
+void freeNameList(struct TSearchList nameList) {
+    if (nameList.numItems > 0) {
+        unsigned long n = nameList.numItems;
+        if (n > nameList.maxItems) n = nameList.maxItems; //assigned if (nameList->numItems < nameList->maxItems)
+        for (unsigned long i = 0; i < n; i++)
+            free(nameList.str[i]);
+    }
+    free(nameList.str);
+}
+
+
 int singleDICOM(struct TDCMopts* opts, char *fname) {
-    char filename[768] ="";
-    strcat(filename, fname);
-    if (isDICOMfile(filename) == 0) {
-        printError("Not a DICOM image : %s\n", filename);
+    if (isDICOMfile(fname) == 0) {
+        printError("Not a DICOM image : %s\n", fname);
         return 0;
     }
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc( sizeof(struct  TDICOMdata));
@@ -3801,16 +3808,73 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     nameList.maxItems = 1; // larger requires more memory, smaller more passes
     nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
     nameList.numItems = 0;
-    nameList.str[nameList.numItems]  = (char *)malloc(strlen(filename)+1);
-    strcpy(nameList.str[nameList.numItems],filename);
+    nameList.str[nameList.numItems]  = (char *)malloc(strlen(fname)+1);
+    strcpy(nameList.str[nameList.numItems],fname);
     nameList.numItems++;
     struct TDCMsort dcmSort[1];
     dcmList[0].converted2NII = 1;
     dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
     fillTDCMsort(dcmSort[0], 0, dcmList[0]);
     int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+    freeNameList(nameList);
     return ret;
 }// singleDICOM()
+
+int textDICOM(struct TDCMopts* opts, char *fname) {
+	//check input file
+    FILE *fp = fopen(fname, "r");
+    if (fp == NULL)
+    	exit(EXIT_FAILURE);
+    char *dcmname = NULL;
+    int nConvert = 0;
+    size_t len = 0;
+    size_t sz;
+	while ((sz =getline(&dcmname, &len, fp)) != -1) {
+		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0; //Unix LF
+		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0; //Windows CR/LF
+		//if (isDICOMfile(dcmname) == 0) { //<- this will reject DICOM metadata not wrapped with a header
+        if ((!is_fileexists(dcmname)) || (!is_fileNotDir(dcmname)) ) { //<-this will accept meta data
+        	fclose(fp);
+        	printError("Problem with file '%s'\n", dcmname);
+        	return EXIT_FAILURE;
+    	}
+    	//printf("%s\n", dcmname);
+		nConvert ++;
+    }
+    fclose(fp);
+    if (nConvert < 1) {
+    	printError("No DICOM files found '%s'\n", dcmname);
+    	return EXIT_FAILURE;
+    }
+    printMessage("Found %d DICOM file(s)\n", nConvert);
+    TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
+	struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nConvert * sizeof(struct  TDICOMdata));
+    struct TDTI4D dti4D;
+    struct TSearchList nameList;
+    nameList.maxItems = nConvert; // larger requires more memory, smaller more passes
+    nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
+    nameList.numItems = 0;
+	nConvert = 0;
+	fp = fopen(fname, "r");
+    while ((sz =getline(&dcmname, &len, fp)) != -1) {
+		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0;
+		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0;
+
+		nameList.str[nameList.numItems]  = (char *)malloc(strlen(dcmname)+1);
+    	strcpy(nameList.str[nameList.numItems],dcmname);
+    	nameList.numItems++;
+		dcmList[nConvert] = readDICOMv(nameList.str[nConvert], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+		fillTDCMsort(dcmSort[nConvert], nConvert, dcmList[nConvert]);
+		nConvert ++;
+    }
+    fclose(fp);
+    qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
+	int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+    free(dcmSort);
+    free(dcmList);
+    freeNameList(nameList);
+    return ret;
+}//textDICOM()
 
 size_t fileBytes(const char * fname) {
     FILE *fp = fopen(fname, "rb");
@@ -3935,22 +3999,9 @@ int convert_parRec(struct TDCMopts opts) {
     free(dcmList);//if (nConvertTotal == 0)
     if (nameList.numItems < 1)
     	printMessage("No valid PAR/REC files were found\n");
-    if (nameList.numItems > 0)
-        for (int i = 0; i < (int)nameList.numItems; i++)
-            free(nameList.str[i]);
-    free(nameList.str);
+    freeNameList(nameList);
     return ret;
 }// convert_parRec()
-
-void freeNameList(struct TSearchList nameList) {
-    if (nameList.numItems > 0) {
-        unsigned long n = nameList.numItems;
-        if (n > nameList.maxItems) n = nameList.maxItems; //assigned if (nameList->numItems < nameList->maxItems)
-        for (unsigned long i = 0; i < n; i++)
-            free(nameList.str[i]);
-    }
-    free(nameList.str);
-}
 
 int copyFile (char * src_path, char * dst_path) {
 	#define BUFFSIZE 32768
@@ -3994,10 +4045,10 @@ int nii_loadDir(struct TDCMopts* opts) {
     }
     char indir[512];
     strcpy(indir,opts->indir);
-    bool isFile = is_fileNotDir(opts->indir);
-    //bool isParRec = (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) );
+    //bool isFile = is_fileNotDir(opts->indir);
+    bool isFile = is_fileNotDir(indir);
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
-        dropFilenameFromPath(opts->indir);//getParentFolder(opts.indir, opts.indir);
+        dropFilenameFromPath(opts->indir);
     dropTrailingFileSep(opts->indir);
     if (strlen(opts->outdir) < 1) {
         strcpy(opts->outdir,opts->indir);
@@ -4012,13 +4063,6 @@ int nii_loadDir(struct TDCMopts* opts) {
 		return EXIT_FAILURE;
 		#endif
     }
-    /*if (isFile && ((isExt(indir, ".gz")) || (isExt(indir, ".tgz"))) ) {
-        #ifndef myDisableTarGz
-         #ifndef myDisableZLib
-          untargz( indir, opts->outdir);
-         #endif
-        #endif
-    }*/
     getFileName(opts->indirParent, opts->indir);
     if (isFile && ( (isExt(indir, ".v"))) )
 		return convert_foreign (indir, *opts);
@@ -4037,8 +4081,11 @@ int nii_loadDir(struct TDCMopts* opts) {
             return convert_parRec(*opts);
         };
     }
+    if (isFile && (opts->isOnlySingleFile) && isExt(indir, ".txt") )
+    	return textDICOM(opts, indir);
+
     if ((isFile) && (opts->isOnlySingleFile))
-        return singleDICOM(opts, indir);
+    	return singleDICOM(opts, indir);
     struct TSearchList nameList;
 	nameList.maxItems = 24000; // larger requires more memory, smaller more passes
     //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
@@ -4056,7 +4103,7 @@ int nii_loadDir(struct TDCMopts* opts) {
         if (opts->dirSearchDepth > 0)
         	printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", opts->indir, opts->dirSearchDepth);
         else //keep silent for dirSearchDepth = 0 - presumably searching multiple folders
-        	; //printError("Unable to find any DICOM images in %s%s\n", opts->indir, str);
+        	{}; //printError("Unable to find any DICOM images in %s%s\n", opts->indir, str);
         free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
         return kEXIT_NO_VALID_FILES_FOUND;
     }

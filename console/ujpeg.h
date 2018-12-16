@@ -9,7 +9,7 @@ typedef enum _nj_result {
     NJ_OUT_OF_MEM,    // out of memory
     NJ_INTERNAL_ERR,  // internal error
     NJ_SYNTAX_ERROR,  // syntax error
-    __NJ_FINISHED,    // used internally, will never be reported
+    __NJ_FINISHED    // used internally, will never be reported
 } nj_result_t;
 
 // njInit: Initialize NanoJPEG.
