@@ -308,6 +308,9 @@ int main(int argc, const char * argv[])
                     opts.isForceStackSameSeries = false;
                 else
                     opts.isForceStackSameSeries = true;
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                    opts.isForceStackDCE = false;
+
             } else if ((argv[i][1] == 'p') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

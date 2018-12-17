@@ -1707,7 +1707,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'Q')
                 strcat (outname,dcm.scanningSequence);
             if (f == 'S') {
-                sprintf(newstr, "%ld", dcm.seriesNum);
+            	sprintf(newstr, "%ld", dcm.seriesNum);
                 strcat (outname,newstr);
                 isSeriesReported = true;
             }
@@ -3683,6 +3683,12 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     if (d1.isDerived != d2.isDerived) return false; //do not stack raw and derived image types
     if (d1.manufacturer != d2.manufacturer) return false; //do not stack data from different vendors
 	bool isForceStackSeries = false;
+	if ((opts->isForceStackDCE) && (d1.isStackableSeries) && (d2.isStackableSeries) && (d1.seriesNum != d2.seriesNum)) {
+		if (!warnings->forceStackSeries)
+        	printMessage("DCE volumes stacked despite varying series number (use '-m o' to turn off merging).\n");
+        warnings->forceStackSeries = true;
+        isForceStackSeries = true;
+	}
 	if ((d1.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d1.protocolName, d2.protocolName) == 0) && (strlen(d1.softwareVersions) > 4) && (strlen(d1.sequenceName) > 4) && (strlen(d2.sequenceName) > 4))  {
 		if (strstr(d1.sequenceName, "_ep_b") && strstr(d2.sequenceName, "_ep_b") && (strstr(d1.softwareVersions, "VB13") || strstr(d1.softwareVersions, "VB12"))  ) {
 			//Siemens B12/B13 users with a "DWI" but not "DTI" license would ofter create multi-series acquisitions
@@ -4437,6 +4443,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isRenameNotConvert = false;
     opts->isForceStackSameSeries = false;
+    opts->isForceStackDCE = true;
     opts->isIgnoreDerivedAnd2D = false;
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;

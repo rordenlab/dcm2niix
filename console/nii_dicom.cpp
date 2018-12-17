@@ -774,6 +774,7 @@ struct TDICOMdata clear_dicom_data() {
     d.is2DAcq = false; //
     d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.isSegamiOasis = false; //these images do not store spatial coordinates
+    d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
     d.triggerDelayTime = 0.0;
     d.RWVScale = 0.0;
@@ -5751,6 +5752,9 @@ double TE = 0.0; //most recent echo time recorded
 		strcat (d.protocolName,"_MoCo"); //disambiguate MoCo https://github.com/neurolabusc/MRIcroGL/issues/31
     if ((strlen(d.protocolName) < 1) && (strlen(d.sequenceName) > 1) && (d.manufacturer != kMANUFACTURER_SIEMENS))
 		strcpy(d.protocolName, d.sequenceName); //protocolName (0018,1030) optional, sequence name (0018,0024) is not a good substitute for Siemens as it can vary per volume: *ep_b0 *ep_b1000#1, *ep_b1000#2, etc https://www.nitrc.org/forum/forum.php?thread_id=8771&forum_id=4703
+
+	//d.isValid = false;
+
 	//     if (!isOrient) {
 	//     	if (d.isNonImage)
 	//     		printWarning("Spatial orientation ambiguous  (tag 0020,0037 not found) [probably not important: derived image]: %s\n", fname);
@@ -5942,6 +5946,16 @@ if (d.isHasPhase)
     //if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
     //	long timeCRC = abs( (long)mz_crc32((unsigned char*) &contentTime, sizeof(double)));
     //}
+    //if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d.sequenceName, "fldyn3d1")== 0)) {
+
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fldyn3d1") != NULL)) {
+    	//combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
+    	d.isStackableSeries = true;
+		d.imageNum += (d.seriesNum * 1000);
+		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
+		d.seriesUidCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.protocolName, strlen(d.protocolName)));
+	}
+	//printf(">>%s\n", d.sequenceName); d.isValid = false;
     if ((isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
