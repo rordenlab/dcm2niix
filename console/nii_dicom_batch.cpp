@@ -495,9 +495,9 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
         }
     }
     return 0;
-} // phoenixOffsetCSASeriesHeader()
+} // phoeechoSpacingnixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
+void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*delayTimeInTR = 0.0;
@@ -508,6 +508,7 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
  	*interp = 0;
  	*partialFourier = 0;
  	*echoSpacing = 0;
+ 	*difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
  	for (int i = 0; i < 8; i++)
  		shimSetting[i] = 0.0;
  	strcpy(coilID, "");
@@ -554,6 +555,8 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		#endif
+		char keyStrDS[] = "sDiffusion.dsScheme";
+		*difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
@@ -737,11 +740,11 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	//tools like gdcmanon strip protocol name (0018,1030) but for Siemens we can recover it from CSASeriesHeaderInfo (0029,1020)
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 	if (strlen(d->protocolName) > 0) return;
-	int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+	int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane;
 	//float pf = 1.0f; //partial fourier
 	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
-	siemensCsaAscii(filename,  d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	siemensCsaAscii(filename,  d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
 }
 
@@ -943,11 +946,11 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	#endif
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int baseResolution, interpInt, partialFourier, echoSpacing, parallelReductionFactorInPlane;
+		int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane;
 		float pf = 1.0f; //partial fourier
 		float delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (partialFourier == 1) pf = 0.5; // 4/8
@@ -970,6 +973,8 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			}
 			fprintf(fp, "\t],\n");
 		}
+		if (difBipolar == 1) fprintf(fp, "\t\"DiffusionScheme\": \"Bipolar\",\n" );
+		if (difBipolar == 2) fprintf(fp, "\t\"DiffusionScheme\": \"Monopolar\",\n" );
 		//DelayTimeInTR
 		// https://groups.google.com/forum/#!topic/bids-discussion/nmg1BOVH1SU
 		// https://groups.google.com/forum/#!topic/bids-discussion/seD7AtJfaFE

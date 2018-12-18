@@ -4036,6 +4036,7 @@ double TE = 0.0; //most recent echo time recorded
 	int sqDepth = 0;
 	int acquisitionTimesGE_UIH = 0;
     int sqDepth00189114 = -1;
+    //int numFirstPatientPosition = 0;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
     int PETImageIndex = 0;
@@ -4781,6 +4782,7 @@ double TE = 0.0; //most recent echo time recorded
 					} //if different position from 1st slice in file
 				} //if not first slice in file
 				set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
+				//if (isAtFirstPatientPosition) numFirstPatientPosition++;
 				if (isVerbose == 1) //verbose > 1 will report full DICOM tag
 					printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 				break; }
@@ -4805,8 +4807,9 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.imageNum < 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image again in 2001,9000, which can lead to duplicates
 				break;
 			case kInStackPositionNumber:
-				if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
+				if ((d.manufacturer != kMANUFACTURER_UNKNOWN) && (d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
 				inStackPositionNumber = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+				//if (inStackPositionNumber == 1) numInStackPositionNumber1 ++;
 				//printf("<%d>\n",inStackPositionNumber);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
@@ -5958,6 +5961,8 @@ if (d.isHasPhase)
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
     if ((isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
+    if ((numDimensionIndexValues+1) < MAX_NUMBER_OF_DIMENSIONS)
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-2] = d.echoNum;
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = (uint32_t)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218

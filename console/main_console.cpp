@@ -306,7 +306,7 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isForceStackSameSeries = false;
-                else
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')  || (argv[i][0] == '1'))
                     opts.isForceStackSameSeries = true;
                 if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
                     opts.isForceStackDCE = false;
