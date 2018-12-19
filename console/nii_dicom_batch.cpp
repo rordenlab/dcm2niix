@@ -557,6 +557,13 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		#endif
 		char keyStrDS[] = "sDiffusion.dsScheme";
 		*difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
+		if (*difBipolar == 0) {
+			char keyStrROM[] = "ucReadOutMode";
+			*difBipolar = readKey(keyStrROM, keyPos, csaLengthTrim);
+			if ((*difBipolar >= 1) && (*difBipolar <= 2)) { //E11C Siemens/CMRR dsScheme: 1=bipolar, 2=unipolar, B17 CMRR ucReadOutMode 0x1=monopolar, 0x2=bipolar
+				*difBipolar = 3 - *difBipolar;
+			} //https://github.com/poldracklab/fmriprep/pull/1359#issuecomment-448379329
+		}
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
