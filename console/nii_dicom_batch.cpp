@@ -71,6 +71,8 @@
 #define isnan ISNAN
 #endif
 
+#define newTilt
+
 struct TDCMsort {
   uint64_t indx, img;
   uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
@@ -2418,6 +2420,7 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
     //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
     // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
     // also validated with actual data...
+    #ifndef newTilt
     if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
         GNTtanPx = - GNTtanPx;
     else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
@@ -2426,7 +2429,7 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
         ; //do nothing
     else
     	if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
-    // printMessage("gantry tilt pixels per mm %g\n",GNTtanPx);
+    #endif //newTilt
     float * imIn32 = ( float*) im;
 	//create new output image: larger due to skew
 	// compute how many pixels slice must be extended due to skew
@@ -2498,6 +2501,7 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     //unintuitive step: reverse sign for negative gantry tilt, therefore -27deg == +27deg (why @!?#)
     // seen in http://www.mathworks.com/matlabcentral/fileexchange/28141-gantry-detector-tilt-correction/content/gantry2.m
     // also validated with actual data...
+    #ifndef newTilt
     if (manufacturer == kMANUFACTURER_PHILIPS) //see 'Manix' example from Osirix
         GNTtanPx = - GNTtanPx;
     else if ((manufacturer == kMANUFACTURER_SIEMENS) && (gantryTiltDeg > 0.0))
@@ -2506,7 +2510,7 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
         ; //do nothing
     else
         if (gantryTiltDeg < 0.0) GNTtanPx = - GNTtanPx; //see Toshiba examples from John Muschelli
-    // printMessage("gantry tilt pixels per mm %g\n",GNTtanPx);
+    #endif //newTilt
     short * imIn16 = ( short*) im;
 	//create new output image: larger due to skew
 	// compute how many pixels slice must be extended due to skew
@@ -2980,12 +2984,86 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
 }//checkSliceTiming
 
+#ifdef newTilt //see issue 254
+float vec3Length (vec3 v) { //normalize vector length
+	return sqrt( (v.v[0]*v.v[0])
+                      + (v.v[1]*v.v[1])
+                      + (v.v[2]*v.v[2]));
+}
+
+float vec3maxMag (vec3 v) { //return signed vector with maximum magnitude
+	float mx = v.v[0];
+	if (abs(v.v[1]) > abs(mx)) mx = v.v[1];
+	if (abs(v.v[2]) > abs(mx)) mx = v.v[2];
+	return mx;
+}
+
+void vecRep (vec3 v) { //normalize vector length
+   printMessage("[%g %g %g]\n", v.v[0], v.v[1], v.v[2]);
+}
+
+//Precise method for determining gantry tilt
+// rationale:
+//   gantry tilt (0018,1120) is optional
+//   some tools may correct gantry tilt but not reset 0018,1120
+//   0018,1120 might be saved at low precision (though patientPosition, orient might be as well)
+//https://github.com/rordenlab/dcm2niix/issues/253
+float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int isVerbose) {
+	float ret = 0.0;
+	if (isNanPosition(d1)) return ret;
+	vec3 slice_vector = setVec3(d2.patientPosition[1] - d1.patientPosition[1],
+    	d2.patientPosition[2] - d1.patientPosition[2],
+    	d2.patientPosition[3] - d1.patientPosition[3]);
+    float len = vec3Length(slice_vector);
+	if (isSameFloat(len, 0.0)) {
+		slice_vector = setVec3(d1.patientPositionLast[1] - d1.patientPosition[1],
+    		d1.patientPositionLast[2] - d1.patientPosition[2],
+    		d1.patientPositionLast[3] - d1.patientPosition[3]);
+    	len = vec3Length(slice_vector);
+    	if (isSameFloat(len, 0.0)) return ret;
+	}
+	if (isnan(slice_vector.v[0])) return ret;
+	vec3 read_vector = setVec3(d1.orient[1],d1.orient[2],d1.orient[3]);
+    vec3 phase_vector = setVec3(d1.orient[4],d1.orient[5],d1.orient[6]);
+    vec3 slice_vector90 = crossProduct(read_vector ,phase_vector); //perpendicular
+    float len90 = vec3Length(slice_vector90);
+    if (isSameFloat(len90, 0.0)) return ret;
+    float dotX = dotProduct(slice_vector90, slice_vector);
+    float cosX = dotX / (len * len90);
+    float degX = acos(cosX) * (180.0 / M_PI); //arccos, radian -> degrees
+    if (!isSameFloat(cosX, 1.0))
+		ret = degX;
+    if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)) ) return ret;
+    //determine if gantry tilt is positive or negative
+    vec3 signv = crossProduct(slice_vector,slice_vector90);
+    float sign = vec3maxMag(signv);
+    if (sign > 0.0) ret = -ret; //the length of len90 was negative, negative gantry tilt
+
+    if ((isVerbose) || (isnan(ret)))  {
+    	printMessage("Gantry Tilt Parameters (see issue 253)\n");
+    	printMessage(" Read ="); vecRep(read_vector);
+    	printMessage(" Phase ="); vecRep(phase_vector);
+    	printMessage(" CrossReadPhase ="); vecRep(slice_vector90);
+    	printMessage(" Slice ="); vecRep(slice_vector);
+    }
+    printMessage("Gantry Tilt based on 0018,1120 %g, estimated from slice vector %g\n", d1.gantryTilt, ret);
+	return ret;
+}
+#endif //newTilt //see issue 254
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     uint64_t indx1 = indx0;
+    uint64_t indxEnd = dcmSort[nConvert-1].indx;
+    #ifdef newTilt //see issue 254
+    if ((nConvert > 1) && (dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0)) {
+    	dcmList[indx0].gantryTilt = computeGantryTiltPrecise(dcmList[indx0], dcmList[indxEnd], opts.isVerbose);
+    	if (isnan(dcmList[indx0].gantryTilt)) return EXIT_FAILURE;
+    }
+    #endif //newTilt see issue 254
     if ((dcmList[indx].isXA10A) && (dcmList[indx].CSA.mosaicSlices < 0)) {
     	printMessage("Siemens XA10 Mosaics are not primary images and lack vital data.\n");
     	printMessage(" See https://github.com/rordenlab/dcm2niix/issues/236\n");
