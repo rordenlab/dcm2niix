@@ -1045,7 +1045,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	// with the *reconstructed* data.
 	int reconMatrixPE = d.phaseEncodingLines;
     if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
-		if  (h->dim[2] == h->dim[2]) //phase encoding does not matter
+		if  (h->dim[1] == h->dim[2]) //phase encoding does not matter
 			reconMatrixPE = h->dim[2];
 		else if (d.phaseEncodingRC =='R')
 			reconMatrixPE = h->dim[2];
@@ -3091,7 +3091,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     uint64_t indx1 = indx0;
     uint64_t indxEnd = dcmSort[nConvert-1].indx;
     #ifdef newTilt //see issue 254
-    if ((nConvert > 1) && (dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0)) {
+    if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) {
     	dcmList[indx0].gantryTilt = computeGantryTiltPrecise(dcmList[indx0], dcmList[indxEnd], opts.isVerbose);
     	if (isnan(dcmList[indx0].gantryTilt)) return EXIT_FAILURE;
     }
