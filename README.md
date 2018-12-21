@@ -85,6 +85,7 @@ If you have any problems with the cmake build script described above or want to 
 
 ## Alternatives
 
+ - [dicomtonifti](https://github.com/dgobbi/vtk-dicom/wiki/dicomtonifti) leverages [VTK](https://www.vtk.org/).
  - [dinifti](http://cbi.nyu.edu/software/dinifti.php) is focused on conversion of Siemens data.
  - [dcm2nii](http://www.mccauslandcenter.sc.edu/mricro/mricron/dcm2nii.htm) is the predecessor of dcm2niix. It is deprecated for modern images, but does handle image formats that predate DICOM (proprietary Elscint, GE and Siemens formats).
  - [DWIConvert](https://github.com/BRAINSia/BRAINSTools/tree/master/DWIConvert) converts DICOM images to NRRD and NIfTI formats.

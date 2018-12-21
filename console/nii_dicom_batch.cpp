@@ -2153,6 +2153,39 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     char fname[2048] = {""};
     strcpy (fname,niiFilename);
     strcat (fname,".nii");
+	#if defined(_WIN64) || defined(_WIN32)
+	if ((opts.isGz) && (opts.isPipedGz))
+    	printWarning(" The 'optimal' piped gz is only available for Unix\n");
+	#else //if windows else Unix
+	if ((opts.isGz) && (opts.isPipedGz) && (strlen(opts.pigzname)  > 0) ) {
+		//piped gz
+    	printMessage(" Optimal piped gz will fail if pigz version < 2.3.4.\n");
+    	char command[768];
+    	strcpy(command, "\"" );
+    	strcat(command, opts.pigzname );
+    	if ((opts.gzLevel > 0) &&  (opts.gzLevel < 12)) {
+        	char newstr[256];
+        	sprintf(newstr, "\" -n -f -%d > \"", opts.gzLevel);
+        	strcat(command, newstr);
+    	} else
+        	strcat(command, "\" -n -f > \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+    	strcat(command, fname);
+    	strcat(command, ".gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+		//strcat(command, "x.gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+        printMessage("Compress: %s\n",command);
+    	FILE *pigzPipe;
+		if (( pigzPipe = popen(command, "w")) == NULL) {
+    		printError("Unable to open pigz pipe\n");
+        	return EXIT_FAILURE;
+    	}
+    	fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
+    	uint32_t pad = 0;
+    	fwrite(&pad, sizeof( pad), 1, pigzPipe);
+    	fwrite(&im[0], imgsz, 1, pigzPipe);
+    	pclose(pigzPipe);
+		return EXIT_SUCCESS;
+    }
+	#endif
     FILE *fp = fopen(fname, "wb");
     if (!fp) return EXIT_FAILURE;
     fwrite(&hdr, sizeof(hdr), 1, fp);
@@ -3038,7 +3071,6 @@ float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int i
     vec3 signv = crossProduct(slice_vector,slice_vector90);
     float sign = vec3maxMag(signv);
     if (sign > 0.0) ret = -ret; //the length of len90 was negative, negative gantry tilt
-
     if ((isVerbose) || (isnan(ret)))  {
     	printMessage("Gantry Tilt Parameters (see issue 253)\n");
     	printMessage(" Read ="); vecRep(read_vector);
@@ -4538,6 +4570,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isGz = false;
+    opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;
     opts->dirSearchDepth = 5;
     #ifdef myDisableZLib

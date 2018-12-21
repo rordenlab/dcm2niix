@@ -108,14 +108,14 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     if (opts.isGz) gzCh = 'y';
     #ifdef myDisableZLib
 		if (strlen(opts.pigzname) > 0)
-			printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, n=no, 3=no,3D]\n", gzCh);
+			printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, o=optimal pigz, n=no, 3=no,3D]\n", gzCh);
 		else
-			printf("  -z : gz compress images (y/n/3, default %c)  [y=pigz(MISSING!), n=no, 3=no,3D]\n", gzCh);
+			printf("  -z : gz compress images (y/n/3, default %c)  [y=pigz(MISSING!), o=optimal(requires pigz), n=no, 3=no,3D]\n", gzCh);
     #else
     	#ifdef myDisableMiniZ
-    	printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
+    	printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
 		#else
-		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
+		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
 
@@ -383,6 +383,8 @@ int main(int argc, const char * argv[])
                     opts.isGz = false;
                 else
                     opts.isGz = true;
+                if (argv[i][0] == 'o')
+                    opts.isPipedGz = true; //pipe to pigz without saving uncompressed to disk
             } else if ((argv[i][1] == 'f') && ((i+1) < argc)) {
                 i++;
                 strcpy(opts.filename,argv[i]);
