@@ -3083,12 +3083,20 @@ float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int i
 }
 #endif //newTilt //see issue 254
 
+void reportMat44o(char *str, mat44 A) {
+    printMessage("%s = [%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1]\n",str,
+           A.m[0][0],A.m[0][1],A.m[0][2],A.m[0][3],
+           A.m[1][0],A.m[1][1],A.m[1][2],A.m[1][3],
+           A.m[2][0],A.m[2][1],A.m[2][2],A.m[2][3]);
+}
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     uint64_t indx1 = indx0;
+    if (nConvert > 1) indx1 = dcmSort[1].indx;
     uint64_t indxEnd = dcmSort[nConvert-1].indx;
     #ifdef newTilt //see issue 254
     if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) {
@@ -3108,7 +3116,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			dcmList[dcmSort[i].indx].CSA.mosaicSlices = n;
 		#endif
     }
-    if (nConvert > 1) indx1 = dcmSort[1].indx;
     if (opts.isIgnoreDerivedAnd2D && dcmList[indx].isDerived) {
     	printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
@@ -3518,6 +3525,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
+    //hdr0.pixdim[3] = dxNoTilt;
     if (hdr0.dim[3] < 2)
     	printWarning("Check that 2D images are not mirrored.\n");
 #ifndef USING_R
@@ -3530,6 +3538,36 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         imgM = nii_flipY(imgM, &hdr0);
     else
     	printMessage("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
+
+
+	//begin: gantry tilt we need to save the shear in the transform
+	mat44 sForm;
+	LOAD_MAT44(sForm,
+	    hdr0.srow_x[0],hdr0.srow_x[1],hdr0.srow_x[2],hdr0.srow_x[3],
+		hdr0.srow_y[0],hdr0.srow_y[1],hdr0.srow_y[2],hdr0.srow_y[3],
+		hdr0.srow_z[0],hdr0.srow_z[1],hdr0.srow_z[2],hdr0.srow_z[3]);
+	if (!isSameFloatGE(dcmList[indx0].gantryTilt, 0.0)) {
+    	float thetaRad = dcmList[indx0].gantryTilt * M_PI / 180.0;
+    	float c = cos(thetaRad);
+    	if (!isSameFloatGE(c, 0.0)) {
+    		mat33 shearMat;
+    		LOAD_MAT33(shearMat, 1.0, 0.0, 0.0,
+    			0.0, 1.0, sin(thetaRad)/c,
+    			0.0, 0.0, 1.0);
+    		mat33 s;
+    		LOAD_MAT33(s,hdr0.srow_x[0],hdr0.srow_x[1],hdr0.srow_x[2],
+    			hdr0.srow_y[0],hdr0.srow_y[1],hdr0.srow_y[2],
+              	hdr0.srow_z[0],hdr0.srow_z[1],hdr0.srow_z[2]);
+			s = nifti_mat33_mul(shearMat, s);
+			mat44 shearForm;
+			LOAD_MAT44(shearForm, s.m[0][0],s.m[0][1],s.m[0][2],hdr0.srow_x[3],
+				s.m[1][0],s.m[1][1],s.m[1][2],hdr0.srow_y[3],
+				s.m[2][0],s.m[2][1],s.m[2][2],hdr0.srow_z[3]);
+			setQSForm(&hdr0,shearForm, true);
+    	} //avoid div/0: cosine not zero
+    } //if gantry tilt
+ 	//end: gantry tilt we need to save the shear in the transform
+
 #ifndef myNoSave
     // Indicates success or failure of the (last) save
     int returnCode = EXIT_FAILURE;
@@ -3564,10 +3602,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     }
 #endif
     if (dcmList[indx0].gantryTilt != 0.0) {
-        if (dcmList[indx0].isResampled) {
-            printMessage("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
-        } else if (opts.isTiltCorrect) {
-            imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
+    	setQSForm(&hdr0,sForm, true);
+        //if (dcmList[indx0].isResampled) { //we no detect based on image orientation https://github.com/rordenlab/dcm2niix/issues/253
+        //    printMessage("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
+        //} else
+        if (opts.isTiltCorrect) {
+        	imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
             strcat(pathoutname,"_Tilt");
         } else
             printMessage("Tilt correction skipped\n");
