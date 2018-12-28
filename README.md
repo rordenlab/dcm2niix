@@ -11,9 +11,7 @@ This software is open source. The bulk of the code is covered by the BSD license
 
 ## Dependencies
 
-This software should run on macOS, Linux and Windows typically without requiring any other software. However, if you use dcm2niix to create gz-compressed images it will be faster if you have [pigz](https://github.com/madler/pigz) installed. You can get a version of both dcm2niix and git
- compiled for your operating system by downloading [MRIcroGL](https://www.nitrc.org/projects/mricrogl/).
-
+This software should run on macOS, Linux and Windows typically without requiring any other software. However, if you use dcm2niix to create gz-compressed images it will be faster if you have [pigz](https://github.com/madler/pigz) installed. You can get a version of both dcm2niix and pigz compiled for your operating system by downloading [MRIcroGL](https://www.nitrc.org/projects/mricrogl/).
 
 ## Image Conversion and Compression
 

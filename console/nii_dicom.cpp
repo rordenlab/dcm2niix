@@ -867,7 +867,7 @@ void dcmStrDigitsOnly(char* lStr) {
 }
 
 // Karl Malbrain's compact CRC-32. See "A compact CCITT crc16 and crc32 C implementation that balances processor cache usage against speed": http://www.geocities.com/malbrain/
-uint32_t mz_crc32(unsigned char *ptr, uint32_t buf_len)
+uint32_t mz_crc32X(unsigned char *ptr, size_t buf_len)
 {
   static const uint32_t s_crc32[16] = { 0, 0x1db71064, 0x3b6e20c8, 0x26d930ac, 0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
     0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c, 0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c };
@@ -4755,7 +4755,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kSeriesInstanceUID : // 0020, 000E
             	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
-            	d.seriesUidCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
+            	d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
                 break;
             case kImagePositionPatient : {
                 if (is2005140FSQ) {
@@ -5068,7 +5068,7 @@ double TE = 0.0; //most recent echo time recorded
             case kReceiveCoilName :
                 dcmStr (lLength, &buffer[lPos], d.coilName);
                 if (strlen(d.coilName) < 1) break;
-                d.coilCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.coilName, strlen(d.coilName)));
+                d.coilCrc = mz_crc32X((unsigned char*) &d.coilName, strlen(d.coilName));
 				break;
             case kSlope :
                 d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
@@ -5111,7 +5111,7 @@ double TE = 0.0; //most recent echo time recorded
                     //char *ptr;
                     //dcmStrDigitsOnly(coilStr);
                     //coilNum = (int)strtol(coilStr, &ptr, 10);
-                    d.coilCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.coilName, strlen(d.coilName)));
+                    d.coilCrc = mz_crc32X((unsigned char*) &d.coilName, strlen(d.coilName));
 
                     //printf("%d:%s\n", d.coilNum, coilStr);
                     //if (*ptr != '\0')
@@ -5947,16 +5947,15 @@ if (d.isHasPhase)
     	d.seriesNum += (philMRImageDiffBValueNumber*1000);
     }
     //if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
-    //	long timeCRC = abs( (long)mz_crc32((unsigned char*) &contentTime, sizeof(double)));
+    //	uint_32t timeCRC = mz_crc32X((unsigned char*) &contentTime, sizeof(double));
     //}
     //if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d.sequenceName, "fldyn3d1")== 0)) {
-
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fldyn3d1") != NULL)) {
     	//combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     	d.isStackableSeries = true;
 		d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
-		d.seriesUidCrc =(long)abs( (long)mz_crc32((unsigned char*) &d.protocolName, strlen(d.protocolName)));
+		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
 	}
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
     if ((isInterpolated) && (d.imageNum <= 1))
@@ -5964,9 +5963,9 @@ if (d.isHasPhase)
     if ((numDimensionIndexValues+1) < MAX_NUMBER_OF_DIMENSIONS)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-2] = d.echoNum;
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
-    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = (uint32_t)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
-		d.seriesNum = (long)abs( (long)mz_crc32((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID)));
+		d.seriesNum = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
     getFileName(d.imageBaseName, fname);
     if (multiBandFactor > d.CSA.multiBandFactor)
     	d.CSA.multiBandFactor = multiBandFactor; //SMS reported in 0051,1011 but not CSA header

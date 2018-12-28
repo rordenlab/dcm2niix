@@ -106,20 +106,20 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -x : crop (y/n, default n)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
+#if defined(_WIN64) || defined(_WIN32)
+    //n.b. the optimal use of pigz requires pipes that are not provided for Windows
     #ifdef myDisableZLib
 		if (strlen(opts.pigzname) > 0)
-			printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, o=optimal pigz, n=no, 3=no,3D]\n", gzCh);
+			printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, n=no, 3=no,3D]\n", gzCh);
 		else
-			printf("  -z : gz compress images (y/n/3, default %c)  [y=pigz(MISSING!), o=optimal(requires pigz), n=no, 3=no,3D]\n", gzCh);
+			printf("  -z : gz compress images (y/n/3, default %c)  [y=pigz(MISSING!), n=no, 3=no,3D]\n", gzCh);
     #else
     	#ifdef myDisableMiniZ
-    	printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
+    	printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
 		#else
-		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
+		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
-
-#if defined(_WIN64) || defined(_WIN32)
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
     printf("  %s c:\\DICOM\\dir\n", cstr);
@@ -128,6 +128,18 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  %s -f mystudy%%s c:\\DICOM\\dir\n", cstr);
     printf("  %s -o \"c:\\dir with spaces\\dir\" c:\\dicomdir\n", cstr);
 #else
+    #ifdef myDisableZLib
+		if (strlen(opts.pigzname) > 0)
+			printf("  -z : gz compress images (y/o/n/3, default %c) [y=pigz, o=optimal pigz, n=no, 3=no,3D]\n", gzCh);
+		else
+			printf("  -z : gz compress images (y/o/n/3, default %c)  [y=pigz(MISSING!), o=optimal(requires pigz), n=no, 3=no,3D]\n", gzCh);
+    #else
+    	#ifdef myDisableMiniZ
+    	printf("  -z : gz compress images (y/o/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
+		#else
+		printf("  -z : gz compress images (y/o/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
+		#endif
+    #endif
     printf(" Defaults file : %s\n", opts.optsname);
     printf(" Examples :\n");
     printf("  %s /Users/chris/dir\n", cstr);
