@@ -2416,6 +2416,10 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int 
 }
 #endif
 
+//void reportPos(struct TDICOMdata d1) {
+//	printMessage("Instance\t%d\t0020,0032\t%g\t%g\t%g\n", d1.imageNum, d1.patientPosition[1],d1.patientPosition[2],d1.patientPosition[3]);
+//}
+
 int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[]) {
     //Siemens CT bug: when a user draws an open object graphics object onto a 2D slice this is appended as an additional image,
     //regardless of slice position. These images do not report number of positions in the volume, so we need tedious leg work to detect
@@ -2425,6 +2429,8 @@ int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     for (int i = 1; i < nConvert; i++) {
         float dx = intersliceDistance(dcmList[indx0],dcmList[dcmSort[i].indx]);
         if ((!isSameFloat(dx,0.0f)) && (dx < prevDx)) {
+            //for (int j = 1; j < nConvert; j++)
+            //	reportPos(dcmList[dcmSort[j].indx]);
             printMessage("Slices skipped: image position not sequential, admonish your vendor (Siemens OOG?)\n");
             return i;
         }
@@ -3031,6 +3037,17 @@ float vec3maxMag (vec3 v) { //return signed vector with maximum magnitude
 	return mx;
 }
 
+vec3 makePositive(vec3 v) {
+	//we do not no order of cross product or order of instance number (e.g. head->foot, foot->head)
+	// this function matches the polarity of slice direction inferred from patient position and image orient
+	vec3 ret = v;
+	if (vec3maxMag(v) >= 0.0) return ret;
+	ret.v[0] = -ret.v[0];
+	ret.v[1] = -ret.v[1];
+	ret.v[2] = -ret.v[2];
+	return ret;
+}
+
 void vecRep (vec3 v) { //normalize vector length
    printMessage("[%g %g %g]\n", v.v[0], v.v[1], v.v[2]);
 }
@@ -3056,21 +3073,27 @@ float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int i
     	if (isSameFloat(len, 0.0)) return ret;
 	}
 	if (isnan(slice_vector.v[0])) return ret;
+	slice_vector = makePositive(slice_vector);
 	vec3 read_vector = setVec3(d1.orient[1],d1.orient[2],d1.orient[3]);
     vec3 phase_vector = setVec3(d1.orient[4],d1.orient[5],d1.orient[6]);
     vec3 slice_vector90 = crossProduct(read_vector ,phase_vector); //perpendicular
-    float len90 = vec3Length(slice_vector90);
+    slice_vector90 = makePositive(slice_vector90);
+	float len90 = vec3Length(slice_vector90);
     if (isSameFloat(len90, 0.0)) return ret;
     float dotX = dotProduct(slice_vector90, slice_vector);
     float cosX = dotX / (len * len90);
     float degX = acos(cosX) * (180.0 / M_PI); //arccos, radian -> degrees
     if (!isSameFloat(cosX, 1.0))
 		ret = degX;
-    if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)) ) return ret;
+    if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)) ) return 0.0;
     //determine if gantry tilt is positive or negative
     vec3 signv = crossProduct(slice_vector,slice_vector90);
-    float sign = vec3maxMag(signv);
-    if (sign > 0.0) ret = -ret; //the length of len90 was negative, negative gantry tilt
+	float sign = vec3maxMag(signv);
+	if (isSameFloatGE(ret, 0.0)) return 0.0; //parallel vectors
+	if (sign > 0.0) ret = -ret; //the length of len90 was negative, negative gantry tilt
+    //while (ret >= 89.99) ret -= 90;
+    //while (ret <= -89.99) ret += 90;
+	if (isSameFloatGE(ret, 0.0)) return 0.0;
     if ((isVerbose) || (isnan(ret)))  {
     	printMessage("Gantry Tilt Parameters (see issue 253)\n");
     	printMessage(" Read ="); vecRep(read_vector);
