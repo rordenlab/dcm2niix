@@ -788,6 +788,48 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 			fprintf(fp, "\t\"Modality\": \"US\",\n" );
 			break;
 	};
+	//attempt to determine BIDS sequence type
+/*(0018,0024) SequenceName
+ep_b: dwi
+epfid2d: perf (unlike bold, asl has "MR_ASL" in CSA header)
+   pCASL sequences store Post Label Delay in sWipMemBlock.adFree[2]	 = 	1200000.0
+epfid2d: bold
+epse2d: dwi (when b-vals specified)
+epse2d: fmap (spin echo, e.g. TOPUP, nb could also be extra B=0 for DWI sequence)
+fl2d: localizer
+fl3d1r_t: angio (not sure how to detect angio or swi!)
+fl3d1r_tm: angio
+fl3d1r: angio (20180628134317)
+fl3d1r: swi
+fm2d: fmap (gradient echo, e.g. FUGUE)
+spc3d: T2
+spcir: flair
+spcir:also double-inversion "SequenceVariant": "SK_SP_MP_OSP","ScanOptions": "IR_PFP_FS",
+spcR: PD
+tfl3d: T1
+tir2d: flair
+tse2d: PD
+tse3d: T2*/
+	/*
+	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
+		#define kLabel_UNKNOWN  0
+		#define kLabel_T1w  1
+		#define kLabel_T2w  2
+		#define kLabel_bold  3
+		#define kLabel_perf  4
+		#define kLabel_dwi  5
+		#define kLabel_fieldmap  6
+		int iLabel = kLabel_UNKNOWN;
+		if (d.CSA.numDti > 1) iLabel = kLabel_dwi;
+		//if ((iLabel == kLabel_UNKNOWN) && (d.is2DAcq))
+		//if ((iLabel == kLabel_UNKNOWN) && (d.is3DAcq))
+		if (iLabel != kLabel_UNKNOWN) {
+			char tLabel[20] = {""};
+			if (iLabel == kLabel_dwi) strcat (tLabel,"dwi");
+			json_Str(fp, "\t\"ModalityLabel\": \"%s\",\n", tLabel);
+		}
+	}*/
+	//report vendor
 	if (d.fieldStrength > 0.0) fprintf(fp, "\t\"MagneticFieldStrength\": %g,\n", d.fieldStrength );
 	//Imaging Frequency (0018,0084) can be useful https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
 	// however, UIH stores 128176031 not 128.176031 https://github.com/rordenlab/dcm2niix/issues/225
@@ -3773,7 +3815,6 @@ int compareTDCMsort(void const *item1, void const *item2) {
 	struct TDCMsort const *dcm2 = (const struct TDCMsort *)item2;
 	//to do: detect duplicates with SOPInstanceUID (0008,0018) - accurate but slow text comparison
 	int retval = 0;   // tie
-
 	if (dcm1->img < dcm2->img)
 		retval = -1;
 	else if (dcm1->img > dcm2->img)
@@ -4050,7 +4091,6 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
     while ((sz =getline(&dcmname, &len, fp)) != -1) {
 		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0;
 		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0;
-
 		nameList.str[nameList.numItems]  = (char *)malloc(strlen(dcmname)+1);
     	strcpy(nameList.str[nameList.numItems],dcmname);
     	nameList.numItems++;

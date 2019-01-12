@@ -1611,10 +1611,14 @@ int	kbval = 33; //V3: 27
     int maxSlice = 0;
     bool ADCwarning = false;
     bool isTypeWarning = false;
+    bool isType4Warning = false;
+    bool isSequenceWarning = false;
     int numSlice2D = 0;
     int prevDyn = -1;
     bool dynNotAscending = false;
     int parVers = 0;
+    int maxSeq = -1; //maximum value of Seq column
+    int seq1 = -1; //value of Seq volume for first slice
     int maxEcho = 1;
     int maxCardiac = 1;
     int nCols = 26;
@@ -1900,7 +1904,7 @@ int	kbval = 33; //V3: 27
         if ((isSameFloat(cols[kImageType],18)) && (!isTypeWarning)) {
         	printWarning("Field map in Hz will be saved as the 'real' image.\n");
         	isTypeWarning = true;
-        } else if (((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0)) && (!isTypeWarning)) {
+        } else if (((cols[kImageType] < 0.0) || (cols[kImageType] > 4.0)) && (!isTypeWarning)) {
         	printError("Unknown type %g: not magnitude[0], real[1], imaginary[2] or phase[3].\n", cols[kImageType]);
         	isTypeWarning = true;
         }
@@ -1970,11 +1974,30 @@ int	kbval = 33; //V3: 27
 			if (ASL < 1) ASL = 1;
 			vol = vol  + (volStep * (ASL - 1));
 			volStep = volStep * maxNumberOfLabels;
+			//if ((int)cols[kSequence] > 0)
+			int seq = (int)cols[kSequence];
+			if (seq1 < 0) seq1 = seq;
+			if (seq > maxSeq) maxSeq = seq;
+			if (seq != seq1) {//sequence varies within this PAR file
+				if (!isSequenceWarning) {
+					isSequenceWarning =true;
+					printWarning("'scanning sequence' column varies within a single file. This behavior is not described at the top of the header.\n");
+				}
+        		vol = vol  + (volStep * 1);
+				volStep = volStep * 2;
+			}
 			//if (slice == 1)  printMessage("%d\t%d\t%d\t%d\t%d\n", isADC,(int)cols[kbvalNumber], (int)cols[kGradientNumber], bval, vol);
 			if (vol > maxVol) maxVol = vol;
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
 			bool isPhase = (cols[kImageType] == 3);
+			if (cols[kImageType] == 4) {
+				if (!isType4Warning) {
+        			printWarning("Unknown image type (4). Be aware the 'phase' image is of an unknown type.\n");
+        			isType4Warning = true;
+        		}
+				isPhase = true; //2019
+			}
 			if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
 				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
 			if (isReal) vol += num3DExpected;
@@ -2017,8 +2040,7 @@ int	kbval = 33; //V3: 27
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
 			//printWarning("%d\t%d\n", slice -1, numSlice2D);
-            //printMessage("%d\t%d\t%d\n", numSlice2D, slice, vol);
-			if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
+            if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice -1] = numSlice2D;
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
 			}
@@ -5957,8 +5979,11 @@ if (d.isHasPhase)
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
 	}
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "_fl2d1") != NULL)) {
+    	d.isLocalizer = true;
+	}
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
-    if ((isInterpolated) && (d.imageNum <= 1))
+    if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
     if ((numDimensionIndexValues+1) < MAX_NUMBER_OF_DIMENSIONS)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-2] = d.echoNum;
@@ -5972,6 +5997,8 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
+	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
+	//d.isValid = false;
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	return d;

@@ -5,8 +5,16 @@ nifti.h, nifti1_io.h/nifti1_io_core.cpp is public domain
   http://sourceforge.net/projects/niftilib/files/latest/download
 ujpeg.h/ujpeg.cpp uses the MIT license (see file for license text)
   http://keyj.emphy.de/nanojpeg/
-miniz.c is public domain (http://unlicense.org)
+miniz.c is optional, it is public domain (http://unlicense.org)
  https://code.google.com/p/miniz/
+OpenJpeg is optional, it uses a BSD license
+ https://github.com/uclouvain/openjpeg/blob/master/LICENSE
+Charls is optional, it uses a BSD license
+ https://github.com/team-charls/charls/blob/master/LICENSE.md
+zlib is optional and includes a simple license
+ https://www.zlib.net/zlib_license.html
+Jasper is optional and provides its own license
+ https://github.com/mdadams/jasper/blob/master/LICENSE
 
 ---
 The Software has been developed for research purposes only and is not a clinical tool
