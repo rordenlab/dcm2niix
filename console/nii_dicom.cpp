@@ -3622,6 +3622,7 @@ void clear_volume(struct TVolumeDiffusion* ptvd) {
 
 void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* inbuf) {
     if(strncmp(( char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==.
+       strncmp(( char*)(inbuf), "NONE", 4) &&
        strncmp(( char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
         ptvd->_isPhilipsNonDirectional = true;
         // Explicitly set the direction to 0 now, because there may
@@ -3663,7 +3664,7 @@ void dcmMultiFloatDouble (size_t lByteLength, unsigned char lBuffer[], size_t ln
 
 void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf, bool isLittleEndian) {
     if(ptvd->_isPhilipsNonDirectional){
-        for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
+    	for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
             ptvd->_dtiV[i] = 0.0;
     }
     else
@@ -4534,6 +4535,10 @@ double TE = 0.0; //most recent echo time recorded
                 	d.isHasReal = true;
                 	isReal = true;
                 }
+                if((slen > 3) && (strstr(d.imageType, "_M_") != NULL) ) {
+                	d.isHasMagnitude = true;
+                	isMagnitude = true;
+                }
                 if((slen > 3) && (strstr(d.imageType, "_I_") != NULL) ) {
                 	d.isHasImaginary = true;
                 	isImaginary = true;
@@ -4545,6 +4550,10 @@ double TE = 0.0; //most recent echo time recorded
                 if((slen > 6) && (strstr(d.imageType, "_REAL_") != NULL) ) {
                 	d.isHasReal = true;
                 	isReal = true;
+                }
+                if((slen > 11) && (strstr(d.imageType, "_MAGNITUDE_") != NULL) ) {
+                	d.isHasMagnitude = true;
+                	isMagnitude = true;
                 }
                 if((slen > 11) && (strstr(d.imageType, "_IMAGINARY_") != NULL) ) {
                 	d.isHasImaginary = true;
@@ -4602,6 +4611,10 @@ double TE = 0.0; //most recent echo time recorded
             case kComplexImageComponent:
                 if (is2005140FSQ) break; //see Maastricht DICOM data for magnitude data with this field set as REAL!  https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
                 if (lLength < 2) break;
+                if (true) { //issue 256 https://github.com/rordenlab/dcm2niix/issues/256
+                	// printMessage("Ignoring 0008,9208\n");
+                	break;
+                }
                 isPhase = false;
                 isReal = false;
                 isImaginary = false;
@@ -5310,7 +5323,12 @@ double TE = 0.0; //most recent echo time recorded
                 	vRLPhilips = v[0];
 					vAPPhilips = v[1];
 					vFHPhilips = v[2];
-
+				//printMessage("><>< 0018,9089:\t%g\t%g\t%g\n",  v[0], v[1], v[2]);
+				//https://github.com/rordenlab/dcm2niix/issues/256
+				//d.CSA.dtiV[1] = v[0];
+				//d.CSA.dtiV[2] = v[1];
+				//d.CSA.dtiV[3] = v[2];
+				//printMessage("><>< 0018,9089: DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
                 set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
               }
               break;
@@ -5676,8 +5694,11 @@ double TE = 0.0; //most recent echo time recorded
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
+    	//printMessage(" DWI bxyz %g %g %g %g %d\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], d.CSA.numDti);
+
     } //while d.imageStart == 0
     free (buffer);
+    //printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     if (encapsulatedDataFragmentStart > 0) {
         if (encapsulatedDataFragments > 1)
         	printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
@@ -5832,8 +5853,8 @@ if (d.isHasPhase)
         	printMessage(" patient position end (0020,0032)\t%g\t%g\t%g\n", patientPositionEndPhilips[1],patientPositionEndPhilips[2],patientPositionEndPhilips[3]);
         printMessage(" orient (0020,0037)\t%g\t%g\t%g\t%g\t%g\t%g\n", d.orient[1],d.orient[2],d.orient[3], d.orient[4],d.orient[5],d.orient[6]);
         printMessage(" acq %d img %d ser %ld dim %dx%dx%dx%d mm %gx%gx%g offset %d loc %d valid %d ph %d mag %d nDTI %d 3d %d bits %d littleEndian %d echo %d coilCRC %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3], d.xyzDim[4],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilCrc, d.TE, d.TR);
-        //if (d.CSA.dtiV[0] > 0)
-        //	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
+        if (d.CSA.dtiV[0] > 0)
+        	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
@@ -5997,6 +6018,7 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
+
 	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
 	//d.isValid = false;
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);
