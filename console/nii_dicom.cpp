@@ -4611,10 +4611,7 @@ double TE = 0.0; //most recent echo time recorded
             case kComplexImageComponent:
                 if (is2005140FSQ) break; //see Maastricht DICOM data for magnitude data with this field set as REAL!  https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
                 if (lLength < 2) break;
-                if (true) { //issue 256 https://github.com/rordenlab/dcm2niix/issues/256
-                	// printMessage("Ignoring 0008,9208\n");
-                	break;
-                }
+                //issue 256: Philips files report real ComplexImageComponent but Magnitude ImageType https://github.com/rordenlab/dcm2niix/issues/256
                 isPhase = false;
                 isReal = false;
                 isImaginary = false;
