@@ -111,8 +111,10 @@ The following tools exploit dcm2niix
   - [dcm2niiXL](https://github.com/neurolabusc/dcm2niiXL) is a shell script and tuned compilation of dcm2niix designed for accelerated conversion of extra large datasets.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
-  - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its [fslpy libraries](https://users.fmrib.ox.ac.uk/~paulmc/fsleyes/fslpy/latest/fsl.data.dicom.html).
+  - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
+  - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
+  - [LEAD-DBS](http://www.lead-dbs.org/) uses dcm2niix for [DICOM import](https://github.com/leaddbs/leaddbs/blob/master/ea_dicom_import.m).
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
   - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a single, static Dockerfile.
   - [NeuroDebian](http://neuro.debian.net/pkgs/dcm2niix.html) provides up-to-date version of dcm2niix for Debian-based systems.

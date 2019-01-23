@@ -774,6 +774,8 @@ struct TDICOMdata clear_dicom_data() {
     d.is2DAcq = false; //
     d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.isSegamiOasis = false; //these images do not store spatial coordinates
+    d.isGrayscaleSoftcopyPresentationState = false;
+    d.isRawDataStorage = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
     d.triggerDelayTime = 0.0;
@@ -3622,7 +3624,7 @@ void clear_volume(struct TVolumeDiffusion* ptvd) {
 
 void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* inbuf) {
     if(strncmp(( char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==.
-       strncmp(( char*)(inbuf), "NONE", 4) &&
+       // strncmp(( char*)(inbuf), "NONE", 4) && //256
        strncmp(( char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
         ptvd->_isPhilipsNonDirectional = true;
         // Explicitly set the direction to 0 now, because there may
@@ -3662,9 +3664,10 @@ void dcmMultiFloatDouble (size_t lByteLength, unsigned char lBuffer[], size_t ln
         lFloats[i] = dcmFloatDouble((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
 } //dcmMultiFloatDouble()
 
+
 void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf, bool isLittleEndian) {
     if(ptvd->_isPhilipsNonDirectional){
-    	for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
+        for(int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
             ptvd->_dtiV[i] = 0.0;
     }
     else
@@ -3866,6 +3869,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //DEFINE DICOM TAGS
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
+#define  kMediaStorageSOPClassUID 0x0002+(0x0002 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
 #define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
@@ -4426,6 +4430,17 @@ double TE = 0.0; //most recent echo time recorded
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
         switch ( groupElement ) {
+         	case kMediaStorageSOPClassUID: {
+         		char mediaUID[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], mediaUID);
+                //Philips "XX_" files
+                if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL) d.isRawDataStorage = true;
+                if (d.isRawDataStorage) d.isDerived = true;
+         		//Philips "PS_" files
+                if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.11.1") != NULL) d.isGrayscaleSoftcopyPresentationState = true;
+                if (d.isGrayscaleSoftcopyPresentationState) d.isDerived = true;
+                break;
+         	}
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], transferSyntax);

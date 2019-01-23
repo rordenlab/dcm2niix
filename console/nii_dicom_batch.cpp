@@ -1572,6 +1572,90 @@ float sqr(float v){
     return v*v;
 }// sqr()
 
+#ifdef newTilt //see issue 254
+float vec3Length (vec3 v) { //normalize vector length
+	return sqrt( (v.v[0]*v.v[0])
+                      + (v.v[1]*v.v[1])
+                      + (v.v[2]*v.v[2]));
+}
+
+float vec3maxMag (vec3 v) { //return signed vector with maximum magnitude
+	float mx = v.v[0];
+	if (abs(v.v[1]) > abs(mx)) mx = v.v[1];
+	if (abs(v.v[2]) > abs(mx)) mx = v.v[2];
+	return mx;
+}
+
+vec3 makePositive(vec3 v) {
+	//we do not no order of cross product or order of instance number (e.g. head->foot, foot->head)
+	// this function matches the polarity of slice direction inferred from patient position and image orient
+	vec3 ret = v;
+	if (vec3maxMag(v) >= 0.0) return ret;
+	ret.v[0] = -ret.v[0];
+	ret.v[1] = -ret.v[1];
+	ret.v[2] = -ret.v[2];
+	return ret;
+}
+
+void vecRep (vec3 v) { //normalize vector length
+   printMessage("[%g %g %g]\n", v.v[0], v.v[1], v.v[2]);
+}
+
+//Precise method for determining gantry tilt
+// rationale:
+//   gantry tilt (0018,1120) is optional
+//   some tools may correct gantry tilt but not reset 0018,1120
+//   0018,1120 might be saved at low precision (though patientPosition, orient might be as well)
+//https://github.com/rordenlab/dcm2niix/issues/253
+float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int isVerbose) {
+	float ret = 0.0;
+	if (isNanPosition(d1)) return ret;
+	vec3 slice_vector = setVec3(d2.patientPosition[1] - d1.patientPosition[1],
+    	d2.patientPosition[2] - d1.patientPosition[2],
+    	d2.patientPosition[3] - d1.patientPosition[3]);
+    float len = vec3Length(slice_vector);
+	if (isSameFloat(len, 0.0)) {
+		slice_vector = setVec3(d1.patientPositionLast[1] - d1.patientPosition[1],
+    		d1.patientPositionLast[2] - d1.patientPosition[2],
+    		d1.patientPositionLast[3] - d1.patientPosition[3]);
+    	len = vec3Length(slice_vector);
+    	if (isSameFloat(len, 0.0)) return ret;
+	}
+	if (isnan(slice_vector.v[0])) return ret;
+	slice_vector = makePositive(slice_vector);
+	vec3 read_vector = setVec3(d1.orient[1],d1.orient[2],d1.orient[3]);
+    vec3 phase_vector = setVec3(d1.orient[4],d1.orient[5],d1.orient[6]);
+    vec3 slice_vector90 = crossProduct(read_vector ,phase_vector); //perpendicular
+    slice_vector90 = makePositive(slice_vector90);
+	float len90 = vec3Length(slice_vector90);
+    if (isSameFloat(len90, 0.0)) return ret;
+    float dotX = dotProduct(slice_vector90, slice_vector);
+    float cosX = dotX / (len * len90);
+    float degX = acos(cosX) * (180.0 / M_PI); //arccos, radian -> degrees
+    if (!isSameFloat(cosX, 1.0))
+		ret = degX;
+    if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)) ) return 0.0;
+    //determine if gantry tilt is positive or negative
+    vec3 signv = crossProduct(slice_vector,slice_vector90);
+	float sign = vec3maxMag(signv);
+	if (isSameFloatGE(ret, 0.0)) return 0.0; //parallel vectors
+	if (sign > 0.0) ret = -ret; //the length of len90 was negative, negative gantry tilt
+    //while (ret >= 89.99) ret -= 90;
+    //while (ret <= -89.99) ret += 90;
+	if (isSameFloatGE(ret, 0.0)) return 0.0;
+    if ((isVerbose) || (isnan(ret)))  {
+    	printMessage("Gantry Tilt Parameters (see issue 253)\n");
+    	printMessage(" Read ="); vecRep(read_vector);
+    	printMessage(" Phase ="); vecRep(phase_vector);
+    	printMessage(" CrossReadPhase ="); vecRep(slice_vector90);
+    	printMessage(" Slice ="); vecRep(slice_vector);
+    }
+    printMessage("Gantry Tilt based on 0018,1120 %g, estimated from slice vector %g\n", d1.gantryTilt, ret);
+	return ret;
+}
+#endif //newTilt //see issue 254
+
+
 float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
     //some MRI scans have gaps between slices, some CT have overlapping slices. Comparing adjacent slices provides measure for dx between slices
     if ( isNanPosition(d1) ||  isNanPosition(d2))
@@ -1585,14 +1669,93 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
                 sqr(d1.patientPosition[3]-d2.patientPosition[3]));
 } //intersliceDistance()
 
+#define myInstanceNumberOrderIsNotSpatial
+//instance number is virtually always ordered based on spatial position.
+// interleaved/multi-band conversion will be disrupted if instance number refers to temporal order
+// these functions reorder images based on spatial position
+// this situation is exceptionally rare, and there is a performance penalty
+// further, there may be unintended consequences.
+// Therefore, use of myInstanceNumberOrderIsNotSpatial is NOT recommended
+//  a better solution is to fix the sequences that generated those files
+//  as such images will probably disrupt most tools.
+// This option is only to salvage borked data.
+// This code has also not been tested on data stored in TXYZ rather than XYZT order
+#ifdef myInstanceNumberOrderIsNotSpatial
+
+float intersliceDistanceSigned(struct TDICOMdata d1, struct TDICOMdata d2) {
+	//reports distance between two slices, signed as 2nd slice can be in front or behind 1st
+	vec3 slice_vector = setVec3(d2.patientPosition[1] - d1.patientPosition[1],
+    	d2.patientPosition[2] - d1.patientPosition[2],
+    	d2.patientPosition[3] - d1.patientPosition[3]);
+    float len = vec3Length(slice_vector);
+    if (isSameFloat(len, 0.0)) return len;
+    if (d1.gantryTilt != 0)
+        len = len * cos(d1.gantryTilt  * M_PI/180);
+    vec3 read_vector = setVec3(d1.orient[1],d1.orient[2],d1.orient[3]);
+    vec3 phase_vector = setVec3(d1.orient[4],d1.orient[5],d1.orient[6]);
+    vec3 slice_vector90 = crossProduct(read_vector ,phase_vector); //perpendicular
+	float dot = dotProduct(slice_vector90, slice_vector);
+    if (dot < 0.0) return -len;
+	return len;
+}
+
+//https://stackoverflow.com/questions/36714030/c-sort-float-array-while-keeping-track-of-indices/36714204
+struct TFloatSort{
+   float value;
+   int index;
+};
+
+ int compareTFloatSort(const void *a,const void *b){
+  struct TFloatSort *a1 = (struct TFloatSort *)a;
+  struct TFloatSort *a2 = (struct TFloatSort*)b;
+  if((*a1).value > (*a2).value) return 1;
+  if((*a1).value < (*a2).value) return -1;
+  //if value is tied, retain index order (useful for TXYZ images?)
+  if((*a1).index > (*a2).index) return 1;
+  if((*a1).index < (*a2).index) return -1;
+  return 0;
+} // compareTFloatSort()
+
+bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[]) {
+    //ensure slice position is sequential: either ascending [1 2 3] or descending [3 2 1], not [1 3 2], [3 1 2] etc.
+    //n.b. as currently designed, this will force swapDim3Dim4() for 4D data
+    int nConvert = d3 * d4;
+    if (d3 < 3) return true; //always consistent
+    float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+	bool isAscending1 = (dx > 0);
+    bool isConsistent = true;
+	for(int i=1; i < d3; i++) {
+		dx = intersliceDistanceSigned(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]);
+		bool isAscending = (dx > 0);
+		if (isAscending != isAscending1) isConsistent = false; //direction reverses
+	}
+	if (isConsistent) return true;
+	printWarning("Order specified by DICOM instance number is not spatial (reordering).\n");
+	TFloatSort * floatSort = (TFloatSort *)malloc(d3 * sizeof(TFloatSort));
+    for(int i=0; i < d3; i++) {
+		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+		floatSort[i].value = dx;
+		floatSort[i].index=i;
+	}
+	TDCMsort* dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
+	for(int i=0; i < nConvert; i++)
+		dcmSortIn[i] = dcmSort[i];
+	qsort(floatSort, d3, sizeof(struct TFloatSort), compareTFloatSort); //sort based on series and image numbers....
+	for(int vol=0; vol < d4; vol++) {
+		int volInc = vol * d3;
+		for(int i=0; i < d3; i++)
+			dcmSort[volInc+i] = dcmSortIn[volInc+floatSort[i].index];
+	}
+	free(floatSort);
+	free(dcmSortIn);
+	return false;
+} // ensureSequentialSlicePositions()
+#endif //myInstanceNumberOrderIsNotSpatial
+
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
     //swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...
     int nConvert = d3 * d4;
-//#ifdef _MSC_VER
 	TDCMsort * dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
-//#else
-//    struct TDCMsort dcmSortIn[nConvert];
-//#endif
     for (int i = 0; i < nConvert; i++) dcmSortIn[i] = dcmSort[i];
     int i = 0;
     for (int b = 0; b < d3; b++)
@@ -1602,9 +1765,7 @@ void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
             dcmSort[k] = dcmSortIn[i];
             i++;
         }
-//#ifdef _MSC_VER
 	free(dcmSortIn);
-//#endif
 } //swapDim3Dim4()
 
 bool intensityScaleVaries(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[]){
@@ -1750,7 +1911,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'N')
                 strcat (outname,dcm.patientName);
             if (f == 'P') {
-                strcat (outname,dcm.protocolName);
+            	strcat (outname,dcm.protocolName);
                 if (strlen(dcm.protocolName) < 1)
                 	printWarning("Unable to append protocol name (0018,1030) to filename (it is empty).\n");
             }
@@ -1876,6 +2037,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     	sprintf(newstr, "_t%d", (int)roundf(dcm.triggerDelayTime));
         strcat (outname,newstr);
     }
+    if (dcm.isRawDataStorage) //avoid name clash for Philips XX_ files
+    	strcat (outname,"_Raw");
+    if (dcm.isGrayscaleSoftcopyPresentationState) //avoid name clash for Philips PS_ files
+    	strcat (outname,"_PS");
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
@@ -2645,7 +2810,6 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     return imOut;
 }// nii_saveNII3Dtilt()
 
-
 int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
     //convert image with unequal slice distances to equal slice distances
     //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
@@ -2659,16 +2823,162 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     float mn = sliceMMarray[1] - sliceMMarray[0];
     for (int i = 1; i < hdr.dim[3]; i++) {
     	float dx = sliceMMarray[i] - sliceMMarray[i-1];
-        //if ((dx < mn) // <- only allow consistent slice direction
-        if ((dx < mn) && (dx > 0.0)) // <- allow slice direction to reverse
+        if ((dx < mn) && (!isSameFloat(dx, 0.0))) // <- allow slice direction to reverse
             mn = sliceMMarray[i] - sliceMMarray[i-1];
+    }
+    if (mn <= 0.0f) {
+    	printMessage("Unable to equalize slice distances: slice order not consistently ascending.\n");
+    	printMessage(" Recompiling with '-DmyInstanceNumberOrderIsNotSpatial' might help.\n");
+    	return EXIT_FAILURE;
+    }
+    int slices = hdr.dim[3];
+    slices = (int)ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    if (slices > (hdr.dim[3] * 2)) {
+        slices = 2 * hdr.dim[3];
+        mn = (sliceMMarray[hdr.dim[3]-1]) / (slices-1);
+    }
+    //printMessage("-->%g mn slices %d orig %d\n", mn, slices, hdr.dim[3]);
+    if (slices < 3) return EXIT_FAILURE;
+    struct nifti_1_header hdrX = hdr;
+    hdrX.dim[3] = slices;
+    hdrX.pixdim[3] = mn;
+    if ((hdr.pixdim[3] != 0.0) && (hdr.pixdim[3] != hdrX.pixdim[3])) {
+        float Scale = hdrX.pixdim[3] / hdr.pixdim[3];
+        //to do: do I change srow_z or srow_x[2], srow_y[2], srow_z[2],
+        hdrX.srow_z[0] = hdr.srow_z[0] * Scale;
+        hdrX.srow_z[1] = hdr.srow_z[1] * Scale;
+        hdrX.srow_z[2] = hdr.srow_z[2] * Scale;
+    }
+    unsigned char *imX;
+    if (hdr.datatype == DT_FLOAT32) {
+        float * im32 = ( float*) im;
+        imX = (unsigned char *)malloc( (nVox2D * slices)  *  4);//sizeof(float)
+        float * imX32 = ( float*) imX;
+        for (int s=0; s < slices; s++) {
+            float sliceXmm = s * mn; //distance from first slice
+            int sliceXi = (s * nVox2D);//offset for this slice
+            int sHi = 0;
+            while ((sHi < (hdr.dim[3] - 1) ) && (sliceMMarray[sHi] < sliceXmm))
+                sHi += 1;
+            int sLo = sHi - 1;
+            if (sLo < 0) sLo = 0;
+            float mmHi = sliceMMarray[sHi];
+            float mmLo = sliceMMarray[sLo];
+            sLo = sLo * nVox2D;
+            sHi = sHi * nVox2D;
+            if ((mmHi == mmLo) || (sliceXmm > mmHi)) { //select only from upper slice TPX
+                //for (int v=0; v < nVox2D; v++)
+                //    imX16[sliceXi+v] = im16[sHi+v];
+                memcpy(&imX32[sliceXi], &im32[sHi], nVox2D* sizeof(float)); //memcpy( dest, src, bytes)
+            } else {
+                float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
+                float fracLo = 1.0 - fracHi;
+                //weight between two slices
+                for (int v=0; v < nVox2D; v++)
+                    imX32[sliceXi+v] = round( ( (float)im32[sLo+v]*fracLo) + (float)im32[sHi+v]*fracHi);
+            }
+        }
+    } else if (hdr.datatype == DT_INT16) {
+        short * im16 = ( short*) im;
+        imX = (unsigned char *)malloc( (nVox2D * slices)  *  2);//sizeof( short) );
+        short * imX16 = ( short*) imX;
+        for (int s=0; s < slices; s++) {
+            float sliceXmm = s * mn; //distance from first slice
+            int sliceXi = (s * nVox2D);//offset for this slice
+            int sHi = 0;
+            while ((sHi < (hdr.dim[3] - 1) ) && (sliceMMarray[sHi] < sliceXmm))
+                sHi += 1;
+            int sLo = sHi - 1;
+            if (sLo < 0) sLo = 0;
+            float mmHi = sliceMMarray[sHi];
+            float mmLo = sliceMMarray[sLo];
+            sLo = sLo * nVox2D;
+            sHi = sHi * nVox2D;
+            if ((mmHi == mmLo) || (sliceXmm > mmHi)) { //select only from upper slice TPX
+                //for (int v=0; v < nVox2D; v++)
+                //    imX16[sliceXi+v] = im16[sHi+v];
+                memcpy(&imX16[sliceXi], &im16[sHi], nVox2D* sizeof(unsigned short)); //memcpy( dest, src, bytes)
+
+            } else {
+                float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
+                float fracLo = 1.0 - fracHi;
+                //weight between two slices
+                for (int v=0; v < nVox2D; v++)
+                    imX16[sliceXi+v] = round( ( (float)im16[sLo+v]*fracLo) + (float)im16[sHi+v]*fracHi);
+            }
+        }
+    } else {
+        if (hdr.datatype == DT_RGB24) nVox2D = nVox2D * 3;
+        imX = (unsigned char *)malloc( (nVox2D * slices)  *  2);//sizeof( short) );
+        for (int s=0; s < slices; s++) {
+            float sliceXmm = s * mn; //distance from first slice
+            int sliceXi = (s * nVox2D);//offset for this slice
+            int sHi = 0;
+            while ((sHi < (hdr.dim[3] - 1) ) && (sliceMMarray[sHi] < sliceXmm))
+                sHi += 1;
+            int sLo = sHi - 1;
+            if (sLo < 0) sLo = 0;
+            float mmHi = sliceMMarray[sHi];
+            float mmLo = sliceMMarray[sLo];
+            sLo = sLo * nVox2D;
+            sHi = sHi * nVox2D;
+            if ((mmHi == mmLo) || (sliceXmm > mmHi)) { //select only from upper slice TPX
+                memcpy(&imX[sliceXi], &im[sHi], nVox2D); //memcpy( dest, src, bytes)
+            } else {
+                float fracHi = (sliceXmm-mmLo)/ (mmHi-mmLo);
+                float fracLo = 1.0 - fracHi; //weight between two slices
+                for (int v=0; v < nVox2D; v++)
+                    imX[sliceXi+v] = round( ( (float)im[sLo+v]*fracLo) + (float)im[sHi+v]*fracHi);
+            }
+        }
+    }
+    char niiFilenameEq[2048] = {""};
+    strcat(niiFilenameEq,niiFilename);
+    strcat(niiFilenameEq,"_Eq");
+    nii_saveNII3D(niiFilenameEq, hdrX, imX, opts);
+    free(imX);
+    return EXIT_SUCCESS;
+}// nii_saveNII3Deq()
+
+/*int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
+    //convert image with unequal slice distances to equal slice distances
+    //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
+    if (opts.isOnlyBIDS) return EXIT_SUCCESS;
+
+    int nVox2D = hdr.dim[1]*hdr.dim[2];
+    if ((nVox2D < 1) || (hdr.dim[0] != 3) ) return EXIT_FAILURE;
+    if ((hdr.datatype !=  DT_FLOAT32) && (hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
+        printMessage("Only able to make equidistant slices from 8,16,24-bit integer or 32-bit float data with at least 3 slices.");
+        return EXIT_FAILURE;
+    }
+    //find lowest and highest slice
+    float lo = sliceMMarray[0];
+    float hi = lo;
+    for (int i = 1; i < hdr.dim[3]; i++) {
+    	if (sliceMMarray[i] < lo)
+    		lo = sliceMMarray[i];
+    	if (sliceMMarray[i] > hi)
+    		hi = sliceMMarray[i];
+    }
+    if (isSameFloat(lo,hi)) return EXIT_SUCCESS;
+
+
+    float mn = fabs(sliceMMarray[1] - sliceMMarray[0]);
+    for (int i = 1; i < (hdr.dim[3]-1); i++) {
+    	for (int j = i+1; j < hdr.dim[3]; j++) {
+    		float dx = fabs(sliceMMarray[i] - sliceMMarray[j]);
+        	if ((dx < mn) && (dx > 0.0))
+            	mn = dx;
+        }
     }
     if (mn <= 0.0f) {
     	printMessage("Unable to equalize slice distances: slice number not consistent with slice position.\n");
     	return EXIT_FAILURE;
     }
     int slices = hdr.dim[3];
-    slices = (int)ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    //slices = (int)ceil((sliceMMarray[slices-1]-0.5*(sliceMMarray[slices-1]-sliceMMarray[slices-2]))/mn); //-0.5: fence post
+    slices = (int)round((hi-lo+mn)/mn); //+mn: fence post
+    printMessage("lo=%g hi=%g mn=%g slices=%d\n", lo, hi, mn, slices);
     if (slices > (hdr.dim[3] * 2)) {
         slices = 2 * hdr.dim[3];
         mn = (sliceMMarray[hdr.dim[3]-1]) / (slices-1);
@@ -2775,7 +3085,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     nii_saveNII3D(niiFilenameEq, hdrX, imX, opts);
     free(imX);
     return EXIT_SUCCESS;
-}// nii_saveNII3Deq()
+}// nii_saveNII3Deq() */
 
 float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
     if ((lRS*lSS) == 0) //avoid divide by zero
@@ -3065,89 +3375,6 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
 }//checkSliceTiming
 
-#ifdef newTilt //see issue 254
-float vec3Length (vec3 v) { //normalize vector length
-	return sqrt( (v.v[0]*v.v[0])
-                      + (v.v[1]*v.v[1])
-                      + (v.v[2]*v.v[2]));
-}
-
-float vec3maxMag (vec3 v) { //return signed vector with maximum magnitude
-	float mx = v.v[0];
-	if (abs(v.v[1]) > abs(mx)) mx = v.v[1];
-	if (abs(v.v[2]) > abs(mx)) mx = v.v[2];
-	return mx;
-}
-
-vec3 makePositive(vec3 v) {
-	//we do not no order of cross product or order of instance number (e.g. head->foot, foot->head)
-	// this function matches the polarity of slice direction inferred from patient position and image orient
-	vec3 ret = v;
-	if (vec3maxMag(v) >= 0.0) return ret;
-	ret.v[0] = -ret.v[0];
-	ret.v[1] = -ret.v[1];
-	ret.v[2] = -ret.v[2];
-	return ret;
-}
-
-void vecRep (vec3 v) { //normalize vector length
-   printMessage("[%g %g %g]\n", v.v[0], v.v[1], v.v[2]);
-}
-
-//Precise method for determining gantry tilt
-// rationale:
-//   gantry tilt (0018,1120) is optional
-//   some tools may correct gantry tilt but not reset 0018,1120
-//   0018,1120 might be saved at low precision (though patientPosition, orient might be as well)
-//https://github.com/rordenlab/dcm2niix/issues/253
-float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int isVerbose) {
-	float ret = 0.0;
-	if (isNanPosition(d1)) return ret;
-	vec3 slice_vector = setVec3(d2.patientPosition[1] - d1.patientPosition[1],
-    	d2.patientPosition[2] - d1.patientPosition[2],
-    	d2.patientPosition[3] - d1.patientPosition[3]);
-    float len = vec3Length(slice_vector);
-	if (isSameFloat(len, 0.0)) {
-		slice_vector = setVec3(d1.patientPositionLast[1] - d1.patientPosition[1],
-    		d1.patientPositionLast[2] - d1.patientPosition[2],
-    		d1.patientPositionLast[3] - d1.patientPosition[3]);
-    	len = vec3Length(slice_vector);
-    	if (isSameFloat(len, 0.0)) return ret;
-	}
-	if (isnan(slice_vector.v[0])) return ret;
-	slice_vector = makePositive(slice_vector);
-	vec3 read_vector = setVec3(d1.orient[1],d1.orient[2],d1.orient[3]);
-    vec3 phase_vector = setVec3(d1.orient[4],d1.orient[5],d1.orient[6]);
-    vec3 slice_vector90 = crossProduct(read_vector ,phase_vector); //perpendicular
-    slice_vector90 = makePositive(slice_vector90);
-	float len90 = vec3Length(slice_vector90);
-    if (isSameFloat(len90, 0.0)) return ret;
-    float dotX = dotProduct(slice_vector90, slice_vector);
-    float cosX = dotX / (len * len90);
-    float degX = acos(cosX) * (180.0 / M_PI); //arccos, radian -> degrees
-    if (!isSameFloat(cosX, 1.0))
-		ret = degX;
-    if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)) ) return 0.0;
-    //determine if gantry tilt is positive or negative
-    vec3 signv = crossProduct(slice_vector,slice_vector90);
-	float sign = vec3maxMag(signv);
-	if (isSameFloatGE(ret, 0.0)) return 0.0; //parallel vectors
-	if (sign > 0.0) ret = -ret; //the length of len90 was negative, negative gantry tilt
-    //while (ret >= 89.99) ret -= 90;
-    //while (ret <= -89.99) ret += 90;
-	if (isSameFloatGE(ret, 0.0)) return 0.0;
-    if ((isVerbose) || (isnan(ret)))  {
-    	printMessage("Gantry Tilt Parameters (see issue 253)\n");
-    	printMessage(" Read ="); vecRep(read_vector);
-    	printMessage(" Phase ="); vecRep(phase_vector);
-    	printMessage(" CrossReadPhase ="); vecRep(slice_vector90);
-    	printMessage(" Slice ="); vecRep(slice_vector);
-    }
-    printMessage("Gantry Tilt based on 0018,1120 %g, estimated from slice vector %g\n", d1.gantryTilt, ret);
-	return ret;
-}
-#endif //newTilt //see issue 254
-
 void reportMat44o(char *str, mat44 A) {
     printMessage("%s = [%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1]\n",str,
            A.m[0][0],A.m[0][1],A.m[0][2],A.m[0][3],
@@ -3298,6 +3525,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             } //if PET
             //next: detect variable inter-slice distance
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+			#ifdef MY_INSTANCE_NUMBER_ORDER_IS_NOT_SPATIAL
+            if  (!isSameFloat(dx, 0.0)) //only for XYZT, not TXYZ: perhaps run for swapDim3Dim4? Extremely rare anomaly
+            	if (!ensureSequentialSlicePositions(hdr0.dim[3],hdr0.dim[4], dcmSort, dcmList))
+            		dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+            #endif
             bool dxVaries = false;
             for (int i = 1; i < nConvert; i++)
                 if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
@@ -3325,9 +3557,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						}
 						printMessage("]\n");
                     } //imageNum not sequential
-
-                }
-            }
+				} //dx varies
+            } //not 4D
             if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) &&  ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS))  ) { //Niels Janssen has provided GE sequential multi-phase acquisitions that also require swizzling
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
@@ -3510,7 +3741,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	free(img4D);
     	saveAs3D = false;
     }
-    if (strlen(dcmList[dcmSort[0].indx].protocolName) < 1)
+    if (strlen(dcmList[dcmSort[0].indx].protocolName) < 1) //beware: tProtocolName can vary within a series "t1+AF8-mpr+AF8-ns+AF8-sag+AF8-p2+AF8-iso" vs "T1_mprage_ns_sag_p2_iso 1.0mm_192"
     	rescueProtocolName(&dcmList[dcmSort[0].indx], nameList->str[dcmSort[0].indx]);
     char pathoutname[2048] = {""};
     if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
@@ -4362,17 +4593,23 @@ int nii_loadDir(struct TDCMopts* opts) {
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
         //~ if ((dcmList[i].isValid) &&((dcmList[i].totalSlicesIn4DOrder != NULL) ||(dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
         if ((dcmList[i].imageNum > 0) && (opts->isRenameNotConvert > 0)) { //use imageNum instead of isValid to convert non-images (kWaveformSq will have instance number but is not a valid image)
-        	char outname[PATH_MAX] = {""};
-        	if (dcmList[i].echoNum > 1) dcmList[i].isMultiEcho = true; //last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
-        	nii_createFilename(dcmList[i], outname, *opts);
-        	if (isDcmExt) strcat (outname,".dcm");
-        	int ret = copyFile (nameList.str[i], outname);
-        	if (ret != EXIT_SUCCESS) {
-        		printError("Unable to rename all DICOM images.\n");
-        		return ret;
+        	if ((opts->isIgnoreDerivedAnd2D) && ((dcmList[i].isLocalizer)  || (strcmp(dcmList[i].sequenceName, "_tfl2d1")== 0) || (strcmp(dcmList[i].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[i].sequenceName, "_fl2d1")== 0)) ) {
+    			printMessage("Ignoring localizer %s\n", nameList.str[i]);
+        	} else if ((opts->isIgnoreDerivedAnd2D && dcmList[i].isDerived) ) {
+        		printMessage("Ignoring derived %s\n", nameList.str[i]);
+        	} else {
+				char outname[PATH_MAX] = {""};
+				if (dcmList[i].echoNum > 1) dcmList[i].isMultiEcho = true; //last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
+				nii_createFilename(dcmList[i], outname, *opts);
+				if (isDcmExt) strcat (outname,".dcm");
+				int ret = copyFile (nameList.str[i], outname);
+				if (ret != EXIT_SUCCESS) {
+					printError("Unable to rename all DICOM images.\n");
+					return ret;
+				}
+				if (opts->isVerbose > 0)
+					printMessage("Renaming %s -> %s\n", nameList.str[i], outname);
         	}
-        	if (opts->isVerbose > 0)
-        		printMessage("Renaming %s -> %s\n", nameList.str[i], outname);
         	dcmList[i].isValid = false;
         }
         if ((dcmList[i].isValid) && ((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
