@@ -485,7 +485,6 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
         //    nifti_swap_4bytes(1, &tagCSA.nitems);
         //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         lPos +=sizeof(tagCSA);
-
         if (strcmp(tagCSA.name, "MrPhoenixProtocol") == 0)
         	return lPos;
         for (int lI = 1; lI <= tagCSA.nitems; lI++) {
@@ -970,11 +969,11 @@ tse3d: T2*/
     	json_Float(fp, "\t\"SpacingBetweenSlices\": %g,\n", d.zSpacing);
     }
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR );
+	if (d.numberOfAverages > 1.0) json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages );
 	if ((d.echoNum > 1) || (d.isMultiEcho)) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
-	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-    json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
+	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
@@ -1306,7 +1305,7 @@ bool isAllZeroFloat(float v1, float v2, float v3) {
 	return true;
 }
 
-int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, int * numADC) {
+int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, int * numADC) {
     //reports non-zero if any volumes should be excluded (e.g. philip stores an ADC maps)
     //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
     *numADC = 0;
@@ -1526,6 +1525,17 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     images->addDeferredAttribute("bValues", bValues);
     images->addDeferredAttribute("bVectors", bVectors, numDti, 3);
 #else
+    if (opts.isSaveNRRD) {
+    	if (numDti < kMaxDTI4D) {
+    		//dcmList[indx0].CSA.numDti
+    		dcmList[indx0].CSA.numDti = numDti;
+    		for (int i = 0; i < numDti; i++) //for each direction
+        		for (int v = 0; v < 4; v++) //for each vector+B-value
+            		dti4D->S[i].V[v] = vx[i].V[v];
+        }
+    	free(vx);
+    	return volOrderIndex;
+    }
     char txtname[2048] = {""};
     strcpy (txtname,pathoutname);
     strcat (txtname,".bval");
@@ -1566,7 +1576,7 @@ int * nii_SaveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 #endif
     free(vx);
     return volOrderIndex;
-}// nii_SaveDTI()
+}// nii_saveDTI()
 
 float sqr(float v){
     return v*v;
@@ -1818,6 +1828,12 @@ bool niiExists(const char*pathoutname) {
     strcat (gzname,pathoutname);
     strcat (gzname,".nii.gz");
     if (is_fileexists(gzname)) return true;
+    strcpy (niiname,pathoutname);
+    strcat (niiname,".nrrd");
+    if (is_fileexists(niiname)) return true;
+    strcpy (niiname,pathoutname);
+    strcat (niiname,".nhdr");
+    if (is_fileexists(niiname)) return true;
     return false;
 } //niiExists()
 
@@ -2170,13 +2186,14 @@ unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_l
  #define MZ_DEFAULT_LEVEL 6
 #endif
 
-void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len, int gzLevel) {
+void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src_buffer, unsigned long src_len, int gzLevel, bool isSkipHeader) {
     //create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
     // in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
     char fname[2048] = {""};
     strcpy (fname,baseName);
-    strcat (fname,".nii.gz");
+    if (!isSkipHeader) strcat (fname,".nii.gz");
     unsigned long hdrPadBytes = sizeof(hdr) + 4; //348 byte header + 4 byte pad
+    if (isSkipHeader) hdrPadBytes = 0;
     unsigned long cmp_len = mz_compressBound(src_len+hdrPadBytes);
     unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
     z_stream strm;
@@ -2196,13 +2213,17 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
         free(pCmp);
         return;
     }
-    //add header
-    unsigned char *pHdr = (unsigned char *)malloc(hdrPadBytes);
-    pHdr[hdrPadBytes-1] = 0; pHdr[hdrPadBytes-2] = 0; pHdr[hdrPadBytes-3] = 0; pHdr[hdrPadBytes-4] = 0;
-    memcpy(pHdr,&hdr, sizeof(hdr));
-    strm.avail_in = (unsigned int)hdrPadBytes; // size of input
-	strm.next_in = (uint8_t *)pHdr; // input header -- TPX  strm.next_in = (Bytef *)pHdr; uint32_t
-    deflate(&strm, Z_NO_FLUSH);
+    //unsigned char *pHdr = (unsigned char *)malloc(hdrPadBytes);
+    unsigned char *pHdr;
+    if (!isSkipHeader) {
+		//add header
+		pHdr = (unsigned char *)malloc(hdrPadBytes);
+		pHdr[hdrPadBytes-1] = 0; pHdr[hdrPadBytes-2] = 0; pHdr[hdrPadBytes-3] = 0; pHdr[hdrPadBytes-4] = 0;
+		memcpy(pHdr,&hdr, sizeof(hdr));
+		strm.avail_in = (unsigned int)hdrPadBytes; // size of input
+		strm.next_in = (uint8_t *)pHdr; // input header -- TPX  strm.next_in = (Bytef *)pHdr; uint32_t
+		deflate(&strm, Z_NO_FLUSH);
+    }
     //add image
     strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer; // input image -- TPX strm.next_in = (Bytef *)src_buffer;
@@ -2210,7 +2231,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     //finish up
     deflateEnd(&strm);
     unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
-    file_crc32 = mz_crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
+    if (!isSkipHeader) file_crc32 = mz_crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
     file_crc32 = mz_crc32(file_crc32, src_buffer, (unsigned int)src_len);
     cmp_len = strm.total_out;
     if (cmp_len <= 0) {
@@ -2248,7 +2269,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
     fputc((unsigned char)(strm.total_in >> 24), fileGz);
     fclose(fileGz);
     free(pCmp);
-    free(pHdr);
+    if (!isSkipHeader) free(pHdr);
 } //writeNiiGz()
 #endif
 
@@ -2325,8 +2346,238 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 
 #else
 
-int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+inline bool littleEndianPlatformNRRD ()
+{
+    uint32_t value = 1;
+    return (*((char *) &value) == 1);
+}
+
+int pigz_File(char * fname, struct TDCMopts opts, size_t imgsz) {
+	//given "/dir/file.nii" creates "/dir/file.nii.gz"
+	char blockSize[768];
+	strcpy(blockSize, "");
+	//-b 960 increases block size from 128 to 960: each block has 32kb lead in... so less redundancy
+	if (imgsz > 1000000) strcpy(blockSize, " -b 960");
+	char command[768];
+	strcpy(command, "\"" );
+	strcat(command, opts.pigzname );
+	if ((opts.gzLevel > 0) &&  (opts.gzLevel < 12)) {
+		char newstr[256];
+		sprintf(newstr, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
+		strcat(command, newstr);
+	} else {
+		char newstr[256];
+		sprintf(newstr, "\"%s -n \"", blockSize);
+		strcat(command, newstr);
+	}
+	strcat(command, fname);
+	strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+	#if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
+		DWORD exitCode;
+	PROCESS_INFORMATION ProcessInfo = {0};
+	STARTUPINFO startupInfo= {0};
+	startupInfo.cb = sizeof(startupInfo);
+		//StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
+		if(CreateProcess(NULL, command, NULL,NULL,FALSE,NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,NULL, NULL,&startupInfo,&ProcessInfo)) {
+			//printMessage("compression --- %s\n",command);
+			WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
+			CloseHandle(ProcessInfo.hThread);
+			CloseHandle(ProcessInfo.hProcess);
+		} else
+			printMessage("Compression failed %s\n",command);
+	#else //if win else linux
+	int ret = system(command);
+	if (ret == -1)
+		printWarning("Failed to execute: %s\n",command);
+	#endif //else linux
+	printMessage("Compress: %s\n",command);
+    return EXIT_SUCCESS;
+} // pigz_File()
+
+int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
+	int n, nDim = hdr.dim[0];
+    printMessage("NRRD writer is experimental\n");
+    if (nDim < 1) return EXIT_FAILURE;
+	bool isGz = opts.isGz;
+	size_t imgsz = nii_ImgBytes(hdr);
+	if  ((isGz) && (imgsz >=  2147483647)) { //use internal compressor
+		printWarning("Saving huge image uncompressed (many GZip tools have 2 Gb limit).\n");
+		isGz = false;
+	}
+	char fname[2048] = {""};
+    strcpy (fname, niiFilename);
+    if (isGz)
+    	strcat (fname,".nhdr"); //nrrd or nhdr
+    else
+    	strcat (fname,".nrrd"); //nrrd or nhdr
+	FILE *fp = fopen(fname, "w");
+    fprintf(fp,"NRRD0005\n");
+    fprintf(fp,"# Complete NRRD file format specification at:\n");
+    fprintf(fp,"# http://teem.sourceforge.net/nrrd/format.html\n");
+    fprintf(fp,"# dcm2niix NRRD export transforms by Tashrif Billah\n");
+    //type tag
+    switch (hdr.datatype) {
+		case DT_RGB24:
+        	fprintf(fp,"type: uint8\n");
+            break;
+		case DT_UINT8:
+        	fprintf(fp,"type: uint8\n");
+            break;
+        case DT_INT16:
+            fprintf(fp,"type: int16\n");
+            break;
+        case DT_UINT16:
+			fprintf(fp,"type: uint16\n");
+            break;
+        case DT_FLOAT32:
+			fprintf(fp,"type: float\n");
+            break;
+        case DT_INT32:
+			fprintf(fp,"type: int32\n");
+            break;
+        case DT_FLOAT64:
+			fprintf(fp,"type: double\n");
+            break;
+        default:
+        	printError("Unknown NRRD datatype %d\n", hdr.datatype);
+        	fclose(fp);
+    		return EXIT_FAILURE;
+    }
+    //dimension tag
+    if (hdr.datatype == DT_RGB24)
+    	fprintf(fp,"dimension: %d\n", nDim+1); //RGB is first dimension
+    else
+    	fprintf(fp,"dimension: %d\n", nDim);
+    //space tag
+	fprintf(fp,"space: right-anterior-superior\n");
+	//sizes tag
+	fprintf(fp,"sizes:");
+	if (hdr.datatype == DT_RGB24) fprintf(fp," 3");
+	for (int i = 1; i <= hdr.dim[0]; i++)
+		fprintf(fp," %d", hdr.dim[i]);
+    fprintf(fp,"\n");
+    //thicknesses
+    if ((d.zThick > 0.0) && (nDim >= 3)) {
+    	fprintf(fp,"thicknesses:  NaN  NaN %g", d.zThick);
+    	int n = 3;
+		while (n < nDim ) {
+	 		fprintf(fp," NaN");
+	 		n ++;
+		}
+    	fprintf(fp,"\n");
+    }
+    //byteskip only for .nhdr, not .nrrd
+	if (littleEndianPlatformNRRD()) //raw data in native format
+		fprintf(fp,"endian: little\n");
+	else
+		fprintf(fp,"endian: big\n");
+    if (isGz) {
+    	fprintf(fp,"encoding: gzip\n");
+    	strcpy (fname, niiFilename);
+    	strcat (fname,".gz");
+    	char basefname[2048] = {""};
+    	getFileName(basefname, fname);
+    	fprintf(fp,"data file: %s\n", basefname);
+    } else
+    	fprintf(fp,"encoding: raw\n");
+	fprintf(fp,"space units: \"mm\" \"mm\" \"mm\"\n");
+	//origin
+	fprintf(fp,"space origin: (%g,%g,%g)\n", hdr.srow_x[3],hdr.srow_y[3],hdr.srow_z[3]);
+	//space directions:
+	fprintf(fp,"space directions: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)", hdr.srow_x[0],hdr.srow_y[0],hdr.srow_z[0],
+		hdr.srow_x[1],hdr.srow_y[1],hdr.srow_z[1], hdr.srow_x[2],hdr.srow_y[2],hdr.srow_z[2] );
+	n = 3;
+	while (n < nDim ) {
+	 fprintf(fp," none");
+	 n ++;
+	}
+	fprintf(fp,"\n");
+	//centerings tag
+	if (hdr.dim[0] < 4) //*check RGB, more dims
+		fprintf(fp,"centerings: cell cell cell\n");
+	else
+		fprintf(fp,"centerings: cell cell cell ???\n");
+	//kinds tag
+	fprintf(fp,"kinds:");
+	if (hdr.datatype == DT_RGB24) fprintf(fp," RGB-color");
+	n = 0;
+	while ((n < nDim ) && (n < 3)) {
+	 fprintf(fp," space"); //dims 1..3
+	 n ++;
+	}
+	while (n < nDim ) {
+	 fprintf(fp," list"); //dims 4..7
+	 n ++;
+	}
+	fprintf(fp,"\n");
+	//Slicer DWIconvert values
+	if (d.modality = kMODALITY_MR)  fprintf(fp,"DICOM_0008_0060_Modality:=MR\n");
+	if (d.modality = kMODALITY_CT)  fprintf(fp,"DICOM_0008_0060_Modality:=CT\n");
+	if (d.manufacturer == kMANUFACTURER_SIEMENS) fprintf(fp,"DICOM_0008_0070_Manufacturer:=SIEMENS\n");
+	if (d.manufacturer == kMANUFACTURER_PHILIPS) fprintf(fp,"DICOM_0008_0070_Manufacturer:=Philips Medical Systems\n");
+	if (d.manufacturer == kMANUFACTURER_GE) fprintf(fp,"DICOM_0008_0070_Manufacturer:=GE MEDICAL SYSTEMS\n");
+	if (strlen(d.manufacturersModelName) > 0)  fprintf(fp,"DICOM_0008_1090_ManufacturerModelName:=%s\n",d.manufacturersModelName);
+	if (strlen(d.scanOptions) > 0)  fprintf(fp,"DICOM_0018_0022_ScanOptions:=%s\n",d.scanOptions);
+	if (d.is2DAcq)  fprintf(fp,"DICOM_0018_0023_MRAcquisitionType:=2D\n");
+	if (d.is3DAcq)  fprintf(fp,"DICOM_0018_0023_MRAcquisitionType:=3D\n");
+	//if (strlen(d.mrAcquisitionType) > 0)  fprintf(fp,"DICOM_0018_0023_MRAcquisitionType:=%s\n",d.mrAcquisitionType);
+	if (d.TR > 0.0) fprintf(fp,"DICOM_0018_0080_RepetitionTime:=%g\n",d.TR);
+	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp,"DICOM_0018_0081_EchoTime:=%g\n",d.TE);
+	if (d.numberOfAverages > 0.0) fprintf(fp,"DICOM_0018_0083_NumberOfAverages:=%g\n",d.numberOfAverages);
+	if (d.fieldStrength > 0.0) fprintf(fp,"DICOM_0018_0087_MagneticFieldStrength:=%g\n",d.fieldStrength);
+	if (strlen(d.softwareVersions) > 0)  fprintf(fp,"DICOM_0018_1020_SoftwareVersions:=%s\n",d.softwareVersions);
+	if (d.flipAngle > 0.0) fprintf(fp,"DICOM_0018_1314_FlipAngle:=%g\n",d.flipAngle);
+	//DWI values
+	if ((numDTI > 0) && (numDTI < kMaxDTI4D)) {
+		mat33 inv;
+		LOAD_MAT33(inv, hdr.pixdim[1],0.0,0.0,  0.0,hdr.pixdim[2],0.0,  0.0, 0.0,hdr.pixdim[3]);
+		inv = nifti_mat33_inverse(inv);
+		mat33 s;
+		LOAD_MAT33(s,hdr.srow_x[0],hdr.srow_x[1],hdr.srow_x[2],
+			hdr.srow_y[0],hdr.srow_y[1],hdr.srow_y[2],
+			hdr.srow_z[0],hdr.srow_z[1],hdr.srow_z[2]);
+		mat33 mf = nifti_mat33_mul(inv, s);
+		fprintf(fp,"measurement frame: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)",
+			mf.m[0][0],mf.m[1][0],mf.m[2][0],
+			mf.m[0][1],mf.m[1][1],mf.m[2][1],
+			mf.m[0][2],mf.m[1][2],mf.m[2][2]);
+		//modality tag
+		fprintf(fp,"modality:=DWMRI\n");
+		float b_max = 0;
+		for (int i = 0; i < numDTI; i++)
+			if (dti4D->S[i].V[0] > b_max)
+				b_max = dti4D->S[i].V[0];
+		fprintf(fp,"DWMRI_b-value:=%g\n", b_max);
+		//gradient tag, e.g. DWMRI_gradient_0000:=0.0   0.0   0.0
+		for (int i = 0; i < numDTI; i++) {
+			float factor = 0;
+			if (b_max > 0) factor = sqrt(dti4D->S[i].V[0]/b_max);
+			fprintf(fp,"DWMRI_gradient_%04d:=%g %g %g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
+		}
+	}
+	fprintf(fp,"\n"); //blank line: end of NRRD header
+	if (!isGz) fwrite(&im[0], imgsz, 1, fp);
+	fclose(fp);
+    if (!isGz) return EXIT_SUCCESS;
+    //below: gzip file
+    if  (strlen(opts.pigzname)  < 1) { //internal compression
+    	writeNiiGz (fname, hdr, im, imgsz, opts.gzLevel, true);
+    	return EXIT_SUCCESS;
+    }
+	//below pigz
+	strcpy (fname, niiFilename); //without gz
+    fp = fopen(fname, "wb");
+    fwrite(&im[0], imgsz, 1, fp);
+    fclose(fp);
+    return pigz_File(fname, opts, imgsz);
+} // nii_saveNRRD()
+
+int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
+    if (opts.isSaveNRRD) {
+    	struct TDTI4D *dti4D;
+    	return nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, 0);
+    }
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
     if (imgsz < 1) {
@@ -2352,7 +2603,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
 			if ((imgsz+hdr.vox_offset) <  kMaxPigz)
 				printWarning(" Hint: using external compressor (pigz) should help.\n");
 		} else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  kMaxGz) ) { //use internal compressor
-			writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel);
+			writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel, false);
 			return EXIT_SUCCESS;
 		}
 		#endif
@@ -2407,43 +2658,19 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     		return EXIT_SUCCESS;
     	}
     	#endif
-    	char command[768];
-    	strcpy(command, "\"" );
-        strcat(command, opts.pigzname );
-        if ((opts.gzLevel > 0) &&  (opts.gzLevel < 12)) {
-        	char newstr[256];
-        	sprintf(newstr, "\" -n -f -%d \"", opts.gzLevel);
-        	strcat(command, newstr);
-        } else
-        	strcat(command, "\" -n -f \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
-        strcat(command, fname);
-        strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
-    	#if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
-    		DWORD exitCode;
-   		PROCESS_INFORMATION ProcessInfo = {0};
-   		STARTUPINFO startupInfo= {0};
-   		startupInfo.cb = sizeof(startupInfo);
-    		//StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
-    		if(CreateProcess(NULL, command, NULL,NULL,FALSE,NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,NULL, NULL,&startupInfo,&ProcessInfo)) {
-                //printMessage("compression --- %s\n",command);
-        		WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
-        		CloseHandle(ProcessInfo.hThread);
-        		CloseHandle(ProcessInfo.hProcess);
-    		} else
-    			printMessage("Compression failed %s\n",command);
-    	#else //if win else linux
-        int ret = system(command);
-        if (ret == -1)
-        	printWarning("Failed to execute: %s\n",command);
-        #endif //else linux
-        printMessage("Compress: %s\n",command);
+    	return pigz_File(fname, opts, imgsz);
     }
     return EXIT_SUCCESS;
 }// nii_saveNII()
 
 #endif
 
-int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+int nii_saveNIIx(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+	struct TDICOMdata dcm = clear_dicom_data();
+	return nii_saveNII(niiFilename, hdr, im, opts, dcm);
+}
+
+int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     //save 4D series as sequence of 3D volumes
     struct nifti_1_header hdr1 = hdr;
     int nVol = 1;
@@ -2461,7 +2688,7 @@ int nii_saveNII3D(char * niiFilename, struct nifti_1_header hdr, unsigned char* 
     sprintf(zeroPad,"%%s_%%0%dd",zeroPadLen);
     for (int i = 1; i <= nVol; i++) {
         sprintf(fname,zeroPad,niiFilename,i);
-        if (nii_saveNII(fname, hdr1, (unsigned char*)&im[pos], opts) == EXIT_FAILURE) return EXIT_FAILURE;
+        if (nii_saveNII(fname, hdr1, (unsigned char*)&im[pos], opts, d) == EXIT_FAILURE) return EXIT_FAILURE;
         pos += imgsz;
     }
     return EXIT_SUCCESS;
@@ -2650,7 +2877,7 @@ int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
 }
 
-unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
+unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
     if (opts.isOnlyBIDS) return im;
     if (gantryTiltDeg == 0.0) return im;
@@ -2725,11 +2952,11 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
     char niiFilenameTilt[2048] = {""};
     strcat(niiFilenameTilt,niiFilename);
     strcat(niiFilenameTilt,"_Tilt");
-    nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts);
+    nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts, d);
     return imOut;
 }// nii_saveNII3DtiltFloat32()
 
-unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
+unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
     if (opts.isOnlyBIDS) return im;
     if (gantryTiltDeg == 0.0) return im;
@@ -2737,7 +2964,7 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     int nVox2DIn = hdrIn.dim[1]*hdrIn.dim[2];
     if ((nVox2DIn < 1) || (hdrIn.dim[0] != 3) || (hdrIn.dim[3] < 3)) return im;
     if (hdrIn.datatype == DT_FLOAT32)
-        return nii_saveNII3DtiltFloat32(niiFilename, hdr, im, opts, sliceMMarray, gantryTiltDeg, manufacturer);
+        return nii_saveNII3DtiltFloat32(niiFilename, hdr, im, opts, d, sliceMMarray, gantryTiltDeg, manufacturer);
     if (hdrIn.datatype != DT_INT16) {
         printMessage("Only able to correct gantry tilt for 16-bit integer data with at least 3 slices.");
         return im;
@@ -2806,11 +3033,11 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     char niiFilenameTilt[2048] = {""};
     strcat(niiFilenameTilt,niiFilename);
     strcat(niiFilenameTilt,"_Tilt");
-    nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts);
+    nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts, d);
     return imOut;
 }// nii_saveNII3Dtilt()
 
-int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, float * sliceMMarray ) {
+int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, float * sliceMMarray ) {
     //convert image with unequal slice distances to equal slice distances
     //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
@@ -2935,7 +3162,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     char niiFilenameEq[2048] = {""};
     strcat(niiFilenameEq,niiFilename);
     strcat(niiFilenameEq,"_Eq");
-    nii_saveNII3D(niiFilenameEq, hdrX, imX, opts);
+    nii_saveNII3D(niiFilenameEq, hdrX, imX, opts, d);
     free(imX);
     return EXIT_SUCCESS;
 }// nii_saveNII3Deq()
@@ -3152,7 +3379,7 @@ void smooth1D(int num, double * im) {
 	free(src);
 }// smooth1D()
 
-int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts) {
+int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     //remove excess neck slices - assumes output of nii_setOrtho()
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
@@ -3269,7 +3496,7 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     char niiFilenameCrop[2048] = {""};
     strcat(niiFilenameCrop,niiFilename);
     strcat(niiFilenameCrop,"_Crop");
-    const int returnCode = nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts);
+    const int returnCode = nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts, d);
     free(imX);
     return returnCode;
 }// nii_saveCrop()
@@ -3808,7 +4035,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     }
 	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
-    int * volOrderIndex = nii_SaveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
+    int * volOrderIndex = nii_saveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
     if ((dcmList[dcmSort[0].indx].bitsStored == 12) && (dcmList[dcmSort[0].indx].bitsAllocated == 16))
     	nii_mask12bit(imgM, &hdr0);
@@ -3871,7 +4098,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
         imgM = nii_planar2rgb(imgM, &hdr0, true); //NIfTI is packed while Analyze was planar
     if ((hdr0.dim[4] > 1) && (saveAs3D))
-        returnCode = nii_saveNII3D(pathoutname, hdr0, imgM,opts);
+        returnCode = nii_saveNII3D(pathoutname, hdr0, imgM,opts, dcmList[dcmSort[0].indx]);
     else {
         if (volOrderIndex) //reorder volumes
         	imgM = reorderVolumes(&hdr0, imgM, volOrderIndex);
@@ -3883,17 +4110,19 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			strcat(pathoutnameADC,pathoutname);
 			strcat(pathoutnameADC,"_ADC");
 			if (opts.isSave3D)
-				nii_saveNII3D(pathoutnameADC, hdr0, imgM, opts);
+				nii_saveNII3D(pathoutnameADC, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 			else
-				nii_saveNII(pathoutnameADC, hdr0, imgM, opts);
+				nii_saveNII(pathoutnameADC, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 		}
 #endif
 		imgM = removeADC(&hdr0, imgM, numADC);
 #ifndef USING_R
-		if (opts.isSave3D)
-			returnCode = nii_saveNII3D(pathoutname, hdr0, imgM, opts);
+		if (opts.isSaveNRRD)
+			returnCode = nii_saveNRRD(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx], dti4D, dcmList[indx0].CSA.numDti);
+		else if (opts.isSave3D)
+			returnCode = nii_saveNII3D(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 		else
-        	returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts);
+        	returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 #endif
     }
 #endif
@@ -3903,7 +4132,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         //    printMessage("Tilt correction skipped: 0008,2111 reports RESAMPLED\n");
         //} else
         if (opts.isTiltCorrect) {
-        	imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
+        	imgM = nii_saveNII3Dtilt(pathoutname, &hdr0, imgM,opts, dcmList[dcmSort[0].indx], sliceMMarray, dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
             strcat(pathoutname,"_Tilt");
         } else
             printMessage("Tilt correction skipped\n");
@@ -3913,15 +4142,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             printMessage("Slice thickness correction skipped: 0008,2111 reports RESAMPLED\n");
         }
         else
-            returnCode = nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, sliceMMarray);
+            returnCode = nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, dcmList[dcmSort[0].indx], sliceMMarray);
         free(sliceMMarray);
     }
     if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
-        returnCode = nii_saveCrop(pathoutname, hdr0, imgM,opts); //n.b. must be run AFTER nii_setOrtho()!
+        returnCode = nii_saveCrop(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]); //n.b. must be run AFTER nii_setOrtho()!
 #ifdef USING_R
     // Note that for R, only one image should be created per series
     // Hence the logical OR here
-    if (returnCode == EXIT_SUCCESS || nii_saveNII(pathoutname,hdr0,imgM,opts) == EXIT_SUCCESS)
+    if (returnCode == EXIT_SUCCESS || nii_saveNII(pathoutname,hdr0,imgM,opts, dcmList[dcmSort[0].indx]) == EXIT_SUCCESS)
         nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts);
 #endif
     free(imgM);
@@ -4910,6 +5139,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isGz = false;
+    opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;
     opts->dirSearchDepth = 5;

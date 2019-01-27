@@ -78,6 +78,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
     printf("  -c : comment stored in NIfTI aux_file (up to 24 characters)\n");
     printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
+    printf("  -e : export as NRRD instead of NIfTI (y/n, default n)\n");
     if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
     //printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
@@ -218,6 +219,7 @@ int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
     bool isSaveIni = false;
+    bool isOutNameSpecified = false;
     bool isResetDefaults = false;
     readIniFile(&opts, argv); //set default preferences
 #ifdef mydebugtest
@@ -279,6 +281,11 @@ int main(int argc, const char * argv[])
                 i++;
                 if ((argv[i][0] >= '0') && (argv[i][0] <= '9'))
                 	opts.dirSearchDepth = abs((int)strtol(argv[i], NULL, 10));
+            } else if ((argv[i][1] == 'e') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')  || (argv[i][0] == '1'))
+                    opts.isSaveNRRD = true;
             } else if ((argv[i][1] == 'g') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -400,6 +407,7 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'f') && ((i+1) < argc)) {
                 i++;
                 strcpy(opts.filename,argv[i]);
+                isOutNameSpecified = true;
             } else if ((argv[i][1] == 'o') && ((i+1) < argc)) {
                 i++;
                 strcpy(opts.outdir,argv[i]);
@@ -427,6 +435,15 @@ int main(int argc, const char * argv[])
     	printf("n.b. Setting directory search depth of zero invokes internal gz (network mode)\n");
 	}
 	#endif
+	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { //sensible naming scheme for renaming option
+		//strcpy(opts.filename,argv[i]);
+		#if defined(_WIN64) || defined(_WIN32)
+		strcpy(opts.filename,"%t/%s_%p/%4r.dcm"); //nrrd or nhdr
+		#else
+		strcpy(opts.filename,"%t\\%s_%p\\%4r.dcm"); //nrrd or nhdr
+		#endif
+		printf("renaming without output filename, assuming '-f %s'\n", opts.filename);
+	}
     if (isSaveIni)
     	saveIniFile(opts);
     //printf("%d %d",argc,lastCommandArg);

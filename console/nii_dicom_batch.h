@@ -25,7 +25,7 @@ extern "C" {
 #define MAX_NUM_SERIES 16
 
     struct TDCMopts {
-        bool isRenameNotConvert, isMaximize16BitRange, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isForceStackSameSeries, isCrop;
+        bool isSaveNRRD, isRenameNotConvert, isMaximize16BitRange, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isForceStackSameSeries, isCrop;
         int isVerbose, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
         float seriesNumber[MAX_NUM_SERIES];
@@ -39,7 +39,7 @@ extern "C" {
     void saveIniFile (struct TDCMopts opts);
     void setDefaultOpts (struct TDCMopts *opts, const char * argv[]); //either "setDefaultOpts(opts,NULL)" or "setDefaultOpts(opts,argv)" where argv[0] is path to search
     void readIniFile (struct TDCMopts *opts, const char * argv[]);
-    int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts);
+    int nii_saveNIIx(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts);
     //void readIniFile (struct TDCMopts *opts);
     int nii_loadDir(struct TDCMopts *opts);
     //void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct TDTI4D *dti4D, struct nifti_1_header *h, const char * filename);

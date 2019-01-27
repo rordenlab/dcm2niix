@@ -738,6 +738,7 @@ struct TDICOMdata clear_dicom_data() {
     d.bandwidthPerPixelPhaseEncode = 0.0;
     d.acquisitionDuration = 0.0;
     d.imagingFrequency = 0.0;
+    d.numberOfAverages = 0.0;
     d.fieldStrength = 0.0;
     d.SAR = 0.0;
     d.pixelBandwidth = 0.0;
@@ -3908,6 +3909,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kZThick  0x0018+(0x0050 << 16 )
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
+#define  kNumberOfAverages 0x0018+(0x0083 << 16 ) //DS
 #define  kImagingFrequency 0x0018+(0x0084 << 16 ) //DS
 #define  kTriggerTime  0x0018+(0x1060 << 16 ) //DS
 //#define  kEffectiveTE  0x0018+(0x9082 << 16 )
@@ -5032,6 +5034,9 @@ double TE = 0.0; //most recent echo time recorded
             	if (d.TE <= 0.0)
             		d.TE = TE;
             	break;
+            case kNumberOfAverages :
+            	d.numberOfAverages = dcmStrFloat(lLength, &buffer[lPos]);
+                break;
             case kImagingFrequency :
             	d.imagingFrequency = dcmStrFloat(lLength, &buffer[lPos]);
                 break;

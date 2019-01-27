@@ -427,7 +427,7 @@ int  convert_foreign (const char *fn, struct TDCMopts opts){
 	//struct TDTI4D dti4D;
 	//nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
 	nii_SaveBIDS(niiFilename, dcm, opts, &hdr, fn);
-	ret = nii_saveNII(niiFilename, hdr, img, opts);
+	ret = nii_saveNIIx(niiFilename, hdr, img, opts);
 	free(img);
     return ret;
 }// convert_foreign()
