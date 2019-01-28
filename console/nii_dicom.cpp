@@ -3747,8 +3747,7 @@ struct TDCMdim { //DimensionIndexValues
   bool isImaginary;
 };
 
-void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then filename is 'd2'
-{
+void getFileNameX( char *pathParent, const char *path, int maxLen) {//if path is c:\d1\d2 then filename is 'd2'
     const char *filename = strrchr(path, '/'); //UNIX
     if (filename == 0) {
        filename = strrchr(path, '\\'); //Windows
@@ -3760,8 +3759,11 @@ void getFileName( char *pathParent, const char *path) //if path is c:\d1\d2 then
         return;
     }
     filename++;
-    strncpy(pathParent,filename, kDICOMStr-1);
-    //strcpy(pathParent,filename); //<- this can cause overflow if filename longer than kDICOMStr
+    strncpy(pathParent,filename, maxLen-1);
+}
+
+void getFileName( char *pathParent, const char *path) {//if path is c:\d1\d2 then filename is 'd2'
+getFileNameX(pathParent, path, kDICOMStr);
 }
 
 #ifdef USING_R

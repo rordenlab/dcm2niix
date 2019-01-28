@@ -2276,7 +2276,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 #ifdef USING_R
 
 // Version of nii_saveNII() for R/divest: create nifti_image pointer and push onto stack
-int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts)
+int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d)
 {
     hdr.vox_offset = 352;
     // Extract the basename from the full file path
@@ -2415,10 +2415,12 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     fprintf(fp,"# Complete NRRD file format specification at:\n");
     fprintf(fp,"# http://teem.sourceforge.net/nrrd/format.html\n");
     fprintf(fp,"# dcm2niix NRRD export transforms by Tashrif Billah\n");
-    //type tag
+    char rgbNoneStr[10] = {""};
+	//type tag
     switch (hdr.datatype) {
 		case DT_RGB24:
         	fprintf(fp,"type: uint8\n");
+        	strcpy (rgbNoneStr, " none");
             break;
 		case DT_UINT8:
         	fprintf(fp,"type: uint8\n");
@@ -2476,7 +2478,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     	strcpy (fname, niiFilename);
     	strcat (fname,".gz");
     	char basefname[2048] = {""};
-    	getFileName(basefname, fname);
+    	getFileNameX(basefname, fname, 2048);
     	fprintf(fp,"data file: %s\n", basefname);
     } else
     	fprintf(fp,"encoding: raw\n");
@@ -2484,7 +2486,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	//origin
 	fprintf(fp,"space origin: (%g,%g,%g)\n", hdr.srow_x[3],hdr.srow_y[3],hdr.srow_z[3]);
 	//space directions:
-	fprintf(fp,"space directions: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)", hdr.srow_x[0],hdr.srow_y[0],hdr.srow_z[0],
+	fprintf(fp,"space directions:%s (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)", rgbNoneStr, hdr.srow_x[0],hdr.srow_y[0],hdr.srow_z[0],
 		hdr.srow_x[1],hdr.srow_y[1],hdr.srow_z[1], hdr.srow_x[2],hdr.srow_y[2],hdr.srow_z[2] );
 	n = 3;
 	while (n < nDim ) {
@@ -2494,9 +2496,9 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	fprintf(fp,"\n");
 	//centerings tag
 	if (hdr.dim[0] < 4) //*check RGB, more dims
-		fprintf(fp,"centerings: cell cell cell\n");
+		fprintf(fp,"centerings:%s cell cell cell\n", rgbNoneStr);
 	else
-		fprintf(fp,"centerings: cell cell cell ???\n");
+		fprintf(fp,"centerings:%s cell cell cell ???\n", rgbNoneStr);
 	//kinds tag
 	fprintf(fp,"kinds:");
 	if (hdr.datatype == DT_RGB24) fprintf(fp," RGB-color");
@@ -2511,8 +2513,8 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	}
 	fprintf(fp,"\n");
 	//Slicer DWIconvert values
-	if (d.modality = kMODALITY_MR)  fprintf(fp,"DICOM_0008_0060_Modality:=MR\n");
-	if (d.modality = kMODALITY_CT)  fprintf(fp,"DICOM_0008_0060_Modality:=CT\n");
+	if (d.modality == kMODALITY_MR)  fprintf(fp,"DICOM_0008_0060_Modality:=MR\n");
+	if (d.modality == kMODALITY_CT)  fprintf(fp,"DICOM_0008_0060_Modality:=CT\n");
 	if (d.manufacturer == kMANUFACTURER_SIEMENS) fprintf(fp,"DICOM_0008_0070_Manufacturer:=SIEMENS\n");
 	if (d.manufacturer == kMANUFACTURER_PHILIPS) fprintf(fp,"DICOM_0008_0070_Manufacturer:=Philips Medical Systems\n");
 	if (d.manufacturer == kMANUFACTURER_GE) fprintf(fp,"DICOM_0008_0070_Manufacturer:=GE MEDICAL SYSTEMS\n");
@@ -2523,10 +2525,24 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	//if (strlen(d.mrAcquisitionType) > 0)  fprintf(fp,"DICOM_0018_0023_MRAcquisitionType:=%s\n",d.mrAcquisitionType);
 	if (d.TR > 0.0) fprintf(fp,"DICOM_0018_0080_RepetitionTime:=%g\n",d.TR);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp,"DICOM_0018_0081_EchoTime:=%g\n",d.TE);
+	if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp,"DICOM_0018_1152_XRayExposure:=%g\n",d.TE);
 	if (d.numberOfAverages > 0.0) fprintf(fp,"DICOM_0018_0083_NumberOfAverages:=%g\n",d.numberOfAverages);
 	if (d.fieldStrength > 0.0) fprintf(fp,"DICOM_0018_0087_MagneticFieldStrength:=%g\n",d.fieldStrength);
 	if (strlen(d.softwareVersions) > 0)  fprintf(fp,"DICOM_0018_1020_SoftwareVersions:=%s\n",d.softwareVersions);
 	if (d.flipAngle > 0.0) fprintf(fp,"DICOM_0018_1314_FlipAngle:=%g\n",d.flipAngle);
+	//multivolume but NOT DTI, e.g. fMRI/DCE see https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
+	if ((nDim > 3) && (hdr.dim[4] > 1) && (numDTI < 1)) {
+		if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp,"MultiVolume.DICOM.EchoTime:=%g\n",d.TE);
+		if (d.flipAngle > 0.0) fprintf(fp,"MultiVolume.DICOM.FlipAngle:=%g\n",d.flipAngle);
+		if (d.TR > 0.0) fprintf(fp,"MultiVolume.DICOM.RepetitionTime:=%g\n",d.TR);
+		fprintf(fp,"MultiVolume.FrameIdentifyingDICOMTagName:=TriggerTime\n");
+		fprintf(fp,"MultiVolume.FrameIdentifyingDICOMTagUnits:=ms\n");
+		fprintf(fp,"MultiVolume.FrameLabels:=");
+		for (int i = 0; i < (hdr.dim[4]-1); i++)
+			fprintf(fp,"%g,", i * d.TR);
+    	fprintf(fp,"%g\n", (hdr.dim[4]-1) * d.TR);
+		fprintf(fp,"MultiVolume.NumberOfFrames:=%d\n",hdr.dim[4]);
+	}
 	//DWI values
 	if ((numDTI > 0) && (numDTI < kMaxDTI4D)) {
 		mat33 inv;
@@ -4488,7 +4504,6 @@ void freeNameList(struct TSearchList nameList) {
     free(nameList.str);
 }
 
-
 int singleDICOM(struct TDCMopts* opts, char *fname) {
     if (isDICOMfile(fname) == 0) {
         printError("Not a DICOM image : %s\n", fname);
@@ -4754,7 +4769,7 @@ int nii_loadDir(struct TDCMopts* opts) {
 		return EXIT_FAILURE;
 		#endif
     }
-    getFileName(opts->indirParent, opts->indir);
+    getFileNameX(opts->indirParent, opts->indir, 512);
     if (isFile && ( (isExt(indir, ".v"))) )
 		return convert_foreign (indir, *opts);
     if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
