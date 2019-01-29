@@ -2555,7 +2555,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 			hdr.srow_y[0],hdr.srow_y[1],hdr.srow_y[2],
 			hdr.srow_z[0],hdr.srow_z[1],hdr.srow_z[2]);
 		mat33 mf = nifti_mat33_mul(inv, s);
-		fprintf(fp,"measurement frame: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)",
+		fprintf(fp,"measurement frame: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)\n",
 			mf.m[0][0],mf.m[1][0],mf.m[2][0],
 			mf.m[0][1],mf.m[1][1],mf.m[2][1],
 			mf.m[0][2],mf.m[1][2],mf.m[2][2]);
