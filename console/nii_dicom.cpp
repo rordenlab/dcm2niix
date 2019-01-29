@@ -3625,7 +3625,7 @@ void clear_volume(struct TVolumeDiffusion* ptvd) {
 
 void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* inbuf) {
     if(strncmp(( char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==.
-       // strncmp(( char*)(inbuf), "NONE", 4) && //256
+       //strncmp(( char*)(inbuf), "NONE", 4) && //issue 256
        strncmp(( char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
         ptvd->_isPhilipsNonDirectional = true;
         // Explicitly set the direction to 0 now, because there may
@@ -5046,10 +5046,11 @@ double TE = 0.0; //most recent echo time recorded
 				//untested method to detect slice timing for GE PSD “epi” with multiphase option
 				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
             	if (d.manufacturer != kMANUFACTURER_GE) break;
-            	d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
+            	d.triggerDelayTime = dcmStrFloat(lLength, &buffer[lPos]);
+            	d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.triggerDelayTime;
                 //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
-            	break;
+				break;
             case kEffectiveTE : {
             	TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	if (d.TE <= 0.0)

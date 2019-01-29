@@ -1936,7 +1936,6 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,newstr);
                 isImageNumReported = true;
             }
-
             if (f == 'Q')
                 strcat (outname,dcm.scanningSequence);
             if (f == 'S') {
@@ -2538,9 +2537,12 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		fprintf(fp,"MultiVolume.FrameIdentifyingDICOMTagName:=TriggerTime\n");
 		fprintf(fp,"MultiVolume.FrameIdentifyingDICOMTagUnits:=ms\n");
 		fprintf(fp,"MultiVolume.FrameLabels:=");
+		double frameTime = d.TR;
+		if (d.triggerDelayTime > 0.0)
+			frameTime = d.triggerDelayTime / (hdr.dim[4] - 1); //GE dce data
 		for (int i = 0; i < (hdr.dim[4]-1); i++)
-			fprintf(fp,"%g,", i * d.TR);
-    	fprintf(fp,"%g\n", (hdr.dim[4]-1) * d.TR);
+			fprintf(fp,"%g,", i * frameTime);
+    	fprintf(fp,"%g\n", (hdr.dim[4]-1) * frameTime);
 		fprintf(fp,"MultiVolume.NumberOfFrames:=%d\n",hdr.dim[4]);
 	}
 	//DWI values
@@ -3684,6 +3686,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     free(img);
     //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
     if (nConvert > 1) {
+        //next: detect trigger time see example https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
+        double triggerDx = dcmList[dcmSort[nConvert-1].indx].triggerDelayTime - dcmList[indx0].triggerDelayTime;
+        dcmList[indx0].triggerDelayTime = triggerDx;
         //next: determine gantry tilt
         if (dcmList[indx0].gantryTilt != 0.0f)
             printMessage(" Warning: note these images have gantry tilt of %g degrees (manufacturer ID = %d)\n", dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
