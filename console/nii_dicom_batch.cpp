@@ -2895,6 +2895,26 @@ int isSameFloatT (float a, float b, float tolerance) {
     return (fabs (a - b) <= tolerance);
 }
 
+void adjustOriginForNegativeTilt(struct nifti_1_header * hdr, float shiftPxY) {
+    if (hdr->sform_code > 0) {
+        // Adjust the srow_*  offsets using srow_y
+        hdr->srow_x[3] -= shiftPxY * hdr->srow_y[0];
+        hdr->srow_y[3] -= shiftPxY * hdr->srow_y[1];
+        hdr->srow_z[3] -= shiftPxY * hdr->srow_y[2];
+    }
+
+    if (hdr->qform_code > 0) {
+        // Adjust the quaternion offsets using quatern_* and pixdim
+        mat44 mat = nifti_quatern_to_mat44(hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
+                                           hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
+                                           hdr->pixdim[1], hdr->pixdim[2], hdr->pixdim[3], hdr->pixdim[0]);
+
+        hdr->qoffset_x -= shiftPxY * mat.m[1][0];
+        hdr->qoffset_y -= shiftPxY * mat.m[1][1];
+        hdr->qoffset_z -= shiftPxY * mat.m[1][2];
+    }
+}
+
 unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_header * hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, float * sliceMMarray, float gantryTiltDeg, int manufacturer ) {
     //correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
     if (opts.isOnlyBIDS) return im;
@@ -2930,6 +2950,13 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
     int pxOffset = ceil(fabs(GNTtanPx*maxSliceMM));
     // printMessage("Tilt extends slice by %d pixels", pxOffset);
 	hdr->dim[2] = hdr->dim[2] + pxOffset;
+
+    // When there is negative tilt, the image origin must be adjusted for the padding that will be added.
+    if (GNTtanPx < 0) {
+        // printMessage("Adjusting origin for %d pixels padding (float)\n", pxOffset);
+        adjustOriginForNegativeTilt(hdr, pxOffset);
+    }
+
 	int nVox2D = hdr->dim[1]*hdr->dim[2];
 	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 4);// *4 as 32-bits per voxel, sizeof(float) );
 	float * imOut32 = ( float*) imOut;
@@ -3011,6 +3038,13 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
     int pxOffset = ceil(fabs(GNTtanPx*maxSliceMM));
     // printMessage("Tilt extends slice by %d pixels", pxOffset);
 	hdr->dim[2] = hdr->dim[2] + pxOffset;
+
+    // When there is negative tilt, the image origin must be adjusted for the padding that will be added.
+    if (GNTtanPx < 0) {
+        // printMessage("Adjusting origin for %d pixels padding (short)\n", pxOffset);
+        adjustOriginForNegativeTilt(hdr, pxOffset);
+    }
+
 	int nVox2D = hdr->dim[1]*hdr->dim[2];
 	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
 	short * imOut16 = ( short*) imOut;
