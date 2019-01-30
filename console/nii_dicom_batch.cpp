@@ -2570,7 +2570,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		for (int i = 0; i < numDTI; i++) {
 			float factor = 0;
 			if (b_max > 0) factor = sqrt(dti4D->S[i].V[0]/b_max);
-			fprintf(fp,"DWMRI_gradient_%04d:=%g %g %g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
+			fprintf(fp,"DWMRI_gradient_%04d:=%.17g %.17g %.17g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
 		}
 	}
 	fprintf(fp,"\n"); //blank line: end of NRRD header
