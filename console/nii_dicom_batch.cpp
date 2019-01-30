@@ -2475,7 +2475,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     if (isGz) {
     	fprintf(fp,"encoding: gzip\n");
     	strcpy (fname, niiFilename);
-    	strcat (fname,".gz");
+    	strcat (fname,".raw.gz");
     	char basefname[2048] = {""};
     	getFileNameX(basefname, fname, 2048);
     	fprintf(fp,"data file: %s\n", basefname);
