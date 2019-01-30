@@ -2475,7 +2475,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     if (isGz) {
     	fprintf(fp,"encoding: gzip\n");
     	strcpy (fname, niiFilename);
-    	strcat (fname,".gz");
+    	strcat (fname,".raw.gz");
     	char basefname[2048] = {""};
     	getFileNameX(basefname, fname, 2048);
     	fprintf(fp,"data file: %s\n", basefname);
@@ -2555,7 +2555,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 			hdr.srow_y[0],hdr.srow_y[1],hdr.srow_y[2],
 			hdr.srow_z[0],hdr.srow_z[1],hdr.srow_z[2]);
 		mat33 mf = nifti_mat33_mul(inv, s);
-		fprintf(fp,"measurement frame: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)",
+		fprintf(fp,"measurement frame: (%g,%g,%g) (%g,%g,%g) (%g,%g,%g)\n",
 			mf.m[0][0],mf.m[1][0],mf.m[2][0],
 			mf.m[0][1],mf.m[1][1],mf.m[2][1],
 			mf.m[0][2],mf.m[1][2],mf.m[2][2]);
@@ -2570,7 +2570,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		for (int i = 0; i < numDTI; i++) {
 			float factor = 0;
 			if (b_max > 0) factor = sqrt(dti4D->S[i].V[0]/b_max);
-			fprintf(fp,"DWMRI_gradient_%04d:=%g %g %g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
+			fprintf(fp,"DWMRI_gradient_%04d:=%.17g %.17g %.17g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
 		}
 	}
 	fprintf(fp,"\n"); //blank line: end of NRRD header
