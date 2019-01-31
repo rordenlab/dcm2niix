@@ -2986,8 +2986,17 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
 				rLo = (rLo * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row below
 				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row above
 				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
-				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
-					imOut32[rOut+c] = round( ( ((float)imIn32[rLo+c])*fracLo) + ((float)imIn32[rHi+c])*fracHi);
+				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each column
+					float valLo = (float) imIn32[rLo+c];
+					float valHi = (float) imIn32[rHi+c];
+					if (d.isHasFloatPixelPaddingValue && (valLo == d.floatPixelPaddingValue || valHi == d.floatPixelPaddingValue)) {
+						// https://github.com/rordenlab/dcm2niix/issues/262 - Use nearest neighbor interpolation
+						// when at least one of the values is padding.
+						imOut32[rOut+c] = fracHi >= 0.5 ? valHi : valLo;
+					}
+					else {
+						imOut32[rOut+c] = round(valLo*fracLo + valHi*fracHi);
+					}
 				} //for c (each column)
 			} //rI (input row) in range
 		} //for r (each row)
@@ -3075,7 +3084,16 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
 				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row above
 				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
 				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
-					imOut16[rOut+c] = round( ( ((float)imIn16[rLo+c])*fracLo) + ((float)imIn16[rHi+c])*fracHi);
+					int valLo = imIn16[rLo+c];
+					int valHi = imIn16[rHi+c];
+					if (d.isHasPixelPaddingValue && (valLo == d.pixelPaddingValue || valHi == d.pixelPaddingValue)) {
+						// https://github.com/rordenlab/dcm2niix/issues/262 - Use nearest neighbor interpolation
+						// when at least one of the values is padding.
+						imOut16[rOut+c] = fracHi >= 0.5 ? valHi : valLo;
+					}
+					else {
+						imOut16[rOut+c] = round((((float) valLo)*fracLo) + ((float) valHi)*fracHi);
+					}
 				} //for c (each column)
 			} //rI (input row) in range
 		} //for r (each row)

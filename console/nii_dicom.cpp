@@ -779,6 +779,8 @@ struct TDICOMdata clear_dicom_data() {
     d.isRawDataStorage = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
+    d.isHasPixelPaddingValue = false;
+    d.isHasFloatPixelPaddingValue = false;
     d.triggerDelayTime = 0.0;
     d.RWVScale = 0.0;
     d.RWVIntercept = 0.0;
@@ -786,6 +788,8 @@ struct TDICOMdata clear_dicom_data() {
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
     d.samplesPerPixel = 1;
+    d.pixelPaddingValue = -1;
+    d.floatPixelPaddingValue = -1.0;
     d.isValid = false;
     d.isXRay = false;
     d.isMultiEcho = false;
@@ -3999,6 +4003,8 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kBitsAllocated 0x0028+(0x0100 << 16 )
 #define  kBitsStored 0x0028+(0x0101 << 16 )//US 'BitsStored'
 #define  kIsSigned 0x0028+(0x0103 << 16 ) //PixelRepresentation
+#define  kPixelPaddingValue 0x0028+(0x0120 << 16 ) // https://github.com/rordenlab/dcm2niix/issues/262
+#define  kFloatPixelPaddingValue 0x0028+(0x0122 << 16 ) // https://github.com/rordenlab/dcm2niix/issues/262
 #define  kIntercept 0x0028+(0x1052 << 16 )
 #define  kSlope 0x0028+(0x1053 << 16 )
 //#define  kSpectroscopyDataPointColumns 0x0028+(0x9002 << 16 ) //IS
@@ -5027,6 +5033,14 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kIsSigned : //http://dicomiseasy.blogspot.com/2012/08/chapter-12-pixel-data.html
                 d.isSigned = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
+            case kPixelPaddingValue :
+                d.pixelPaddingValue = (short) dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                d.isHasPixelPaddingValue = true;
+                break;
+            case kFloatPixelPaddingValue :
+                d.floatPixelPaddingValue = dcmStrFloat(lLength, &buffer[lPos]);
+                d.isHasFloatPixelPaddingValue = true;
                 break;
             case kTR :
                 d.TR = dcmStrFloat(lLength, &buffer[lPos]);
