@@ -2546,7 +2546,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		fprintf(fp,"MultiVolume.NumberOfFrames:=%d\n",hdr.dim[4]);
 	}
 	//DWI values
-	if ((numDTI > 0) && (numDTI < kMaxDTI4D)) {
+	if ((nDim > 3) && (numDTI > 0) && (numDTI < kMaxDTI4D)) {
 		mat33 inv;
 		LOAD_MAT33(inv, hdr.pixdim[1],0.0,0.0,  0.0,hdr.pixdim[2],0.0,  0.0, 0.0,hdr.pixdim[3]);
 		inv = nifti_mat33_inverse(inv);
@@ -2584,6 +2584,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     }
 	//below pigz
 	strcpy (fname, niiFilename); //without gz
+	strcat (fname,".raw");
     fp = fopen(fname, "wb");
     fwrite(&im[0], imgsz, 1, fp);
     fclose(fp);
