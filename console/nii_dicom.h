@@ -161,6 +161,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 		float ecat_isotope_halflife, ecat_dosage;
+		float pixelPaddingValue;  // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
         double acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, acquisitionDate, bandwidthPerPixelPhaseEncode;
         char coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], scanOptions[kDICOMStr], stationName[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionAddress[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr],seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr];
         char imageComments[kDICOMStrLarge];
