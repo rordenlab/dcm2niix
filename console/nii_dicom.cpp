@@ -1058,6 +1058,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
         ret = kMANUFACTURER_SIEMENS;
     if ((toupper(cString[0])== 'G') && (toupper(cString[1])== 'E'))
         ret = kMANUFACTURER_GE;
+    if ((toupper(cString[0])== 'H') && (toupper(cString[1])== 'I'))
+        ret = kMANUFACTURER_HITACHI;
     if ((toupper(cString[0])== 'P') && (toupper(cString[1])== 'H'))
         ret = kMANUFACTURER_PHILIPS;
     if ((toupper(cString[0])== 'T') && (toupper(cString[1])== 'O'))
@@ -4861,7 +4863,7 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.imageNum < 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image again in 2001,9000, which can lead to duplicates
 				break;
 			case kInStackPositionNumber:
-				if ((d.manufacturer != kMANUFACTURER_UNKNOWN) && (d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
+				if ((d.manufacturer != kMANUFACTURER_HITACHI) && (d.manufacturer != kMANUFACTURER_UNKNOWN) && (d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
 				inStackPositionNumber = dcmInt(4,&buffer[lPos],d.isLittleEndian);
 				//if (inStackPositionNumber == 1) numInStackPositionNumber1 ++;
 				//printf("<%d>\n",inStackPositionNumber);
@@ -5346,7 +5348,8 @@ double TE = 0.0; //most recent echo time recorded
               //     (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 
               //if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-              if((d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+              if((d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+                //for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
                 float v[4];
                 //dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
                 //dcmMultiFloatDouble(lLength, &buffer[lPos], 3, v, d.isLittleEndian);

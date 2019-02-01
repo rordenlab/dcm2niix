@@ -273,7 +273,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
     // requires PatientPosition 0018,5100 is HFS (head first supine)
-    if ((d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
+    if ((d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
     if (d->manufacturer == kMANUFACTURER_UIH) {
     	for (int i = 0; i < d->CSA.numDti; i++) {
@@ -849,6 +849,9 @@ tse3d: T2*/
 			break;
 		case kMANUFACTURER_TOSHIBA:
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
+			break;
+		case kMANUFACTURER_HITACHI:
+			fprintf(fp, "\t\"Manufacturer\": \"Hitachi\",\n" );
 			break;
 		case kMANUFACTURER_UIH:
 			fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n" );

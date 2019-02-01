@@ -58,6 +58,7 @@ static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Phili
 #define kMANUFACTURER_TOSHIBA  4
 #define kMANUFACTURER_UIH  5
 #define kMANUFACTURER_BRUKER  6
+#define kMANUFACTURER_HITACHI 7
 
 //note: note a complete modality list, e.g. XA,PX, etc
 #define kMODALITY_UNKNOWN  0
