@@ -2960,13 +2960,24 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
 	int nVox2D = hdr->dim[1]*hdr->dim[2];
 	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 4);// *4 as 32-bits per voxel, sizeof(float) );
 	float * imOut32 = ( float*) imOut;
-	//set surrounding voxels to darkest observed value
-	float minVoxVal = imIn32[0];
-	for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
-		if (imIn32[v] < minVoxVal)
-			minVoxVal = imIn32[v];
+
+	//set surrounding voxels to padding (if present) or darkest observed value
+	bool hasPixelPaddingValue = !isnan(d.pixelPaddingValue);
+	float pixelPaddingValue;
+	if (hasPixelPaddingValue) {
+		pixelPaddingValue = d.pixelPaddingValue;
+	}
+	else {
+		// Find darkest pixel value. Note that `hasPixelPaddingValue` remains false so that the darkest value
+		// will not trigger nearest neighbor interpolation below when this value is found in the image.
+		pixelPaddingValue = imIn32[0];
+		for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
+			if (imIn32[v] < pixelPaddingValue)
+                pixelPaddingValue = imIn32[v];
+	}
 	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-		imOut32[v] = minVoxVal;
+		imOut32[v] = pixelPaddingValue;
+
 	//copy skewed voxels
 	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
 		float sliceMM = s * hdrIn.pixdim[3];
@@ -2989,7 +3000,7 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
 				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each column
 					float valLo = (float) imIn32[rLo+c];
 					float valHi = (float) imIn32[rHi+c];
-					if (d.isHasFloatPixelPaddingValue && (valLo == d.floatPixelPaddingValue || valHi == d.floatPixelPaddingValue)) {
+					if (hasPixelPaddingValue && (valLo == pixelPaddingValue || valHi == pixelPaddingValue)) {
 						// https://github.com/rordenlab/dcm2niix/issues/262 - Use nearest neighbor interpolation
 						// when at least one of the values is padding.
 						imOut32[rOut+c] = fracHi >= 0.5 ? valHi : valLo;
@@ -3057,13 +3068,24 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
 	int nVox2D = hdr->dim[1]*hdr->dim[2];
 	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
 	short * imOut16 = ( short*) imOut;
-	//set surrounding voxels to darkest observed value
-	int minVoxVal = imIn16[0];
-	for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
-		if (imIn16[v] < minVoxVal)
-			minVoxVal = imIn16[v];
+
+	//set surrounding voxels to padding (if present) or darkest observed value
+	bool hasPixelPaddingValue = !isnan(d.pixelPaddingValue);
+	short pixelPaddingValue;
+	if (hasPixelPaddingValue) {
+		pixelPaddingValue = (short) round(d.pixelPaddingValue);
+	}
+	else {
+		// Find darkest pixel value. Note that `hasPixelPaddingValue` remains false so that the darkest value
+		// will not trigger nearest neighbor interpolation below when this value is found in the image.
+		pixelPaddingValue = imIn16[0];
+		for (int v = 0; v < (nVox2DIn * hdrIn.dim[3]); v++)
+			if (imIn16[v] < pixelPaddingValue)
+				pixelPaddingValue = imIn16[v];
+	}
 	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
-		imOut16[v] = minVoxVal;
+		imOut16[v] = pixelPaddingValue;
+
 	//copy skewed voxels
 	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
 		float sliceMM = s * hdrIn.pixdim[3];
@@ -3084,9 +3106,9 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
 				rHi = (rHi * hdrIn.dim[1]) + (s * nVox2DIn); //offset to start of row above
 				int rOut = (r * hdrIn.dim[1]) + (s * nVox2D); //offset to output row
 				for (int c = 0; c < hdrIn.dim[1]; c++) { //for each row
-					int valLo = imIn16[rLo+c];
-					int valHi = imIn16[rHi+c];
-					if (d.isHasPixelPaddingValue && (valLo == d.pixelPaddingValue || valHi == d.pixelPaddingValue)) {
+					short valLo = imIn16[rLo+c];
+					short valHi = imIn16[rHi+c];
+					if (hasPixelPaddingValue && (valLo == pixelPaddingValue || valHi == pixelPaddingValue)) {
 						// https://github.com/rordenlab/dcm2niix/issues/262 - Use nearest neighbor interpolation
 						// when at least one of the values is padding.
 						imOut16[rOut+c] = fracHi >= 0.5 ? valHi : valLo;

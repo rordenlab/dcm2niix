@@ -779,8 +779,6 @@ struct TDICOMdata clear_dicom_data() {
     d.isRawDataStorage = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
-    d.isHasPixelPaddingValue = false;
-    d.isHasFloatPixelPaddingValue = false;
     d.triggerDelayTime = 0.0;
     d.RWVScale = 0.0;
     d.RWVIntercept = 0.0;
@@ -788,8 +786,7 @@ struct TDICOMdata clear_dicom_data() {
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
     d.samplesPerPixel = 1;
-    d.pixelPaddingValue = -1;
-    d.floatPixelPaddingValue = -1.0;
+    d.pixelPaddingValue = NAN;
     d.isValid = false;
     d.isXRay = false;
     d.isMultiEcho = false;
@@ -5035,12 +5032,12 @@ double TE = 0.0; //most recent echo time recorded
                 d.isSigned = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kPixelPaddingValue :
-                d.pixelPaddingValue = (short) dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-                d.isHasPixelPaddingValue = true;
+                // According to the DICOM standard, this can be either unsigned (US) or signed (SS). Currently this
+                // is used only in nii_saveNII3Dtilt() which only allows DT_INT16, so treat it as signed.
+                d.pixelPaddingValue = (float) (short) dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kFloatPixelPaddingValue :
-                d.floatPixelPaddingValue = dcmStrFloat(lLength, &buffer[lPos]);
-                d.isHasFloatPixelPaddingValue = true;
+                d.pixelPaddingValue = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
                 break;
             case kTR :
                 d.TR = dcmStrFloat(lLength, &buffer[lPos]);
