@@ -777,6 +777,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isSegamiOasis = false; //these images do not store spatial coordinates
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
+    d.isVectorFromBMatrix = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
     d.triggerDelayTime = 0.0;
@@ -3588,6 +3589,7 @@ struct TVolumeDiffusion {
     //char _seq0018_9117[64];              // MRDiffusionSequence, not in Philips 2.6.
 
     float _dtiV[4];
+    double _symBMatrix[6];
     //uint16_t numDti;
 };
 struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D);
@@ -3599,6 +3601,7 @@ void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, bool iafpp)
 void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
 void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,  int axis);
 void set_bVal(struct TVolumeDiffusion* ptvd, float b);
+void set_bMatrix(struct TVolumeDiffusion* ptvd, float b, int component);
 void _update_tvd(struct TVolumeDiffusion* ptvd);
 
 struct TVolumeDiffusion initTVolumeDiffusion(struct TDICOMdata* ptdd, struct TDTI4D* dti4D) {
@@ -3623,10 +3626,15 @@ void clear_volume(struct TVolumeDiffusion* ptvd) {
     ptvd->_dtiV[0] = -1;
     for(int i = 1; i < 4; ++i)
         ptvd->_dtiV[i] = 2;
+    for(int i = 1; i < 6; ++i)
+        ptvd->_symBMatrix[i] = NAN;
     //numDti = 0;
 }//clear_volume()
 
 void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* inbuf) {
+    //if(!strncmp(( char*)(inbuf), "BMATRIX", 4)) printf("FOUND BMATRIX----%s\n",inbuf );
+    //n.b. strncmp returns 0 if the contents of both strings are equal, for boolean 0 = false!
+    //  elsewhere we use strstr() which returns 0/null if match is not present
     if(strncmp(( char*)(inbuf), "DIRECTIONAL", 11) &&  // strncmp = 0 for ==.
        //strncmp(( char*)(inbuf), "NONE", 4) && //issue 256
        strncmp(( char*)(inbuf), "BMATRIX", 7)){        // Siemens XA10
@@ -3640,7 +3648,6 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
         ptvd->_isPhilipsNonDirectional = false;
         // Wait for 0018,9089 to get the direction.
     }
-
     _update_tvd(ptvd);
 } //set_directionality0018_9075()
 
@@ -3663,7 +3670,6 @@ void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsig
 
 void dcmMultiFloatDouble (size_t lByteLength, unsigned char lBuffer[], size_t lnFloats, float *lFloats, bool isLittleEndian) {
     size_t floatlen = lByteLength / lnFloats;
-
     for(size_t i = 0; i < lnFloats; ++i)
         lFloats[i] = dcmFloatDouble((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
 } //dcmMultiFloatDouble()
@@ -3683,6 +3689,12 @@ void set_bVal(struct TVolumeDiffusion* ptvd, const float b) {
     ptvd->_dtiV[0] = b;
     _update_tvd(ptvd);
 }//set_bVal()
+
+void set_bMatrix(struct TVolumeDiffusion* ptvd, double b, int idx) {
+ if ((idx < 0) || (idx > 5)) return;
+ ptvd->_symBMatrix[idx] = b;
+ _update_tvd(ptvd);
+}
 
 void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, const bool iafpp) {
     ptvd->_isAtFirstPatientPosition = iafpp;
@@ -3712,7 +3724,8 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
     //   dtiV[0] = 0;  // Implied 0.
 
     bool isReady = (ptvd->_isAtFirstPatientPosition && (ptvd->_dtiV[0] >= 0));
-    if(isReady){
+    if(!isReady) return; //no B=0
+	if(isReady){
         for(int i = 1; i < 4; ++i){
             if(ptvd->_dtiV[i] > 1){
                 isReady = false;
@@ -3720,9 +3733,18 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
             }
         }
     }
-    if(!isReady)
-        return;
-
+    if(!isReady){ //bvecs NOT filled: see if symBMatrix filled
+    	isReady = true;
+    	for(int i = 1; i < 6; ++i)
+    		if (isnan(ptvd->_symBMatrix[i])) isReady = false;
+    	if(!isReady) return; //	symBMatrix not filled
+    	vec3 bVec = nifti_mat33_eig3(ptvd->_symBMatrix[0], ptvd->_symBMatrix[1], ptvd->_symBMatrix[2], ptvd->_symBMatrix[3], ptvd->_symBMatrix[4], ptvd->_symBMatrix[5]);
+		ptvd->_dtiV[1] = bVec.v[0];
+		ptvd->_dtiV[2] = bVec.v[1];
+		ptvd->_dtiV[3] = bVec.v[2];
+		//printf("%g %g %g\n", ptvd->_dtiV[1], ptvd->_dtiV[2], ptvd->_dtiV[3]);
+    }
+    if(!isReady) return;
     // If still here, update dd and *pdti4D.
     ptvd->pdd->CSA.numDti++;
     if (ptvd->pdd->CSA.numDti == 2) {                  // First time we know that this is a 4D DTI dataset;
@@ -3950,6 +3972,12 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
 #define  kImagingFrequency2 0x0018+uint32_t(0x9098 << 16 ) //FD
+#define  kDiffusionBValueXX 0x0018+uint32_t(0x9602 << 16 ) //FD
+#define  kDiffusionBValueXY 0x0018+uint32_t(0x9603 << 16 ) //FD
+#define  kDiffusionBValueXZ 0x0018+uint32_t(0x9604 << 16 ) //FD
+#define  kDiffusionBValueYY 0x0018+uint32_t(0x9605 << 16 ) //FD
+#define  kDiffusionBValueYZ 0x0018+uint32_t(0x9606 << 16 ) //FD
+#define  kDiffusionBValueZZ 0x0018+uint32_t(0x9607 << 16 ) //FD
 #define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
 #define  kMRAcquisitionPhaseEncodingStepsInPlane  0x0018+uint32_t(0x9231<< 16 ) //US
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
@@ -4072,6 +4100,7 @@ double TE = 0.0; //most recent echo time recorded
 	int sqDepth = 0;
 	int acquisitionTimesGE_UIH = 0;
     int sqDepth00189114 = -1;
+    bool hasDwiDirectionality = false;
     //int numFirstPatientPosition = 0;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
@@ -5328,10 +5357,8 @@ double TE = 0.0; //most recent echo time recorded
                 //   dti4D->S[0].V[3] = d.CSA.dtiV[3];
                 // }
                 B0Philips = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-
                 //d.CSA.dtiV[0] = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
                 set_bVal(&volDiffusion, dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
-
                 // if ((d.CSA.numDti > 1) && (d.CSA.numDti < kMaxDTI4D))
                 //   dti4D->S[d.CSA.numDti-1].V[0] = d.CSA.dtiV[0];
               //}
@@ -5363,6 +5390,7 @@ double TE = 0.0; //most recent echo time recorded
 				//d.CSA.dtiV[2] = v[1];
 				//d.CSA.dtiV[3] = v[2];
 				//printMessage("><>< 0018,9089: DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
+                hasDwiDirectionality = true;
                 set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
               }
               break;
@@ -5379,10 +5407,40 @@ double TE = 0.0; //most recent echo time recorded
             case kImagingFrequency2 :
             	d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	break;
+            case kDiffusionBValueXX : {
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	set_bMatrix(&volDiffusion, bMat, 0);
+            	break; }
+            case kDiffusionBValueXY : {
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	set_bMatrix(&volDiffusion, bMat, 1);
+            	break; }
+            case kDiffusionBValueXZ : {
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	set_bMatrix(&volDiffusion, bMat, 2);
+            	break; }
+            case kDiffusionBValueYY : {
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	set_bMatrix(&volDiffusion, bMat, 3);
+            	break; }
+            case kDiffusionBValueYZ : {
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	set_bMatrix(&volDiffusion, bMat, 4);
+            	break; }
+            case kDiffusionBValueZZ : {
+            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	set_bMatrix(&volDiffusion, bMat, 5);
+            	d.isVectorFromBMatrix = true;
+            	break; }
             case kSliceNumberMrPhilips : {
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
-
 				sliceNumberMrPhilips = dcmStrInt(lLength, &buffer[lPos]);
 				int sliceNumber = sliceNumberMrPhilips;
             	//use public patientPosition if it exists - fall back to private patient position
@@ -5920,7 +5978,7 @@ if (d.isHasPhase)
 		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
 		for (int i = 0; i < numberOfFrames; i++)
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
-		if ((d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		if ((d.manufacturer != kMANUFACTURER_BRUKER) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;
@@ -5973,7 +6031,6 @@ if (d.isHasPhase)
 				d.xyzMM[3] = dx;
 		} //d.zSpacing <= 0.0: Bruker does not populate 0018,0088 https://github.com/rordenlab/dcm2niix/issues/241
     } //if numDimensionIndexValues > 1 : enhanced DICOM
-
     /* //Attempt to append ADC
     printMessage("CXC grad %g %d %d\n", philDTI[0].V[0], maxGradNum, d.xyzDim[4]);
 	if ((maxGradNum > 1) && ((maxGradNum+1) == d.xyzDim[4]) ) {
@@ -6054,6 +6111,7 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
+	if (hasDwiDirectionality) d.isVectorFromBMatrix = false; //issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
 	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
 	//d.isValid = false;
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);

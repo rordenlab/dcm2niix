@@ -273,7 +273,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
     // requires PatientPosition 0018,5100 is HFS (head first supine)
-    if ((d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
+    if ((d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
     if (d->manufacturer == kMANUFACTURER_UIH) {
     	for (int i = 0; i < d->CSA.numDti; i++) {
@@ -316,12 +316,16 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
         for (int v= 0; v < 4; v++)
             if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
     } //for each direction
-    if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
+    if (d->isVectorFromBMatrix) {
+        printWarning("Saving %d DTI gradients. Eddy users: B-matrix does not encode b-vector polarity (issue 265).\n", d->CSA.numDti);
+    }  else if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
        printWarning("Saving %d DTI gradients. Validate vectors (matrix had a negative determinant).\n", d->CSA.numDti); //perhaps Siemens sagittal
     } else if (( d->sliceOrient == kSliceOrientTra) || (d->manufacturer != kMANUFACTURER_PHILIPS)) {
         printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
     } else if ( d->sliceOrient == kSliceOrientUnknown)
     	printWarning("Saving %d DTI gradients. Validate vectors (image slice orientation not reported, e.g. 2001,100B).\n", d->CSA.numDti);
+	if (d->manufacturer == kMANUFACTURER_BRUKER)
+		printWarning("Bruker DTI support experimental (issue 265).\n");
 }// siemensPhilipsCorrectBvecs()
 
 bool isNanPosition(struct TDICOMdata d) { //in 2007 some Siemens RGB DICOMs did not include the PatientPosition 0020,0032 tag
@@ -498,7 +502,12 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoeechoSpacingnixOffsetCSASeriesHeader()
 
-void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
+#define kMaxAlFree 64
+typedef struct {                   /** x4 vector struct **/
+    float alFree[kMaxAlFree] ;
+} TsWipMemBlock;
+
+void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*delayTimeInTR = 0.0;
@@ -592,6 +601,20 @@ void siemensCsaAscii(const char * filename,  int csaOffset, int csaLength, float
 		char keyStrPn[] = "tProtocolName";
 		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
 		char keyStrDelay[] = "lDelayTimeInTR";
+		//read ALL sWipMemBlock.alFree[*] values
+		for (int k = 0; k < kMaxAlFree; k++)
+			sWipMemBlock->alFree[k] = 0.0;
+		char keyStrFree[] = "sWipMemBlock.alFree[";
+		//check if ANY sWipMemBlock.alFree tags exist
+		char *keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrFree, strlen(keyStrFree));
+		if (keyPosFree) {
+			for (int k = 0; k < kMaxAlFree; k++) {
+				char txt[1024] = {""};
+				sprintf(txt, "%s%d]", keyStrFree,k);
+				sWipMemBlock->alFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
+			}
+		}
+		//read delay time
 		*delayTimeInTR = readKeyFloat(keyStrDelay, keyPos, csaLengthTrim);
 		char keyStrOver[] = "sKSpace.dPhaseOversamplingForDialog";
 		*phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
@@ -752,7 +775,8 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	//float pf = 1.0f; //partial fourier
 	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
-	siemensCsaAscii(filename,  d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	TsWipMemBlock sWipMemBlock;
+	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
 }
 
@@ -1003,7 +1027,40 @@ tse3d: T2*/
 		float pf = 1.0f; //partial fourier
 		float delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
-		siemensCsaAscii(filename,  d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		TsWipMemBlock sWipMemBlock;
+		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		//epfid2d1_64
+		if (strstr(d.sequenceName,"epfid2d1_64")) {
+			//for (int k = 0; k < kMaxAlFree; k++)
+			//	if(sWipMemBlock.alFree[k] > 0.0) printf("%d %g\n", k, sWipMemBlock.alFree[k]);
+			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
+			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"TagDuration\": %g,\n", sWipMemBlock.alFree[9]/ 1000.0); //ms -> sec
+			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[10]/ 1000.0); //ms -> sec
+			for (int k = 11; k < 31; k++) {
+				char newstr[256];
+				sprintf(newstr, "\t\"PLD%d\": %%g,\n", k-11);
+				json_Float(fp, newstr, sWipMemBlock.alFree[k]/ 1000.0); //ms -> sec
+				//json_Float(fp, "\t\"PLD0\": %g,\n", sWipMemBlock.alFree[k]); //ms -> sec
+			}
+		}
+		if (strstr(d.sequenceName,"tgse3d1_1260")) {
+			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[6]);
+			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[7]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[8]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[9]/1000.0); //ms -> sec
+			json_Float(fp, "\t\"Tag0\": %g,\n", sWipMemBlock.alFree[10]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"Tag1\": %g,\n", sWipMemBlock.alFree[11]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"Tag2\": %g,\n", sWipMemBlock.alFree[12]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"Tag3\": %g,\n", sWipMemBlock.alFree[13]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"PLD0\": %g,\n", sWipMemBlock.alFree[30]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"PLD1\": %g,\n", sWipMemBlock.alFree[31]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"PLD2\": %g,\n", sWipMemBlock.alFree[32]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"PLD3\": %g,\n", sWipMemBlock.alFree[33]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"PLD4\": %g,\n", sWipMemBlock.alFree[34]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0); //DelayTimeInTR usec -> sec
+		}
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (partialFourier == 1) pf = 0.5; // 4/8
@@ -4145,6 +4202,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     } else if ((!opts.isMaximize16BitRange) && (hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned))
     	nii_check16bitUnsigned(imgM, &hdr0, opts.isVerbose); //save UINT16 as INT16 if we can do this losslessly
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
+    #ifdef USING_R
+    fflush(stdout); //show immediately if run from MRIcroGL GUI
+    #endif
     //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
     //hdr0.pixdim[3] = dxNoTilt;
@@ -4637,6 +4697,9 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
     	return EXIT_FAILURE;
     }
     printMessage("Found %d DICOM file(s)\n", nConvert);
+    #ifdef USING_R
+    fflush(stdout); //show immediately if run from MRIcroGL GUI
+    #endif
     TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 	struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nConvert * sizeof(struct  TDICOMdata));
     struct TDTI4D dti4D;
