@@ -502,9 +502,11 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     return 0;
 } // phoeechoSpacingnixOffsetCSASeriesHeader()
 
-#define kMaxAlFree 64
-typedef struct {                   /** x4 vector struct **/
-    float alFree[kMaxAlFree] ;
+#define kMaxWipFree 64
+typedef struct {
+    float alFree[kMaxWipFree] ;
+    float adFree[kMaxWipFree];
+    float dThickness, ulShape, sPositionDTra, sNormalDTra;
 } TsWipMemBlock;
 
 void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
@@ -600,21 +602,45 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		readKeyStr(keyStrWipMemBlock,  keyPos, csaLengthTrim, wipMemBlock);
 		char keyStrPn[] = "tProtocolName";
 		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
-		char keyStrDelay[] = "lDelayTimeInTR";
 		//read ALL sWipMemBlock.alFree[*] values
-		for (int k = 0; k < kMaxAlFree; k++)
+		for (int k = 0; k < kMaxWipFree; k++)
 			sWipMemBlock->alFree[k] = 0.0;
-		char keyStrFree[] = "sWipMemBlock.alFree[";
+		char keyStrAlFree[] = "sWipMemBlock.alFree[";
 		//check if ANY sWipMemBlock.alFree tags exist
-		char *keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrFree, strlen(keyStrFree));
+		char *keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAlFree, strlen(keyStrAlFree));
 		if (keyPosFree) {
-			for (int k = 0; k < kMaxAlFree; k++) {
+			for (int k = 0; k < kMaxWipFree; k++) {
 				char txt[1024] = {""};
-				sprintf(txt, "%s%d]", keyStrFree,k);
+				sprintf(txt, "%s%d]", keyStrAlFree,k);
 				sWipMemBlock->alFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
 			}
 		}
+		//read ALL sWipMemBlock.adFree[*] values
+		for (int k = 0; k < kMaxWipFree; k++)
+			sWipMemBlock->adFree[k] = NAN;
+		char keyStrAdFree[] = "sWipMemBlock.adFree[";
+		//check if ANY sWipMemBlock.alFree tags exist
+		keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
+		if (keyPosFree) {
+			for (int k = 0; k < kMaxWipFree; k++) {
+				char txt[1024] = {""};
+				sprintf(txt, "%s%d]", keyStrAdFree,k);
+				sWipMemBlock->adFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
+			}
+		}
+		//read labelling plane
+		char keyStrDThickness[] = "sRSatArray.asElm[1].dThickness";
+		sWipMemBlock->dThickness = readKeyFloat(keyStrDThickness, keyPos, csaLengthTrim);
+		if (sWipMemBlock->dThickness > 0.0) {
+			char keyStrUlShape[] = "sRSatArray.asElm[1].ulShape";
+			sWipMemBlock->ulShape = readKeyFloat(keyStrUlShape, keyPos, csaLengthTrim);
+			char keyStrSPositionDTra[] = "sRSatArray.asElm[1].sPosition.dTra";
+			sWipMemBlock->sPositionDTra = readKeyFloat(keyStrSPositionDTra, keyPos, csaLengthTrim);
+			char keyStrSNormalDTra[] = "sRSatArray.asElm[1].sNormalDTra";
+			sWipMemBlock->sNormalDTra = readKeyFloat(keyStrSNormalDTra, keyPos, csaLengthTrim);
+		}
 		//read delay time
+		char keyStrDelay[] = "lDelayTimeInTR";
 		*delayTimeInTR = readKeyFloat(keyStrDelay, keyPos, csaLengthTrim);
 		char keyStrOver[] = "sKSpace.dPhaseOversamplingForDialog";
 		*phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
@@ -761,6 +787,11 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) {
     }
 	fprintf(fp, sLabel, outname );*/
 } //json_Str
+
+void json_FloatNotNan(FILE *fp, const char *sLabel, float sVal) {
+	if (isnan(sVal)) return;
+	fprintf(fp, sLabel, sVal );
+} //json_Float
 
 void json_Float(FILE *fp, const char *sLabel, float sVal) {
 	if (sVal <= 0.0) return;
@@ -1029,23 +1060,35 @@ tse3d: T2*/
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TsWipMemBlock sWipMemBlock;
 		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
-		//epfid2d1_64
-		if (strstr(d.sequenceName,"epfid2d1_64")) {
-			//for (int k = 0; k < kMaxAlFree; k++)
+		//ASL specific tags
+		if (strstr(d.sequenceName,"epfid2d1_64")) { //2D VEPCASL sequence
+			//for (int k = 0; k < kMaxWipFree; k++)
 			//	if(sWipMemBlock.alFree[k] > 0.0) printf("%d %g\n", k, sWipMemBlock.alFree[k]);
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
+			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
+			json_FloatNotNan(fp, "\t\"MeanTagGradient\": %g,\n", sWipMemBlock.adFree[6]); //mTm
+			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", sWipMemBlock.adFree[6]); //mTm
 			json_Float(fp, "\t\"TagDuration\": %g,\n", sWipMemBlock.alFree[9]/ 1000.0); //ms -> sec
 			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[10]/ 1000.0); //ms -> sec
+			bool isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 11; k < 31; k++) {
+				if (isValid) {
+					char newstr[256];
+					sprintf(newstr, "\t\"PLD%d\": %%g,\n", k-11);
+					json_Float(fp, newstr, sWipMemBlock.alFree[k]/ 1000.0); //ms -> sec
+					if (sWipMemBlock.alFree[k] <= 0.0) isValid = false;
+				}//isValid
+			} //for k
+			for (int k = 3; k < 11; k++) { //vessel locations
 				char newstr[256];
-				sprintf(newstr, "\t\"PLD%d\": %%g,\n", k-11);
-				json_Float(fp, newstr, sWipMemBlock.alFree[k]/ 1000.0); //ms -> sec
-				//json_Float(fp, "\t\"PLD0\": %g,\n", sWipMemBlock.alFree[k]); //ms -> sec
+				sprintf(newstr, "\t\"sWipMemBlockAdFree%d\": %%g,\n", k);
+				json_FloatNotNan(fp, newstr, sWipMemBlock.adFree[k]);
 			}
 		}
-		if (strstr(d.sequenceName,"tgse3d1_1260")) {
+		if (strstr(d.sequenceName,"tgse3d1_1260")) { // 3D tgse PCASL
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[6]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[7]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[8]/1000000.0); //usec -> sec
@@ -1061,6 +1104,12 @@ tse3d: T2*/
 			json_Float(fp, "\t\"PLD4\": %g,\n", sWipMemBlock.alFree[34]/1000.0); //DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0); //DelayTimeInTR usec -> sec
 		}
+		//labelling plane
+		fprintf(fp, "\t\"DThickness\": %g,\n", sWipMemBlock.dThickness);
+		fprintf(fp, "\t\"UlShape\": %g,\n", sWipMemBlock.ulShape);
+		fprintf(fp, "\t\"SPositionDTra\": %g,\n", sWipMemBlock.sPositionDTra);
+		fprintf(fp, "\t\"SNormalDTra\": %g,\n", sWipMemBlock.sNormalDTra);
+		//general properties
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (partialFourier == 1) pf = 0.5; // 4/8
