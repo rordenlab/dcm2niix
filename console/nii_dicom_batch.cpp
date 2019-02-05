@@ -636,7 +636,7 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 			sWipMemBlock->ulShape = readKeyFloat(keyStrUlShape, keyPos, csaLengthTrim);
 			char keyStrSPositionDTra[] = "sRSatArray.asElm[1].sPosition.dTra";
 			sWipMemBlock->sPositionDTra = readKeyFloat(keyStrSPositionDTra, keyPos, csaLengthTrim);
-			char keyStrSNormalDTra[] = "sRSatArray.asElm[1].sNormalDTra";
+			char keyStrSNormalDTra[] = "sRSatArray.asElm[1].sNormal.dTra";
 			sWipMemBlock->sNormalDTra = readKeyFloat(keyStrSNormalDTra, keyPos, csaLengthTrim);
 		}
 		//read delay time
@@ -1061,16 +1061,18 @@ tse3d: T2*/
 		TsWipMemBlock sWipMemBlock;
 		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		//ASL specific tags
-		if (strstr(d.sequenceName,"epfid2d1_64")) { //2D VEPCASL sequence
+		if (strstr(pulseSequenceDetails,"to_ep2d_VEPCASL")) { //Oxford 2D pCASL
+		//if (strstr(d.sequenceName,"epfid2d1_64")) { //2D VEPCASL sequence
 			//for (int k = 0; k < kMaxWipFree; k++)
 			//	if(sWipMemBlock.alFree[k] > 0.0) printf("%d %g\n", k, sWipMemBlock.alFree[k]);
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
-			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
-			json_FloatNotNan(fp, "\t\"MeanTagGradient\": %g,\n", sWipMemBlock.adFree[6]); //mTm
-			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", sWipMemBlock.adFree[6]); //mTm
+
+
+			json_FloatNotNan(fp, "\t\"MeanTagGradient\": %g,\n", sWipMemBlock.adFree[0]); //mTm
+			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", sWipMemBlock.adFree[1]); //mTm
 			json_Float(fp, "\t\"TagDuration\": %g,\n", sWipMemBlock.alFree[9]/ 1000.0); //ms -> sec
 			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[10]/ 1000.0); //ms -> sec
 			bool isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
@@ -1088,7 +1090,8 @@ tse3d: T2*/
 				json_FloatNotNan(fp, newstr, sWipMemBlock.adFree[k]);
 			}
 		}
-		if (strstr(d.sequenceName,"tgse3d1_1260")) { // 3D tgse PCASL
+		if (strstr(pulseSequenceDetails,"jw_tgse_VEPCASL")) { //Oxford 3D pCASL
+		//if (strstr(d.sequenceName,"tgse3d1_1260")) { // 3D tgse PCASL
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[6]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[7]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[8]/1000000.0); //usec -> sec
@@ -1105,10 +1108,10 @@ tse3d: T2*/
 			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0); //DelayTimeInTR usec -> sec
 		}
 		//labelling plane
-		fprintf(fp, "\t\"DThickness\": %g,\n", sWipMemBlock.dThickness);
-		fprintf(fp, "\t\"UlShape\": %g,\n", sWipMemBlock.ulShape);
-		fprintf(fp, "\t\"SPositionDTra\": %g,\n", sWipMemBlock.sPositionDTra);
-		fprintf(fp, "\t\"SNormalDTra\": %g,\n", sWipMemBlock.sNormalDTra);
+		fprintf(fp, "\t\"TagPlaneDThickness\": %g,\n", sWipMemBlock.dThickness);
+		fprintf(fp, "\t\"TagPlaneUlShape\": %g,\n", sWipMemBlock.ulShape);
+		fprintf(fp, "\t\"TagPlaneSPositionDTra\": %g,\n", sWipMemBlock.sPositionDTra);
+		fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", sWipMemBlock.sNormalDTra);
 		//general properties
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
@@ -1664,7 +1667,10 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     fprintf(fp, "%g\n", vx[numDti-1].V[0]);
     fclose(fp);
     strcpy(txtname,pathoutname);
-    strcat (txtname,".bvec");
+    if (dcmList[indx0].isVectorFromBMatrix)
+    	strcat (txtname,".mvec");
+    else
+    	strcat (txtname,".bvec");
     //printMessage("Saving DTI %s\n",txtname);
     fp = fopen(txtname, "w");
     if (fp == NULL) {
