@@ -343,7 +343,7 @@ bool isSamePosition(struct TDICOMdata d, struct TDICOMdata d2){
     return true;
 }// isSamePosition()
 
-void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, char * dcmname) {
+void nii_saveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, char * dcmname) {
 	if (!opts.isCreateText) return;
 	char txtname[2048] = {""};
 	strcpy (txtname,pathoutname);
@@ -356,7 +356,7 @@ void nii_SaveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
             d.coilCrc,d.echoNum, d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
             d.bitsAllocated, dcmname);
     fclose(fp);
-}// nii_SaveText()
+}// nii_saveText()
 
 #define myReadAsciiCsa
 
@@ -1067,10 +1067,7 @@ tse3d: T2*/
 			//	if(sWipMemBlock.alFree[k] > 0.0) printf("%d %g\n", k, sWipMemBlock.alFree[k]);
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
-			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
-
-
 			json_FloatNotNan(fp, "\t\"MeanTagGradient\": %g,\n", sWipMemBlock.adFree[0]); //mTm
 			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", sWipMemBlock.adFree[1]); //mTm
 			json_Float(fp, "\t\"TagDuration\": %g,\n", sWipMemBlock.alFree[9]/ 1000.0); //ms -> sec
@@ -2274,10 +2271,18 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
     nii_createFilename(d, niiFilenameBase, opts) ;
     strcpy(niiFilename,"Example output filename: '");
     strcat(niiFilename,niiFilenameBase);
-    if (opts.isGz)
-        strcat(niiFilename,".nii.gz'");
-    else
-        strcat(niiFilename,".nii'");
+    if (opts.isSaveNRRD) {
+		if (opts.isGz)
+			strcat(niiFilename,".nhdr'");
+		else
+			strcat(niiFilename,".nrrd'");
+
+    } else {
+		if (opts.isGz)
+			strcat(niiFilename,".nii.gz'");
+		else
+			strcat(niiFilename,".nii'");
+    }
 }// nii_createDummyFilename()
 
 #ifndef myDisableZLib
@@ -3544,7 +3549,6 @@ void PhilipsPrecise(struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling,
 		return;
 	}
 	if (d->intenScalePhilips == 0)  return; //no Philips Precise
-
 	//we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
 	float l0 = PhilipsPreciseVal (0, d->intenScale, d->intenIntercept, d->intenScalePhilips);
 	float l1 = PhilipsPreciseVal (1, d->intenScale, d->intenIntercept, d->intenScalePhilips);
@@ -3855,6 +3859,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage("Ignoring 2D image of series %ld %s\n", dcmList[indx].seriesNum,  nameList->str[indx]);
     	return EXIT_SUCCESS;
     }
+    if (dcmList[indx].manufacturer == kMANUFACTURER_UNKNOWN)
+		printWarning("Unable to determine manufacturer (0008,0070), so conversion is not tuned for vendor.\n");
     #ifdef myForce3DPhaseRealImaginary //compiler option: segment each phase/real/imaginary map
     bool saveAs3D = dcmList[indx].isHasPhase || dcmList[indx].isHasReal  || dcmList[indx].isHasImaginary;
     #else
@@ -3997,7 +4003,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     } //imageNum not sequential
 				} //dx varies
             } //not 4D
-            if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) &&  ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS))  ) { //Niels Janssen has provided GE sequential multi-phase acquisitions that also require swizzling
+            if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) &&  ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UNKNOWN)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS))  ) { //Niels Janssen has provided GE sequential multi-phase acquisitions that also require swizzling
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
                 printMessage("swizzling 3rd and 4th dimensions (XYTZ -> XYZT), assuming interslice distance is %f\n",dx);
@@ -4019,6 +4025,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             hdr0.dim[5] = nConvert;
             hdr0.dim[0] = 5;
         }
+
         /*if (nConvert > 1) { //next determine if TR is true time between volumes
         	double startTime = dcmList[indx0].acquisitionTime;
         	double endTime = startTime;
@@ -4244,7 +4251,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         free(imgM);
         return EXIT_SUCCESS;
     }
-	nii_SaveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
+	nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
     int * volOrderIndex = nii_saveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
@@ -4375,7 +4382,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	//this wrapper does nothing if all the images share the same echo time and scale
 	// however, it segments images when these properties vary
 	uint64_t indx = dcmSort[0].indx;
-    if ((!dcmList[indx].isScaleOrTEVaries) || (dcmList[indx].xyzDim[4] < 2))
+	if ((!dcmList[indx].isScaleOrTEVaries) || (dcmList[indx].xyzDim[4] < 2))
 		return saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, -1);
 	if ((dcmList[indx].xyzDim[4]) && (dti4D->sliceOrder[0] < 0)) {
 		printError("Unexpected error for image with varying echo time or intensity scaling\n");

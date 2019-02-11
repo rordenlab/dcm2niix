@@ -66,21 +66,21 @@ const char* removePath(const char* path) { // "/usr/path/filename.exe" -> "filen
     return path;
 } //removePath()
 
+char bool2Char(bool b) {
+	if (b) return('y');
+	return('n');
+}
+
 void showHelp(const char * argv[], struct TDCMopts opts) {
     const char *cstr = removePath(argv[0]);
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
     printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
-    char bidsCh = 'n';
-    if (opts.isCreateBIDS) bidsCh = 'y';
-    printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bidsCh);
-    if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
-    printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
-    printf("  -c : comment stored in NIfTI aux_file (up to 24 characters)\n");
+    printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
+    printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
+    printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters)\n");
     printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
     printf("  -e : export as NRRD instead of NIfTI (y/n, default n)\n");
-    if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
-    //printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
     #ifdef mySegmentByAcq
      #define kQstr " %%q=sequence number,"
     #else

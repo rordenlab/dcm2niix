@@ -3738,11 +3738,45 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
     	for(int i = 1; i < 6; ++i)
     		if (isnan(ptvd->_symBMatrix[i])) isReady = false;
     	if(!isReady) return; //	symBMatrix not filled
+		//START BRUKER KLUDGE
+		//see issue 265: Bruker stores xx,xy,xz,yx,yy,yz instead of xx,xy,xz,yy,yz,zz
+		// we can recover since xx+yy+zz = bval
+		// since any value squared is positive, a negative diagonal reveals fault
+		double xx = ptvd->_symBMatrix[0]; //x*x
+		double xy = ptvd->_symBMatrix[1]; //x*y
+		double xz = ptvd->_symBMatrix[2]; //x*z
+		double yy = ptvd->_symBMatrix[3]; //y*y
+		double yz = ptvd->_symBMatrix[4]; //y*z
+		double zz = ptvd->_symBMatrix[5]; //z*z
+		bool isBrukerBug = false;
+		if ((xx < 0.0) || (yy < 0.0) || (zz < 0.0)) isBrukerBug = true;
+		double sumDiag = ptvd->_symBMatrix[0]+ptvd->_symBMatrix[3]+ptvd->_symBMatrix[5]; //if correct xx+yy+zz = bval
+		double bVecError = fabs(sumDiag - ptvd->pdd->CSA.dtiV[0]);
+		if (bVecError > 0.5) isBrukerBug = true;
+		//next: check diagonals
+		double x = sqrt(xx);
+		double y = sqrt(yy);
+		double z = sqrt(zz);
+		if ( (fabs((x*y)-xy)) > 0.5) isBrukerBug = true;
+		if ( (fabs((x*z)-xz)) > 0.5) isBrukerBug = true;
+		if ( (fabs((y*z)-yz)) > 0.5) isBrukerBug = true;
+		if (isBrukerBug) printWarning("Fixing corrupt bmat (issue 265). [%g %g %g %g %g %g]\n", xx,xy,xz,yy,yz,zz);
+		if (isBrukerBug) {
+			ptvd->_symBMatrix[3] = ptvd->_symBMatrix[4];
+			ptvd->_symBMatrix[4] = ptvd->_symBMatrix[5];
+			//next: solve for zz given bvalue, xx, and yy
+			ptvd->_symBMatrix[5] = ptvd->_dtiV[0] - ptvd->_symBMatrix[0] - ptvd->_symBMatrix[3];
+			if ((ptvd->_symBMatrix[0] < 0.0) || (ptvd->_symBMatrix[5] < 0.0)) printError("DICOM BMatrix corrupt.\n");
+		}
+		//END BRUKER_KLUDGE
     	vec3 bVec = nifti_mat33_eig3(ptvd->_symBMatrix[0], ptvd->_symBMatrix[1], ptvd->_symBMatrix[2], ptvd->_symBMatrix[3], ptvd->_symBMatrix[4], ptvd->_symBMatrix[5]);
 		ptvd->_dtiV[1] = bVec.v[0];
 		ptvd->_dtiV[2] = bVec.v[1];
 		ptvd->_dtiV[3] = bVec.v[2];
-		//printf("%g %g %g\n", ptvd->_dtiV[1], ptvd->_dtiV[2], ptvd->_dtiV[3]);
+		//printf("bmat=[%g %g %g %g %g %g %g %g %g]\n", ptvd->_symBMatrix[0],ptvd->_symBMatrix[1],ptvd->_symBMatrix[2],  ptvd->_symBMatrix[1],ptvd->_symBMatrix[3],ptvd->_symBMatrix[4], ptvd->_symBMatrix[2],ptvd->_symBMatrix[4],ptvd->_symBMatrix[5]);
+		//printf("bmats=[%g %g %g %g %g %g];\n", ptvd->_symBMatrix[0],ptvd->_symBMatrix[1],ptvd->_symBMatrix[2],ptvd->_symBMatrix[3],ptvd->_symBMatrix[4],ptvd->_symBMatrix[5]);
+		//printf("bvec=[%g %g %g];\n", ptvd->_dtiV[1], ptvd->_dtiV[2], ptvd->_dtiV[3]);
+		//printf("bval=%g;\n\n", ptvd->_dtiV[0]);
     }
     if(!isReady) return;
     // If still here, update dd and *pdti4D.
@@ -5241,7 +5275,7 @@ double TE = 0.0; //most recent echo time recorded
             	printMessage("StackSliceNumber %d\n",stackSliceNumber);
             	break;
 			}*/
-            case kNumberOfDynamicScans:
+			case kNumberOfDynamicScans:
                 //~d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
                 numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
 
@@ -5408,32 +5442,32 @@ double TE = 0.0; //most recent echo time recorded
             	d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	break;
             case kDiffusionBValueXX : {
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	set_bMatrix(&volDiffusion, bMat, 0);
             	break; }
             case kDiffusionBValueXY : {
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	set_bMatrix(&volDiffusion, bMat, 1);
             	break; }
             case kDiffusionBValueXZ : {
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	set_bMatrix(&volDiffusion, bMat, 2);
             	break; }
             case kDiffusionBValueYY : {
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	set_bMatrix(&volDiffusion, bMat, 3);
             	break; }
             case kDiffusionBValueYZ : {
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	set_bMatrix(&volDiffusion, bMat, 4);
             	break; }
             case kDiffusionBValueZZ : {
-            	if (!d.manufacturer == kMANUFACTURER_BRUKER) break; //other manufacturers provide bvec directly, rather than bmatrix
+            	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	set_bMatrix(&volDiffusion, bMat, 5);
             	d.isVectorFromBMatrix = true;
@@ -5975,7 +6009,7 @@ if (d.isHasPhase)
 #endif
 		}
 		//for (int i = 0; i < numberOfFrames; i++)
-		//	printf("%d -> %d  %d %d %d\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3]);
+		//	printf("diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++)
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
 		if ((d.manufacturer != kMANUFACTURER_BRUKER) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
