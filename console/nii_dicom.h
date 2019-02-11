@@ -49,7 +49,7 @@ static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mos
 static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
 static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Philips) images
 
-#define kDICOMStr 64
+#define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
 #define kDICOMStrLarge 256
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
