@@ -1205,13 +1205,28 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
                 float maxTimeValue, minTimeValue, timeValue1;
-                for (int z = 0; z < kMaxEPI3D; z++)
+                 for (int z = 0; z < kMaxEPI3D; z++)
         			CSA->sliceTiming[z] = -1.0;
+        		minTimeValue = sliceTimes[1];
         		if (itemsOK <= kMaxEPI3D) {
-                	for (int z = 1; z <= itemsOK; z++)
+                	for (int z = 1; z <= itemsOK; z++) {
                 		CSA->sliceTiming[z-1] = sliceTimes[z];
+                		if (sliceTimes[z] < minTimeValue)
+                			minTimeValue = sliceTimes[z];
+                	}
                 } else
                 	printError("Please increase kMaxEPI3D and recompile\n");
+                //CSA can report negative slice times
+                // https://neurostars.org/t/slice-timing-illegal-values-in-fmriprep/1516/8
+                // Nov 1, 2018 <siemens-healthineers.com> wrote:
+                //  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
+                if (minTimeValue < 0) {
+                	printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
+                	for (int z = 1; z <= itemsOK; z++) {
+                		sliceTimes[z] = sliceTimes[z] - minTimeValue;
+                		CSA->sliceTiming[z-1] = sliceTimes[z];
+                	}
+                }
                 CSA->multiBandFactor = 1;
                 timeValue1 = sliceTimes[1];
                 int nTimeZero = 0;
@@ -5803,8 +5818,10 @@ double TE = 0.0; //most recent echo time recorded
         		printMessage("%s\n", str);
         	} else if (isStr) { //if length is greater than 8 bytes (+4 hdr) the MIGHT be a string
         		char tagStr[kDICOMStr];
-            	tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
-                dcmStr (lLength, &buffer[lPos], tagStr);
+            	//tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
+                strcpy(tagStr,"");
+                if (lLength > 0)
+                	dcmStr (lLength, &buffer[lPos], tagStr);
                 if (strlen(tagStr) > 1) {
                 	for (size_t pos = 0; pos<strlen(tagStr); pos ++)
 						if ((tagStr[pos] == '<') || (tagStr[pos] == '>') || (tagStr[pos] == ':')

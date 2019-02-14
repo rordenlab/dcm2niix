@@ -509,7 +509,7 @@ typedef struct {
     float dThickness, ulShape, sPositionDTra, sNormalDTra;
 } TsWipMemBlock;
 
-void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
+void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, int* refLinesPE, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
  	*delayTimeInTR = 0.0;
@@ -521,6 +521,8 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
  	*partialFourier = 0;
  	*echoSpacing = 0;
  	*difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
+ 	*parallelReductionFactorInPlane = 0;
+ 	*refLinesPE = 0;
  	for (int i = 0; i < 8; i++)
  		shimSetting[i] = 0.0;
  	strcpy(coilID, "");
@@ -586,6 +588,8 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		*partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
 		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
 		//*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
+		char keyStrRef[] = "sPat.lRefLinesPE";
+		*refLinesPE = readKey(keyStrRef, keyPos, csaLengthTrim);
 		char keyStrAF[] = "sPat.lAccelFactPE";
 		*parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		//char keyStrEF[] = "sFastImaging.lEPIFactor";
@@ -802,12 +806,12 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	//tools like gdcmanon strip protocol name (0018,1030) but for Siemens we can recover it from CSASeriesHeaderInfo (0029,1020)
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 	if (strlen(d->protocolName) > 0) return;
-	int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane;
+	int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 	//float pf = 1.0f; //partial fourier
 	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	TsWipMemBlock sWipMemBlock;
-	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
 }
 
@@ -1054,12 +1058,12 @@ tse3d: T2*/
 	#endif
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane;
+		int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 		float pf = 1.0f; //partial fourier
 		float delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TsWipMemBlock sWipMemBlock;
-		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		//ASL specific tags
 		if (strstr(pulseSequenceDetails,"to_ep2d_VEPCASL")) { //Oxford 2D pCASL
 		//if (strstr(d.sequenceName,"epfid2d1_64")) { //2D VEPCASL sequence
@@ -1155,7 +1159,8 @@ tse3d: T2*/
 		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
 		if (strlen(d.protocolName) < 1)  //insert protocol name if it exists in CSA but not DICOM header: https://github.com/nipy/heudiconv/issues/80
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
-		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
+		if (refLinesPE > 0)
+			fprintf(fp, "\t\"RefLinesPE\": %d,\n", refLinesPE);
 		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
 				d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
@@ -3789,7 +3794,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))  return; //fine: single-band calibration data, the slice timing WILL exceed the TR
-	//check if 2nd image has valud slice timing
+	//check if 2nd image has valid slice timing
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
 	for (int i = 0; i < nSlices; i++) {
