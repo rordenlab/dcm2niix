@@ -2655,6 +2655,13 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	if (strlen(d.softwareVersions) > 0)  fprintf(fp,"DICOM_0018_1020_SoftwareVersions:=%s\n",d.softwareVersions);
 	if (d.flipAngle > 0.0) fprintf(fp,"DICOM_0018_1314_FlipAngle:=%g\n",d.flipAngle);
 	//multivolume but NOT DTI, e.g. fMRI/DCE see https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
+	//  https://github.com/QIICR/PkModeling/blob/master/PkSolver/IO/MultiVolumeMetaDictReader.cxx#L34-L58
+	//  for "MultiVolume.FrameLabels:="
+	//    https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
+	//  for "axis 0 index values:="
+	//  https://github.com/mhe/pynrrd/issues/71
+	// "I don't know if it is a good idea for dcm2niix to mimic Slicer converter tags" Andrey Fedorov
+	/*
 	if ((nDim > 3) && (hdr.dim[4] > 1) && (numDTI < 1)) {
 		if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp,"MultiVolume.DICOM.EchoTime:=%g\n",d.TE);
 		if (d.flipAngle > 0.0) fprintf(fp,"MultiVolume.DICOM.FlipAngle:=%g\n",d.flipAngle);
@@ -2669,7 +2676,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 			fprintf(fp,"%g,", i * frameTime);
     	fprintf(fp,"%g\n", (hdr.dim[4]-1) * frameTime);
 		fprintf(fp,"MultiVolume.NumberOfFrames:=%d\n",hdr.dim[4]);
-	}
+	} */
 	//DWI values
 	if ((nDim > 3) && (numDTI > 0) && (numDTI < kMaxDTI4D)) {
 		mat33 inv;
@@ -3211,7 +3218,6 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
 	}
 	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
 		imOut16[v] = pixelPaddingValue;
-
 	//copy skewed voxels
 	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
 		float sliceMM = s * hdrIn.pixdim[3];
@@ -4030,7 +4036,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             hdr0.dim[5] = nConvert;
             hdr0.dim[0] = 5;
         }
-
         /*if (nConvert > 1) { //next determine if TR is true time between volumes
         	double startTime = dcmList[indx0].acquisitionTime;
         	double endTime = startTime;
@@ -4287,8 +4292,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         imgM = nii_flipY(imgM, &hdr0);
     else
     	printMessage("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
-
-
 	//begin: gantry tilt we need to save the shear in the transform
 	mat44 sForm;
 	LOAD_MAT44(sForm,

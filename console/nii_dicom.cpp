@@ -6163,6 +6163,15 @@ if (d.isHasPhase)
 	fclose(file);
 	#endif
 	if (hasDwiDirectionality) d.isVectorFromBMatrix = false; //issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
+    if ((d.xyzDim[3] == 1) && (numDimensionIndexValues < 1) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (B0Philips >= 0.0)) {
+    	//Special case: old Philips Classic DWI storing vectors in 0019,10bb, 0019,10bc
+    	//printf(">>>>%g  %g %g %g\n",B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
+    	d.CSA.dtiV[0] = B0Philips;
+    	d.CSA.dtiV[1] = vRLPhilips;
+    	d.CSA.dtiV[2] = vAPPhilips;
+    	d.CSA.dtiV[3] = vFHPhilips;
+    	d.CSA.numDti = 1;
+	}
 	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
 	//d.isValid = false;
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);

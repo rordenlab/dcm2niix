@@ -39,7 +39,21 @@ Some Philips diffusion DICOM images include derived image(s) along with the imag
 
 Proper Philips enhanced scans use tag 0018,9089 to report the 3 gradient directions. However, in the wild, other files from Philips (presumably using older versions of Philips software) use the tags 2005,10b0, 2005,10b1, 2005,10b2. In general, dcm2niix will use the values that most closely precede the Dimension Index Values (0020,9157).
 
-The current version of dcm2niix uses Dimension Index Values (0020,9157) to determine gradient number, which can also be found in (2005,1413). However, while 2005,1413 is always indexed from one, this is not necessarily the case for 0020,9157. For example, the ADNI DWI dataset for participant 018_S_4868 has values of 2005,1413 that range from 1..36 for the 36 directions, while 0020,9157 ranges from 2..37. The current version of dcm2niix compensates for this by re-indexing the values of 0020,9157 after all the volumes have been read.
+Public Tags
+```
+(0018,9089) FD 1\0\0
+(0018,9087) FD 1000
+```
+
+Private Tags
+```
+(2001,1003) FL 1000
+(2005,10b0) FL 1.0
+(2005,10b1) FL 1.0
+(2005,10b2) FL 0.0
+```
+
+For modern Philips DICOMs, the current version of dcm2niix uses Dimension Index Values (0020,9157) to determine gradient number, which can also be found in (2005,1413). However, while 2005,1413 is always indexed from one, this is not necessarily the case for 0020,9157. For example, the ADNI DWI dataset for participant 018_S_4868 has values of 2005,1413 that range from 1..36 for the 36 directions, while 0020,9157 ranges from 2..37. The current version of dcm2niix compensates for this by re-indexing the values of 0020,9157 after all the volumes have been read.
 
 ## General variations
 
