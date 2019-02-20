@@ -3614,6 +3614,7 @@ void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsign
                               bool isLittleEndian);
 void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, bool iafpp);
 void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
+void set_diffusion_directionPhilips(struct TVolumeDiffusion* ptvd, float vec, const int axis);
 void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,  int axis);
 void set_bVal(struct TVolumeDiffusion* ptvd, float b);
 void set_bMatrix(struct TVolumeDiffusion* ptvd, float b, int component);
@@ -3677,6 +3678,13 @@ void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf
 } //set_bValGE()
 
 // axis: 0 -> x, 1 -> y , 2 -> z
+void set_diffusion_directionPhilips(struct TVolumeDiffusion* ptvd, float vec, const int axis){
+    ptvd->_dtiV[axis + 1] = vec;
+	//printf("(2005,10b0..2) v[%d]=%g\n", axis, ptvd->_dtiV[axis + 1]);
+    _update_tvd(ptvd);
+}//set_diffusion_directionPhilips()
+
+// axis: 0 -> x, 1 -> y , 2 -> z
 void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf, const int axis){
     ptvd->_dtiV[axis + 1] = dcmStrFloat(lLength, inbuf);
 	//printf("(0019,10bb..d) v[%d]=%g\n", axis, ptvd->_dtiV[axis + 1]);
@@ -3737,8 +3745,7 @@ void _update_tvd(struct TVolumeDiffusion* ptvd) {
     // // after PatientPosition.
     // if(isAtFirstPatientPosition && manufacturer == kMANUFACTURER_GE && dtiV[0] < 0)
     //   dtiV[0] = 0;  // Implied 0.
-
-    bool isReady = (ptvd->_isAtFirstPatientPosition && (ptvd->_dtiV[0] >= 0));
+	bool isReady = (ptvd->_isAtFirstPatientPosition && (ptvd->_dtiV[0] >= 0));
     if(!isReady) return; //no B=0
 	if(isReady){
         for(int i = 1; i < 4; ++i){
@@ -5367,6 +5374,7 @@ double TE = 0.0; //most recent echo time recorded
             case kDiffusionBFactor :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
             	B0Philips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            	set_bVal(&volDiffusion, B0Philips);
             	break;
             // case	kDiffusionBFactor: // 2001,1003
             //     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
@@ -5517,14 +5525,17 @@ double TE = 0.0; //most recent echo time recorded
 			case kDiffusionDirectionRL:
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				vRLPhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+				set_diffusion_directionPhilips(&volDiffusion, vRLPhilips, 0);
 				break;
 			case kDiffusionDirectionAP:
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				vAPPhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+				set_diffusion_directionPhilips(&volDiffusion, vAPPhilips, 1);
 				break;
 			case kDiffusionDirectionFH:
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				vFHPhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+				set_diffusion_directionPhilips(&volDiffusion, vFHPhilips, 2);
 				break;
             // case    kDiffusionDirectionRL:
             //     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isAtFirstPatientPosition)) {
@@ -5841,6 +5852,7 @@ double TE = 0.0; //most recent echo time recorded
 
     } //while d.imageStart == 0
     free (buffer);
+    //printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     //printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     if (encapsulatedDataFragmentStart > 0) {
         if (encapsulatedDataFragments > 1)
@@ -6163,6 +6175,8 @@ if (d.isHasPhase)
 	fclose(file);
 	#endif
 	if (hasDwiDirectionality) d.isVectorFromBMatrix = false; //issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
+    /*
+    fixed 2/2019 by modifying to kDiffusionBFactor, kDiffusionDirectionRL, kDiffusionDirectionAP, kDiffusionDirectionFH
     if ((d.xyzDim[3] == 1) && (numDimensionIndexValues < 1) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (B0Philips >= 0.0)) {
     	//Special case: old Philips Classic DWI storing vectors in 0019,10bb, 0019,10bc
     	//printf(">>>>%g  %g %g %g\n",B0Philips, vRLPhilips, vAPPhilips, vFHPhilips);
@@ -6172,6 +6186,7 @@ if (d.isHasPhase)
     	d.CSA.dtiV[3] = vFHPhilips;
     	d.CSA.numDti = 1;
 	}
+	*/
 	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
 	//d.isValid = false;
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);

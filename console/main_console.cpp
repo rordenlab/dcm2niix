@@ -104,7 +104,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 	printf("  -u : up-to-date check\n");
 	#endif
 	printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
-    printf("  -x : crop (y/n, default n)\n");
+    printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquistions)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
 #if defined(_WIN64) || defined(_WIN32)
@@ -374,7 +374,10 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isCrop = false;
-                else
+                else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
+                	opts.isRotate3DAcq = false;
+                	opts.isCrop = false;
+                } else
                     opts.isCrop = true;
             } else if ((argv[i][1] == 'y') && ((i+1) < argc)) {
                 i++;

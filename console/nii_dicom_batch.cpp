@@ -4286,7 +4286,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     else
         fflush(stdout); //GUI buffers printf, display all results
 #endif
-    if ((dcmList[dcmSort[0].indx].is3DAcq) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
+    if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
         imgM = nii_setOrtho(imgM, &hdr0); //printMessage("ortho %d\n", echoInt (33));
     else if (opts.isFlipY)//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
         imgM = nii_flipY(imgM, &hdr0);
@@ -4374,7 +4374,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             returnCode = nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, dcmList[dcmSort[0].indx], sliceMMarray);
         free(sliceMMarray);
     }
-    if ((opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
+    if ((opts.isRotate3DAcq) && (opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
         returnCode = nii_saveCrop(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]); //n.b. must be run AFTER nii_setOrtho()!
 #ifdef USING_R
     // Note that for R, only one image should be created per series
@@ -5369,6 +5369,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isIgnoreDerivedAnd2D = false;
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
+    opts->isRotate3DAcq = true;
     opts->isGz = false;
     opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
