@@ -4136,6 +4136,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kElscintIcon 0x07a3+(0x10ce << 16 ) //see kGeiisFlag and https://github.com/rordenlab/dcm2niix/issues/239
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
+#define  kPrivateCreator  0x2001+(0x0010 << 16 )// LO
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
@@ -5387,6 +5388,12 @@ double TE = 0.0; //most recent echo time recorded
 				d.imageStart = (int)lPos + (int)lFileOffset;
 				d.imageBytes = lLength;
 				break;
+			case kPrivateCreator : {
+				if (d.manufacturer != kMANUFACTURER_UNKNOWN) break;
+                d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
+                volDiffusion.manufacturer = d.manufacturer;
+                printf(">>>>%d\n", d.manufacturer);
+                break; }
             case kDiffusionBFactor :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
             	B0Philips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5409,7 +5416,12 @@ double TE = 0.0; //most recent echo time recorded
             //            d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
             //     }
             //     break;
-            case kDiffusion_bValue:  // 0018, 9087
+            case kDiffusion_bValue:  // 0018,9087
+            	if (d.manufacturer == kMANUFACTURER_UNKNOWN ) {
+            		d.manufacturer = kMANUFACTURER_PHILIPS;
+            		printWarning("Found 0018,9087 but manufacturer (0008,0070) unknown: assuming Philips.\n");
+            	}
+
               // Note that this is ahead of kPatientPosition (0020,0032), so
               // isAtFirstPatientPosition is not necessarily set yet.
               // Philips uses this tag too, at least as of 5.1, but they also
