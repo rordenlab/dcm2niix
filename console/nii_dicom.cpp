@@ -1557,14 +1557,16 @@ int isSameFloatGE (float a, float b) {
     return (fabs (a - b) <= 0.0001);
 }
 
+
+
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
-    struct TDICOMdata d = clear_dicom_data();
-    strcpy(d.protocolName, ""); //erase dummy with empty
-    strcpy(d.seriesDescription, ""); //erase dummy with empty
-    strcpy(d.sequenceName, ""); //erase dummy with empty
-    strcpy(d.scanningSequence, "");
-    FILE *fp = fopen(parname, "r");
-    if (fp == NULL) return d;
+struct TDICOMdata d = clear_dicom_data();
+strcpy(d.protocolName, ""); //erase dummy with empty
+strcpy(d.seriesDescription, ""); //erase dummy with empty
+strcpy(d.sequenceName, ""); //erase dummy with empty
+strcpy(d.scanningSequence, "");
+FILE *fp = fopen(parname, "r");
+if (fp == NULL) return d;
 #define LINESZ 2048
 #define	kSlice	0
 #define	kEcho	1
@@ -2178,10 +2180,24 @@ int	kbval = 33; //V3: 27
             		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
     }
+    if ((d.xyzDim[3] > 1) && (minSlice == 1) && (maxSlice > minSlice)) { //issue 273
+		float dx[4];
+		dx[1] = (d.patientPosition[1]-d.patientPositionLast[1]);
+		dx[2] = (d.patientPosition[2]-d.patientPositionLast[2]);
+		dx[3] = (d.patientPosition[3]-d.patientPositionLast[3]);
+		//compute error using 3D pythagorean theorm
+		float sliceMM = sqrt(pow(dx[1],2)+pow(dx[2],2)+pow(dx[3],2)  );
+		sliceMM = sliceMM / (maxSlice - minSlice);
+		if (!(isSameFloatGE(sliceMM, d.xyzMM[3]))) {
+			//if (d.xyzMM[3] > 0.0)
+			printWarning("Distance between slices reported by slice gap+thick does not match estimate from slice positions (issue 273).\n");
+			d.xyzMM[3] = sliceMM;
+		}
+    } //issue 273
     printMessage("Done reading PAR header version %.1f, with %d slices\n", (float)parVers/10, numSlice2D);
 	//see Xiangrui Li 's dicm2nii (also BSD license)
 	// http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
-	// Rotation order and signs are figured out by try and err, not 100% sure
+	// Rotation order and signs are figured out by trial and err, not 100% sure
 	float d2r = (float) (M_PI/180.0);
 	vec3 ca = setVec3(cos(d.angulation[1]*d2r),cos(d.angulation[2]*d2r),cos(d.angulation[3]*d2r));
 	vec3 sa = setVec3(sin(d.angulation[1]*d2r),sin(d.angulation[2]*d2r),sin(d.angulation[3]*d2r));
