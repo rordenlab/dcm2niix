@@ -4118,12 +4118,22 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 		//0018,1060 provides time at end of acquisition, not start...
 		if (GEsliceTiming_x0018x1060) {
 			float minT = dcmList[dcmSort[0].indx].CSA.sliceTiming[0];
+			float maxT = minT;
 			for (int v = 0; v < hdr0.dim[3]; v++)
 				if (dcmList[dcmSort[0].indx].CSA.sliceTiming[v] < minT)
 					minT = dcmList[dcmSort[0].indx].CSA.sliceTiming[v];
 			for (int v = 0; v < hdr0.dim[3]; v++)
+				if (dcmList[dcmSort[0].indx].CSA.sliceTiming[v] > maxT)
+					maxT = dcmList[dcmSort[0].indx].CSA.sliceTiming[v];
+			for (int v = 0; v < hdr0.dim[3]; v++)
 				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[0].indx].CSA.sliceTiming[v] - minT;
+			if (isSameFloatGE(minT, maxT)) {
+				//ABCD simulated GE DICOMs do not populate 0018,1060 correctly
+				GEsliceTiming_x0018x1060 = false;
+				dcmList[dcmSort[0].indx].CSA.sliceTiming[0] = -1.0; //no valid slice times
+			}
 		} //adjust: first slice is time = 0.0
+
 	} //GE slice timing from 0018,1060
 	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (!GEsliceTiming_x0018x1060) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		//GE: 2nd method for "epiRT" PSD
@@ -4902,7 +4912,7 @@ int removeDuplicatesVerbose(int nConvert, struct TDCMsort dcmSort[], struct TSea
     return nConvert - nDuplicates;
 }// removeDuplicatesVerbose()
 
-int convert_parRec(struct TDCMopts opts) {
+int convert_parRec(char * fnm, struct TDCMopts opts) {
     //sample dataset from Ed Gronenschild <ed.gronenschild@maastrichtuniversity.nl>
     struct TSearchList nameList;
     int ret = EXIT_FAILURE;
@@ -4910,8 +4920,10 @@ int convert_parRec(struct TDCMopts opts) {
     nameList.maxItems = 1;
     nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //we reserve one pointer (32 or 64 bits) per potential file
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
-    nameList.str[0]  = (char *)malloc(strlen(opts.indir)+1);
-    strcpy(nameList.str[0],opts.indir);
+    nameList.str[0]  = (char *)malloc(strlen(fnm)+1);
+    strcpy(nameList.str[0], fnm);
+    //nameList.str[0]  = (char *)malloc(strlen(opts.indir)+1);
+    //strcpy(nameList.str[0],opts.indir);
     TDTI4D dti4D;
     dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D, false);
     struct TDCMsort dcmSort[1];
@@ -4959,62 +4971,72 @@ int copyFile (char * src_path, char * dst_path) {
     return EXIT_SUCCESS;
 }
 
-int nii_loadDir(struct TDCMopts* opts) {
-    //Identifies all the DICOM files in a folder and its subfolders
-    if (strlen(opts->indir) < 1) {
-        printMessage("No input\n");
-        return EXIT_FAILURE;
+int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* opts ) {
+    int retAll = 0;
+    bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
+    tinydir_dir dir;
+    tinydir_open(&dir, path);
+    while (dir.has_next) {
+        tinydir_file file;
+        file.is_dir = 0; //avoids compiler warning: this is set by tinydir_readfile
+        tinydir_readfile(&dir, &file);
+        char filename[768] ="";
+        strcat(filename, path);
+        strcat(filename,kFileSep);
+        strcat(filename, file.name);
+        if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.')) {
+        	int retSub = searchDirRenameDICOM(filename, maxDepth, depth+1, opts);
+        	if (retSub < 0) return retSub;
+        	retAll += retSub;
+        } else if (!file.is_reg) //ignore files "." and ".."
+            ;
+        else if ((strlen(file.name) < 1) || (file.name[0]=='.'))
+        	; //printMessage("skipping hidden file %s\n", file.name);
+        else if ((strlen(file.name) == 8) && (strcicmp(file.name, "DICOMDIR") == 0))
+        	; //printMessage("skipping DICOMDIR\n");
+        else if (isDICOMfile(filename) > 0 ) {
+            //printMessage("dcm %s \n", filename);
+			struct TDICOMdata dcm = readDICOM(filename); //ignore compile warning - memory only freed on first of 2 passes
+			//~ if ((dcm.isValid) &&((dcm.totalSlicesIn4DOrder != NULL) ||(dcm.patientPositionNumPhilips > 1) || (dcm.CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+			if (dcm.imageNum > 0) { //use imageNum instead of isValid to convert non-images (kWaveformSq will have instance number but is not a valid image)
+				if ((opts->isIgnoreDerivedAnd2D) && ((dcm.isLocalizer)  || (strcmp(dcm.sequenceName, "_tfl2d1")== 0) || (strcmp(dcm.sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcm.sequenceName, "_fl2d1")== 0)) ) {
+					printMessage("Ignoring localizer %s\n", filename);
+				} else if ((opts->isIgnoreDerivedAnd2D && dcm.isDerived) ) {
+					printMessage("Ignoring derived %s\n", filename);
+				} else {
+					char outname[PATH_MAX] = {""};
+					if (dcm.echoNum > 1) dcm.isMultiEcho = true; //last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
+					nii_createFilename(dcm, outname, *opts);
+					if (isDcmExt) strcat (outname,".dcm");
+					int ret = copyFile (filename, outname);
+					if (ret != EXIT_SUCCESS) {
+						printError("Unable to rename all DICOM images.\n");
+						return -1;
+					}
+					retAll += 1;
+					if (opts->isVerbose > 0)
+						printMessage("Renaming %s -> %s\n", filename, outname);
+				}
+			}
+        }
+        tinydir_next(&dir);
     }
-    char indir[512];
-    strcpy(indir,opts->indir);
-    //bool isFile = is_fileNotDir(opts->indir);
-    bool isFile = is_fileNotDir(indir);
-    if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
-        dropFilenameFromPath(opts->indir);
-    dropTrailingFileSep(opts->indir);
-    if (strlen(opts->outdir) < 1) {
-        strcpy(opts->outdir,opts->indir);
-    } else
-    	dropTrailingFileSep(opts->outdir);
-    if (!is_dir(opts->outdir,true)) {
-		#ifdef myUseInDirIfOutDirUnavailable
-		printWarning("Output folder invalid %s will try %s\n",opts->outdir,opts->indir);
-		strcpy(opts->outdir,opts->indir);
-		#else
-		printError("Output folder invalid: %s\n",opts->outdir);
-		return EXIT_FAILURE;
-		#endif
-    }
-    getFileNameX(opts->indirParent, opts->indir, 512);
-    if (isFile && ( (isExt(indir, ".v"))) )
-		return convert_foreign (indir, *opts);
-    if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
-        char pname[512], rname[512];
-        strcpy(pname,indir);
-        strcpy(rname,indir);
-        changeExt (pname, "PAR");
-        changeExt (rname, "REC");
-        #ifndef _MSC_VER //Linux is case sensitive, #include <unistd.h>
-   		if( access( rname, F_OK ) != 0 ) changeExt (rname, "rec");
-   		if( access( pname, F_OK ) != 0 ) changeExt (pname, "par");
-		#endif
-        if (is_fileNotDir(rname)  &&  is_fileNotDir(pname) ) {
-            strcpy(opts->indir, pname); //set to original file name, not path
-            return convert_parRec(*opts);
-        };
-    }
-    if (isFile && (opts->isOnlySingleFile) && isExt(indir, ".txt") )
-    	return textDICOM(opts, indir);
+    tinydir_close(&dir);
+    return retAll;
+}// searchDirForDICOM()
 
-    if ((isFile) && (opts->isOnlySingleFile))
-    	return singleDICOM(opts, indir);
+int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     struct TSearchList nameList;
+    #if defined(_WIN64) || defined(_WIN32) || defined(USING_R)
 	nameList.maxItems = 24000; // larger requires more memory, smaller more passes
-    //1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
+    #else //UNIX, not R
+	nameList.maxItems = 96000; // larger requires more memory, smaller more passes
+    #endif
+	//1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
     for (int i = 0; i < 2; i++ ) {
         nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
         nameList.numItems = 0;
-        searchDirForDICOM(opts->indir, &nameList, opts->dirSearchDepth, 0, opts);
+        searchDirForDICOM(indir, &nameList, opts->dirSearchDepth, 0, opts);
         if (nameList.numItems <= nameList.maxItems)
             break;
         freeNameList(nameList);
@@ -5023,9 +5045,9 @@ int nii_loadDir(struct TDCMopts* opts) {
     }
     if (nameList.numItems < 1) {
         if (opts->dirSearchDepth > 0)
-        	printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", opts->indir, opts->dirSearchDepth);
+        	printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", indir, opts->dirSearchDepth);
         else //keep silent for dirSearchDepth = 0 - presumably searching multiple folders
-        	{}; //printError("Unable to find any DICOM images in %s%s\n", opts->indir, str);
+        	{};
         free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
         return kEXIT_NO_VALID_FILES_FOUND;
     }
@@ -5041,9 +5063,9 @@ int nii_loadDir(struct TDCMopts* opts) {
 	if (isDcmExt) opts->filename[strlen(opts->filename) - 4] = 0; // "%s_%r.dcm" -> "%s_%r"
     for (int i = 0; i < (int)nDcm; i++ ) {
     	if ((isExt(nameList.str[i], ".par")) && (isDICOMfile(nameList.str[i]) < 1)) {
-			strcpy(opts->indir, nameList.str[i]); //set to original file name, not path
+			//strcpy(opts->indir, nameList.str[i]); //set to original file name, not path
             dcmList[i].converted2NII = 1;
-            int ret = convert_parRec(*opts);
+            int ret = convert_parRec(nameList.str[i] , *opts);
             if (ret == EXIT_SUCCESS)
             	nConvertTotal++;
             else
@@ -5051,27 +5073,6 @@ int nii_loadDir(struct TDCMopts* opts) {
             continue;
     	}
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
-        //~ if ((dcmList[i].isValid) &&((dcmList[i].totalSlicesIn4DOrder != NULL) ||(dcmList[i].patientPositionNumPhilips > 1) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
-        if ((dcmList[i].imageNum > 0) && (opts->isRenameNotConvert > 0)) { //use imageNum instead of isValid to convert non-images (kWaveformSq will have instance number but is not a valid image)
-        	if ((opts->isIgnoreDerivedAnd2D) && ((dcmList[i].isLocalizer)  || (strcmp(dcmList[i].sequenceName, "_tfl2d1")== 0) || (strcmp(dcmList[i].sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcmList[i].sequenceName, "_fl2d1")== 0)) ) {
-    			printMessage("Ignoring localizer %s\n", nameList.str[i]);
-        	} else if ((opts->isIgnoreDerivedAnd2D && dcmList[i].isDerived) ) {
-        		printMessage("Ignoring derived %s\n", nameList.str[i]);
-        	} else {
-				char outname[PATH_MAX] = {""};
-				if (dcmList[i].echoNum > 1) dcmList[i].isMultiEcho = true; //last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
-				nii_createFilename(dcmList[i], outname, *opts);
-				if (isDcmExt) strcat (outname,".dcm");
-				int ret = copyFile (nameList.str[i], outname);
-				if (ret != EXIT_SUCCESS) {
-					printError("Unable to rename all DICOM images.\n");
-					return ret;
-				}
-				if (opts->isVerbose > 0)
-					printMessage("Renaming %s -> %s\n", nameList.str[i], outname);
-        	}
-        	dcmList[i].isValid = false;
-        }
         if ((dcmList[i].isValid) && ((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
 			struct TDCMsort dcmSort[1];
 			fillTDCMsort(dcmSort[0], i, dcmList[i]);
@@ -5187,6 +5188,96 @@ int nii_loadDir(struct TDCMopts* opts) {
         return kEXIT_NO_VALID_FILES_FOUND;
     }
     return EXIT_SUCCESS;
+} //nii_loadDirCore()
+
+int nii_loadDirOneDirAtATime(char *path, struct TDCMopts* opts, int maxDepth, int depth) {
+    //return kEXIT_NO_VALID_FILES_FOUND if no files in ANY sub folders
+    //return EXIT_FAILURE if ANY failure
+    //return EXIT_SUCCESS if no failures and at least one image converted
+    int ret = nii_loadDirCore(path, opts);
+    if (ret == EXIT_FAILURE) return ret;
+    tinydir_dir dir;
+    tinydir_open(&dir, path);
+    while (dir.has_next) {
+        tinydir_file file;
+        file.is_dir = 0; //avoids compiler warning: this is set by tinydir_readfile
+        tinydir_readfile(&dir, &file);
+        char filename[768] ="";
+        strcat(filename, path);
+        strcat(filename,kFileSep);
+        strcat(filename, file.name);
+        if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.')) {
+        	int retSub = nii_loadDirOneDirAtATime(filename, opts, maxDepth, depth+1);
+        	if (retSub == EXIT_FAILURE) return retSub;
+        	if (retSub == EXIT_SUCCESS) ret = retSub;
+        }
+        tinydir_next(&dir);
+    }
+    tinydir_close(&dir);
+    return ret;
+}
+
+int nii_loadDir(struct TDCMopts* opts) {
+    //Identifies all the DICOM files in a folder and its subfolders
+    if (strlen(opts->indir) < 1) {
+        printMessage("No input\n");
+        return EXIT_FAILURE;
+    }
+    char indir[512];
+    strcpy(indir,opts->indir);
+    bool isFile = is_fileNotDir(indir);
+    if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
+        dropFilenameFromPath(opts->indir);
+    dropTrailingFileSep(opts->indir);
+    if (strlen(opts->outdir) < 1) {
+        strcpy(opts->outdir,opts->indir);
+    } else
+    	dropTrailingFileSep(opts->outdir);
+    if (!is_dir(opts->outdir,true)) {
+		#ifdef myUseInDirIfOutDirUnavailable
+		printWarning("Output folder invalid %s will try %s\n",opts->outdir,opts->indir);
+		strcpy(opts->outdir,opts->indir);
+		#else
+		printError("Output folder invalid: %s\n",opts->outdir);
+		return EXIT_FAILURE;
+		#endif
+    }
+    getFileNameX(opts->indirParent, opts->indir, 512);
+    if (isFile && ( (isExt(indir, ".v"))) )
+		return convert_foreign (indir, *opts);
+    if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
+        char pname[512], rname[512];
+        strcpy(pname,indir);
+        strcpy(rname,indir);
+        changeExt (pname, "PAR");
+        changeExt (rname, "REC");
+        #ifndef _MSC_VER //Linux is case sensitive, #include <unistd.h>
+   		if( access( rname, F_OK ) != 0 ) changeExt (rname, "rec");
+   		if( access( pname, F_OK ) != 0 ) changeExt (pname, "par");
+		#endif
+        if (is_fileNotDir(rname)  &&  is_fileNotDir(pname) ) {
+            //strcpy(opts->indir, pname); //set to original file name, not path
+            return convert_parRec(pname, *opts);
+        };
+    }
+    if (isFile && (opts->isOnlySingleFile) && isExt(indir, ".txt") )
+    	return textDICOM(opts, indir);
+	if (opts->isRenameNotConvert > 0) {
+		int nConvert = searchDirRenameDICOM(opts->indir, opts->dirSearchDepth, 0, opts);
+		if (nConvert < 0) return EXIT_FAILURE;
+		printMessage("Converted %d DICOMs\n", nConvert);
+		return EXIT_SUCCESS;
+	}
+    if ((isFile) && (opts->isOnlySingleFile))
+    	return singleDICOM(opts, indir);
+    if (opts->isOneDirAtATime) {
+		int maxDepth = opts->dirSearchDepth;
+		opts->dirSearchDepth = 0;
+        strcpy(indir,opts->indir);
+		return nii_loadDirOneDirAtATime(indir, opts, maxDepth, 0);
+	} else
+		return nii_loadDirCore(opts->indir, opts);
+
 }// nii_loadDir()
 
 /* cleaner than findPigz - perhaps validate someday
@@ -5363,6 +5454,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     strcpy(opts->outdir,"");
     strcpy(opts->imageComments,"");
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
+    opts->isOneDirAtATime = false;
     opts->isRenameNotConvert = false;
     opts->isForceStackSameSeries = false;
     opts->isForceStackDCE = true;

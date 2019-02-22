@@ -521,7 +521,6 @@ mat44 xform_mat(struct TDICOMdata d) {
 	exit(1);
 }
 
-
 mat44 set_nii_header(struct TDICOMdata d) {
 	mat44 R = xform_mat(d);
 	//R(1:2,:) = -R(1:2,:); % dicom LPS to nifti RAS, xform matrix before reorient
@@ -534,10 +533,20 @@ mat44 set_nii_header(struct TDICOMdata d) {
 }
 #endif
 
+/*mat44 doQuadruped(mat44 m) {
+	mat44 m_in = m;
+	mat44 rot;
+        LOAD_MAT44(rot, 1.0,0.0,0.0,0.0,
+               0.0,0.0,-1.0,0.0,
+               0.0,-1.0,0.0,0.0);
+    return nifti_mat44_mul( rot, m_in );
+}*/
+
 // This code predates  Xiangrui Li's set_nii_header function
 mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int* sliceDir, int isVerbose) {
     *sliceDir = 0;
     mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
+    //Q44 = doQuadruped(Q44);
 	if (d.isSegamiOasis == true) {
 		//Segami reconstructions appear to disregard DICOM spatial parameters: assume center of volume is isocenter and no table tilt
 		// Consider sample image with d.orient (0020,0037) = -1 0 0; 0 1 0: this suggests image RAI (L->R, P->A, S->I) but the vendors viewing software suggests LPS
@@ -2197,7 +2206,7 @@ int	kbval = 33; //V3: 27
     printMessage("Done reading PAR header version %.1f, with %d slices\n", (float)parVers/10, numSlice2D);
 	//see Xiangrui Li 's dicm2nii (also BSD license)
 	// http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter
-	// Rotation order and signs are figured out by trial and err, not 100% sure
+	// Rotation order and signs are figured out by trial and error, not 100% sure
 	float d2r = (float) (M_PI/180.0);
 	vec3 ca = setVec3(cos(d.angulation[1]*d2r),cos(d.angulation[2]*d2r),cos(d.angulation[3]*d2r));
 	vec3 sa = setVec3(sin(d.angulation[1]*d2r),sin(d.angulation[2]*d2r),sin(d.angulation[3]*d2r));
@@ -4054,6 +4063,10 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kMRAcquisitionPhaseEncodingStepsInPlane  0x0018+uint32_t(0x9231<< 16 ) //US
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
+//https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
+//  https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
+#define  kDiffusionBValueSiemens  0x0019+(0x100C<< 16 ) //IS
+#define  kDiffusionGradientDirectionSiemens  0x0019+(0x100E<< 16 ) //FD
 #define  kNumberOfDiffusionDirectionGE 0x0019+(0x10E0<< 16) ///DS NumberOfDiffusionDirection:UserData24
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS phase diffusion direction
@@ -4869,6 +4882,21 @@ double TE = 0.0; //most recent echo time recorded
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
+            case kDiffusionBValueSiemens :
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
+            	d.CSA.numDti = 1;
+            	break;
+            case kDiffusionGradientDirectionSiemens : {
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+				float v[4];
+            	dcmMultiFloatDouble(lLength, &buffer[lPos], 3, v, d.isLittleEndian);
+				//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
+                //printf(">>>%g %g %g\n", v[0], v[1], v[2]);
+                d.CSA.dtiV[1] = v[0];
+                d.CSA.dtiV[2] = v[1];
+                d.CSA.dtiV[3] = v[2];
+            	break; }
             case kNumberOfDiffusionDirectionGE : {
 				if (d.manufacturer != kMANUFACTURER_GE) break;
             	float f = dcmStrFloat(lLength, &buffer[lPos]);
@@ -5015,9 +5043,16 @@ double TE = 0.0; //most recent echo time recorded
             case kDim1:
                 d.xyzDim[1] = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case kXYSpacing:
-                dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
-                break;
+            //order is Row,Column e.g. YX
+            case kXYSpacing:{
+            	float yx[3];
+            	dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, yx);
+                d.xyzMM[1] = yx[2];
+            	d.xyzMM[2] = yx[1];
+            	break; }
+            //case kXYSpacing:
+            //    dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
+            //    break;
             case kImageComments:
                 dcmStr (lLength, &buffer[lPos], d.imageComments, true);
                 break;
