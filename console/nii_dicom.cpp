@@ -4568,6 +4568,7 @@ double TE = 0.0; //most recent echo time recorded
          	}
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
+                strcpy(transferSyntax, "");
                 dcmStr (lLength, &buffer[lPos], transferSyntax);
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
@@ -4613,8 +4614,12 @@ double TE = 0.0; //most recent echo time recorded
                 else if (strcmp(transferSyntax, "1.2.840.10008.1.2") == 0)
                     isSwitchToImplicitVR = true; //d.isLittleEndian=true
                 else {
-                    printMessage("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
-                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                	if (lLength < 1) //"1.2.840.10008.1.2"
+                    	printWarning("Missing transfer syntax: assuming default (1.2.840.10008.1.2)\n");
+                    else {
+                    	printMessage("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
+                    	d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    }
                 }
                 break;} //{} provide scope for variable 'transferSyntax
             /*case kImplementationVersionName: {
