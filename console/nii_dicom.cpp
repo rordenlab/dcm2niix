@@ -4151,6 +4151,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kPrivateCreator  0x2001+(0x0010 << 16 )// LO
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
+//#define  kDiffusionDirectionPhilips  0x2001+(0x1004 << 16 )//CS Diffusion Direction
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
@@ -4838,6 +4839,7 @@ double TE = 0.0; //most recent echo time recorded
             case kSoftwareVersions : {
             	dcmStr (lLength, &buffer[lPos], d.softwareVersions);
             	int slen = (int) strlen(d.softwareVersions);
+				if((slen > 4) && (strstr(d.softwareVersions, "XA11") != NULL) )  d.isXA10A = true;
 				if((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL) ) break;
                 d.isXA10A = true;
             	break;
@@ -5427,7 +5429,7 @@ double TE = 0.0; //most recent echo time recorded
 				if (d.manufacturer != kMANUFACTURER_UNKNOWN) break;
                 d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
                 volDiffusion.manufacturer = d.manufacturer;
-                printf(">>>>%d\n", d.manufacturer);
+                //printf(">>>>%d\n", d.manufacturer);
                 break; }
             case kDiffusionBFactor :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
@@ -5451,6 +5453,19 @@ double TE = 0.0; //most recent echo time recorded
             //            d.CSA.dtiV[d.CSA.numDti-1][0] = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);*/
             //     }
             //     break;
+
+            /*
+            case kDiffusionDirectionPhilips: {//
+				//note not useful: does not report precise direction, both B=0 and Isotropic scans labelled "I" so does not tell us if image is oblique
+				//http://incenter.medical.philips.com/doclib/enc/fetch/2000/4504/577242/577256/588723/5144873/5144488/5144982/DICOM_Conformance_Statement_Ingenia_R4.1.pdf%3fnodeid%3d8124182%26vernum%3d-2
+				//CS: Possible values: P (PreparationDirection), M (MeasurementDirection),S (Selection Direction),O(Oblique Direction),I (Isotropic),Only applicable for diffusion scans.
+				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+            	char diffDir[kDICOMStr];
+                dcmStr (lLength, &buffer[lPos], diffDir);
+                printf(">>%s  %s\n", diffDir, fname);
+				break;
+            }
+            */
             case kDiffusion_bValue:  // 0018,9087
             	if (d.manufacturer == kMANUFACTURER_UNKNOWN ) {
             		d.manufacturer = kMANUFACTURER_PHILIPS;

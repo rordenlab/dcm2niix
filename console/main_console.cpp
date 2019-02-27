@@ -76,6 +76,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
     printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
+    printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
     printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
     printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters)\n");
@@ -104,7 +105,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 	printf("  -u : up-to-date check\n");
 	#endif
 	printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
-    printf("  -w : well-behaved DICOM (images from same series always in same folder) for faster conversion (n/y, default n)\n");
+//#define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
+//#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
+//#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
+    printf("  -w : write behavior for name conflicts (0,1,2, default 2: 0=skip duplicates, 1=overwrite, 2=add suffix)\n");
    	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquistions)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
@@ -247,7 +251,15 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
-            else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
+            else if ((argv[i][1] == 'a') && ((i+1) < argc)) { //adjacent DICOMs
+				i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isOneDirAtATime = false;
+                else
+                    opts.isOneDirAtATime = true;
+
+           } else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
             	opts.gzLevel = abs((int)strtol(argv[i], NULL, 10));
             	if (opts.gzLevel > 11)
         	 		opts.gzLevel = 11;
@@ -373,10 +385,14 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'w') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isOneDirAtATime = false;
-                else
-                    opts.isOneDirAtATime = true;
+                if (argv[i][0] == '0') opts.nameConflictBehavior = 0;
+                if (argv[i][0] == '1') opts.nameConflictBehavior = 1;
+                if (argv[i][0] == '2') opts.nameConflictBehavior = 2;
+
+                //if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                //    opts.isOneDirAtATime = false;
+                //else
+                //    opts.isOneDirAtATime = true;
             } else if ((argv[i][1] == 'x') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

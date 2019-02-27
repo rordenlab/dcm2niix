@@ -22,11 +22,15 @@ extern "C" {
     };
 #endif
 
+#define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
+#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
+#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
+
 #define MAX_NUM_SERIES 16
 
     struct TDCMopts {
         bool isSaveNRRD, isOneDirAtATime, isRenameNotConvert, isMaximize16BitRange, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isForceStackSameSeries, isRotate3DAcq, isCrop;
-        int isVerbose, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
+        int nameConflictBehavior, isVerbose, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
         float seriesNumber[MAX_NUM_SERIES];
         long numSeries;

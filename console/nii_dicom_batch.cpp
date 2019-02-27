@@ -1936,6 +1936,26 @@ bool intensityScaleVaries(int nConvert, struct TDCMsort dcmSort[],struct TDICOMd
  return bImg;
  } */
 
+void niiDeleteFnm(const char* outname, const char* ext) {
+    char niiname[2048] = {""};
+    strcat (niiname,outname);
+    strcat (niiname,ext);
+    if (is_fileexists(niiname))
+    	remove(niiname);
+}
+
+void niiDelete(const char*niiname) {
+	//for niiname "~/d/img" delete img.nii, img.bvec, img.bval, img.json
+	niiDeleteFnm(niiname,".nii");
+	niiDeleteFnm(niiname,".nii.gz");
+	niiDeleteFnm(niiname,".nrrd");
+	niiDeleteFnm(niiname,".nhdr");
+	niiDeleteFnm(niiname,".raw.gz");
+	niiDeleteFnm(niiname,".json");
+	niiDeleteFnm(niiname,".bval");
+	niiDeleteFnm(niiname,".bvec");
+}
+
 bool niiExists(const char*pathoutname) {
     char niiname[2048] = {""};
     strcat (niiname,pathoutname);
@@ -2235,6 +2255,16 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     strcat (baseoutname,outname);
     char pathoutname[2048] = {""};
     strcat (pathoutname,baseoutname);
+    if ((niiExists(pathoutname)) && (opts.nameConflictBehavior == kNAME_CONFLICT_SKIP)) {
+    	printWarning("Skipping existing file named %s\n", pathoutname);
+    	return EXIT_FAILURE;
+    }
+    if ((niiExists(pathoutname)) && (opts.nameConflictBehavior == kNAME_CONFLICT_OVERWRITE)) {
+    	printWarning("Overwriting existing file with the name %s\n", pathoutname);
+    	niiDelete(pathoutname);
+    	strcpy(niiFilename,pathoutname);
+    	return EXIT_SUCCESS;
+    }
     int i = 0;
     while (niiExists(pathoutname) && (i < 26)) {
         strcpy(pathoutname,baseoutname);
@@ -4076,14 +4106,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     //Siemens XA10 slice timing
     // Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
     // an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
-    if ((dcmList[dcmSort[0].indx].isXA10A) && (hdr0.dim[4] < 2)) {
-    	dcmList[dcmSort[0].indx].CSA.sliceTiming[0] = -1.0; //XA10A slice timing often not correct for 1st volume
-	}
-	if (((dcmList[dcmSort[0].indx].isXA10A)) && (nConvert == (hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+    if (((dcmList[dcmSort[0].indx].isXA10A)) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		//XA11 2D classic
+		for (int v = 0; v < hdr0.dim[3]; v++)
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0];
+	} else if (((dcmList[dcmSort[0].indx].isXA10A)) && (nConvert == (hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		//XA10 mosaics - these are missing a lot of information
 		float mn = dcmList[dcmSort[1].indx].CSA.sliceTiming[0];
-		//for (int v = 0; v < hdr0.dim[4]; v++)
-		//	for (int z = 0; z < hdr0.dim[3]; z++)
-		//		printf("%g\n",dcmList[dcmSort[v].indx].CSA.sliceTiming[z]);
 		//get slice timing from second volume
 		for (int v = 0; v < hdr0.dim[3]; v++) {
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[1].indx].CSA.sliceTiming[v];
@@ -4973,7 +5002,7 @@ int copyFile (char * src_path, char * dst_path) {
 
 int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* opts ) {
     int retAll = 0;
-    bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
+    //bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
     tinydir_dir dir;
     tinydir_open(&dir, path);
     while (dir.has_next) {
@@ -5007,7 +5036,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
 					char outname[PATH_MAX] = {""};
 					if (dcm.echoNum > 1) dcm.isMultiEcho = true; //last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
 					nii_createFilename(dcm, outname, *opts);
-					if (isDcmExt) strcat (outname,".dcm");
+					//if (isDcmExt) strcat (outname,".dcm");
 					int ret = copyFile (filename, outname);
 					if (ret != EXIT_SUCCESS) {
 						printError("Unable to rename all DICOM images.\n");
@@ -5467,6 +5496,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;
     opts->dirSearchDepth = 5;
+    opts->nameConflictBehavior = kNAME_CONFLICT_ADD_SUFFIX;
     #ifdef myDisableZLib
     	opts->gzLevel = 6;
     #else
