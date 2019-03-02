@@ -2311,7 +2311,6 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
 			strcat(niiFilename,".nhdr'");
 		else
 			strcat(niiFilename,".nrrd'");
-
     } else {
 		if (opts.isGz)
 			strcat(niiFilename,".nii.gz'");
@@ -2552,7 +2551,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	int n, nDim = hdr.dim[0];
     printMessage("NRRD writer is experimental\n");
     if (nDim < 1) return EXIT_FAILURE;
-	bool isGz = opts.isGz;
+    bool isGz = opts.isGz;
 	size_t imgsz = nii_ImgBytes(hdr);
 	if  ((isGz) && (imgsz >=  2147483647)) { //use internal compressor
 		printWarning("Saving huge image uncompressed (many GZip tools have 2 Gb limit).\n");
@@ -2666,6 +2665,20 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	 n ++;
 	}
 	fprintf(fp,"\n");
+	//http://teem.sourceforge.net/nrrd/format.html
+	bool isFloat = (hdr.datatype == DT_FLOAT64) || (hdr.datatype == DT_FLOAT32);
+	if (((!isSameFloat(hdr.scl_inter, 0.0)) || (!isSameFloat(hdr.scl_slope, 1.0))) && (!isFloat)) {
+		//http://teem.sourceforge.net/nrrd/format.html
+		double dtMin = 0.0; //DT_UINT8, DT_RGB24, DT_UINT16
+		if (hdr.datatype == DT_INT16) dtMin = -32768.0;
+		if (hdr.datatype == DT_INT32) dtMin = -2147483648;
+		fprintf(fp,"oldmin: %g\n", (dtMin * hdr.scl_slope)  + hdr.scl_inter);
+		double dtMax = 255.00; //DT_UINT8, DT_RGB24
+		if (hdr.datatype == DT_INT16) dtMax = 32767;
+		if (hdr.datatype == DT_UINT16) dtMax = 65535.0;
+		if (hdr.datatype == DT_INT32) dtMax = 2147483647.0;
+		fprintf(fp,"oldmax: %g\n", (dtMax * hdr.scl_slope)  + hdr.scl_inter);
+	}
 	//Slicer DWIconvert values
 	if (d.modality == kMODALITY_MR)  fprintf(fp,"DICOM_0008_0060_Modality:=MR\n");
 	if (d.modality == kMODALITY_CT)  fprintf(fp,"DICOM_0008_0060_Modality:=CT\n");
@@ -2756,7 +2769,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     if (opts.isSaveNRRD) {
-    	struct TDTI4D *dti4D;
+		struct TDTI4D *dti4D;
     	return nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, 0);
     }
     hdr.vox_offset = 352;
