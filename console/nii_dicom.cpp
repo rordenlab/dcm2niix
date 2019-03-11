@@ -1146,7 +1146,7 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
 } //csaIsPhaseMap()
 
 //int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
-int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose) {
+int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, bool is3DAcq) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printMessage("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
     if (lLength < 36) return EXIT_FAILURE;
@@ -1157,7 +1157,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
     lPos += 8; //skip 8 bytes of data, 32-bit lnTag plus 77 00 00 0
     TCSAtag tagCSA;
     TCSAitem itemCSA;
-    //bool is3D = false;
     int itemsOK;
     float lFloats[7];
     for (int lT = 1; lT <= lnTag; lT++) {
@@ -1208,8 +1207,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 CSA->sliceMeasurementDuration = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
-            //else if ((strcmp(tagCSA.name, "Actual3DImaPartNumber") == 0) && (tagCSA.nitems > 0)  )
-            //	is3D = true;
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
 				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
                 csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
@@ -1284,7 +1281,8 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                      [sliceTimesNS addObject:[NSNumber numberWithFloat:sliceTimes[z]]];
                      NSLog(@" Warning: unable to determine slice order for %lu slice mosaic: %@",(unsigned long)[sliceTimesNS count],sliceTimesNS );
                      */
-                    printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
+                    if (!is3DAcq) //we expect 3D sequences to be simultaneous
+                    	printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
                 }
                 if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
                 	if (isVerbose)
@@ -5674,7 +5672,7 @@ double TE = 0.0; //most recent echo time recorded
                 d.imageStart = (int)lPos + (int)lFileOffset;
                 break;
             case kCSAImageHeaderInfo:
-            	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose); //, dti4D);
+            	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq); //, dti4D);
                 if (!d.isHasPhase)
                 	d.isHasPhase = d.CSA.isPhaseMap;
                 break;

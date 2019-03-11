@@ -1036,6 +1036,7 @@ tse3d: T2*/
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
+	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
@@ -1065,10 +1066,9 @@ tse3d: T2*/
 		TsWipMemBlock sWipMemBlock;
 		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		//ASL specific tags
+		bool isOxfordASL = false;
 		if (strstr(pulseSequenceDetails,"to_ep2d_VEPCASL")) { //Oxford 2D pCASL
-		//if (strstr(d.sequenceName,"epfid2d1_64")) { //2D VEPCASL sequence
-			//for (int k = 0; k < kMaxWipFree; k++)
-			//	if(sWipMemBlock.alFree[k] > 0.0) printf("%d %g\n", k, sWipMemBlock.alFree[k]);
+			isOxfordASL = true;
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
@@ -1092,7 +1092,7 @@ tse3d: T2*/
 			}
 		}
 		if (strstr(pulseSequenceDetails,"jw_tgse_VEPCASL")) { //Oxford 3D pCASL
-		//if (strstr(d.sequenceName,"tgse3d1_1260")) { // 3D tgse PCASL
+			isOxfordASL = true;
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[6]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[7]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[8]/1000000.0); //usec -> sec
@@ -1108,11 +1108,13 @@ tse3d: T2*/
 			json_Float(fp, "\t\"PLD4\": %g,\n", sWipMemBlock.alFree[34]/1000.0); //DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0); //DelayTimeInTR usec -> sec
 		}
-		//labelling plane
-		fprintf(fp, "\t\"TagPlaneDThickness\": %g,\n", sWipMemBlock.dThickness);
-		fprintf(fp, "\t\"TagPlaneUlShape\": %g,\n", sWipMemBlock.ulShape);
-		fprintf(fp, "\t\"TagPlaneSPositionDTra\": %g,\n", sWipMemBlock.sPositionDTra);
-		fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", sWipMemBlock.sNormalDTra);
+		if (isOxfordASL) { //properties common to 2D and 3D ASL
+			//labelling plane
+			fprintf(fp, "\t\"TagPlaneDThickness\": %g,\n", sWipMemBlock.dThickness);
+			fprintf(fp, "\t\"TagPlaneUlShape\": %g,\n", sWipMemBlock.ulShape);
+			fprintf(fp, "\t\"TagPlaneSPositionDTra\": %g,\n", sWipMemBlock.sPositionDTra);
+			fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", sWipMemBlock.sNormalDTra);
+		}
 		//general properties
 		if (partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
@@ -1136,8 +1138,10 @@ tse3d: T2*/
 			}
 			fprintf(fp, "\t],\n");
 		}
-		if (difBipolar == 1) fprintf(fp, "\t\"DiffusionScheme\": \"Bipolar\",\n" );
-		if (difBipolar == 2) fprintf(fp, "\t\"DiffusionScheme\": \"Monopolar\",\n" );
+		if (d.CSA.numDti > 0) { //
+			if (difBipolar == 1) fprintf(fp, "\t\"DiffusionScheme\": \"Bipolar\",\n" );
+			if (difBipolar == 2) fprintf(fp, "\t\"DiffusionScheme\": \"Monopolar\",\n" );
+		}
 		//DelayTimeInTR
 		// https://groups.google.com/forum/#!topic/bids-discussion/nmg1BOVH1SU
 		// https://groups.google.com/forum/#!topic/bids-discussion/seD7AtJfaFE
@@ -1161,6 +1165,7 @@ tse3d: T2*/
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
 		if (refLinesPE > 0)
 			fprintf(fp, "\t\"RefLinesPE\": %d,\n", refLinesPE);
+		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
 				d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
@@ -1202,9 +1207,9 @@ tse3d: T2*/
     if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
 		if  (h->dim[1] == h->dim[2]) //phase encoding does not matter
 			reconMatrixPE = h->dim[2];
-		else if (d.phaseEncodingRC =='R')
-			reconMatrixPE = h->dim[2];
 		else if (d.phaseEncodingRC =='C')
+			reconMatrixPE = h->dim[2]; //see dcm_qa: NOPF_NOPAT_NOPOS_PERES100_ES0P59_BW2222_200PFOV_AP_0034
+		else if (d.phaseEncodingRC =='R')
 			reconMatrixPE = h->dim[1];
     }
 	if (reconMatrixPE > 0) fprintf(fp, "\t\"ReconMatrixPE\": %d,\n", reconMatrixPE );
@@ -2672,12 +2677,12 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		double dtMin = 0.0; //DT_UINT8, DT_RGB24, DT_UINT16
 		if (hdr.datatype == DT_INT16) dtMin = -32768.0;
 		if (hdr.datatype == DT_INT32) dtMin = -2147483648;
-		fprintf(fp,"oldmin: %g\n", (dtMin * hdr.scl_slope)  + hdr.scl_inter);
+		fprintf(fp,"oldmin: %8.8f\n", (dtMin * hdr.scl_slope)  + hdr.scl_inter);
 		double dtMax = 255.00; //DT_UINT8, DT_RGB24
 		if (hdr.datatype == DT_INT16) dtMax = 32767;
 		if (hdr.datatype == DT_UINT16) dtMax = 65535.0;
 		if (hdr.datatype == DT_INT32) dtMax = 2147483647.0;
-		fprintf(fp,"oldmax: %g\n", (dtMax * hdr.scl_slope)  + hdr.scl_inter);
+		fprintf(fp,"oldmax: %8.8f\n", (dtMax * hdr.scl_slope)  + hdr.scl_inter);
 	}
 	//Slicer DWIconvert values
 	if (d.modality == kMODALITY_MR)  fprintf(fp,"DICOM_0008_0060_Modality:=MR\n");
@@ -4306,7 +4311,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
       }
     }
     //move before headerDcm2Nii2 checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
-    //nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, dti4D, &hdr0, nameList->str[dcmSort[0].indx]);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output

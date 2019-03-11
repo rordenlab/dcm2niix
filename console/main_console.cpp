@@ -373,6 +373,9 @@ int main(int argc, const char * argv[])
             } else if (argv[i][1] == 'u') {
 				return checkUpToDate();
 			#endif
+			} else if ((argv[i][1] == 'v') && ((i+1) <= argc)) {
+				printf("%s\n", kDCMdate);
+            	return 3;
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

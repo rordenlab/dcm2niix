@@ -7,6 +7,10 @@
            - added DT_RGBA32 and NIFTI_TYPE_RGBA32
            - added NIFTI_INTENT codes:
                 TIME_SERIES, NODE_INDEX, RGB_VECTOR, RGBA_VECTOR, SHAPE
+
+        08 Mar 2019 [PT,DRG]
+           - Updated to include [qs]form_code = 5
+
  */
 
 #ifndef _NIFTI_HEADER_
@@ -142,7 +146,6 @@ extern "C" {
  */
                         /*************************/  /************************/
 struct nifti_1_header { /* NIFTI-1 usage         */  /* ANALYZE 7.5 field(s) */
-//typedef struct __attribute__((packed))
                         /*************************/  /************************/
 
                                            /*--- was header_key substruct ---*/
@@ -277,7 +280,7 @@ typedef struct nifti_1_header nifti_1_header ;
    program can simply ignore all extended header sections simply by jumping
    straight to the image data using vox_offset.
 -----------------------------------------------------------------------------*/
-   
+
 /*! \struct nifti1_extender
     \brief This structure represents a 4-byte string that should follow the
            binary nifti_1_header data in a NIFTI-1 header file.  If the char
@@ -475,15 +478,15 @@ typedef struct nifti1_extension nifti1_extension ;
    when it encounters a dataset with a type it doesn't like.
 -----------------------------------------------------------------------------*/
 
-//#undef DT_UNKNOWN  /* defined in dirent.h on some Unix systems */
-//https://www.mail-archive.com/fltk-bugs@easysw.com/msg05850.html
+#undef DT_UNKNOWN  /* defined in dirent.h on some Unix systems */
+
 /*! \defgroup NIFTI1_DATATYPES
     \brief nifti1 datatype codes
     @{
  */
                             /*--- the original ANALYZE 7.5 type codes ---*/
 #define DT_NONE                    0
-#define DT_UNKNOWN_DT              0  //3/3/2014 CR modified to avoid conflict /usr/include/dirent
+#define DT_UNKNOWN                 0     /* what it says, dude           */
 #define DT_BINARY                  1     /* binary (1 bit/voxel)         */
 #define DT_UNSIGNED_CHAR           2     /* unsigned char (8 bits/voxel) */
 #define DT_SIGNED_SHORT            4     /* signed short (16 bits/voxel) */
@@ -911,7 +914,7 @@ typedef struct { unsigned char r,g,b; } rgb_byte ;
 
 #define NIFTI_INTENT_QUATERNION 1010
 
- /*! Dimensionless value - no params - although, as in _ESTIMATE 
+ /*! Dimensionless value - no params - although, as in _ESTIMATE
      the name of the parameter may be stored in intent_name.     */
 
 #define NIFTI_INTENT_DIMLESS    1011
@@ -1232,6 +1235,13 @@ typedef struct { unsigned char r,g,b; } rgb_byte ;
                                     /*! MNI 152 normalized coordinates. */
 
 #define NIFTI_XFORM_MNI_152      4
+
+                                    /*!  Normalized coordinates (for
+                                         any general standard template
+                                         space). Added March 8, 2019. */
+
+#define NIFTI_XFORM_TEMPLATE_OTHER  5
+
 /* @} */
 
 /*---------------------------------------------------------------------------*/
