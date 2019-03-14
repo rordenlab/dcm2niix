@@ -1035,8 +1035,8 @@ tse3d: T2*/
 	if ((d.echoNum > 1) || (d.isMultiEcho)) fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
-	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
+	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
@@ -3861,7 +3861,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		return;
 	}
 	if ((minT1 == maxT1) || (maxT1 >= d->TR)) { //both first and second image corrupted
-		printWarning("CSA slice timing appears corrupted (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
+		printWarning("Slice timing appears corrupted (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
 		return;
 	}
 	//1st image corrupted, but 2nd looks ok - substitute values from 2nd image
@@ -3977,12 +3977,14 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
                 if ((nAcq > 1) && (nConvert != nAcq)) {
-                    printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): converting only complete volumes.\n", nConvert, nAcq);
+                	printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): converting only complete volumes.\n", nConvert, nAcq);
                 }
             } else {
                 hdr0.dim[3] = nConvert;
                 if ((nAcq > 1) && (nConvert != nAcq)) {
-                    printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
+                	printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
+                	if (dcmList[indx0].locationsInAcquisition > 0)
+                		 printMessage("Hint: expected %d locations", dcmList[indx0].locationsInAcquisition);
                 }
             }
             //next options removed: features now thoroughly detected in nii_loadDir()
@@ -4041,8 +4043,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 if (dxVaries) {
                     sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
                     sliceMMarray[0] = 0.0f;
-                    printMessage("Dims %d %d %d %d %d\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], nAcq);
                     printWarning("Interslice distance varies in this volume (incompatible with NIfTI format).\n");
+                    printMessage("Dimensions %d %d %d %d nAcq %d nConvert %d\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], nAcq, nConvert);
                     printMessage(" Distance from first slice:\n");
                     printMessage("dx=[0");
                     for (int i = 1; i < nConvert; i++) {

@@ -4745,8 +4745,8 @@ double TE = 0.0; //most recent echo time recorded
             case kInstitutionName:
             	dcmStr(lLength, &buffer[lPos], d.institutionName);
             	break;
-            case kInstitutionAddress:
-            	dcmStr(lLength, &buffer[lPos], d.institutionAddress);
+            case kInstitutionAddress: //VR is "ST": 1024 chars maximum
+            	dcmStr(lLength, &buffer[lPos], d.institutionAddress, true);
             	break;
             case kReferringPhysicianName:
             	dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
