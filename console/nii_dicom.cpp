@@ -5672,6 +5672,7 @@ double TE = 0.0; //most recent echo time recorded
                 d.imageStart = (int)lPos + (int)lFileOffset;
                 break;
             case kCSAImageHeaderInfo:
+            	if ((lPos + lLength) > fileLen) break;
             	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq); //, dti4D);
                 if (!d.isHasPhase)
                 	d.isHasPhase = d.CSA.isPhaseMap;
@@ -6082,8 +6083,8 @@ if (d.isHasPhase)
 	if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
-    if (isVerbose) {
-        printMessage("DICOM file %s:\n", fname);
+	if (isVerbose) {
+        printMessage("DICOM file: %s\n", fname);
         printMessage(" patient position (0020,0032)\t%g\t%g\t%g\n", d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
         if (!isnan(patientPositionEndPhilips[1]))
         	printMessage(" patient position end (0020,0032)\t%g\t%g\t%g\n", patientPositionEndPhilips[1],patientPositionEndPhilips[2],patientPositionEndPhilips[3]);
@@ -6091,6 +6092,10 @@ if (d.isHasPhase)
         printMessage(" acq %d img %d ser %ld dim %dx%dx%dx%d mm %gx%gx%g offset %d loc %d valid %d ph %d mag %d nDTI %d 3d %d bits %d littleEndian %d echo %d coilCRC %d TE %g TR %g\n",d.acquNum,d.imageNum,d.seriesNum,d.xyzDim[1],d.xyzDim[2],d.xyzDim[3], d.xyzDim[4],d.xyzMM[1],d.xyzMM[2],d.xyzMM[3],d.imageStart, d.locationsInAcquisition, d.isValid, d.isHasPhase, d.isHasMagnitude, d.CSA.numDti, d.is3DAcq, d.bitsAllocated, d.isLittleEndian, d.echoNum, d.coilCrc, d.TE, d.TR);
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
+    }
+    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132)) {
+    	printError("Conversion aborted due to corrupt file: %s\n", fname);
+    	exit (kEXIT_CORRUPT_FILE_FOUND);
     }
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.

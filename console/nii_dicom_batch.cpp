@@ -1983,6 +1983,24 @@ bool niiExists(const char*pathoutname) {
 #define W_OK 2 /* write mode check */
 #endif
 
+int strcicmp(char const *a, char const *b) //case insensitive compare
+{
+    for (;; a++, b++) {
+        int d = tolower(*a) - tolower(*b);
+        if (d != 0 || !*a)
+            return d;
+    }
+}// strcicmp()
+
+bool isExt (char *file_name, const char* ext) {
+    char *p_extension;
+    if((p_extension = strrchr(file_name,'.')) != NULL )
+        if(strcicmp(p_extension,ext) == 0) return true;
+    //if(strcmp(p_extension,ext) == 0) return true;
+    return false;
+}// isExt()
+
+
 int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts) {
     char pth[PATH_MAX] = {""};
     if (strlen(opts.outdir) > 0) {
@@ -2006,6 +2024,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
      }
     char inname[PATH_MAX] = {""};//{"test%t_%av"}; //% a = acquisition, %n patient name, %t time
     strcpy(inname, opts.filename);
+    bool isDcmExt = isExt(inname, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
+	if (isDcmExt) {
+		inname[strlen(inname) - 4] = '\0';
+	}
     char outname[PATH_MAX] = {""};
     char newstr[256];
     if (strlen(inname) < 1) {
@@ -2198,7 +2220,11 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     	strcat (outname,"_Raw");
     if (dcm.isGrayscaleSoftcopyPresentationState) //avoid name clash for Philips PS_ files
     	strcat (outname,"_PS");
+    if (isDcmExt)
+    	strcat (outname,".dcm");
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
+
+
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
     // https://github.com/rordenlab/dcm2niix/issues/237
@@ -4864,23 +4890,6 @@ size_t fileBytes(const char * fname) {
     fclose(fp);
     return fileLen;
 } //fileBytes()
-
-int strcicmp(char const *a, char const *b) //case insensitive compare
-{
-    for (;; a++, b++) {
-        int d = tolower(*a) - tolower(*b);
-        if (d != 0 || !*a)
-            return d;
-    }
-}// strcicmp()
-
-bool isExt (char *file_name, const char* ext) {
-    char *p_extension;
-    if((p_extension = strrchr(file_name,'.')) != NULL )
-        if(strcicmp(p_extension,ext) == 0) return true;
-    //if(strcmp(p_extension,ext) == 0) return true;
-    return false;
-}// isExt()
 
 void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, int depth, struct TDCMopts* opts ) {
     tinydir_dir dir;
