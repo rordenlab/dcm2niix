@@ -96,7 +96,7 @@ unsigned char * readEcat7(const char *fname, struct TDICOMdata *dcm, struct nift
         uint16_t angular_compression, coin_samp_mode, axial_samp_mode;
         Float32 ecat_calibration_factor;
         uint16_t calibration_unitS, calibration_units_type, compression_code;
-        char study_type[12], patient_id[16], patient_name[32], patient_sex, patient_dexterity;
+        char study_type[12], patient_id[16], accession_number[16], patient_name[32], patient_sex, patient_dexterity;
         Float32 patient_age, patient_height, patient_weight;
         uint32 patient_birth_date;
         char physician_name[32], operator_name[32], study_description[32];
@@ -348,12 +348,14 @@ PACK( typedef struct {
     //copy and clean strings (ECAT can use 0x0D as a string terminator)
     strncpy(dcm->patientName, mhdr.patient_name, 32);
     strncpy(dcm->patientID, mhdr.patient_id, 16);
+    strncpy(dcm->accessionNumber, mhdr.accession_number, 16);
     strncpy(dcm->seriesDescription, mhdr.study_description, 32);
     strncpy(dcm->protocolName, mhdr.study_type, 12);
     strncpy(dcm->imageComments, mhdr.isotope_name, 8);
 	strncpy(dcm->procedureStepDescription, mhdr.radiopharmaceutical, 32);
 	strClean(dcm->patientName);
 	strClean(dcm->patientID);
+	strClean(dcm->accessionNumber);
 	strClean(dcm->seriesDescription);
 	strClean(dcm->protocolName);
 	strClean(dcm->imageComments);
@@ -368,6 +370,7 @@ PACK( typedef struct {
     	printMessage(" Time between volumes %gms\n", timeBetweenVolumes );
     	printMessage(" Patient name '%s'\n", dcm->patientName);
     	printMessage(" Patient ID '%s'\n", dcm->patientID);
+    	printMessage(" Accession number '%s'\n", dcm->accessionNumber);
     	printMessage(" Study description '%s'\n", dcm->seriesDescription);
     	printMessage(" Study type '%s'\n", dcm->protocolName);
     	printMessage(" Isotope name '%s'\n", dcm->imageComments);
