@@ -930,6 +930,7 @@ tse3d: T2*/
 		//Next lines directly reveal patient identity
 		json_Str(fp, "\t\"PatientName\": \"%s\",\n", d.patientName);
 		json_Str(fp, "\t\"PatientID\": \"%s\",\n", d.patientID);
+		json_Str(fp, "\t\"AccessionNumber\": \"%s\",\n", d.accessionNumber);
 		if (strlen(d.patientBirthDate) == 8) { //DICOM DA YYYYMMDD -> ISO 8601 "YYYY-MM-DD"
 			int ayear,amonth,aday;
 			sscanf(d.patientBirthDate, "%4d%2d%2d", &ayear, &amonth, &aday);
@@ -2064,6 +2065,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             }
             if (f == 'F')
                 strcat (outname,opts.indirParent);
+            if (f == 'G')
+                strcat(outname, dcm.accessionNumber);
             if (f == 'I')
                 strcat (outname,dcm.patientID);
             if (f == 'J')
@@ -2318,6 +2321,7 @@ void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts) {
     struct TDICOMdata d = clear_dicom_data();
     strcpy(d.patientName, "John_Doe");
     strcpy(d.patientID, "ID123");
+    strcpy(d.accessionNumber, "ID123");
     strcpy(d.imageType,"ORIGINAL");
     strcpy(d.imageComments, "imgComments");
     strcpy(d.studyDate, "1/1/1977");

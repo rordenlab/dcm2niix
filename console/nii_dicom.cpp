@@ -697,6 +697,7 @@ struct TDICOMdata clear_dicom_data() {
         d.orient[i] = 0.0f;
     strcpy(d.patientName, "");
     strcpy(d.patientID, "");
+    strcpy(d.accessionNumber, "");
     strcpy(d.imageType,"");
     strcpy(d.imageComments, "");
     strcpy(d.imageBaseName, "");
@@ -4001,6 +4002,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
+#define  kAccessionNumber 0x0008+(0x0050 << 16 )
 #define  kPatientBirthDate 0x0010+(0x0030 << 16 )
 #define  kPatientSex 0x0010+(0x0040 << 16 )
 #define  kPatientAge 0x0010+(0x1010 << 16 )
@@ -4803,6 +4805,9 @@ double TE = 0.0; //most recent echo time recorded
             	break; }
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
+                break;
+            case kAccessionNumber :
+                dcmStr (lLength, &buffer[lPos], d.accessionNumber);
                 break;
             case kPatientBirthDate :
               	dcmStr (lLength, &buffer[lPos], d.patientBirthDate);
