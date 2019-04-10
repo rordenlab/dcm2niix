@@ -57,9 +57,12 @@
 	#define M_PI 3.14159265358979323846
 #endif
 #if defined(_WIN64) || defined(_WIN32)
+	#define myTextFileInputLists //comment out to disable this feature: https://github.com/rordenlab/dcm2niix/issues/288
 	const char kPathSeparator ='\\';
 	const char kFileSep[2] = "\\";
+
 #else
+	#define myTextFileInputLists
 	const char kPathSeparator ='/';
 	const char kFileSep[2] = "/";
 #endif
@@ -4904,6 +4907,67 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     return ret;
 }// singleDICOM()
 
+#ifdef myTextFileInputLists //https://github.com/rordenlab/dcm2niix/issues/288
+int textDICOM(struct TDCMopts* opts, char *fname) {
+	//check input file
+    FILE *fp = fopen(fname, "r");
+    if (fp == NULL)
+    	exit(EXIT_FAILURE);
+    int nConvert = 0;
+    char dcmname[2048];
+    while (fgets(dcmname, sizeof(dcmname), fp)) {
+		int sz = strlen(dcmname);
+		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0; //Unix LF
+		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0; //Windows CR/LF
+		//if (isDICOMfile(dcmname) == 0) { //<- this will reject DICOM metadata not wrapped with a header
+        if ((!is_fileexists(dcmname)) || (!is_fileNotDir(dcmname)) ) { //<-this will accept meta data
+        	fclose(fp);
+        	printError("Problem with file '%s'\n", dcmname);
+        	return EXIT_FAILURE;
+    	}
+    	//printf("%s\n", dcmname);
+		nConvert ++;
+    }
+    fclose(fp);
+    if (nConvert < 1) {
+    	printError("No DICOM files found '%s'\n", dcmname);
+    	return EXIT_FAILURE;
+    }
+    printMessage("Found %d DICOM file(s)\n", nConvert);
+    #ifdef USING_R
+    fflush(stdout); //show immediately if run from MRIcroGL GUI
+    #endif
+    TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
+	struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nConvert * sizeof(struct  TDICOMdata));
+    struct TDTI4D dti4D;
+    struct TSearchList nameList;
+    nameList.maxItems = nConvert; // larger requires more memory, smaller more passes
+    nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
+    nameList.numItems = 0;
+	nConvert = 0;
+	fp = fopen(fname, "r");
+    while (fgets(dcmname, sizeof(dcmname), fp)) {
+		int sz = strlen(dcmname);
+		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0; //Unix LF
+		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0; //Windows CR/LF
+		nameList.str[nameList.numItems]  = (char *)malloc(strlen(dcmname)+1);
+    	strcpy(nameList.str[nameList.numItems],dcmname);
+    	nameList.numItems++;
+		dcmList[nConvert] = readDICOMv(nameList.str[nConvert], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+		fillTDCMsort(dcmSort[nConvert], nConvert, dcmList[nConvert]);
+		nConvert ++;
+    }
+    fclose(fp);
+    qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
+	int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+    free(dcmSort);
+    free(dcmList);
+    freeNameList(nameList);
+    return ret;
+}//textDICOM()
+
+/*
+//code below fails on Windows https://github.com/rordenlab/dcm2niix/issues/288
 int textDICOM(struct TDCMopts* opts, char *fname) {
 	//check input file
     FILE *fp = fopen(fname, "r");
@@ -4960,7 +5024,13 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
     free(dcmList);
     freeNameList(nameList);
     return ret;
-}//textDICOM()
+}//textDICOM()*/
+#else //ifdef myTextFileInputLists
+int textDICOM(struct TDCMopts* opts, char *fname) {
+	printError("Unable to parse txt files: re-compile with 'myTextFileInputLists' (see issue 288)");
+	return EXIT_FAILURE;
+}
+#endif
 
 size_t fileBytes(const char * fname) {
     FILE *fp = fopen(fname, "rb");
