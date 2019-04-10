@@ -764,6 +764,7 @@ struct TDICOMdata clear_dicom_data() {
     d.phaseEncodingSteps = 0;
     d.coilCrc = 0;
     d.seriesUidCrc = 0;
+    d.instanceUidCrc = 0;
     d.accelFactPE = 0.0;
     //d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
@@ -3978,6 +3979,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kUnused 0x0001+(0x0001 << 16 )
 #define  kStart 0x0002+(0x0000 << 16 )
 #define  kMediaStorageSOPClassUID 0x0002+(0x0002 << 16 )
+#define  kMediaStorageSOPInstanceUID 0x0002+(0x0003 << 16 )
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
 #define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
@@ -4566,6 +4568,13 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.isGrayscaleSoftcopyPresentationState) d.isDerived = true;
                 break;
          	}
+            case kMediaStorageSOPInstanceUID : {// 0002, 0003
+            	char SOPInstanceUID[kDICOMStr];
+            	dcmStr (lLength, &buffer[lPos], SOPInstanceUID);
+            	//printMessage(">>%s\n", d.seriesInstanceUID);
+            	d.instanceUidCrc = mz_crc32X((unsigned char*) &SOPInstanceUID, strlen(SOPInstanceUID));
+                break;
+            }
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
                 strcpy(transferSyntax, "");
@@ -4951,6 +4960,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             case kSeriesInstanceUID : // 0020, 000E
             	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
+            	//printMessage(">>%s\n", d.seriesInstanceUID);
             	d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
                 break;
             case kImagePositionPatient : {
@@ -5843,7 +5853,7 @@ double TE = 0.0; //most recent echo time recorded
                 	int imgBytes = (d.xyzDim[1] * d.xyzDim[2] * int(d.bitsAllocated / 8));
                 	if (imgBytes == lLength)
                 		isIconImageSequence = false;
-					if (sqDepth < 1) printWarning("Assuming 7FE0,0010 refers to an icon not the main image\n");
+					if ((isIconImageSequence) && (sqDepth < 1)) printWarning("Assuming 7FE0,0010 refers to an icon not the main image\n");
 
                 }
                 if ((d.compressionScheme == kCompressNone ) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
@@ -6253,6 +6263,8 @@ if (d.isHasPhase)
 		d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
     if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
+    if ((numDimensionIndexValues+2) < MAX_NUMBER_OF_DIMENSIONS)
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-3] = d.instanceUidCrc;
     if ((numDimensionIndexValues+1) < MAX_NUMBER_OF_DIMENSIONS)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-2] = d.echoNum;
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221

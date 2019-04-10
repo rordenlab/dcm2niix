@@ -430,6 +430,25 @@ int readKey(const char * key,  char * buffer, int remLength) { //look for text k
 	return ret;
 } //readKey()
 
+float readKeyFloatNan(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
+	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
+	if (!keyPos) return NAN;
+	char str[kDICOMStr];
+	strcpy(str, "");
+	char tmpstr[2];
+  	tmpstr[1] = 0;
+	int i = (int)strlen(key);
+	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
+		if( (keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] <= '.') || (keyPos[i] <= '-') ) {
+			tmpstr[0] = keyPos[i];
+			strcat (str, tmpstr);
+		}
+		i++;
+	}
+	if (strlen(str) < 1) return NAN;
+	return atof(str);
+} //readKeyFloatNan()
+
 float readKeyFloat(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
 	if (!keyPos) return 0.0;
@@ -506,6 +525,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 typedef struct {
     float alFree[kMaxWipFree] ;
     float adFree[kMaxWipFree];
+    float alTI[kMaxWipFree];
     float dThickness, ulShape, sPositionDTra, sNormalDTra;
 } TsWipMemBlock;
 
@@ -606,6 +626,19 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		readKeyStr(keyStrWipMemBlock,  keyPos, csaLengthTrim, wipMemBlock);
 		char keyStrPn[] = "tProtocolName";
 		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
+		//read ALL alTI[*] values
+		for (int k = 0; k < kMaxWipFree; k++)
+			sWipMemBlock->alTI[k] = NAN;
+		char keyStrTiFree[] = "alTI[";
+		//check if ANY sWipMemBlock.alFree tags exist
+		char *keyPosTi = (char *)memmem(keyPos, csaLengthTrim, keyStrTiFree, strlen(keyStrTiFree));
+		if (keyPosTi) {
+			for (int k = 0; k < kMaxWipFree; k++) {
+				char txt[1024] = {""};
+				sprintf(txt, "%s%d]", keyStrTiFree,k);
+				sWipMemBlock->alTI[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
+			}
+		}
 		//read ALL sWipMemBlock.alFree[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
 			sWipMemBlock->alFree[k] = 0.0;
@@ -622,14 +655,20 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		//read ALL sWipMemBlock.adFree[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
 			sWipMemBlock->adFree[k] = NAN;
-		char keyStrAdFree[] = "sWipMemBlock.adFree[";
-		//check if ANY sWipMemBlock.alFree tags exist
+		char keyStrAdFree[50];
+		strcpy(keyStrAdFree, "sWipMemBlock.adFree[");
+		//char keyStrAdFree[] = "sWipMemBlock.adFree[";
+		//check if ANY sWipMemBlock.adFree tags exist
 		keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
+		if (!keyPosFree) { //"Wip" -> "WiP", modern -> old Siemens
+			strcpy(keyStrAdFree, "sWiPMemBlock.adFree[");
+			keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
+		}
 		if (keyPosFree) {
 			for (int k = 0; k < kMaxWipFree; k++) {
 				char txt[1024] = {""};
 				sprintf(txt, "%s%d]", keyStrAdFree,k);
-				sWipMemBlock->adFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
+				sWipMemBlock->adFree[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
 			}
 		}
 		//read labelling plane
@@ -1066,7 +1105,30 @@ tse3d: T2*/
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TsWipMemBlock sWipMemBlock;
 		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
-		//ASL specific tags
+		//ASL specific tags - Danny J.J. Wang http://www.loft-lab.org
+		if (strstr(pulseSequenceDetails,"ep2d_pcasl")) {
+			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", sWipMemBlock.adFree[1]); //mm
+			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", sWipMemBlock.adFree[2] * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", sWipMemBlock.adFree[3]);
+			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", sWipMemBlock.adFree[4] * (1.0/1000000.0) * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", sWipMemBlock.adFree[10]);  // mT/m
+			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", sWipMemBlock.adFree[11]);  // percent
+		}
+		//ASL specific tags - 2D PASL Siemens Product
+		if (strstr(pulseSequenceDetails,"ep2d_pasl")) {
+			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", sWipMemBlock.alTI[1] * (1.0/1000.0)); //ms->sec
+			json_FloatNotNan(fp, "\t\"InversionTime2\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0));
+		}
+		//ASL specific tags - 3D PASL Siemens Product
+		if (strstr(pulseSequenceDetails,"tgse_pasl")) {
+			for (int k = 0; k < 4; k++) {
+				char newstr[256];
+				sprintf(newstr, "\t\"InversionTime%d\": %%g,\n", k);
+				json_FloatNotNan(fp, newstr,  sWipMemBlock.alTI[k] * (1.0/1000.0)); //ms->sec
+			}
+		}
+		//ASL specific tags - Oxford (Thomas OKell)
 		bool isOxfordASL = false;
 		if (strstr(pulseSequenceDetails,"to_ep2d_VEPCASL")) { //Oxford 2D pCASL
 			isOxfordASL = true;
@@ -1307,7 +1369,7 @@ tse3d: T2*/
 		fprintf(fp, "\t],\n");
 	}
 	//Slice Timing Siemens
-	if ((!d.isXA10A) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((!d.isXA10A) && (!d.is3DAcq) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		if (d.CSA.protocolSliceNumber1 > 1) {
    			//https://github.com/rordenlab/dcm2niix/issues/40
@@ -1714,8 +1776,8 @@ float vec3Length (vec3 v) { //normalize vector length
 
 float vec3maxMag (vec3 v) { //return signed vector with maximum magnitude
 	float mx = v.v[0];
-	if (abs(v.v[1]) > abs(mx)) mx = v.v[1];
-	if (abs(v.v[2]) > abs(mx)) mx = v.v[2];
+	if (fabs(v.v[1]) > fabs(mx)) mx = v.v[1];
+	if (fabs(v.v[2]) > fabs(mx)) mx = v.v[2];
 	return mx;
 }
 
@@ -3886,6 +3948,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d1->CSA.sliceTiming[i] < minT1) minT1 = d1->CSA.sliceTiming[i];
 		if (d1->CSA.sliceTiming[i] > maxT1) maxT1 = d1->CSA.sliceTiming[i];
 	}
+	if ((minT1 < 0.0) && (d->rtia_timerGE >= 0.0)) return; //use rtia timer
 	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
 		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
 		return;
@@ -4230,8 +4293,20 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 		}
 		//compare all slice times in 2nd volume to start time for this volume
 		if (maxTime != minTime) {
+			double scale2Sec = 1.0;
+			if (dcmList[dcmSort[0].indx].TR > 0.0) { //issue 286: determine units for rtia_timerGE
+				//See https://github.com/rordenlab/dcm2niix/tree/master/GE
+				// Nikadon's DV24 data stores RTIA Timer as seconds, issue 286 14_LX uses 1/10,000 sec
+				// The slice timing should always be less than the TR (which is in ms)
+				// Below we assume 1/10,000 of a sec if slice time is >90% and less than <100% of a TR
+				// Will not work for sparse designs, but slice timing inappropriate for those datasets
+				float maxSliceTimeFrac = (maxTime-minTime) / dcmList[dcmSort[0].indx].TR; //should be slightly less than 1.0
+				if ((maxSliceTimeFrac > 9.0) && (maxSliceTimeFrac < 10))
+					scale2Sec = 1.0 / 10000.0;
+				//printMessage(">> %g %g %g\n", maxSliceTimeFrac, scale2Sec, dcmList[dcmSort[0].indx].TR);
+			}
 			for (int v = 0; v < hdr0.dim[3]; v++)
-				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime;
+				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = (dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime) * scale2Sec;
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
 			//detect multi-band
 			int nZero = 0;
@@ -4240,7 +4315,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					nZero ++;
 			if ((nZero > 1) && (nZero < hdr0.dim[3]) && ((hdr0.dim[3] % nZero) == 0))
 				dcmList[dcmSort[0].indx].CSA.multiBandFactor = nZero;
-			//report timines
+			//report times
 			if (opts.isVerbose > 1) {
 				printf("GE slice timing\n");
 				printf("\tTime\tX\tY\tZ\tInstance\n");
@@ -4253,6 +4328,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				} //for v
 			} //verbose > 1
 		} //if maxTime != minTIme
+
 	} //GE slice timing from 0021,105E
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
     	int inVol = hdr0.dim[4];
