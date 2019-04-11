@@ -5292,7 +5292,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
         	printMessage("Image Decompression is new: please validate conversions\n");
     	}
     }
-    if (opts->isRenameNotConvert > 0) {
+    if (opts->isRenameNotConvert) {
     	return EXIT_SUCCESS;
     }
 #ifdef USING_R
@@ -5466,7 +5466,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     }
     if (isFile && (opts->isOnlySingleFile) && isExt(indir, ".txt") )
     	return textDICOM(opts, indir);
-	if (opts->isRenameNotConvert > 0) {
+	if (opts->isRenameNotConvert) {
 		int nConvert = searchDirRenameDICOM(opts->indir, opts->dirSearchDepth, 0, opts);
 		if (nConvert < 0) return EXIT_FAILURE;
 		printMessage("Converted %d DICOMs\n", nConvert);
