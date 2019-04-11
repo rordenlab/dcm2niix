@@ -96,7 +96,7 @@ unsigned char * readEcat7(const char *fname, struct TDICOMdata *dcm, struct nift
         uint16_t angular_compression, coin_samp_mode, axial_samp_mode;
         Float32 ecat_calibration_factor;
         uint16_t calibration_unitS, calibration_units_type, compression_code;
-        char study_type[12], patient_id[16], patient_name[32], patient_sex, patient_dexterity;
+        char study_type[12], patient_id[16], accession_number[16], patient_name[32], patient_sex, patient_dexterity;
         Float32 patient_age, patient_height, patient_weight;
         uint32 patient_birth_date;
         char physician_name[32], operator_name[32], study_description[32];
@@ -270,7 +270,7 @@ PACK( typedef struct {
     			isAbort = true;
     		}
     		if (num_vol < kMaxVols) {
-    			imgOffsets[num_vol]	= lhdr.r[k][1];
+    			imgOffsets[num_vol]	= (size_t)lhdr.r[k][1];
     			imgSlopes[num_vol] = ihdrN.scale_factor;
     		}
     		num_vol ++;
@@ -297,12 +297,12 @@ PACK( typedef struct {
 	unsigned char * img = NULL;
 	if ((isScaleFactorVaries) && (bytesPerVoxel == 2)) { //we need to convert volumes from 16-bit to 32-bit to preserve scaling factors
 		int num_vox = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension;
-		size_t bytesPerVolumeIn = num_vox * bytesPerVoxel; //bytesPerVoxel == 2
+		size_t bytesPerVolumeIn = (size_t)(num_vox * bytesPerVoxel); //bytesPerVoxel == 2
 		unsigned char * imgIn = (unsigned char*)malloc(bytesPerVolumeIn);
 		int16_t * img16i = (int16_t*) imgIn;
 		bytesPerVoxel = 4;
-		size_t bytesPerVolume = num_vox * bytesPerVoxel;
-		img = (unsigned char*)malloc(bytesPerVolume * num_vol);
+		size_t bytesPerVolume = (size_t)(num_vox * bytesPerVoxel);
+		img = (unsigned char*)malloc((size_t)(bytesPerVolume * num_vol));
 		float * img32 = (float*) img;
 		for (int v = 0; v < num_vol; v++) {
 			fseek(f, imgOffsets[v] * 512, SEEK_SET);
@@ -348,12 +348,14 @@ PACK( typedef struct {
     //copy and clean strings (ECAT can use 0x0D as a string terminator)
     strncpy(dcm->patientName, mhdr.patient_name, 32);
     strncpy(dcm->patientID, mhdr.patient_id, 16);
+    strncpy(dcm->accessionNumber, mhdr.accession_number, 16);
     strncpy(dcm->seriesDescription, mhdr.study_description, 32);
     strncpy(dcm->protocolName, mhdr.study_type, 12);
     strncpy(dcm->imageComments, mhdr.isotope_name, 8);
 	strncpy(dcm->procedureStepDescription, mhdr.radiopharmaceutical, 32);
 	strClean(dcm->patientName);
 	strClean(dcm->patientID);
+	strClean(dcm->accessionNumber);
 	strClean(dcm->seriesDescription);
 	strClean(dcm->protocolName);
 	strClean(dcm->imageComments);
@@ -368,6 +370,7 @@ PACK( typedef struct {
     	printMessage(" Time between volumes %gms\n", timeBetweenVolumes );
     	printMessage(" Patient name '%s'\n", dcm->patientName);
     	printMessage(" Patient ID '%s'\n", dcm->patientID);
+    	printMessage(" Accession number '%s'\n", dcm->accessionNumber);
     	printMessage(" Study description '%s'\n", dcm->seriesDescription);
     	printMessage(" Study type '%s'\n", dcm->protocolName);
     	printMessage(" Isotope name '%s'\n", dcm->imageComments);
@@ -427,7 +430,7 @@ int  convert_foreign (const char *fn, struct TDCMopts opts){
 	//struct TDTI4D dti4D;
 	//nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
 	nii_SaveBIDS(niiFilename, dcm, opts, &hdr, fn);
-	ret = nii_saveNII(niiFilename, hdr, img, opts);
+	ret = nii_saveNIIx(niiFilename, hdr, img, opts);
 	free(img);
     return ret;
 }// convert_foreign()

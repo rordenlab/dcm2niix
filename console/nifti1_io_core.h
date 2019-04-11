@@ -53,6 +53,7 @@ float nifti_mat33_determ( mat33 R ) ;
 int isSameFloat (float a, float b) ;
 int isSameDouble (double a, double b) ;
 
+vec3 nifti_mat33_eig3(double bxx, double bxy, double bxz, double byy, double byz, double bzz);
 mat33 nifti_mat33_inverse( mat33 R );
 mat33 nifti_mat33_mul( mat33 A , mat33 B );
 mat33 nifti_mat33_transpose( mat33 A ) ;

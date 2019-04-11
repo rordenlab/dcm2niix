@@ -275,7 +275,7 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
         abortGoto("Decoding error: no Huffman tables.\n");
     }
     //NEXT: unpad data - delete byte that follows $FF
-    int lIsRestartSegments = 0;
+    //int lIsRestartSegments = 0;
     long lIncI = lRawPos; //input position
     long lIncO = lRawPos; //output position
     do {
@@ -285,8 +285,8 @@ unsigned char *  decode_JPEG_SOF_0XC3 (const char *fn, int skipBytes, bool verbo
                 lIncI = lIncI+1;
             else if (lRawRA[lIncI+1] == 0xD9)
                 lIncO = -666; //end of padding
-            else
-                lIsRestartSegments = lRawRA[lIncI+1];
+            //else
+            //    lIsRestartSegments = lRawRA[lIncI+1];
         }
         lIncI++;
         lIncO++;

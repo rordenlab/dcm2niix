@@ -66,20 +66,22 @@ const char* removePath(const char* path) { // "/usr/path/filename.exe" -> "filen
     return path;
 } //removePath()
 
+char bool2Char(bool b) {
+	if (b) return('y');
+	return('n');
+}
+
 void showHelp(const char * argv[], struct TDCMopts opts) {
     const char *cstr = removePath(argv[0]);
     printf("usage: %s [options] <in_folder>\n", cstr);
     printf(" Options :\n");
     printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
-    char bidsCh = 'n';
-    if (opts.isCreateBIDS) bidsCh = 'y';
-    printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bidsCh);
-    if (opts.isAnonymizeBIDS) bidsCh = 'y'; else bidsCh = 'n';
-    printf("   -ba : anonymize BIDS (y/n, default %c)\n", bidsCh);
-    printf("  -c : comment stored in NIfTI aux_file (up to 24 characters)\n");
+    printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
+    printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
+    printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
+    printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters)\n");
     printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
-    if (opts.isSortDTIbyBVal) bidsCh = 'y'; else bidsCh = 'n';
-    //printf("  -d : diffusion volumes sorted by b-value (y/n, default %c)\n", bidsCh);
+    printf("  -e : export as NRRD instead of NIfTI (y/n, default n)\n");
     #ifdef mySegmentByAcq
      #define kQstr " %%q=sequence number,"
     #else
@@ -103,9 +105,15 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 	printf("  -u : up-to-date check\n");
 	#endif
 	printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
-    printf("  -x : crop (y/n, default n)\n");
+//#define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
+//#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
+//#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
+    printf("  -w : write behavior for name conflicts (0,1,2, default 2: 0=skip duplicates, 1=overwrite, 2=add suffix)\n");
+   	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquistions)\n");
     char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
+#if defined(_WIN64) || defined(_WIN32)
+    //n.b. the optimal use of pigz requires pipes that are not provided for Windows
     #ifdef myDisableZLib
 		if (strlen(opts.pigzname) > 0)
 			printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, n=no, 3=no,3D]\n", gzCh);
@@ -118,8 +126,6 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
-
-#if defined(_WIN64) || defined(_WIN32)
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
     printf("  %s c:\\DICOM\\dir\n", cstr);
@@ -128,6 +134,18 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  %s -f mystudy%%s c:\\DICOM\\dir\n", cstr);
     printf("  %s -o \"c:\\dir with spaces\\dir\" c:\\dicomdir\n", cstr);
 #else
+    #ifdef myDisableZLib
+		if (strlen(opts.pigzname) > 0)
+			printf("  -z : gz compress images (y/o/n/3, default %c) [y=pigz, o=optimal pigz, n=no, 3=no,3D]\n", gzCh);
+		else
+			printf("  -z : gz compress images (y/o/n/3, default %c)  [y=pigz(MISSING!), o=optimal(requires pigz), n=no, 3=no,3D]\n", gzCh);
+    #else
+    	#ifdef myDisableMiniZ
+    	printf("  -z : gz compress images (y/o/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:zlib, n=no, 3=no,3D]\n", gzCh);
+		#else
+		printf("  -z : gz compress images (y/o/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
+		#endif
+    #endif
     printf(" Defaults file : %s\n", opts.optsname);
     printf(" Examples :\n");
     printf("  %s /Users/chris/dir\n", cstr);
@@ -206,6 +224,7 @@ int main(int argc, const char * argv[])
 {
     struct TDCMopts opts;
     bool isSaveIni = false;
+    bool isOutNameSpecified = false;
     bool isResetDefaults = false;
     readIniFile(&opts, argv); //set default preferences
 #ifdef mydebugtest
@@ -232,7 +251,15 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h')
                 showHelp(argv, opts);
-            else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
+            else if ((argv[i][1] == 'a') && ((i+1) < argc)) { //adjacent DICOMs
+				i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isOneDirAtATime = false;
+                else
+                    opts.isOneDirAtATime = true;
+
+           } else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
             	opts.gzLevel = abs((int)strtol(argv[i], NULL, 10));
             	if (opts.gzLevel > 11)
         	 		opts.gzLevel = 11;
@@ -267,6 +294,11 @@ int main(int argc, const char * argv[])
                 i++;
                 if ((argv[i][0] >= '0') && (argv[i][0] <= '9'))
                 	opts.dirSearchDepth = abs((int)strtol(argv[i], NULL, 10));
+            } else if ((argv[i][1] == 'e') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')  || (argv[i][0] == '1'))
+                    opts.isSaveNRRD = true;
             } else if ((argv[i][1] == 'g') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -306,8 +338,11 @@ int main(int argc, const char * argv[])
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isForceStackSameSeries = false;
-                else
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')  || (argv[i][0] == '1'))
                     opts.isForceStackSameSeries = true;
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                    opts.isForceStackDCE = false;
+
             } else if ((argv[i][1] == 'p') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -338,6 +373,9 @@ int main(int argc, const char * argv[])
             } else if (argv[i][1] == 'u') {
 				return checkUpToDate();
 			#endif
+			} else if ((argv[i][1] == 'v') && ((i+1) >= argc)) {
+				printf("%s\n", kDCMdate);
+            	return kEXIT_REPORT_VERSION;
             } else if ((argv[i][1] == 'v') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -347,12 +385,26 @@ int main(int argc, const char * argv[])
                     opts.isVerbose = 2;
                 else
                     opts.isVerbose = 1; //1: verbose ON
+            } else if ((argv[i][1] == 'w') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if (argv[i][0] == '0') opts.nameConflictBehavior = 0;
+                if (argv[i][0] == '1') opts.nameConflictBehavior = 1;
+                if (argv[i][0] == '2') opts.nameConflictBehavior = 2;
+
+                //if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                //    opts.isOneDirAtATime = false;
+                //else
+                //    opts.isOneDirAtATime = true;
             } else if ((argv[i][1] == 'x') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isCrop = false;
-                else
+                else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
+                	opts.isRotate3DAcq = false;
+                	opts.isCrop = false;
+                } else
                     opts.isCrop = true;
             } else if ((argv[i][1] == 'y') && ((i+1) < argc)) {
                 i++;
@@ -380,9 +432,12 @@ int main(int argc, const char * argv[])
                     opts.isGz = false;
                 else
                     opts.isGz = true;
+                if (argv[i][0] == 'o')
+                    opts.isPipedGz = true; //pipe to pigz without saving uncompressed to disk
             } else if ((argv[i][1] == 'f') && ((i+1) < argc)) {
                 i++;
                 strcpy(opts.filename,argv[i]);
+                isOutNameSpecified = true;
             } else if ((argv[i][1] == 'o') && ((i+1) < argc)) {
                 i++;
                 strcpy(opts.outdir,argv[i]);
@@ -410,6 +465,15 @@ int main(int argc, const char * argv[])
     	printf("n.b. Setting directory search depth of zero invokes internal gz (network mode)\n");
 	}
 	#endif
+	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { //sensible naming scheme for renaming option
+		//strcpy(opts.filename,argv[i]);
+		#if defined(_WIN64) || defined(_WIN32)
+		strcpy(opts.filename,"%t/%s_%p/%4r.dcm"); //nrrd or nhdr
+		#else
+		strcpy(opts.filename,"%t\\%s_%p\\%4r.dcm"); //nrrd or nhdr
+		#endif
+		printf("renaming without output filename, assuming '-f %s'\n", opts.filename);
+	}
     if (isSaveIni)
     	saveIniFile(opts);
     //printf("%d %d",argc,lastCommandArg);
