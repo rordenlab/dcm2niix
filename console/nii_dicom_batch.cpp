@@ -1122,13 +1122,11 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"InversionTime2\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0));
 		}
-		//ASL specific tags - 3D PASL Siemens Product
+		//ASL specific tags - 3D PASL Siemens Product http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf
 		if (strstr(pulseSequenceDetails,"tgse_pasl")) {
-			for (int k = 0; k < 4; k++) {
-				char newstr[256];
-				sprintf(newstr, "\t\"InversionTime%d\": %%g,\n", k);
-				json_FloatNotNan(fp, newstr,  sWipMemBlock.alTI[k] * (1.0/1000.0)); //ms->sec
-			}
+			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000.0)); //ms->sec
+			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0));
 		}
 		//ASL specific tags - Oxford (Thomas OKell)
 		bool isOxfordASL = false;
