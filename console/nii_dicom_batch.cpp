@@ -60,7 +60,6 @@
 	#define myTextFileInputLists //comment out to disable this feature: https://github.com/rordenlab/dcm2niix/issues/288
 	const char kPathSeparator ='\\';
 	const char kFileSep[2] = "\\";
-
 #else
 	#define myTextFileInputLists
 	const char kPathSeparator ='/';
@@ -2771,10 +2770,10 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		//http://teem.sourceforge.net/nrrd/format.html
 		double dtMin = 0.0; //DT_UINT8, DT_RGB24, DT_UINT16
 		if (hdr.datatype == DT_INT16) dtMin = -32768.0;
-		if (hdr.datatype == DT_INT32) dtMin = -2147483648;
+		if (hdr.datatype == DT_INT32) dtMin = -2147483648.0;
 		fprintf(fp,"oldmin: %8.8f\n", (dtMin * hdr.scl_slope)  + hdr.scl_inter);
 		double dtMax = 255.00; //DT_UINT8, DT_RGB24
-		if (hdr.datatype == DT_INT16) dtMax = 32767;
+		if (hdr.datatype == DT_INT16) dtMax = 32767.0;
 		if (hdr.datatype == DT_UINT16) dtMax = 65535.0;
 		if (hdr.datatype == DT_INT32) dtMax = 2147483647.0;
 		fprintf(fp,"oldmax: %8.8f\n", (dtMax * hdr.scl_slope)  + hdr.scl_inter);
@@ -2836,7 +2835,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 			mf.m[0][2],mf.m[1][2],mf.m[2][2]);
 		//modality tag
 		fprintf(fp,"modality:=DWMRI\n");
-		float b_max = 0;
+		float b_max = 0.0;
 		for (int i = 0; i < numDTI; i++)
 			if (dti4D->S[i].V[0] > b_max)
 				b_max = dti4D->S[i].V[0];
@@ -2869,8 +2868,8 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     if (opts.isSaveNRRD) {
-		struct TDTI4D *dti4D;
-    	return nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, 0);
+		struct TDTI4D dti4D;
+    	return nii_saveNRRD(niiFilename, hdr, im, opts, d, &dti4D, 0);
     }
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);

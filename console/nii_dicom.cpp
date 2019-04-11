@@ -1566,8 +1566,6 @@ int isSameFloatGE (float a, float b) {
     return (fabs (a - b) <= 0.0001);
 }
 
-
-
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
 struct TDICOMdata d = clear_dicom_data();
 strcpy(d.protocolName, ""); //erase dummy with empty

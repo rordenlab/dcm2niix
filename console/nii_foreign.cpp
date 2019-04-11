@@ -270,7 +270,7 @@ PACK( typedef struct {
     			isAbort = true;
     		}
     		if (num_vol < kMaxVols) {
-    			imgOffsets[num_vol]	= lhdr.r[k][1];
+    			imgOffsets[num_vol]	= (size_t)lhdr.r[k][1];
     			imgSlopes[num_vol] = ihdrN.scale_factor;
     		}
     		num_vol ++;
@@ -297,12 +297,12 @@ PACK( typedef struct {
 	unsigned char * img = NULL;
 	if ((isScaleFactorVaries) && (bytesPerVoxel == 2)) { //we need to convert volumes from 16-bit to 32-bit to preserve scaling factors
 		int num_vox = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension;
-		size_t bytesPerVolumeIn = num_vox * bytesPerVoxel; //bytesPerVoxel == 2
+		size_t bytesPerVolumeIn = (size_t)(num_vox * bytesPerVoxel); //bytesPerVoxel == 2
 		unsigned char * imgIn = (unsigned char*)malloc(bytesPerVolumeIn);
 		int16_t * img16i = (int16_t*) imgIn;
 		bytesPerVoxel = 4;
-		size_t bytesPerVolume = num_vox * bytesPerVoxel;
-		img = (unsigned char*)malloc(bytesPerVolume * num_vol);
+		size_t bytesPerVolume = (size_t)(num_vox * bytesPerVoxel);
+		img = (unsigned char*)malloc((size_t)(bytesPerVolume * num_vol));
 		float * img32 = (float*) img;
 		for (int v = 0; v < num_vol; v++) {
 			fseek(f, imgOffsets[v] * 512, SEEK_SET);
