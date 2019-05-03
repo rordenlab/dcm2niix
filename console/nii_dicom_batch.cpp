@@ -591,6 +591,7 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		#endif
+
 		char keyStrDS[] = "sDiffusion.dsScheme";
 		*difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
 		if (*difBipolar == 0) {
@@ -890,24 +891,26 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	//attempt to determine BIDS sequence type
 /*(0018,0024) SequenceName
 ep_b: dwi
-epfid2d: perf (unlike bold, asl has "MR_ASL" in CSA header)
-   pCASL sequences store Post Label Delay in sWipMemBlock.adFree[2]	 = 	1200000.0
+epfid2d: perf
 epfid2d: bold
+epfid3d1_15: swi
 epse2d: dwi (when b-vals specified)
 epse2d: fmap (spin echo, e.g. TOPUP, nb could also be extra B=0 for DWI sequence)
 fl2d: localizer
-fl3d1r_t: angio (not sure how to detect angio or swi!)
+fl3d1r_t: angio
 fl3d1r_tm: angio
-fl3d1r: angio (20180628134317)
+fl3d1r: angio
 fl3d1r: swi
+fl3d1r: ToF
 fm2d: fmap (gradient echo, e.g. FUGUE)
 spc3d: T2
-spcir: flair
-spcir:also double-inversion "SequenceVariant": "SK_SP_MP_OSP","ScanOptions": "IR_PFP_FS",
+spcir: flair (dark fluid)
 spcR: PD
 tfl3d: T1
+tfl_me3d5_16ns: T1 (ME-MPRAGE)
 tir2d: flair
 tse2d: PD
+tse2d: T2
 tse3d: T2*/
 	/*
 	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
@@ -1709,7 +1712,6 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 #else
     if (opts.isSaveNRRD) {
     	if (numDti < kMaxDTI4D) {
-    		//dcmList[indx0].CSA.numDti
     		dcmList[indx0].CSA.numDti = numDti;
     		for (int i = 0; i < numDti; i++) //for each direction
         		for (int v = 0; v < 4; v++) //for each vector+B-value
@@ -2840,9 +2842,21 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		fprintf(fp,"DWMRI_b-value:=%g\n", b_max);
 		//gradient tag, e.g. DWMRI_gradient_0000:=0.0   0.0   0.0
 		for (int i = 0; i < numDTI; i++) {
-			float factor = 0;
+			float factor = 0.0;
 			if (b_max > 0) factor = sqrt(dti4D->S[i].V[0]/b_max);
-			fprintf(fp,"DWMRI_gradient_%04d:=%.17g %.17g %.17g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
+			if ( (dti4D->S[i].V[0] > 50.0) && (isSameFloatGE(0.0, dti4D->S[i].V[1])) && (isSameFloatGE(0.0, dti4D->S[i].V[2])) && (isSameFloatGE(0.0, dti4D->S[i].V[3]))  ) {
+				//On May 2, 2019, at 10:47 AM, Gordon L. Kindlmann <> wrote:
+				//(assuming b_max  2000, we write "isotropic" for the b=2000 isotropic image, and specify the b-value if it is an isotropic image but not b-bax
+				// DWMRI_gradient_0003:=isotropic b=1000
+				// DWMRI_gradient_0004:=isotropic
+				if (isSameFloatGE(b_max, dti4D->S[i].V[0]))
+					fprintf(fp,"DWMRI_gradient_%04d:=isotropic\n", i);
+				else
+					fprintf(fp,"DWMRI_gradient_%04d:=isotropic b=%g\n", i, dti4D->S[i].V[0]);
+			} else
+				fprintf(fp,"DWMRI_gradient_%04d:=%.17g %.17g %.17g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
+			//printf("%g =  %g %g %g>>>>\n",dti4D->S[i].V[0],  dti4D->S[i].V[1],dti4D->S[i].V[2],dti4D->S[i].V[3]);
+
 		}
 	}
 	fprintf(fp,"\n"); //blank line: end of NRRD header

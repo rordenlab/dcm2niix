@@ -3636,7 +3636,7 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
 void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,
                               bool isLittleEndian);
 void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, bool iafpp);
-void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
+int set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
 void set_diffusion_directionPhilips(struct TVolumeDiffusion* ptvd, float vec, const int axis);
 void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,  int axis);
 void set_bVal(struct TVolumeDiffusion* ptvd, float b);
@@ -3690,7 +3690,7 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
     _update_tvd(ptvd);
 } //set_directionality0018_9075()
 
-void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
+int set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
     //see Series 16 https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/ge-mr750-dwi-b-vals#table b750 = 1000000750\8\0\0 b1500 = 1000001500\8\0\0
     int bVal = dcmStrInt(lLength, inbuf);
     bVal = (bVal % 10000);
@@ -3698,6 +3698,7 @@ void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf
     //printf("(0043,1039) '%s' Slop_int_6 -->%d  \n", inbuf, bVal);
     //dd.CSA.numDti = 1;   // Always true for GE.
     _update_tvd(ptvd);
+    return bVal;
 } //set_bValGE()
 
 // axis: 0 -> x, 1 -> y , 2 -> z
@@ -5800,8 +5801,10 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kDiffusionBFactorGE :
-                if (d.manufacturer == kMANUFACTURER_GE)
-                  set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE) {
+                  d.CSA.dtiV[0] = (float)set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
+                  d.CSA.numDti = 1;
+                }
                 break;
             case kGeiisFlag:
                 if ((lLength > 4) && (buffer[lPos]=='G') && (buffer[lPos+1]=='E') && (buffer[lPos+2]=='I')  && (buffer[lPos+3]=='I')) {
@@ -6093,7 +6096,7 @@ if (d.isHasPhase)
 				d.patientPositionLast[k] = patientPositionEndPhilips[k];
 			}
     }
-	if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
+    if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
 	if (isVerbose) {
@@ -6257,8 +6260,9 @@ if (d.isHasPhase)
     	d.isLocalizer = true;
 	}
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
-	if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
-		d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
+	// Andrey Fedorov has requested keeping GE bvalues, see issue 264
+	//if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
+	//	d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
     if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
     if ((numDimensionIndexValues+2) < MAX_NUMBER_OF_DIMENSIONS)
