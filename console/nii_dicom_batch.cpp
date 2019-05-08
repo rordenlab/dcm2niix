@@ -33,7 +33,9 @@
 #include "nifti1.h"
 #endif
 #include "nii_dicom_batch.h"
+#ifndef USING_R
 #include "nii_foreign.h"
+#endif
 #include "nii_dicom.h"
 #include <ctype.h> //toupper
 #include <float.h>
@@ -360,14 +362,16 @@ void nii_saveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }// nii_saveText()
 
+#ifndef USING_R
 #define myReadAsciiCsa
+#endif
 
 #ifdef myReadAsciiCsa
 //read from the ASCII portion of the Siemens CSA series header
 //  this is not recommended: poorly documented
 //  it is better to stick to the binary portion of the Siemens CSA image header
 
-#if defined(_WIN64) || defined(_WIN32)
+#if defined(_WIN64) || defined(_WIN32) || defined(__sun)
 //https://opensource.apple.com/source/Libc/Libc-1044.1.2/string/FreeBSD/memmem.c
 /*-
  * Copyright (c) 2005 Pascal Gloor <pascal.gloor@spale.com>
@@ -848,6 +852,7 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	//tools like gdcmanon strip protocol name (0018,1030) but for Siemens we can recover it from CSASeriesHeaderInfo (0029,1020)
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 	if (strlen(d->protocolName) > 0) return;
+#ifdef myReadAsciiCsa
 	int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 	//float pf = 1.0f; //partial fourier
 	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
@@ -855,6 +860,7 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	TsWipMemBlock sWipMemBlock;
 	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
+#endif
 }
 
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
@@ -2324,11 +2330,16 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     strcat (baseoutname,pth);
     char appendChar[2] = {"a"};
     appendChar[0] = kPathSeparator;
-    if ((pth[strlen(pth)-1] != kPathSeparator) && (outname[0] != kPathSeparator))
+    if ((strlen(pth) > 0) && (pth[strlen(pth)-1] != kPathSeparator) && (outname[0] != kPathSeparator))
         strcat (baseoutname,appendChar);
 	//Allow user to specify new folders, e.g. "-f dir/%p" or "-f %s/%p/%m"
 	// These folders are created if they do not exist
     char *sep = strchr(outname, kPathSeparator);
+#if defined(USING_R) && (defined(_WIN64) || defined(_WIN32))
+    // R also uses forward slash on Windows, so allow it here
+    if (!sep)
+        sep = strchr(outname, kForeignPathSeparator);
+#endif
     if (sep) {
     	char newdir[2048] = {""};
     	strcat (newdir,baseoutname);
@@ -2531,12 +2542,13 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d)
 {
     hdr.vox_offset = 352;
+    
     // Extract the basename from the full file path
-    // R always uses '/' as the path separator, so this should work on all platforms
     char *start = niiFilename + strlen(niiFilename);
-    while (*start != '/')
+    while (start >= niiFilename && *start != '/' && *start != kPathSeparator)
         start--;
     std::string name(++start);
+
     nifti_image *image = nifti_convert_nhdr2nim(hdr, niiFilename);
     if (image == NULL)
         return EXIT_FAILURE;
@@ -2549,9 +2561,26 @@ int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im
     return EXIT_SUCCESS;
 }
 
-void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header, struct TDCMopts &opts)
+void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header, struct TDCMopts &opts, const char *filename)
 {
     ImageList *images = (ImageList *) opts.imageList;
+    switch (data.modality) {
+        case kMODALITY_CR:
+            images->addAttribute("modality", "CR");
+            break;
+        case kMODALITY_CT:
+            images->addAttribute("modality", "CT");
+            break;
+        case kMODALITY_MR:
+            images->addAttribute("modality", "MR");
+            break;
+        case kMODALITY_PT:
+            images->addAttribute("modality", "PT");
+            break;
+        case kMODALITY_US:
+            images->addAttribute("modality", "US");
+            break;
+    }
     switch (data.manufacturer) {
         case kMANUFACTURER_SIEMENS:
         	images->addAttribute("manufacturer", "Siemens");
@@ -2570,6 +2599,14 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("scannerModelName", data.manufacturersModelName);
     if (strlen(data.imageType) > 0)
         images->addAttribute("imageType", data.imageType);
+    if (data.seriesNum > 0)
+        images->addAttribute("seriesNumber", int(data.seriesNum));
+    if (strlen(data.seriesDescription) > 0)
+        images->addAttribute("seriesDescription", data.seriesDescription);
+    if (strlen(data.sequenceName) > 0)
+        images->addAttribute("sequenceName", data.sequenceName);
+    if (strlen(data.protocolName) > 0)
+        images->addAttribute("protocolName", data.protocolName);
     if (strlen(data.studyDate) >= 8 && strcmp(data.studyDate,"00000000") != 0)
         images->addDateAttribute("studyDate", data.studyDate);
     if (strlen(data.studyTime) > 0 && strncmp(data.studyTime,"000000",6) != 0)
@@ -2582,18 +2619,103 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("echoTime", data.TE);
     if (data.TR > 0.0)
         images->addAttribute("repetitionTime", data.TR);
-    if ((data.CSA.bandwidthPerPixelPhaseEncode > 0.0) && (header.dim[2] > 0) && (header.dim[1] > 0)) {
-        if (data.phaseEncodingRC =='C')
-            images->addAttribute("dwellTime", 1.0/data.CSA.bandwidthPerPixelPhaseEncode/header.dim[2]);
-        else if (data.phaseEncodingRC == 'R')
-            images->addAttribute("dwellTime", 1.0/data.CSA.bandwidthPerPixelPhaseEncode/header.dim[1]);
+    if (data.TI > 0.0)
+        images->addAttribute("inversionTime", data.TI);
+    if (!data.isXRay) {
+        if (data.zThick > 0.0)
+            images->addAttribute("sliceThickness", data.zThick);
+        if (data.zSpacing > 0.0)
+            images->addAttribute("sliceSpacing", data.zSpacing);
     }
-    if (data.phaseEncodingRC == 'C')
-        images->addAttribute("phaseEncodingDirection", "j");
-    else if (data.phaseEncodingRC == 'R')
-        images->addAttribute("phaseEncodingDirection", "i");
-    if (data.CSA.phaseEncodingDirectionPositive != -1)
-        images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
+    if (data.CSA.multiBandFactor > 1)
+        images->addAttribute("multibandFactor", data.CSA.multiBandFactor);
+    if (data.phaseEncodingSteps > 0)
+        images->addAttribute("phaseEncodingSteps", data.phaseEncodingSteps);
+    if (data.phaseEncodingLines > 0)
+        images->addAttribute("phaseEncodingLines", data.phaseEncodingLines);
+    
+    // Calculations relating to the reconstruction in the phase encode direction,
+    // which are needed to derive effective echo spacing and readout time below.
+    // See the nii_SaveBIDS() function for details
+    int reconMatrixPE = data.phaseEncodingLines;
+    if ((header.dim[2] > 0) && (header.dim[1] > 0)) {
+        if (header.dim[2] == header.dim[2]) //phase encoding does not matter
+            reconMatrixPE = header.dim[2];
+        else if (data.phaseEncodingRC =='R')
+            reconMatrixPE = header.dim[2];
+        else if (data.phaseEncodingRC =='C')
+            reconMatrixPE = header.dim[1];
+    }
+    
+    double bandwidthPerPixelPhaseEncode = data.bandwidthPerPixelPhaseEncode;
+    if (bandwidthPerPixelPhaseEncode == 0.0)
+        bandwidthPerPixelPhaseEncode = data.CSA.bandwidthPerPixelPhaseEncode;
+    double effectiveEchoSpacing = 0.0;
+    if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+        effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
+    if (data.effectiveEchoSpacingGE > 0.0)
+        effectiveEchoSpacing = data.effectiveEchoSpacingGE / 1000000.0;
+    
+    if (effectiveEchoSpacing > 0.0)
+        images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
+    if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
+        images->addAttribute("effectiveReadoutTime", effectiveEchoSpacing * (reconMatrixPE - 1.0));
+    if (data.pixelBandwidth > 0.0)
+        images->addAttribute("pixelBandwidth", data.pixelBandwidth);
+    if ((data.manufacturer == kMANUFACTURER_SIEMENS) && (data.dwellTime > 0))
+        images->addAttribute("dwellTime", data.dwellTime * 1e-9);
+    
+    // Phase encoding polarity
+    // We only save these attributes if both direction and polarity are known
+    if (((data.phaseEncodingRC == 'R') || (data.phaseEncodingRC == 'C')) &&  (!data.is3DAcq) && ((data.CSA.phaseEncodingDirectionPositive == 1) || (data.CSA.phaseEncodingDirectionPositive == 0))) {
+        if (data.phaseEncodingRC == 'C') {
+            images->addAttribute("phaseEncodingDirection", "j");
+            // Notice the XOR (^): the sense of phaseEncodingDirectionPositive
+            // is reversed if we are flipping the y-axis
+            images->addAttribute("phaseEncodingSign", ((data.CSA.phaseEncodingDirectionPositive == 0) ^ opts.isFlipY) ? -1 : 1);
+        }
+        else if (data.phaseEncodingRC == 'R') {
+            images->addAttribute("phaseEncodingDirection", "i");
+            images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
+        }
+    }
+    
+    // Slice timing
+    if (data.CSA.sliceTiming[0] >= 0.0 && (data.manufacturer == kMANUFACTURER_UIH || data.manufacturer == kMANUFACTURER_GE || (data.manufacturer == kMANUFACTURER_SIEMENS && !data.isXA10A))) {
+        std::vector<double> sliceTimes;
+        if (data.manufacturer == kMANUFACTURER_SIEMENS && data.CSA.protocolSliceNumber1 > 1) {
+            //https://github.com/rordenlab/dcm2niix/issues/40
+            for (int i=header.dim[3]-1; i>=0; i--) {
+                if (data.CSA.sliceTiming[i] < 0.0)
+                    break;
+                sliceTimes.push_back(data.CSA.sliceTiming[i] / 1000.0);
+            }
+        } else if (data.manufacturer != kMANUFACTURER_SIEMENS && data.CSA.protocolSliceNumber1 < 0) {
+            for (int i=header.dim[3]-1; i>=0; i--)
+                sliceTimes.push_back(data.CSA.sliceTiming[i]);
+        } else {
+            for (int i=0; i<header.dim[3]; i++)
+                sliceTimes.push_back(data.CSA.sliceTiming[i] / (data.manufacturer == kMANUFACTURER_SIEMENS ? 1000.0 : 1.0));
+        }
+        images->addAttribute("sliceTiming", sliceTimes);
+    }
+    
+    if (strlen(data.patientID) > 0)
+        images->addAttribute("patientIdentifier", data.patientID);
+    if (strlen(data.patientName) > 0)
+        images->addAttribute("patientName", data.patientName);
+    if (strlen(data.patientBirthDate) >= 8 && strcmp(data.patientBirthDate,"00000000") != 0)
+        images->addDateAttribute("patientBirthDate", data.patientBirthDate);
+    if (strlen(data.patientAge) > 0 && strcmp(data.patientAge,"000Y") != 0)
+        images->addAttribute("patientAge", data.patientAge);
+    if (data.patientSex == 'F')
+        images->addAttribute("patientSex", "F");
+    else if (data.patientSex == 'M')
+        images->addAttribute("patientSex", "M");
+    if (data.patientWeight > 0.0)
+        images->addAttribute("patientWeight", data.patientWeight);
+    if (strlen(data.imageComments) > 0)
+        images->addAttribute("comments", data.imageComments);
 }
 
 #else
@@ -4331,13 +4453,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				dcmList[dcmSort[0].indx].CSA.multiBandFactor = nZero;
 			//report times
 			if (opts.isVerbose > 1) {
-				printf("GE slice timing\n");
-				printf("\tTime\tX\tY\tZ\tInstance\n");
+				printMessage("GE slice timing\n");
+				printMessage("\tTime\tX\tY\tZ\tInstance\n");
 				for (int v = 0; v < hdr0.dim[3]; v++) {
 					if (v == (hdr0.dim[3]-1))
-						printf("...\n");
+						printMessage("...\n");
 					if ((v < 4) || (v == (hdr0.dim[3]-1)))
-						printf("\t%g\t%g\t%g\t%g\t%d\n", dcmList[dcmSort[0].indx].CSA.sliceTiming[v], dcmList[dcmSort[v+j].indx].patientPosition[1], dcmList[dcmSort[v+j].indx].patientPosition[2], dcmList[dcmSort[v+j].indx].patientPosition[3], dcmList[dcmSort[v+j].indx].imageNum);
+						printMessage("\t%g\t%g\t%g\t%g\t%d\n", dcmList[dcmSort[0].indx].CSA.sliceTiming[v], dcmList[dcmSort[v+j].indx].patientPosition[1], dcmList[dcmSort[v+j].indx].patientPosition[2], dcmList[dcmSort[v+j].indx].patientPosition[3], dcmList[dcmSort[v+j].indx].imageNum);
 
 				} //for v
 			} //verbose > 1
@@ -4452,7 +4574,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     } else if ((!opts.isMaximize16BitRange) && (hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned))
     	nii_check16bitUnsigned(imgM, &hdr0, opts.isVerbose); //save UINT16 as INT16 if we can do this losslessly
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
-    #ifdef USING_R
+    #ifndef USING_R
     fflush(stdout); //show immediately if run from MRIcroGL GUI
     #endif
     //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
@@ -4556,9 +4678,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         returnCode = nii_saveCrop(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]); //n.b. must be run AFTER nii_setOrtho()!
 #ifdef USING_R
     // Note that for R, only one image should be created per series
-    // Hence the logical OR here
-    if (returnCode == EXIT_SUCCESS || nii_saveNII(pathoutname,hdr0,imgM,opts, dcmList[dcmSort[0].indx]) == EXIT_SUCCESS)
-        nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts);
+    // Hence this extra test
+    if (returnCode != EXIT_SUCCESS)
+        returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
+    if (returnCode == EXIT_SUCCESS)
+        nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts, nameList->str[dcmSort[0].indx]);
 #endif
     free(imgM);
     return returnCode;//EXIT_SUCCESS;
@@ -4923,7 +5047,11 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
 	//check input file
     FILE *fp = fopen(fname, "r");
     if (fp == NULL)
+#ifdef USING_R
+        return EXIT_FAILURE;
+#else
     	exit(EXIT_FAILURE);
+#endif
     int nConvert = 0;
     char dcmname[2048];
     while (fgets(dcmname, sizeof(dcmname), fp)) {
@@ -4945,7 +5073,7 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
     	return EXIT_FAILURE;
     }
     printMessage("Found %d DICOM file(s)\n", nConvert);
-    #ifdef USING_R
+    #ifndef USING_R
     fflush(stdout); //show immediately if run from MRIcroGL GUI
     #endif
     TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
@@ -4983,7 +5111,11 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
 	//check input file
     FILE *fp = fopen(fname, "r");
     if (fp == NULL)
+#ifdef USING_R
+        return EXIT_FAILURE;
+#else
     	exit(EXIT_FAILURE);
+#endif
     char *dcmname = NULL;
     int nConvert = 0;
     size_t len = 0;
@@ -5006,7 +5138,7 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
     	return EXIT_FAILURE;
     }
     printMessage("Found %d DICOM file(s)\n", nConvert);
-    #ifdef USING_R
+    #ifndef USING_R
     fflush(stdout); //show immediately if run from MRIcroGL GUI
     #endif
     TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
@@ -5079,12 +5211,14 @@ void searchDirForDICOM(char *path, struct TSearchList *nameList, int maxDepth, i
             }
             nameList->numItems++;
             //printMessage("dcm %lu %s \n",nameList->numItems, filename);
+#ifndef USING_R
         } else {
         	if (fileBytes(filename) > 2048)
             	convert_foreign (filename, *opts);
         	#ifdef MY_DEBUG
             	printMessage("Not a dicom:\t%s\n", filename);
         	#endif
+#endif
         }
         tinydir_next(&dir);
     }
@@ -5189,6 +5323,94 @@ int copyFile (char * src_path, char * dst_path) {
     return EXIT_SUCCESS;
 }
 
+#ifdef USING_R
+
+// This implementation differs enough from the mainline one to be separated
+int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* opts ) {
+    // The tinydir_open_sorted function reads the whole directory at once,
+    // which is necessary in this context since we may be creating new
+    // files in the same directory, which we don't want to further examine
+    tinydir_dir dir;
+    int count = 0;
+    if (tinydir_open_sorted(&dir, path) != 0)
+        return -1;
+    
+    for (size_t i=0; i<dir.n_files; i++) {
+        // If this directory entry is a subdirectory, search it recursively
+        tinydir_file &file = dir._files[i];
+        const std::string sourcePath = std::string(path) + kFileSep + file.name;
+        char *sourcePathPtr = const_cast<char*>(sourcePath.c_str());
+        if ((file.is_dir) && (depth < maxDepth) && (file.name[0] != '.')) {
+            const int subdirectoryCount = searchDirRenameDICOM(sourcePathPtr, maxDepth, depth+1, opts);
+            if (subdirectoryCount < 0) {
+                tinydir_close(&dir);
+                return -1;
+            }
+            count += subdirectoryCount;
+        } else if (file.is_reg && strlen(file.name) > 0 && file.name[0] != '.' && strcicmp(file.name,"DICOMDIR") != 0 && isDICOMfile(sourcePathPtr)) {
+            TDICOMdata dcm = readDICOM(sourcePathPtr);
+			if (dcm.imageNum > 0) {
+				if ((opts->isIgnoreDerivedAnd2D) && ((dcm.isLocalizer) || (strcmp(dcm.sequenceName, "_tfl2d1")== 0) || (strcmp(dcm.sequenceName, "_fl3d1_ns")== 0) || (strcmp(dcm.sequenceName, "_fl2d1")== 0)) ) {
+					printMessage("Ignoring localizer %s\n", sourcePathPtr);
+                    opts->ignoredPaths.push_back(sourcePath);
+				} else if ((opts->isIgnoreDerivedAnd2D && dcm.isDerived) ) {
+					printMessage("Ignoring derived %s\n", sourcePathPtr);
+                    opts->ignoredPaths.push_back(sourcePath);
+				} else {
+					// Create an initial file name
+                    char outname[PATH_MAX] = {""};
+					if (dcm.echoNum > 1)
+                        dcm.isMultiEcho = true;
+					nii_createFilename(dcm, outname, *opts);
+                    
+                    // If the file name part of the target path has no extension, add ".dcm"
+                    std::string targetPath(outname);
+                    std::string targetStem, targetExtension;
+                    const size_t periodLoc = targetPath.find_last_of('.');
+                    if (periodLoc == targetPath.length() - 1) {
+                        targetStem = targetPath.substr(0, targetPath.length() - 1);
+                        targetExtension = ".dcm";
+                    } else if (periodLoc == std::string::npos || periodLoc < targetPath.find_last_of("\\/")) {
+                        targetStem = targetPath;
+                        targetExtension = ".dcm";
+                    } else {
+                        targetStem = targetPath.substr(0, periodLoc);
+                        targetExtension = targetPath.substr(periodLoc);
+                    }
+                    
+                    // Deduplicate the target path to avoid overwriting existing files
+                    targetPath = targetStem + targetExtension;
+                    GetRNGstate();
+                    while (is_fileexists(targetPath.c_str())) {
+                        std::ostringstream suffix;
+                        unsigned suffixValue = static_cast<unsigned>(round(R::unif_rand() * (R_pow_di(2.0,24) - 1.0)));
+                        suffix << std::hex << std::setfill('0') << std::setw(6) << suffixValue;
+                        targetPath = targetStem + "_" + suffix.str() + targetExtension;
+                    }
+                    PutRNGstate();
+                    
+                    // Copy the file, unless the source and target paths are the same
+                    if (targetPath.compare(sourcePath) == 0) {
+                        if (opts->isVerbose > 1)
+                            printMessage("Skipping %s, which would be copied onto itself\n", sourcePathPtr);
+                    } else if (copyFile(sourcePathPtr, const_cast<char*>(targetPath.c_str())) == EXIT_SUCCESS) {
+                        opts->sourcePaths.push_back(sourcePath);
+                        opts->targetPaths.push_back(targetPath);
+                        count++;
+                        if (opts->isVerbose > 0)
+                            printMessage("Copying %s -> %s\n", sourcePathPtr, targetPath.c_str());
+                    } else {
+                        printWarning("Unable to copy to path %s\n", targetPath.c_str());
+                    }
+				}
+			}
+        }
+    }
+    return count;
+}
+
+#else
+
 int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* opts ) {
     int retAll = 0;
     //bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
@@ -5242,6 +5464,8 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
     tinydir_close(&dir);
     return retAll;
 }// searchDirForDICOM()
+
+#endif // USING_R
 
 int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     struct TSearchList nameList;
@@ -5314,6 +5538,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
         TWarnings warnings = setWarnings();
         // Create the first series from the first DICOM file
         TDicomSeries firstSeries;
+        char firstSeriesName[2048] = "";
+        nii_createFilename(dcmList[0], firstSeriesName, *opts);
+        firstSeries.name = firstSeriesName;
         firstSeries.representativeData = dcmList[0];
         firstSeries.files.push_back(nameList.str[0]);
         opts->series.push_back(firstSeries);
@@ -5332,6 +5559,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             // If not, create a new series object
             if (!matched) {
                 TDicomSeries nextSeries;
+                char nextSeriesName[2048] = "";
+                nii_createFilename(dcmList[i], nextSeriesName, *opts);
+                nextSeries.name = nextSeriesName;
                 nextSeries.representativeData = dcmList[i];
                 nextSeries.files.push_back(nameList.str[i]);
                 opts->series.push_back(nextSeries);
@@ -5447,6 +5677,10 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);
     dropTrailingFileSep(opts->indir);
+#ifdef USING_R
+    // Full file paths are only used by R/divest when reorganising DICOM files
+    if (opts->isRenameNotConvert) {
+#endif
     if (strlen(opts->outdir) < 1) {
         strcpy(opts->outdir,opts->indir);
     } else
@@ -5460,9 +5694,14 @@ int nii_loadDir(struct TDCMopts* opts) {
 		return EXIT_FAILURE;
 		#endif
     }
+#ifdef USING_R
+    }
+#endif
     getFileNameX(opts->indirParent, opts->indir, 512);
+#ifndef USING_R
     if (isFile && ( (isExt(indir, ".v"))) )
 		return convert_foreign (indir, *opts);
+#endif
     if (isFile && ( (isExt(indir, ".par")) || (isExt(indir, ".rec"))) ) {
         char pname[512], rname[512];
         strcpy(pname,indir);
@@ -5483,7 +5722,11 @@ int nii_loadDir(struct TDCMopts* opts) {
 	if (opts->isRenameNotConvert) {
 		int nConvert = searchDirRenameDICOM(opts->indir, opts->dirSearchDepth, 0, opts);
 		if (nConvert < 0) return EXIT_FAILURE;
+#ifdef USING_R
+		printMessage("Renamed %d DICOMs\n", nConvert);
+#else
 		printMessage("Converted %d DICOMs\n", nConvert);
+#endif
 		return EXIT_SUCCESS;
 	}
     if ((isFile) && (opts->isOnlySingleFile))
@@ -5657,7 +5900,9 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
 
 void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "setDefaultOpts(opts,NULL)" or "setDefaultOpts(opts,argv)" where argv[0] is path to search
     strcpy(opts->pigzname,"");
+#ifndef USING_R
     readFindPigz(opts, argv);
+#endif
     #ifdef myEnableJasper
     opts->compressFlag = kCompressYes; //JASPER for JPEG2000
 	#else

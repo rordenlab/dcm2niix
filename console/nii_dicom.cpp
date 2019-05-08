@@ -335,10 +335,11 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     	flip = ((sliceV.v[0]+sliceV.v[1]+sliceV.v[2]) < 0);
     	//printMessage("verify slice dir %g %g %g\n",sliceV.v[0],sliceV.v[1],sliceV.v[2]);
     	if (isVerbose) { //1st pass only
-			if (!d.isDerived) //do not warn user if image is derived
+			if (!d.isDerived) {//do not warn user if image is derived
 				printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
-			else
+			} else {
 				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image)\n");
+            }
     	}
     }
     if (flip) {
@@ -514,11 +515,17 @@ mat44 xform_mat(struct TDICOMdata d) {
 	} else if (true) {
 //SliceNormalVector TO DO
 		printMessage("Not completed");
+#ifndef USING_R
 		exit(2);
+#endif
 		return R44;
 	}
 	printMessage("Unable to determine spatial transform\n");
+#ifndef USING_R
 	exit(1);
+#else
+    return R44;
+#endif
 }
 
 mat44 set_nii_header(struct TDICOMdata d) {
@@ -653,9 +660,9 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         sprintf(dtxt, ";mb=%d", d.CSA.multiBandFactor);
         strcat(txt,dtxt);
     }
-    // GCC 8 warns about truncation using snprintf; using strncpy instead seems to keep it happy
+    // GCC 8 warns about truncation using snprintf
     // snprintf(h->descrip,80, "%s",txt);
-    strncpy(h->descrip, txt, 79);
+    memcpy(h->descrip, txt, 79);
     h->descrip[79] = '\0';
 
     if (strlen(d.imageComments) > 0)
@@ -5884,6 +5891,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
         } //switch/case for groupElement
 
+#ifndef USING_R
         if (isVerbose > 1) {
         	//dcm2niix i fast because it does not use a dictionary.
         	// this is a very incomplete DICOM header report, and not a substitute for tools like dcmdump
@@ -5944,6 +5952,7 @@ double TE = 0.0; //most recent echo time recorded
             	printMessage("%s\n", str);
 	    	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
+#endif
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
     	//printMessage(" DWI bxyz %g %g %g %g %d\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], d.CSA.numDti);
@@ -5953,10 +5962,11 @@ double TE = 0.0; //most recent echo time recorded
     //printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     //printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     if (encapsulatedDataFragmentStart > 0) {
-        if (encapsulatedDataFragments > 1)
+        if (encapsulatedDataFragments > 1) {
         	printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
-    	else
+    	} else {
     		d.imageStart = encapsulatedDataFragmentStart;
+        }
     } else if ((isEncapsulatedData) && (d.imageStart < 128)) {
     	//http://www.dclunie.com/medical-image-faq/html/part6.html
 		//Uncompressed data (unencapsulated) is sent in DICOM as a series of raw bytes or words (little or big endian) in the Value field of the Pixel Data element (7FE0,0010). Encapsulated data on the other hand is sent not as raw bytes or words but as Fragments contained in Items that are the Value field of Pixel Data
@@ -5973,7 +5983,7 @@ double TE = 0.0; //most recent echo time recorded
 		// 20161117131643.80000 -> date 20161117 time 131643.80000
 		//printMessage("acquisitionDateTime %s\n",acquisitionDateTimeTxt);
     	char acquisitionDateTxt[kDICOMStr];
-        strncpy(acquisitionDateTxt, acquisitionDateTimeTxt, kYYYYMMDDlen);
+        memcpy(acquisitionDateTxt, acquisitionDateTimeTxt, kYYYYMMDDlen);
 		acquisitionDateTxt[kYYYYMMDDlen] = '\0'; // IMPORTANT!
         d.acquisitionDate = atof(acquisitionDateTxt);
         char acquisitionTimeTxt[kDICOMStr];
@@ -6111,7 +6121,11 @@ if (d.isHasPhase)
     }
     if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132)) {
     	printError("Conversion aborted due to corrupt file: %s\n", fname);
+#ifdef USING_R
+        Rf_error("Irrecoverable error during conversion");
+#else
     	exit (kEXIT_CORRUPT_FILE_FOUND);
+#endif
     }
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
