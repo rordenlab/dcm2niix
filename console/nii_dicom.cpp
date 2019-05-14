@@ -788,6 +788,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isSegamiOasis = false; //these images do not store spatial coordinates
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
+    d.isDiffusion = false;
     d.isVectorFromBMatrix = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
@@ -4000,6 +4001,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
+#define  kAcquisitionContrast (uint32_t) 0x0008+(0x9209 << 16 )//'0008' '9209' 'CS' 'AcquisitionContrast'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
 #define  kAccessionNumber 0x0008+(0x0050 << 16 )
@@ -4783,6 +4785,13 @@ double TE = 0.0; //most recent echo time recorded
                 if (isImaginary) d.isHasImaginary = true;
                 if (isMagnitude) d.isHasMagnitude = true;
                 break;
+            case kAcquisitionContrast:
+                char acqContrast[kDICOMStr];
+                dcmStr(lLength, &buffer[lPos], acqContrast);
+                if (((int) strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
+                    d.isDiffusion = true;
+                break;
+
             case kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
@@ -6140,7 +6149,7 @@ if (d.isHasPhase)
 		//	printf("diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++)
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
-		if ((d.manufacturer != kMANUFACTURER_BRUKER) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		if ( !(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;
