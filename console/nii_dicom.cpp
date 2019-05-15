@@ -1015,6 +1015,14 @@ int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //rea
     return lBuffer[3]+(lBuffer[2]<<8)+(lBuffer[1]<<16)+(lBuffer[0]<<24); //shortint vs word?
 } //dcmInt()
 
+
+uint32_t dcmAttributeTag (unsigned char lBuffer[], bool littleEndian) {
+    // read Attribute Tag (AT) value
+    // return in Group + (Element << 16) format
+    if (littleEndian)
+        return lBuffer[0]+(lBuffer[1]<<8)+(lBuffer[2]<<16)+(lBuffer[3]<<24);
+    return lBuffer[1]+(lBuffer[0]<<8)+(lBuffer[3]<<16)+(lBuffer[2]<<24);
+} //dcmInt()
 /*
 //the code below trims strings after integer
 // does not appear required not http://en.cppreference.com/w/cpp/string/byte/atoi
@@ -4094,6 +4102,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
+#define  kDimensionIndexPointer 0x0020+uint32_t(0x9165<< 16 )
 //Private Group 21 as Used by Siemens:
 #define  kSequenceVariant21 0x0021+(0x105B<< 16 )//CS
 #define  kPATModeText 0x0021+(0x1009<< 16 )//LO, see kImaPATModeText
@@ -4195,6 +4204,8 @@ double TE = 0.0; //most recent echo time recorded
     int locationsInAcquisitionGE = 0;
     int PETImageIndex = 0;
     int inStackPositionNumber = 0;
+    uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
+    size_t dimensionIndexPointerCounter = 0;
     int maxInStackPositionNumber = 0;
     //int temporalPositionIdentifier = 0;
     int locationsInAcquisitionPhilips = 0;
@@ -4348,9 +4359,24 @@ double TE = 0.0; //most recent echo time recorded
 				printError("Too many slices to track dimensions. Only up to %d are supported\n", kMaxSlice2D);
 				break;
 			}
+            uint32_t dimensionIndexOrder[MAX_NUMBER_OF_DIMENSIONS];
+            for(size_t i = 0; i < nDimIndxVal; i++)
+                dimensionIndexOrder[i] = i;
+
+            // Bruker Enhanced MR IOD: reorder dimensions to ensure InStackPositionNumber corresponds to the first one
+            // This will ensure correct ordering of slices in 4D datasets
+            if (d.manufacturer == kMANUFACTURER_BRUKER) {
+                for(size_t i = 1; i < dimensionIndexPointerCounter; i++){
+                    if (dimensionIndexPointer[i] == kInStackPositionNumber){
+                        //swap with first
+                        dimensionIndexOrder[i] = 0;
+                        dimensionIndexOrder[0] = i;
+                    }
+                }
+            }
 			int ndim = nDimIndxVal;
 			for (int i = 0; i < ndim; i++)
-				dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[i];
+				dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
 			dcmDim[numDimensionIndexValues].TE = TE;
 			dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
 			dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
@@ -5026,6 +5052,9 @@ double TE = 0.0; //most recent echo time recorded
 				//printf("<%d>\n",inStackPositionNumber);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
+            case kDimensionIndexPointer:
+                dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos],d.isLittleEndian);
+                break;
 			case kFrameContentSequence :
             	//if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //see https://github.com/rordenlab/dcm2niix/issues/241
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
@@ -6137,14 +6166,12 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
-    	if (d.manufacturer != kMANUFACTURER_BRUKER) { //only single sample Bruker - perhaps use 0020,9057 to identify if space or time is 3rd dimension
     	//sort dimensions
 #ifdef USING_R
         std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
 #else
         qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 #endif
-		}
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++)
