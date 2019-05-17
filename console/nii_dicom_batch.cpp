@@ -2542,7 +2542,7 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d)
 {
     hdr.vox_offset = 352;
-    
+
     // Extract the basename from the full file path
     char *start = niiFilename + strlen(niiFilename);
     while (start >= niiFilename && *start != '/' && *start != kPathSeparator)
@@ -2633,7 +2633,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("phaseEncodingSteps", data.phaseEncodingSteps);
     if (data.phaseEncodingLines > 0)
         images->addAttribute("phaseEncodingLines", data.phaseEncodingLines);
-    
+
     // Calculations relating to the reconstruction in the phase encode direction,
     // which are needed to derive effective echo spacing and readout time below.
     // See the nii_SaveBIDS() function for details
@@ -2646,7 +2646,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         else if (data.phaseEncodingRC =='C')
             reconMatrixPE = header.dim[1];
     }
-    
+
     double bandwidthPerPixelPhaseEncode = data.bandwidthPerPixelPhaseEncode;
     if (bandwidthPerPixelPhaseEncode == 0.0)
         bandwidthPerPixelPhaseEncode = data.CSA.bandwidthPerPixelPhaseEncode;
@@ -2655,7 +2655,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
     if (data.effectiveEchoSpacingGE > 0.0)
         effectiveEchoSpacing = data.effectiveEchoSpacingGE / 1000000.0;
-    
+
     if (effectiveEchoSpacing > 0.0)
         images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
     if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
@@ -2664,7 +2664,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("pixelBandwidth", data.pixelBandwidth);
     if ((data.manufacturer == kMANUFACTURER_SIEMENS) && (data.dwellTime > 0))
         images->addAttribute("dwellTime", data.dwellTime * 1e-9);
-    
+
     // Phase encoding polarity
     // We only save these attributes if both direction and polarity are known
     if (((data.phaseEncodingRC == 'R') || (data.phaseEncodingRC == 'C')) &&  (!data.is3DAcq) && ((data.CSA.phaseEncodingDirectionPositive == 1) || (data.CSA.phaseEncodingDirectionPositive == 0))) {
@@ -2679,7 +2679,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
             images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
         }
     }
-    
+
     // Slice timing
     if (data.CSA.sliceTiming[0] >= 0.0 && (data.manufacturer == kMANUFACTURER_UIH || data.manufacturer == kMANUFACTURER_GE || (data.manufacturer == kMANUFACTURER_SIEMENS && !data.isXA10A))) {
         std::vector<double> sliceTimes;
@@ -2699,7 +2699,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         }
         images->addAttribute("sliceTiming", sliceTimes);
     }
-    
+
     if (strlen(data.patientID) > 0)
         images->addAttribute("patientIdentifier", data.patientID);
     if (strlen(data.patientName) > 0)
@@ -5334,7 +5334,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
     int count = 0;
     if (tinydir_open_sorted(&dir, path) != 0)
         return -1;
-    
+
     for (size_t i=0; i<dir.n_files; i++) {
         // If this directory entry is a subdirectory, search it recursively
         tinydir_file &file = dir._files[i];
@@ -5362,7 +5362,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
 					if (dcm.echoNum > 1)
                         dcm.isMultiEcho = true;
 					nii_createFilename(dcm, outname, *opts);
-                    
+
                     // If the file name part of the target path has no extension, add ".dcm"
                     std::string targetPath(outname);
                     std::string targetStem, targetExtension;
@@ -5377,7 +5377,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
                         targetStem = targetPath.substr(0, periodLoc);
                         targetExtension = targetPath.substr(periodLoc);
                     }
-                    
+
                     // Deduplicate the target path to avoid overwriting existing files
                     targetPath = targetStem + targetExtension;
                     GetRNGstate();
@@ -5388,7 +5388,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
                         targetPath = targetStem + "_" + suffix.str() + targetExtension;
                     }
                     PutRNGstate();
-                    
+
                     // Copy the file, unless the source and target paths are the same
                     if (targetPath.compare(sourcePath) == 0) {
                         if (opts->isVerbose > 1)
@@ -5413,13 +5413,23 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
 
 int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* opts ) {
     int retAll = 0;
-    //bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
     tinydir_dir dir;
-    tinydir_open(&dir, path);
-    while (dir.has_next) {
-        tinydir_file file;
-        file.is_dir = 0; //avoids compiler warning: this is set by tinydir_readfile
-        tinydir_readfile(&dir, &file);
+    int count = 0;
+    if (tinydir_open_sorted(&dir, path) != 0) {
+		if (opts->isVerbose > 0)
+			printMessage("Unable to open %s\n", path);
+        return -1;
+    }
+    if (dir.n_files < 1) {
+		if (opts->isVerbose > 0)
+			printMessage("No files in %s\n", path);
+        return 0;
+    }
+	if (opts->isVerbose > 0)
+		printMessage("Found %lu items in %s\n", dir.n_files, path);
+    for (size_t i=0; i<dir.n_files; i++) {
+        // If this directory entry is a subdirectory, search it recursively
+        tinydir_file &file = dir._files[i];
         char filename[768] ="";
         strcat(filename, path);
         strcat(filename,kFileSep);
