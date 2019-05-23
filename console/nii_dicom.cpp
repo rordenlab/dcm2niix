@@ -4248,6 +4248,7 @@ double TE = 0.0; //most recent echo time recorded
     bool isOrient = false;
     //bool isDcm4Che = false;
     bool isMoCo = false;
+    bool isPaletteColor = false;
     bool isInterpolated = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
@@ -5089,7 +5090,8 @@ double TE = 0.0; //most recent echo time recorded
  				char interp[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], interp);
                 if (strcmp(interp, "PALETTE_COLOR") == 0)
-                	printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
+                	isPaletteColor = true;
+                	//printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
             	break; }
             case kPlanarRGB:
                 d.isPlanarRGB = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -6073,6 +6075,11 @@ double TE = 0.0; //most recent echo time recorded
     //    d.seriesNum = d.seriesNum + (100*coilNum);
     //if (d.echoNum > 1) //segment images with multiple echoes
     //    d.seriesNum = d.seriesNum + (kEchoMult*d.echoNum);
+    if (isPaletteColor) {
+    	d.isValid = false;
+    	d.isDerived = true; //to my knowledge, palette images always derived
+    	printWarning("Photometric Interpretation 'PALETTE COLOR' not supported\n");
+    }
     if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
         //dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);

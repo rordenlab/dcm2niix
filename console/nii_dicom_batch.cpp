@@ -1148,7 +1148,24 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", sWipMemBlock.adFree[1]); //mTm
 			json_Float(fp, "\t\"TagDuration\": %g,\n", sWipMemBlock.alFree[9]/ 1000.0); //ms -> sec
 			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[10]/ 1000.0); //ms -> sec
+			//report post label delay
+
+			int nPLD = 0;
 			bool isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
+			for (int k = 11; k < 31; k++) {
+				if ((isnan(sWipMemBlock.alFree[k])) || (sWipMemBlock.alFree[k] <= 0.0)) isValid = false;
+				if (isValid) nPLD ++;
+			} //for k
+			if (nPLD > 0) { // record PostLabelDelays, these are listed as "PLD0","PLD1",etc in PDF
+				fprintf(fp, "\t\"InitialPostLabelDelay\": [\n"); //https://docs.google.com/document/d/15tnn5F10KpgHypaQJNNGiNKsni9035GtDqJzWqkkP6c/edit#
+				for (int i = 0; i < nPLD; i++) {
+					if (i != 0)
+						fprintf(fp, ",\n");
+					fprintf(fp, "\t\t%g", sWipMemBlock.alFree[i+11]/ 1000.0); //ms -> sec
+				}
+				fprintf(fp, "\t],\n");
+			}
+			/*isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 11; k < 31; k++) {
 				if (isValid) {
 					char newstr[256];
@@ -1156,7 +1173,7 @@ tse3d: T2*/
 					json_Float(fp, newstr, sWipMemBlock.alFree[k]/ 1000.0); //ms -> sec
 					if (sWipMemBlock.alFree[k] <= 0.0) isValid = false;
 				}//isValid
-			} //for k
+			} //for k */
 			for (int k = 3; k < 11; k++) { //vessel locations
 				char newstr[256];
 				sprintf(newstr, "\t\"sWipMemBlockAdFree%d\": %%g,\n", k);
@@ -1173,12 +1190,30 @@ tse3d: T2*/
 			json_Float(fp, "\t\"Tag1\": %g,\n", sWipMemBlock.alFree[11]/1000.0); //DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"Tag2\": %g,\n", sWipMemBlock.alFree[12]/1000.0); //DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"Tag3\": %g,\n", sWipMemBlock.alFree[13]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"PLD0\": %g,\n", sWipMemBlock.alFree[30]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"PLD1\": %g,\n", sWipMemBlock.alFree[31]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"PLD2\": %g,\n", sWipMemBlock.alFree[32]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"PLD3\": %g,\n", sWipMemBlock.alFree[33]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"PLD4\": %g,\n", sWipMemBlock.alFree[34]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0); //DelayTimeInTR usec -> sec
+
+			int nPLD = 0;
+			bool isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
+			for (int k = 30; k < 38; k++) {
+				if ((isnan(sWipMemBlock.alFree[k])) || (sWipMemBlock.alFree[k] <= 0.0)) isValid = false;
+				if (isValid) nPLD ++;
+			} //for k
+			if (nPLD > 0) { // record PostLabelDelays, these are listed as "PLD0","PLD1",etc in PDF
+				fprintf(fp, "\t\"InitialPostLabelDelay\": [\n"); //https://docs.google.com/document/d/15tnn5F10KpgHypaQJNNGiNKsni9035GtDqJzWqkkP6c/edit#
+				for (int i = 0; i < nPLD; i++) {
+					if (i != 0)
+						fprintf(fp, ",\n");
+					fprintf(fp, "\t\t%g", sWipMemBlock.alFree[i+30]/ 1000.0); //ms -> sec
+				}
+				fprintf(fp, "\t],\n");
+			}
+			/*
+			json_Float(fp, "\t\"PLD0\": %g,\n", sWipMemBlock.alFree[30]/1000.0);
+			json_Float(fp, "\t\"PLD1\": %g,\n", sWipMemBlock.alFree[31]/1000.0);
+			json_Float(fp, "\t\"PLD2\": %g,\n", sWipMemBlock.alFree[32]/1000.0);
+			json_Float(fp, "\t\"PLD3\": %g,\n", sWipMemBlock.alFree[33]/1000.0);
+			json_Float(fp, "\t\"PLD4\": %g,\n", sWipMemBlock.alFree[34]/1000.0);
+			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0);
+			*/
 		}
 		if (isOxfordASL) { //properties common to 2D and 3D ASL
 			//labelling plane
@@ -2296,8 +2331,6 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (isDcmExt)
     	strcat (outname,".dcm");
     if (strlen(outname) < 1) strcpy(outname, "dcm2nii_invalidName");
-
-
     if (outname[0] == '.') outname[0] = '_'; //make sure not a hidden file
     //eliminate illegal characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
     // https://github.com/rordenlab/dcm2niix/issues/237
@@ -4810,6 +4843,9 @@ int compareTDCMsort(void const *item1, void const *item2) {
 		retval = -1;
 	else if (dcm1->img > dcm2->img)
 		retval = 1;
+	//printf("%d  %d\n",  dcm1->img, dcm2->img);
+	//for(int i=0; i < MAX_NUMBER_OF_DIMENSIONS; i++)
+	//	printf("%d  %d\n", dcm1->dimensionIndexValues[i], dcm2->dimensionIndexValues[i]);
 	if(retval != 0) return retval; //sorted images
 	// Check the dimensionIndexValues (useful for enhanced DICOM 4D series).
 	// ->img is basically behaving as a (seriesNum, imageNum) sort key
@@ -5299,7 +5335,7 @@ int copyFile (char * src_path, char * dst_path) {
     }
     if (is_fileexists(dst_path)) {
     	if (true) {
-    		printWarning("Naming conflict: skipping existing %s\n", dst_path);
+    		printWarning("Naming conflict (duplicates?): '%s' '%s'\n", src_path, dst_path);
     		return EXIT_SUCCESS;
     	} else {
     		printError("File naming conflict. Existing file %s\n", dst_path);

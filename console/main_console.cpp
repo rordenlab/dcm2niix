@@ -468,9 +468,9 @@ int main(int argc, const char * argv[])
 	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { //sensible naming scheme for renaming option
 		//strcpy(opts.filename,argv[i]);
 		#if defined(_WIN64) || defined(_WIN32)
-		strcpy(opts.filename,"%t/%s_%p/%4r.dcm"); //nrrd or nhdr
+		strcpy(opts.filename,"%t\\%s_%p\\%4r.dcm"); //nrrd or nhdr (windows folders)
 		#else
-		strcpy(opts.filename,"%t\\%s_%p\\%4r.dcm"); //nrrd or nhdr
+		strcpy(opts.filename,"%t/%s_%p/%4r.dcm"); //nrrd or nhdr (unix folders)
 		#endif
 		printf("renaming without output filename, assuming '-f %s'\n", opts.filename);
 	}
