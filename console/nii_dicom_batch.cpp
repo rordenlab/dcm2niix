@@ -2807,7 +2807,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     if (nDim < 1) return EXIT_FAILURE;
     bool isGz = opts.isGz;
 	size_t imgsz = nii_ImgBytes(hdr);
-	if  ((isGz) && (imgsz >=  2147483647)) { //use internal compressor
+	if  ((isGz) && (imgsz >=  2147483647)) {
 		printWarning("Saving huge image uncompressed (many GZip tools have 2 Gb limit).\n");
 		isGz = false;
 	}
@@ -5450,7 +5450,6 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
 int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* opts ) {
     int retAll = 0;
     tinydir_dir dir;
-    int count = 0;
     if (tinydir_open_sorted(&dir, path) != 0) {
 		if (opts->isVerbose > 0)
 			printMessage("Unable to open %s\n", path);

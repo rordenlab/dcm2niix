@@ -831,9 +831,9 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.patientAge, "");
     d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
     d.CSA.mosaicSlices = 0;
-    d.CSA.sliceNormV[1] = 1.0;
+    d.CSA.sliceNormV[1] = 0.0;
     d.CSA.sliceNormV[2] = 0.0;
-    d.CSA.sliceNormV[3] = 0.0;
+    d.CSA.sliceNormV[3] = 1.0; //default Siemens Image Numbering is F>>H https://www.mccauslandcenter.sc.edu/crnl/tools/stc
     d.CSA.sliceOrder = NIFTI_SLICE_UNKNOWN;
     d.CSA.slice_start = 0;
     d.CSA.slice_end = 0;
@@ -1163,7 +1163,82 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
     return false;
 } //csaIsPhaseMap()
 
-//int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
+void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3DAcq) {
+	if (is3DAcq) //we expect 3D sequences to be simultaneous
+    	return;
+	if (itemsOK > kMaxEPI3D) {
+		printError("Please increase kMaxEPI3D and recompile\n");
+		return;
+	}
+	float maxTimeValue, minTimeValue, timeValue1;
+	minTimeValue = CSA->sliceTiming[0];
+	for (int z = 0; z < itemsOK; z++)
+		if (CSA->sliceTiming[z] < minTimeValue)
+		 minTimeValue = CSA->sliceTiming[z];
+	//CSA can report negative slice times
+	// https://neurostars.org/t/slice-timing-illegal-values-in-fmriprep/1516/8
+	// Nov 1, 2018 <siemens-healthineers.com> wrote:
+	//  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
+	if (minTimeValue < 0) {
+		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
+		for (int z = 0; z < itemsOK; z++)
+			CSA->sliceTiming[z] = CSA->sliceTiming[z] - minTimeValue;
+	}
+	CSA->multiBandFactor = 1;
+	timeValue1 = CSA->sliceTiming[0];
+	int nTimeZero = 0;
+	if (CSA->sliceTiming[0] == 0)
+			nTimeZero++;
+	int minTimeIndex = 0;
+	int maxTimeIndex = minTimeIndex;
+	minTimeValue = CSA->sliceTiming[0];
+	maxTimeValue = minTimeValue;
+	if (isVerbose)
+		printMessage("   sliceTimes %g\t", CSA->sliceTiming[0]);
+	for (int z = 1; z < itemsOK; z++) { //find index and value of fastest time
+		if (isVerbose)
+			printMessage("%g\t",  CSA->sliceTiming[z]);
+		if (CSA->sliceTiming[z] == 0)
+			nTimeZero++;
+		if (CSA->sliceTiming[z] < minTimeValue) {
+			minTimeValue = CSA->sliceTiming[z];
+			minTimeIndex = (float) z;
+		}
+		if (CSA->sliceTiming[z] > maxTimeValue) {
+			maxTimeValue = CSA->sliceTiming[z];
+			maxTimeIndex = (float) z;
+		}
+		if (CSA->sliceTiming[z] == timeValue1) CSA->multiBandFactor++;
+	}
+	if (isVerbose)
+		printMessage("\n");
+	CSA->slice_start = minTimeIndex;
+	CSA->slice_end = maxTimeIndex;
+	if (nTimeZero < 2) { //not for multi-band, not 3D
+		if (minTimeIndex == 1)
+			CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
+		else if (minTimeIndex == (itemsOK-2))
+			CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 2,4,1,3 or   5,2,4,1,3
+		else if ((minTimeIndex == 0) && (CSA->sliceTiming[1] < CSA->sliceTiming[2]))
+			CSA->sliceOrder = NIFTI_SLICE_SEQ_INC; // e.g. 1,2,3,4
+		else if ((minTimeIndex == 0) && (CSA->sliceTiming[1] > CSA->sliceTiming[2]))
+			CSA->sliceOrder = NIFTI_SLICE_ALT_INC; //e.g. 1,3,2,4
+		else if ((minTimeIndex == (itemsOK-1)) && (CSA->sliceTiming[itemsOK-3] > CSA->sliceTiming[itemsOK-2]))
+			CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC; //e.g. 4,3,2,1  or 5,4,3,2,1
+		else if ((minTimeIndex == (itemsOK-1)) && (CSA->sliceTiming[itemsOK-3] < CSA->sliceTiming[itemsOK-2]))
+			CSA->sliceOrder = NIFTI_SLICE_ALT_DEC; //e.g.  4,2,3,1 or 3,5,2,4,1
+		else {
+			if (!is3DAcq) //we expect 3D sequences to be simultaneous
+				printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
+		}
+	}
+	if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1) && (nTimeZero < itemsOK)) {
+		if (isVerbose)
+			printMessage(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
+		CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
+	}
+} //checkSliceTimes()
+
 int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, bool is3DAcq) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printMessage("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
@@ -1226,91 +1301,18 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
-				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
-                csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
-                float maxTimeValue, minTimeValue, timeValue1;
-                 for (int z = 0; z < kMaxEPI3D; z++)
-        			CSA->sliceTiming[z] = -1.0;
-        		minTimeValue = sliceTimes[1];
-        		if (itemsOK <= kMaxEPI3D) {
-                	for (int z = 1; z <= itemsOK; z++) {
-                		CSA->sliceTiming[z-1] = sliceTimes[z];
-                		if (sliceTimes[z] < minTimeValue)
-                			minTimeValue = sliceTimes[z];
-                	}
-                } else
-                	printError("Please increase kMaxEPI3D and recompile\n");
-                //CSA can report negative slice times
-                // https://neurostars.org/t/slice-timing-illegal-values-in-fmriprep/1516/8
-                // Nov 1, 2018 <siemens-healthineers.com> wrote:
-                //  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
-                if (minTimeValue < 0) {
-                	printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
-                	for (int z = 1; z <= itemsOK; z++) {
-                		sliceTimes[z] = sliceTimes[z] - minTimeValue;
-                		CSA->sliceTiming[z-1] = sliceTimes[z];
-                	}
+				if (itemsOK > kMaxEPI3D) {
+					printError("Please increase kMaxEPI3D and recompile\n");
+				} else {
+					float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
+					csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
+                 	for (int z = 0; z < kMaxEPI3D; z++)
+        				CSA->sliceTiming[z] = -1.0;
+                 	for (int z = 0; z < itemsOK; z++)
+        				CSA->sliceTiming[z] = sliceTimes[z+1];
+					free(sliceTimes);
+					checkSliceTimes(CSA, itemsOK, isVerbose, is3DAcq);
                 }
-                CSA->multiBandFactor = 1;
-                timeValue1 = sliceTimes[1];
-                int nTimeZero = 0;
-                if (sliceTimes[1] == 0)
-                    	nTimeZero++;
-                int minTimeIndex = 1;
-                int maxTimeIndex = minTimeIndex;
-                minTimeValue = sliceTimes[1];
-                maxTimeValue = minTimeValue;
-                if (isVerbose)
-                    printMessage("   sliceTimes %g\t", sliceTimes[1]);
-				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-                    if (isVerbose)
-                        printMessage("%g\t",  sliceTimes[z]);
-                    if (sliceTimes[z] == 0)
-                    	nTimeZero++;
-                    if (sliceTimes[z] < minTimeValue) {
-						minTimeValue = sliceTimes[z];
-						minTimeIndex = (float) z;
-					}
-                    if (sliceTimes[z] > maxTimeValue) {
-                        maxTimeValue = sliceTimes[z];
-                        maxTimeIndex = (float) z;
-                    }
-                    if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
-				}
-                if (isVerbose)
-                    printMessage("\n");
-                CSA->slice_start = minTimeIndex -1;
-                CSA->slice_end = maxTimeIndex -1;
-                if (minTimeIndex == 2)
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
-                else if (minTimeIndex == (itemsOK-1))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 2,4,1,3 or   5,2,4,1,3
-                else if ((minTimeIndex == 1) && (sliceTimes[2] < sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_INC; // e.g. 1,2,3,4
-                else if ((minTimeIndex == 1) && (sliceTimes[2] > sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC; //e.g. 1,3,2,4
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] > sliceTimes[itemsOK-1]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC; //e.g. 4,3,2,1  or 5,4,3,2,1
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] < sliceTimes[itemsOK-1]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC; //e.g.  4,2,3,1 or 3,5,2,4,1
-                else {
-                    /*NSMutableArray *sliceTimesNS = [NSMutableArray arrayWithCapacity:tagCSA.nitems];
-                     for (int z = 1; z <= itemsOK; z++)
-                     [sliceTimesNS addObject:[NSNumber numberWithFloat:sliceTimes[z]]];
-                     NSLog(@" Warning: unable to determine slice order for %lu slice mosaic: %@",(unsigned long)[sliceTimesNS count],sliceTimesNS );
-                     */
-                    if (!is3DAcq) //we expect 3D sequences to be simultaneous
-                    	printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
-                }
-                if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
-                	if (isVerbose)
-                		printMessage(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
-                	CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
-
-                }
-//#ifdef _MSC_VER
-				free(sliceTimes);
-//#endif
             } else if (strcmp(tagCSA.name, "ProtocolSliceNumber") == 0)
                 CSA->protocolSliceNumber1 = (int) round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             else if (strcmp(tagCSA.name, "PhaseEncodingDirectionPositive") == 0)
@@ -4084,6 +4086,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 //  https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
 #define  kDiffusionBValueSiemens  0x0019+(0x100C<< 16 ) //IS
+#define  kSliceTimeSiemens 0x0019+(0x1029<< 16) ///FD
 #define  kDiffusionGradientDirectionSiemens  0x0019+(0x100E<< 16 ) //FD
 #define  kNumberOfDiffusionDirectionGE 0x0019+(0x10E0<< 16) ///DS NumberOfDiffusionDirection:UserData24
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
@@ -4948,6 +4951,23 @@ double TE = 0.0; //most recent echo time recorded
             	d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
             	d.CSA.numDti = 1;
             	break;
+            case kSliceTimeSiemens : {//Array of FD (64-bit double)
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	if ((lLength < 8) || ((lLength % 8) != 0)) break;
+            	int nSlicesTimes = lLength / 8;
+            	if (nSlicesTimes > kMaxEPI3D) break;
+            	d.CSA.mosaicSlices = nSlicesTimes;
+            	//printf(">>>> %d\n", nSlicesTimes);
+            	//issue 296: for images de-identified to remove readCSAImageHeader
+            	for (int z = 0; z < nSlicesTimes; z++)
+        			d.CSA.sliceTiming[z] = dcmFloatDouble(8, &buffer[lPos+(z*8)],d.isLittleEndian);
+				//for (int z = 0; z < nSlicesTimes; z++)
+        		//	printf("%d>>>%g\n", z+1, d.CSA.sliceTiming[z]);
+				checkSliceTimes(&d.CSA, nSlicesTimes, isVerbose, d.is3DAcq);
+            	//d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
+            	//d.CSA.numDti = 1;
+            	break; }
+
             case kDiffusionGradientDirectionSiemens : {
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
 				float v[4];
@@ -6164,8 +6184,9 @@ if (d.isHasPhase)
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
-    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132)) {
-    	printError("Conversion aborted due to corrupt file: %s\n", fname);
+    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132) && (!d.isRawDataStorage)) {
+    	//20190524: Philips MR 55.1 creates non-image files that report kDim1/kDim2 - we can detect them since 0008,0016 reports "RawDataStorage"
+    	printError("Conversion aborted due to corrupt file: %s %d %d\n", fname, d.xyzDim[1], d.xyzDim[2]);
 #ifdef USING_R
         Rf_error("Irrecoverable error during conversion");
 #else
