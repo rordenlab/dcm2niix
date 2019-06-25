@@ -1137,10 +1137,20 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0));
 		}
+		//PASL http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
+		if (strstr(pulseSequenceDetails,"ep2d_fairest")) {
+			json_FloatNotNan(fp, "\t\"PostInversionDelay\": %g,\n", sWipMemBlock.adFree[2] * (1.0/1000.0)); //usec->sec
+			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", sWipMemBlock.adFree[4] * (1.0/1000.0)); //usec -> sec
+		}
 		//ASL specific tags - Oxford (Thomas OKell)
 		bool isOxfordASL = false;
 		if (strstr(pulseSequenceDetails,"to_ep2d_VEPCASL")) { //Oxford 2D pCASL
 			isOxfordASL = true;
+			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000000.0)); //ms->sec
+			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000000.0)); //usec -> sec
+			//alTI[0]	 = 	700000
+			//alTI[2]	 = 	1800000
+
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
 			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
