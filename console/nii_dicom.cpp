@@ -2647,8 +2647,15 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
     }
 	fseek(file, 0, SEEK_END);
 	long fileLen=ftell(file);
-    if (fileLen < (imgszRead+hdr.vox_offset)) {
-        printMessage("File not large enough to store image data: %s\n", imgname);
+    if (fileLen < (imgszRead+(long) hdr.vox_offset)) {
+        //previously  (fileLen < (imgszRead+hdr.vox_offset))
+        // FileSize < (ImageSize+HeaderSize): 42399788 < (42398702+1086)
+		// FileSize < (ImageSize+HeaderSize): 42399788 < ( 42399792.00)
+        //note hdr.vox_offset is a float, and without a type-cast it can lead to unusual values
+        //https://www.nitrc.org/forum/message.php?msg_id=27155
+        printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu+%lu) \n", fileLen, imgszRead, (long)hdr.vox_offset);
+        //printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
+        printWarning("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
 	fseek(file, (long) hdr.vox_offset, SEEK_SET);
@@ -4921,7 +4928,7 @@ double TE = 0.0; //most recent echo time recorded
             //case kFrameAcquisitionDateTime: {
             //	char dateTime[kDICOMStr];
             //	dcmStr (lLength, &buffer[lPos], dateTime);
-            //	printf("%s\n", dateTime);
+            //	printf("%s\tkFrameAcquisitionDateTime\n", dateTime);
             //}
             case kDiffusionDirectionality : {// 0018, 9075
                 set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
@@ -5164,7 +5171,7 @@ double TE = 0.0; //most recent echo time recorded
 				if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
 				if (acquisitionTimesGE_UIH >= kMaxEPI3D) break;
 				d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
-                //printf("%d %g\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
+                //printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
             	break;
             case kPhaseEncodingDirectionPositive: {

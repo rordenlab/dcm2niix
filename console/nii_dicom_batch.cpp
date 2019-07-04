@@ -1411,6 +1411,7 @@ tse3d: T2*/
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
 	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (d.CSA.sliceTiming[0] >= 0.0)) {
+   		//note for these systems slice timing in seconds, whereas CSA slice timing in msec!
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
@@ -1917,7 +1918,7 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
                 sqr(d1.patientPosition[3]-d2.patientPosition[3]));
 } //intersliceDistance()
 
-#define myInstanceNumberOrderIsNotSpatial
+//#define myInstanceNumberOrderIsNotSpatial
 //instance number is virtually always ordered based on spatial position.
 // interleaved/multi-band conversion will be disrupted if instance number refers to temporal order
 // these functions reorder images based on spatial position
@@ -1928,7 +1929,7 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
 //  as such images will probably disrupt most tools.
 // This option is only to salvage borked data.
 // This code has also not been tested on data stored in TXYZ rather than XYZT order
-#ifdef myInstanceNumberOrderIsNotSpatial
+//#ifdef myInstanceNumberOrderIsNotSpatial
 
 float intersliceDistanceSigned(struct TDICOMdata d1, struct TDICOMdata d2) {
 	//reports distance between two slices, signed as 2nd slice can be in front or behind 1st
@@ -1998,7 +1999,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	free(dcmSortIn);
 	return false;
 } // ensureSequentialSlicePositions()
-#endif //myInstanceNumberOrderIsNotSpatial
+//#endif //myInstanceNumberOrderIsNotSpatial
 
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
     //swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...
@@ -2731,7 +2732,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
             for (int i=header.dim[3]-1; i>=0; i--) {
                 if (data.CSA.sliceTiming[i] < 0.0)
                     break;
-                sliceTimes.push_back(data.CSA.sliceTiming[i] / 1000.0);
+                sliceTimes.push_back(data.CSA.sliceTiming[i] / 1000.0); //slice time in msec
             }
         } else if (data.manufacturer != kMANUFACTURER_SIEMENS && data.CSA.protocolSliceNumber1 < 0) {
             for (int i=header.dim[3]-1; i>=0; i--)
@@ -4115,7 +4116,8 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	if (isSliceTimeHHMMSS) //convert HHMMSS to Sec
 		for (int i = 0; i < kMaxEPI3D; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
-	if ((minT != maxT) && (maxT <= d->TR)) return; //looks fine
+	float TRsec = d->TR / 1000.0; //d->TR in msec, while these slice timings are in seconds
+	if ((minT != maxT) && (maxT <= TRsec)) return; //looks fine
 	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))  return; //fine: single-band calibration data, the slice timing WILL exceed the TR
@@ -4129,11 +4131,11 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	}
 	if ((minT1 < 0.0) && (d->rtia_timerGE >= 0.0)) return; //use rtia timer
 	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
-		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
+		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRsec);
 		return;
 	}
-	if ((minT1 == maxT1) || (maxT1 >= d->TR)) { //both first and second image corrupted
-		printWarning("Slice timing appears corrupted (range %g..%g, TR=%gms)\n", minT1, maxT1, d->TR);
+	if ((minT1 == maxT1) || (maxT1 >= TRsec)) { //both first and second image corrupted
+		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRsec);
 		return;
 	}
 	//1st image corrupted, but 2nd looks ok - substitute values from 2nd image
@@ -4142,7 +4144,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d1->CSA.sliceTiming[i] < 0.0) break;
 	}
 	d->CSA.multiBandFactor = d1->CSA.multiBandFactor;
-	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%gms)\n", minT, maxT, d->TR);
+	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%g seconds)\n", minT, maxT, TRsec);
 }//checkSliceTiming
 
 void reportMat44o(char *str, mat44 A) {
@@ -4302,8 +4304,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             } //if PET
             //next: detect variable inter-slice distance
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
-			#ifdef MY_INSTANCE_NUMBER_ORDER_IS_NOT_SPATIAL
-            if  (!isSameFloat(dx, 0.0)) //only for XYZT, not TXYZ: perhaps run for swapDim3Dim4? Extremely rare anomaly
+			#ifdef myInstanceNumberOrderIsNotSpatial
+			if  (!isSameFloat(dx, 0.0)) //only for XYZT, not TXYZ: perhaps run for swapDim3Dim4? Extremely rare anomaly
             	if (!ensureSequentialSlicePositions(hdr0.dim[3],hdr0.dim[4], dcmSort, dcmList))
             		dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             #endif
@@ -4325,6 +4327,36 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                         sliceMMarray[i] = dx0;
                     }
                     printMessage("]\n");
+                    #ifndef myInstanceNumberOrderIsNotSpatial
+                    //kludge to handle single volume without instance numbers (0020,0013), e.g. https://www.morphosource.org/Detail/MediaDetail/Show/media_id/8430
+					bool isInconsistenSliceDir = false;
+					int slicePositionRepeats = 1; //how many times is first position repeated
+					if (nConvert > 2) {
+						float dxPrev = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+						if (isSameFloatGE(dxPrev, 0.0)) slicePositionRepeats++;
+						for (int i = 2; i < nConvert; i++) {
+                        	float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+							if (dx < dxPrev)
+								isInconsistenSliceDir = true;
+							if (isSameFloatGE(dxPrev, 0.0)) slicePositionRepeats++;
+							dxPrev = dx;
+                    	}
+					}
+					if ((isInconsistenSliceDir) && (slicePositionRepeats == 1))  {
+						//printWarning("Slice order as defined by instance number not spatially sequential.\n");
+						//printWarning("Attempting to reorder slices based on spatial position.\n");
+						ensureSequentialSlicePositions(hdr0.dim[3],hdr0.dim[4], dcmSort, dcmList);
+						dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+						hdr0.pixdim[3] = dx;
+						isInconsistenSliceDir = false;
+					}
+					if (isInconsistenSliceDir) {
+						printMessage("Unable to equalize slice distances: slice order not consistently ascending.\n");
+						printMessage("First spatial position repeated %d times\n", slicePositionRepeats);
+						printError(" Recompiling with '-DmyInstanceNumberOrderIsNotSpatial' might help.\n");
+						return EXIT_FAILURE;
+					}
+					#endif
 					int imageNumRange = 1 + abs( dcmList[dcmSort[nConvert-1].indx].imageNum -  dcmList[dcmSort[0].indx].imageNum);
 					if ((imageNumRange > 1) && (imageNumRange != nConvert)) {
 						printWarning("Missing images? Expected %d images, but instance number (0020,0013) ranges from %d to %d\n", nConvert, dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[nConvert-1].indx].imageNum);

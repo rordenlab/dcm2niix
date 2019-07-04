@@ -28,7 +28,7 @@ Many crucial Siemens parameters are stored in the [proprietary CSA header](http:
 
 ## Slice Timing
 
-The CSA header provides [slice timing](https://www.mccauslandcenter.sc.edu/crnl/tools/stc), and therefore dcm2niix should provide accurate slice timing information for non-XA10 datasets. For archival studies, be aware that some sequences [incorrectly reported slice timing](https://github.com/rordenlab/dcm2niix/issues/126).
+The CSA header provides [slice timing](https://www.mccauslandcenter.sc.edu/crnl/tools/stc), and therefore dcm2niix should provide accurate slice timing information for non-XA10 datasets. For archival studies, be aware that some sequences [incorrectly reported slice timing](https://github.com/rordenlab/dcm2niix/issues/126). The [SPM slice timing wiki](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Siemens_scanners) provides further information on Siemens slice timing.
 
 ## Total Readout Time
 

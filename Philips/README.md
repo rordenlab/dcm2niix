@@ -59,7 +59,7 @@ For modern Philips DICOMs, the current version of dcm2niix uses Dimension Index 
 
 Philips DICOMs do not contain all the information desired by many neuroscientists. Due to this, the [BIDS](http://bids.neuroimaging.io/) files created by dcm2niix are impoverished relative to data from other vendors. This reflects a limitation in the Philips DICOMs, not dcm2niix.
 
-[Slice timing correction](https://www.mccauslandcenter.sc.edu/crnl/tools/stc) can account for some variability in fMRI datasets. Unfortunately, Philips DICOM data [does not encode slice timing information](https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/4). Therefore, dcm2niix is unable to populate the "SliceTiming" BIDS field.
+[Slice timing correction](https://www.mccauslandcenter.sc.edu/crnl/tools/stc) can account for some variability in fMRI datasets. Unfortunately, Philips DICOM data [does not encode slice timing information](https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/4). Therefore, dcm2niix is unable to populate the "SliceTiming" BIDS field. However, one can typically infer slice timing by recording the [mode and number of packages](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Philips_scanners) reported for the sequence on the scanner console.
 
 Likewise, the BIDS tag "PhaseEncodingDirection" allows tools like [eddy](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy) and [TOPUP](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup) to undistort images. While the Philips DICOM header distinguishes the phase encoding axis (e.g. anterior-posterior vs left-right) it does not encode the polarity (A->P vs P->A).
 
