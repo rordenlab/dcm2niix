@@ -1410,21 +1410,24 @@ tse3d: T2*/
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (d.CSA.sliceTiming[0] >= 0.0)) {
-   		//note for these systems slice timing in seconds, whereas CSA slice timing in msec!
+	/*if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (d.CSA.sliceTiming[0] >= 0.0)) {
+   		//note for these systems slice timing is initially reported in seconds, whereas Siemens CSA slice timing in msec!
+   		// dcm2niix 20190704: CSA.sliceTiming should be converted to msec, see checkSliceTiming() this resolves midnight crossings
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		for (int i = 0; i < h->dim[3]; i++) {
 				if (i != 0)
 					fprintf(fp, ",\n");
 				if (d.CSA.protocolSliceNumber1 < 0)
-					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1) - i]);
+					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1) - i] / 1000.0);
 				else
-					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]);
+					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]  / 1000.0);
 			}
 		fprintf(fp, "\t],\n");
 	}
+	*/
 	//Slice Timing Siemens
-	if ((!d.isXA10A) && (!d.is3DAcq) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	//prior to 20190704 if ((!d.isXA10A) && (!d.is3DAcq) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
+   	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		if (d.CSA.protocolSliceNumber1 > 1) {
    			//https://github.com/rordenlab/dcm2niix/issues/40
@@ -2738,9 +2741,16 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
             for (int i=header.dim[3]-1; i>=0; i--)
                 sliceTimes.push_back(data.CSA.sliceTiming[i]);
         } else {
-            for (int i=0; i<header.dim[3]; i++)
-                sliceTimes.push_back(data.CSA.sliceTiming[i] / (data.manufacturer == kMANUFACTURER_SIEMENS ? 1000.0 : 1.0));
+        	#pragma message ("Please test R specific code: at this stage all slice times should be in msec due to changes in checkSliceTiming() 20190704")
+        	for (int i=header.dim[3]-1; i>=0; i--) {
+                if (data.CSA.sliceTiming[i] < 0.0)
+                    break;
+                sliceTimes.push_back(data.CSA.sliceTiming[i]); //slice time in msec
+            }
+            //for (int i=0; i<header.dim[3]; i++)
+            //    sliceTimes.push_back(data.CSA.sliceTiming[i] / (data.manufacturer == kMANUFACTURER_SIEMENS ? 1000.0 : 1.0));
         }
+
         images->addAttribute("sliceTiming", sliceTimes);
     }
 
@@ -4073,8 +4083,9 @@ void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		printWarning("Images sorted by instance number  [0020,0013](%d..%d), but AcquisitionTime [0008,0032] suggests a different order (%g..%g) \n", d->imageNum,d1->imageNum, d->acquisitionTime,d1->acquisitionTime);
 }
 
-void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
+void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose) {
 //detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
+//modified 20190704: this function now ensures all slice times are in msec
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
 	int nSlices = 0;
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
@@ -4082,7 +4093,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	if (nSlices < 1) return;
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
 	//if (d->isXA10A) isSliceTimeHHMMSS = true; //for XA10 use TimeAfterStart 0x0021,0x1104 -> Siemens de-identification can corrupt acquisition ties https://github.com/rordenlab/dcm2niix/issues/236
-	if (isSliceTimeHHMMSS) {//convert HHMMSS to Sec
+	if (isSliceTimeHHMMSS) {//handle midnight crossing
 		for (int i = 0; i < nSlices; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
 		float minT = d->CSA.sliceTiming[0];
@@ -4113,11 +4124,15 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d->CSA.sliceTiming[i] < minT) minT = d->CSA.sliceTiming[i];
 		if (d->CSA.sliceTiming[i] > maxT) maxT = d->CSA.sliceTiming[i];
 	}
-	if (isSliceTimeHHMMSS) //convert HHMMSS to Sec
+	if (isSliceTimeHHMMSS) //convert HHMMSS to msec
 		for (int i = 0; i < kMaxEPI3D; i++)
-			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]);
-	float TRsec = d->TR / 1000.0; //d->TR in msec, while these slice timings are in seconds
-	if ((minT != maxT) && (maxT <= TRsec)) return; //looks fine
+			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]) * 1000.0;
+	float TRms = d->TR; //d->TR in msec!
+	if ((minT != maxT) && (maxT <= TRms)) {
+		if (verbose != 0)
+			printMessage("Slice timing range appears reasonable (range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
+		return; //looks fine
+	}
 	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))  return; //fine: single-band calibration data, the slice timing WILL exceed the TR
@@ -4131,11 +4146,11 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	}
 	if ((minT1 < 0.0) && (d->rtia_timerGE >= 0.0)) return; //use rtia timer
 	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
-		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRsec);
+		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRms);
 		return;
 	}
-	if ((minT1 == maxT1) || (maxT1 >= TRsec)) { //both first and second image corrupted
-		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRsec);
+	if ((minT1 == maxT1) || (maxT1 >= TRms)) { //both first and second image corrupted
+		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g ms)\n", minT1, maxT1, TRms);
 		return;
 	}
 	//1st image corrupted, but 2nd looks ok - substitute values from 2nd image
@@ -4144,8 +4159,8 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		if (d1->CSA.sliceTiming[i] < 0.0) break;
 	}
 	d->CSA.multiBandFactor = d1->CSA.multiBandFactor;
-	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%g seconds)\n", minT, maxT, TRsec);
-}//checkSliceTiming
+	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
+}//checkSliceTiming()
 
 void reportMat44o(char *str, mat44 A) {
     printMessage("%s = [%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1]\n",str,
@@ -4456,18 +4471,22 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 	//UIH 2D slice timing
 	if (((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH)) && (nConvert == (hdr0.dim[3]*hdr0.dim[4])) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		for (int v = 0; v < hdr0.dim[3]; v++)
-			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime;
+			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime; //nb format is HHMMSS we need to handle midnight-crossing and convert to ms,  see checkSliceTiming()
 	}
     //GE check slice timing >>>
     bool GEsliceTiming_x0018x1060 = false;
 	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
 		//GE: 1st method for "epi" PSD
+		//0018x1060 is defined in msec: http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,1060)
+		//as of 20190704 dcm2niix expects sliceTiming to be encoded in msec for all vendors
 		GEsliceTiming_x0018x1060 = true;
 		for (int v = 0; v < hdr0.dim[3]; v++) {
 			if (dcmList[dcmSort[v].indx].CSA.sliceTiming[0] < 0)
 				GEsliceTiming_x0018x1060 = false;
-			dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0] / 1000.0; //ms -> sec
+				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0]; //ms 20190704
+				//dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0] / 1000.0; //ms -> sec prior to 20190704
 		}
+		//printMessage(">>>>Reading GE slice timing from 0018,1060\n");
 		//0018,1060 provides time at end of acquisition, not start...
 		if (GEsliceTiming_x0018x1060) {
 			float minT = dcmList[dcmSort[0].indx].CSA.sliceTiming[0];
@@ -4489,6 +4508,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 
 	} //GE slice timing from 0018,1060
 	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (!GEsliceTiming_x0018x1060) && (hdr0.dim[3] < (kMaxEPI3D-1)) && (hdr0.dim[3] > 1) && (hdr0.dim[4] > 1)) {
+		//printMessage(">>>>Reading GE slice timing from epiRT (0018,1060 did not work)\n");
 		//GE: 2nd method for "epiRT" PSD
 		//ignore bogus values of first volume https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/6
 		// this necessarily requires at last two volumes, hence dim[4] > 1
@@ -4516,8 +4536,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					scale2Sec = 1.0 / 10000.0;
 				//printMessage(">> %g %g %g\n", maxSliceTimeFrac, scale2Sec, dcmList[dcmSort[0].indx].TR);
 			}
+			double scale2ms = scale2Sec * 1000.0; //20190704: convert slice timing values to ms for all vendors
 			for (int v = 0; v < hdr0.dim[3]; v++)
-				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = (dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime) * scale2Sec;
+				dcmList[dcmSort[0].indx].CSA.sliceTiming[v] = (dcmList[dcmSort[v+j].indx].rtia_timerGE - minTime) * scale2ms;
 			dcmList[dcmSort[0].indx].CSA.sliceTiming[hdr0.dim[3]] = -1;
 			//detect multi-band
 			int nZero = 0;
@@ -4527,14 +4548,14 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			if ((nZero > 1) && (nZero < hdr0.dim[3]) && ((hdr0.dim[3] % nZero) == 0))
 				dcmList[dcmSort[0].indx].CSA.multiBandFactor = nZero;
 			//report times
-			if (opts.isVerbose > 1) {
-				printMessage("GE slice timing\n");
+			if (opts.isVerbose > -1) {
+				printMessage("GE slice timing (sec)\n");
 				printMessage("\tTime\tX\tY\tZ\tInstance\n");
 				for (int v = 0; v < hdr0.dim[3]; v++) {
 					if (v == (hdr0.dim[3]-1))
 						printMessage("...\n");
 					if ((v < 4) || (v == (hdr0.dim[3]-1)))
-						printMessage("\t%g\t%g\t%g\t%g\t%d\n", dcmList[dcmSort[0].indx].CSA.sliceTiming[v], dcmList[dcmSort[v+j].indx].patientPosition[1], dcmList[dcmSort[v+j].indx].patientPosition[2], dcmList[dcmSort[v+j].indx].patientPosition[3], dcmList[dcmSort[v+j].indx].imageNum);
+						printMessage("\t%g\t%g\t%g\t%g\t%d\n", dcmList[dcmSort[0].indx].CSA.sliceTiming[v] / 1000.0, dcmList[dcmSort[v+j].indx].patientPosition[1], dcmList[dcmSort[v+j].indx].patientPosition[2], dcmList[dcmSort[v+j].indx].patientPosition[3], dcmList[dcmSort[v+j].indx].imageNum);
 
 				} //for v
 			} //verbose > 1
@@ -4595,7 +4616,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
-    checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
+    checkSliceTiming(&dcmList[indx0], &dcmList[indx1], opts.isVerbose);
     int sliceDir = 0;
     if (hdr0.dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0, true);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1

@@ -4926,6 +4926,8 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             //in theory, 0018,9074 could provide XA10 slice time information, but scrambled by XA10 de-identification: better to use 0021,1104
             //case kFrameAcquisitionDateTime: {
+            // //(0018,9074) DT [20190621095516.140000] YYYYMMDDHHMMSS
+            // //see https://github.com/rordenlab/dcm2niix/issues/303
             //	char dateTime[kDICOMStr];
             //	dcmStr (lLength, &buffer[lPos], dateTime);
             //	printf("%s\tkFrameAcquisitionDateTime\n", dateTime);
@@ -5168,9 +5170,13 @@ double TE = 0.0; //most recent echo time recorded
                 //printMessage("p%gs%d\n",  d.accelFactPE, multiBandFactor);
 				break; }
 			case kTimeAfterStart:
+				//0021,1104 see  https://github.com/rordenlab/dcm2niix/issues/303
+				// 0021,1104 6@159630 DS  4.635
+				// 0021,1104 2@161164 DS  0
 				if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
 				if (acquisitionTimesGE_UIH >= kMaxEPI3D) break;
 				d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
+				d.CSA.sliceTiming[acquisitionTimesGE_UIH] *= 1000.0; //convert sec to msec
                 //printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
             	break;
