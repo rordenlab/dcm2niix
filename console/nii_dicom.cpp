@@ -6072,8 +6072,8 @@ double TE = 0.0; //most recent echo time recorded
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
-    	//printMessage("Check number of slices, discrepancy between tags (0054,0081; 0020,1002; 0021,104F)\n");
-    	if (d.locationsInAcquisition < locationsInAcquisitionGE) d.locationsInAcquisition = locationsInAcquisitionGE;
+    	if (isVerbose)  printMessage("Check number of slices, discrepancy between tags (0020,1002; 0021,104F; 0054,0081) (%d vs %d) %s\n", locationsInAcquisitionGE, d.locationsInAcquisition, fname);
+    	if (locationsInAcquisitionGE < d.locationsInAcquisition) d.locationsInAcquisition = locationsInAcquisitionGE;
     }
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;

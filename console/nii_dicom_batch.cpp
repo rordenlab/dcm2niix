@@ -4548,7 +4548,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			if ((nZero > 1) && (nZero < hdr0.dim[3]) && ((hdr0.dim[3] % nZero) == 0))
 				dcmList[dcmSort[0].indx].CSA.multiBandFactor = nZero;
 			//report times
-			if (opts.isVerbose > -1) {
+			if (opts.isVerbose > 0) {
 				printMessage("GE slice timing (sec)\n");
 				printMessage("\tTime\tX\tY\tZ\tInstance\n");
 				for (int v = 0; v < hdr0.dim[3]; v++) {
