@@ -1121,6 +1121,7 @@ tse3d: T2*/
 		int existUcImageNumb, baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 		float pf = 1.0f; //partial fourier
 		float phaseResolution, txRefAmp, shimSetting[8];
+
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TsWipMemBlock sWipMemBlock;
 		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &existUcImageNumb, &ucMode, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
@@ -1460,7 +1461,7 @@ tse3d: T2*/
 		if (ucMode == 2) //desc
 			for (int i = 0; i < nSL; i++)
 				d.CSA.sliceTiming[i] = sliceTiming[(nSL-1) - i];
-		if (ucMode == 3) { //int
+		if (ucMode == 4) { //int
 			int oddInc = 0; //for slices 1,3,5
 			int evenInc = (nSL+1) / 2; //for 4 slices 0,1,2,3 we will order [2,0,3,1] for 5 slices [0,3,1,4,2]
 			if (nSL % 2 == 0) { //Siemens interleaved for acquisitions with odd number of slices https://www.mccauslandcenter.sc.edu/crnl/tools/stc
