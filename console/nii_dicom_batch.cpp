@@ -423,6 +423,19 @@ const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
 //n.b. memchr returns "const void *" not "void *" for Windows C++ https://msdn.microsoft.com/en-us/library/d7zdhf37.aspx
 #endif //for systems without memmem
 
+int readKeyN1(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
+	int ret = 0;
+	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
+	if (!keyPos) return -1;
+	int i = (int)strlen(key);
+	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
+		if( keyPos[i] >= '0' && keyPos[i] <= '9' )
+			ret = (10 * ret) + keyPos[i] - '0';
+		i++;
+	}
+	return ret;
+} //readKeyN1() //return -1 if key not found
+
 int readKey(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
 	int ret = 0;
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
@@ -612,7 +625,7 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
 		*existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
 		char keyStrUcMode[] = "sSliceArray.ucMode";
-		*ucMode = readKey(keyStrUcMode, keyPos, csaLengthTrim);
+		*ucMode = readKeyN1(keyStrUcMode, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
 		*baseResolution = readKey(keyStrBase, keyPos, csaLengthTrim);
 		char keyStrInterp[] = "sKSpace.uc2DInterpolation";
@@ -738,11 +751,11 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 
 #ifndef myDisableZLib
  //Uncomment next line to decode GE Protocol Data Block, for caveats see https://github.com/rordenlab/dcm2niix/issues/163
- // #define myReadGeProtocolBlock
+ #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
 int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder) {
-	*sliceOrder = 0;
+	*sliceOrder = -1;
 	*viewOrder = 0;
 	int ret = EXIT_FAILURE;
  	if ((geOffset < 0) || (geLength < 20)) return ret;
@@ -810,7 +823,7 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	if ((pUnCmp[0] == '<') &&  (pUnCmp[1] == '?'))
 		printWarning("New XML-based GE Protocol Block is not yet supported: please report issue on dcm2niix Github page\n");
 	char keyStrSO[] = "SLICEORDER";
-	*sliceOrder  = readKey(keyStrSO, (char *) pUnCmp, unCmpSz);
+	*sliceOrder  = readKeyN1(keyStrSO, (char *) pUnCmp, unCmpSz);
 	char keyStrVO[] = "VIEWORDER"; //"MATRIXX";
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	if (isVerbose > 1) {
@@ -1104,15 +1117,42 @@ tse3d: T2*/
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n" );
 	}
 	#ifdef myReadGeProtocolBlock
-	if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
+	//if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
+	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] < 0.0) && (h->dim[3] > 2) && (h->dim[3] < kMaxEPI3D) && (d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
+		//GE final desperate attempt to determine slice order
+		// GE does not provide a good estimate for TA: here we use TR, which will be wrong for sparse designs
+		// Also, unclear what happens if slice order is flipped
+		// Therefore, we warning the user that we are guessing
 		int viewOrderGE = -1;
 		int sliceOrderGE = -1;
-		printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
+		//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
 		int ok = geProtocolBlock(filename, d.protocolBlockStartGE, d.protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE);
 		if (ok != EXIT_SUCCESS)
 			printWarning("Unable to decode GE protocol block\n");
-		printMessage(" ViewOrder %d SliceOrder %d\n", viewOrderGE, sliceOrderGE);
+		else if ((sliceOrderGE >= 0) && (sliceOrderGE <= 1)) {
+			// 0=sequential/1=interleaved
+			//printMessage(" ViewOrder %d SliceOrder %d\n", viewOrderGE, sliceOrderGE);
+			printWarning("Guessing slice times using ProtocolBlock SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
+			int nSL = h->dim[3];
+			int nOdd = nSL / 2;
+			float secPerSlice = d.TR/nSL; //should be TA not TR! We do not know TR
+			if (sliceOrderGE == 0) {
+				for (int i = 0; i < nSL; i++)
+					d.CSA.sliceTiming[i] = i * secPerSlice;
+			} else {
+				for (int i = 0; i < nSL; i++) {
+					if (i % 2 == 0) { //ODD slices since we index from 0!
+						d.CSA.sliceTiming[i] = (i/2) * secPerSlice;
+						//printf("%g\n", d.CSA.sliceTiming[i]);
+					} else {
+						d.CSA.sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
+						//printf("%g\n", d.CSA.sliceTiming[i]);
+					}
+				} //for each slice
+			} //if interleaved
+		} //if slice order reported
 	} //read protocolBlockGE
+
 	#endif
 	int ucMode = -1; //rescue slice timing, issue 309
 	float delayTimeInTR = -0.01;
@@ -1484,7 +1524,18 @@ tse3d: T2*/
 		//if asc_header(s, 'sSliceArray.ucImageNumb'), t = t(nSL:-1:1); end % rev-num
 
    	} //end: rescue Siemens Slice Timing using ucMode
+   	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (h->dim[3] > 2) && (h->dim[3] < kMaxEPI3D) && (!d.is3DAcq) && (d.CSA.protocolSliceNumber1 < 0) && (d.CSA.sliceTiming[0] >= 0.0) ) {
+   		//slice order was flipped!
+   		//if (opts.isVerbose)
+   			printMessage("Slices were spatially flipped, so slice times are flipped\n");
+   		float sliceTiming[kMaxEPI3D];
+   		int nSL = h->dim[3];
+		for (int i = 0; i < nSL; i++)
+			sliceTiming[i] = d.CSA.sliceTiming[i];
+		for (int i = 0; i < nSL; i++)
+			d.CSA.sliceTiming[i] = sliceTiming[(nSL-1)-i];
 
+	}
    	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		if (d.CSA.protocolSliceNumber1 > 1) {
@@ -4687,9 +4738,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
-    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) )
-    		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
-    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE) && (dcmList[dcmSort[0].indx].CSA.sliceTiming[0]  >= 0.0) )
+    	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
     		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
     }
     // skip converting if user has specified one or more series, but has not specified this one
