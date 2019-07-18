@@ -535,13 +535,15 @@ typedef struct {
     float dThickness, ulShape, sPositionDTra, sNormalDTra;
 } TsWipMemBlock;
 
-void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, int* refLinesPE, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
+void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* existUcImageNumb, int* ucMode, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, int* refLinesPE, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
- 	*delayTimeInTR = 0.0;
+ 	*existUcImageNumb = 0;
+ 	*delayTimeInTR = -0.001;
  	*phaseOversampling = 0.0;
  	*phaseResolution = 0.0;
  	*txRefAmp = 0.0;
+ 	*ucMode = -1;
  	*baseResolution = 0;
  	*interp = 0;
  	*partialFourier = 0;
@@ -607,6 +609,10 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		}
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
+		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
+		*existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
+		char keyStrUcMode[] = "sSliceArray.ucMode";
+		*ucMode = readKey(keyStrUcMode, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
 		*baseResolution = readKey(keyStrBase, keyPos, csaLengthTrim);
 		char keyStrInterp[] = "sKSpace.uc2DInterpolation";
@@ -853,12 +859,12 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 	if (strlen(d->protocolName) > 0) return;
 #ifdef myReadAsciiCsa
-	int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
+	int existUcImageNumb, ucMode, baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 	//float pf = 1.0f; //partial fourier
 	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	TsWipMemBlock sWipMemBlock;
-	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &existUcImageNumb, &ucMode, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
 #endif
 }
@@ -1108,14 +1114,23 @@ tse3d: T2*/
 		printMessage(" ViewOrder %d SliceOrder %d\n", viewOrderGE, sliceOrderGE);
 	} //read protocolBlockGE
 	#endif
+	int ucMode = -1; //rescue slice timing, issue 309
+	float delayTimeInTR = -0.01;
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
+		int existUcImageNumb, baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 		float pf = 1.0f; //partial fourier
-		float delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
+		float phaseResolution, txRefAmp, shimSetting[8];
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TsWipMemBlock sWipMemBlock;
-		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &existUcImageNumb, &ucMode, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		if (existUcImageNumb > 0) {
+			if (d.CSA.protocolSliceNumber1 < 2) {
+				printWarning("Assuming mosaics saved in reverse order due to 'sSliceArray.ucImageNumb'\n");
+				printWarning(" check slice direction\n"); //never seen such an image in the wild.... sliceDir may need to be reversed
+			}
+			d.CSA.protocolSliceNumber1 = 2;
+		}
 		//ASL specific tags - Danny J.J. Wang http://www.loft-lab.org
 		if (strstr(pulseSequenceDetails,"ep2d_pcasl")) {
 			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", sWipMemBlock.adFree[1]); //mm
@@ -1425,8 +1440,50 @@ tse3d: T2*/
 		fprintf(fp, "\t],\n");
 	}
 	*/
-	//Slice Timing Siemens
+	//start: rescue Siemens Slice Timing using ucMode
 	//prior to 20190704 if ((!d.isXA10A) && (!d.is3DAcq) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
+   	if ((h->dim[3] > 2) && (h->dim[3] < kMaxEPI3D) && (ucMode > 0) && (ucMode != 3) && (ucMode < 5) && (delayTimeInTR >= 0.0) && (!d.is3DAcq) && (d.CSA.sliceTiming[0] < 0.0)) {
+   		//issue 309: resolve Siemens slice timing if MosaicRefAcqTimes is missing
+   		//clones conditional for sSliceArray.ucMode in dicm2nii.m
+   		// 1/2/4: Asc/Desc/Inter
+   		//json_Float(fp, "\t\"DelayTime\": %g,\n", delayTimeInTR/ 1000000.0); //DelayTimeInTR usec -> sec
+		int nSL = h->dim[3];
+		float trSec = d.TR / 1000.0;
+		float delaySec = delayTimeInTR/ 1000000.0;
+		float taSec = trSec - delaySec;
+		float sliceTiming[kMaxEPI3D];
+		for (int i = 0; i < nSL; i++)
+				sliceTiming[i] = i * taSec/nSL * 1000.0; //expected in ms
+		if (ucMode == 1) //asc
+			for (int i = 0; i < nSL; i++)
+				d.CSA.sliceTiming[i] = sliceTiming[i];
+		if (ucMode == 2) //desc
+			for (int i = 0; i < nSL; i++)
+				d.CSA.sliceTiming[i] = sliceTiming[(nSL-1) - i];
+		if (ucMode == 3) { //int
+			int oddInc = 0; //for slices 1,3,5
+			int evenInc = (nSL+1) / 2; //for 4 slices 0,1,2,3 we will order [2,0,3,1] for 5 slices [0,3,1,4,2]
+			if (nSL % 2 == 0) { //Siemens interleaved for acquisitions with odd number of slices https://www.mccauslandcenter.sc.edu/crnl/tools/stc
+				oddInc = evenInc;
+				evenInc = 0;
+			}
+			for (int i = 0; i < nSL; i++) {
+				if (i % 2 == 0) {//odd slice 1,3,etc [indexed from 0]!
+					d.CSA.sliceTiming[i] = sliceTiming[oddInc];
+					//printf("%d %d\n", i, oddInc);
+					oddInc += 1;
+				} else { //even slice
+					d.CSA.sliceTiming[i] = sliceTiming[evenInc];
+					//printf("%d %d %d\n", i, evenInc, nSL);
+					evenInc += 1;
+				}
+			}
+		} //if ucMode == 3 int
+		//dicm2nii provides sSliceArray.ucImageNumb - similar to protocolSliceNumber1
+		//if asc_header(s, 'sSliceArray.ucImageNumb'), t = t(nSL:-1:1); end % rev-num
+
+   	} //end: rescue Siemens Slice Timing using ucMode
+
    	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
    		if (d.CSA.protocolSliceNumber1 > 1) {

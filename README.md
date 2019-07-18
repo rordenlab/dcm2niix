@@ -71,7 +71,11 @@ In rare case if cmake fails with the message like `"Generator: execution of make
 As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000, [JPEG-LS](https://github.com/team-charls/charls) (this option requires a  c++14 compiler), as well as using the high performance Cloudflare zlib library (this option requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
 
 ```bash
+git clone https://github.com/rordenlab/dcm2niix.git
+cd dcm2niix
+mkdir build && cd build
 cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
+make
 ```
 
 **optional batch processing version:**
