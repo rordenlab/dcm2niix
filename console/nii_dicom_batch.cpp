@@ -542,28 +542,32 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 
 #define kMaxWipFree 64
 typedef struct {
+	float delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
+    int existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
+    	difBipolar, parallelReductionFactorInPlane, refLinesPE;
+
     float alFree[kMaxWipFree] ;
     float adFree[kMaxWipFree];
     float alTI[kMaxWipFree];
     float dThickness, ulShape, sPositionDTra, sNormalDTra;
-} TsWipMemBlock;
+} TCsaAscii;
 
-void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csaOffset, int csaLength, float* delayTimeInTR, float* phaseOversampling, float* phaseResolution, float* txRefAmp, float* shimSetting, int* existUcImageNumb, int* ucMode, int* baseResolution, int* interp, int* partialFourier, int* echoSpacing, int* difBipolar, int* parallelReductionFactorInPlane, int* refLinesPE, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
+void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, int csaLength, float* shimSetting, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
- 	*existUcImageNumb = 0;
- 	*delayTimeInTR = -0.001;
- 	*phaseOversampling = 0.0;
- 	*phaseResolution = 0.0;
- 	*txRefAmp = 0.0;
- 	*ucMode = -1;
- 	*baseResolution = 0;
- 	*interp = 0;
- 	*partialFourier = 0;
- 	*echoSpacing = 0;
- 	*difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
- 	*parallelReductionFactorInPlane = 0;
- 	*refLinesPE = 0;
+ 	csaAscii->delayTimeInTR = -0.001;
+ 	csaAscii->phaseOversampling = 0.0;
+ 	csaAscii->phaseResolution = 0.0;
+ 	csaAscii->txRefAmp = 0.0;
+ 	csaAscii->existUcImageNumb = 0;
+ 	csaAscii->ucMode = -1;
+ 	csaAscii->baseResolution = 0;
+ 	csaAscii->interp = 0;
+ 	csaAscii->partialFourier = 0;
+ 	csaAscii->echoSpacing = 0;
+ 	csaAscii->difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
+ 	csaAscii->parallelReductionFactorInPlane = 0;
+ 	csaAscii->refLinesPE = 0;
  	for (int i = 0; i < 8; i++)
  		shimSetting[i] = 0.0;
  	strcpy(coilID, "");
@@ -611,33 +615,38 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		#endif
 
+
+
+
+		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
+		csaAscii->existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
+		char keyStrUcMode[] = "sSliceArray.ucMode";
+		csaAscii->ucMode = readKeyN1(keyStrUcMode, keyPos, csaLengthTrim);
+		char keyStrBase[] = "sKSpace.lBaseResolution";
+		csaAscii->baseResolution = readKey(keyStrBase, keyPos, csaLengthTrim);
+		char keyStrInterp[] = "sKSpace.uc2DInterpolation";
+		csaAscii->interp = readKey(keyStrInterp, keyPos, csaLengthTrim);
+		char keyStrPF[] = "sKSpace.ucPhasePartialFourier";
+		csaAscii->partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
+		char keyStrES[] = "sFastImaging.lEchoSpacing";
+		csaAscii->echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrDS[] = "sDiffusion.dsScheme";
-		*difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
-		if (*difBipolar == 0) {
+		csaAscii->difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
+		if (csaAscii->difBipolar == 0) {
 			char keyStrROM[] = "ucReadOutMode";
-			*difBipolar = readKey(keyStrROM, keyPos, csaLengthTrim);
-			if ((*difBipolar >= 1) && (*difBipolar <= 2)) { //E11C Siemens/CMRR dsScheme: 1=bipolar, 2=unipolar, B17 CMRR ucReadOutMode 0x1=monopolar, 0x2=bipolar
-				*difBipolar = 3 - *difBipolar;
+			csaAscii->difBipolar = readKey(keyStrROM, keyPos, csaLengthTrim);
+			if ((csaAscii->difBipolar >= 1) && (csaAscii->difBipolar <= 2)) { //E11C Siemens/CMRR dsScheme: 1=bipolar, 2=unipolar, B17 CMRR ucReadOutMode 0x1=monopolar, 0x2=bipolar
+				csaAscii->difBipolar = 3 - csaAscii->difBipolar;
 			} //https://github.com/poldracklab/fmriprep/pull/1359#issuecomment-448379329
 		}
-		char keyStrES[] = "sFastImaging.lEchoSpacing";
-		*echoSpacing  = readKey(keyStrES, keyPos, csaLengthTrim);
-		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
-		*existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
-		char keyStrUcMode[] = "sSliceArray.ucMode";
-		*ucMode = readKeyN1(keyStrUcMode, keyPos, csaLengthTrim);
-		char keyStrBase[] = "sKSpace.lBaseResolution";
-		*baseResolution = readKey(keyStrBase, keyPos, csaLengthTrim);
-		char keyStrInterp[] = "sKSpace.uc2DInterpolation";
-		*interp = readKey(keyStrInterp, keyPos, csaLengthTrim);
-		char keyStrPF[] = "sKSpace.ucPhasePartialFourier";
-		*partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
+		char keyStrAF[] = "sPat.lAccelFactPE";
+		csaAscii->parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
+		char keyStrRef[] = "sPat.lRefLinesPE";
+		csaAscii->refLinesPE = readKey(keyStrRef, keyPos, csaLengthTrim);
+
+
 		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
 		//*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
-		char keyStrRef[] = "sPat.lRefLinesPE";
-		*refLinesPE = readKey(keyStrRef, keyPos, csaLengthTrim);
-		char keyStrAF[] = "sPat.lAccelFactPE";
-		*parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		//char keyStrEF[] = "sFastImaging.lEPIFactor";
 		//ret = readKey(keyStrEF, keyPos, csaLengthTrim);
 		char keyStrCoil[] = "sCoilElementID.tCoilID";
@@ -654,69 +663,69 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
 		//read ALL alTI[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
-			sWipMemBlock->alTI[k] = NAN;
+			csaAscii->alTI[k] = NAN;
 		char keyStrTiFree[] = "alTI[";
-		//check if ANY sWipMemBlock.alFree tags exist
+		//check if ANY csaAscii.alFree tags exist
 		char *keyPosTi = (char *)memmem(keyPos, csaLengthTrim, keyStrTiFree, strlen(keyStrTiFree));
 		if (keyPosTi) {
 			for (int k = 0; k < kMaxWipFree; k++) {
 				char txt[1024] = {""};
 				sprintf(txt, "%s%d]", keyStrTiFree,k);
-				sWipMemBlock->alTI[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
+				csaAscii->alTI[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
 			}
 		}
-		//read ALL sWipMemBlock.alFree[*] values
+		//read ALL csaAscii.alFree[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
-			sWipMemBlock->alFree[k] = 0.0;
+			csaAscii->alFree[k] = 0.0;
 		char keyStrAlFree[] = "sWipMemBlock.alFree[";
-		//check if ANY sWipMemBlock.alFree tags exist
+		//check if ANY csaAscii.alFree tags exist
 		char *keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAlFree, strlen(keyStrAlFree));
 		if (keyPosFree) {
 			for (int k = 0; k < kMaxWipFree; k++) {
 				char txt[1024] = {""};
 				sprintf(txt, "%s%d]", keyStrAlFree,k);
-				sWipMemBlock->alFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
+				csaAscii->alFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
 			}
 		}
-		//read ALL sWipMemBlock.adFree[*] values
+		//read ALL csaAscii.adFree[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
-			sWipMemBlock->adFree[k] = NAN;
+			csaAscii->adFree[k] = NAN;
 		char keyStrAdFree[50];
 		strcpy(keyStrAdFree, "sWipMemBlock.adFree[");
 		//char keyStrAdFree[] = "sWipMemBlock.adFree[";
-		//check if ANY sWipMemBlock.adFree tags exist
+		//check if ANY csaAscii.adFree tags exist
 		keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		if (!keyPosFree) { //"Wip" -> "WiP", modern -> old Siemens
-			strcpy(keyStrAdFree, "sWiPMemBlock.adFree[");
+			strcpy(keyStrAdFree, "sWipMemBlock.adFree[");
 			keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		}
 		if (keyPosFree) {
 			for (int k = 0; k < kMaxWipFree; k++) {
 				char txt[1024] = {""};
 				sprintf(txt, "%s%d]", keyStrAdFree,k);
-				sWipMemBlock->adFree[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
+				csaAscii->adFree[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
 			}
 		}
 		//read labelling plane
 		char keyStrDThickness[] = "sRSatArray.asElm[1].dThickness";
-		sWipMemBlock->dThickness = readKeyFloat(keyStrDThickness, keyPos, csaLengthTrim);
-		if (sWipMemBlock->dThickness > 0.0) {
+		csaAscii->dThickness = readKeyFloat(keyStrDThickness, keyPos, csaLengthTrim);
+		if (csaAscii->dThickness > 0.0) {
 			char keyStrUlShape[] = "sRSatArray.asElm[1].ulShape";
-			sWipMemBlock->ulShape = readKeyFloat(keyStrUlShape, keyPos, csaLengthTrim);
+			csaAscii->ulShape = readKeyFloat(keyStrUlShape, keyPos, csaLengthTrim);
 			char keyStrSPositionDTra[] = "sRSatArray.asElm[1].sPosition.dTra";
-			sWipMemBlock->sPositionDTra = readKeyFloat(keyStrSPositionDTra, keyPos, csaLengthTrim);
+			csaAscii->sPositionDTra = readKeyFloat(keyStrSPositionDTra, keyPos, csaLengthTrim);
 			char keyStrSNormalDTra[] = "sRSatArray.asElm[1].sNormal.dTra";
-			sWipMemBlock->sNormalDTra = readKeyFloat(keyStrSNormalDTra, keyPos, csaLengthTrim);
+			csaAscii->sNormalDTra = readKeyFloat(keyStrSNormalDTra, keyPos, csaLengthTrim);
 		}
 		//read delay time
 		char keyStrDelay[] = "lDelayTimeInTR";
-		*delayTimeInTR = readKeyFloat(keyStrDelay, keyPos, csaLengthTrim);
+		csaAscii->delayTimeInTR = readKeyFloat(keyStrDelay, keyPos, csaLengthTrim);
 		char keyStrOver[] = "sKSpace.dPhaseOversamplingForDialog";
-		*phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
+		csaAscii->phaseOversampling = readKeyFloat(keyStrOver, keyPos, csaLengthTrim);
 		char keyStrPhase[] = "sKSpace.dPhaseResolution";
-		*phaseResolution = readKeyFloat(keyStrPhase, keyPos, csaLengthTrim);
+		csaAscii->phaseResolution = readKeyFloat(keyStrPhase, keyPos, csaLengthTrim);
 		char keyStrAmp[] = "sTXSPEC.asNucleusInfo[0].flReferenceAmplitude";
-		*txRefAmp = readKeyFloat(keyStrAmp, keyPos, csaLengthTrim);
+		csaAscii->txRefAmp = readKeyFloat(keyStrAmp, keyPos, csaLengthTrim);
 		//lower order shims: newer sequences
 		char keyStrSh0[] = "sGRADSPEC.asGPAData[0].lOffsetX";
 		shimSetting[0] = readKeyFloat(keyStrSh0, keyPos, csaLengthTrim);
@@ -747,6 +756,7 @@ void siemensCsaAscii(const char * filename, TsWipMemBlock* sWipMemBlock, int csa
 	free (buffer);
 	return;
 } // siemensCsaAscii()
+
 #endif //myReadAsciiCsa()
 
 #ifndef myDisableZLib
@@ -872,12 +882,10 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 	if (strlen(d->protocolName) > 0) return;
 #ifdef myReadAsciiCsa
-	int existUcImageNumb, ucMode, baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
-	//float pf = 1.0f; //partial fourier
-	float phaseOversampling, delayTimeInTR, phaseResolution, txRefAmp, shimSetting[8];
+	float shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
-	TsWipMemBlock sWipMemBlock;
-	siemensCsaAscii(filename, &sWipMemBlock, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &existUcImageNumb, &ucMode, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	TCsaAscii csaAscii;
+	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	strcpy(d->protocolName, protocolName);
 #endif
 }
@@ -1116,56 +1124,19 @@ tse3d: T2*/
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Unflipped\",\n" );
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n" );
 	}
-	#ifdef myReadGeProtocolBlock
-	//if ((d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
-	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] < 0.0) && (h->dim[3] > 2) && (h->dim[3] < kMaxEPI3D) && (d.manufacturer == kMANUFACTURER_GE) && (d.protocolBlockStartGE> 0) && (d.protocolBlockLengthGE > 19)) {
-		//GE final desperate attempt to determine slice order
-		// GE does not provide a good estimate for TA: here we use TR, which will be wrong for sparse designs
-		// Also, unclear what happens if slice order is flipped
-		// Therefore, we warning the user that we are guessing
-		int viewOrderGE = -1;
-		int sliceOrderGE = -1;
-		//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-		int ok = geProtocolBlock(filename, d.protocolBlockStartGE, d.protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE);
-		if (ok != EXIT_SUCCESS)
-			printWarning("Unable to decode GE protocol block\n");
-		else if ((sliceOrderGE >= 0) && (sliceOrderGE <= 1)) {
-			// 0=sequential/1=interleaved
-			//printMessage(" ViewOrder %d SliceOrder %d\n", viewOrderGE, sliceOrderGE);
-			printWarning("Guessing slice times using ProtocolBlock SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
-			int nSL = h->dim[3];
-			int nOdd = nSL / 2;
-			float secPerSlice = d.TR/nSL; //should be TA not TR! We do not know TR
-			if (sliceOrderGE == 0) {
-				for (int i = 0; i < nSL; i++)
-					d.CSA.sliceTiming[i] = i * secPerSlice;
-			} else {
-				for (int i = 0; i < nSL; i++) {
-					if (i % 2 == 0) { //ODD slices since we index from 0!
-						d.CSA.sliceTiming[i] = (i/2) * secPerSlice;
-						//printf("%g\n", d.CSA.sliceTiming[i]);
-					} else {
-						d.CSA.sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
-						//printf("%g\n", d.CSA.sliceTiming[i]);
-					}
-				} //for each slice
-			} //if interleaved
-		} //if slice order reported
-	} //read protocolBlockGE
 
-	#endif
-	int ucMode = -1; //rescue slice timing, issue 309
 	float delayTimeInTR = -0.01;
 	#ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		int existUcImageNumb, baseResolution, interpInt, partialFourier, echoSpacing, difBipolar, parallelReductionFactorInPlane, refLinesPE;
 		float pf = 1.0f; //partial fourier
-		float phaseResolution, txRefAmp, shimSetting[8];
+		float shimSetting[8];
 
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
-		TsWipMemBlock sWipMemBlock;
-		siemensCsaAscii(filename, &sWipMemBlock, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, &delayTimeInTR, &phaseOversampling, &phaseResolution, &txRefAmp, shimSetting, &existUcImageNumb, &ucMode, &baseResolution, &interpInt, &partialFourier, &echoSpacing, &difBipolar, &parallelReductionFactorInPlane, &refLinesPE, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
-		if (existUcImageNumb > 0) {
+		TCsaAscii csaAscii;
+		siemensCsaAscii(filename, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		delayTimeInTR = csaAscii.delayTimeInTR;
+		phaseOversampling = csaAscii.phaseOversampling;
+		if (csaAscii.existUcImageNumb > 0) {
 			if (d.CSA.protocolSliceNumber1 < 2) {
 				printWarning("Assuming mosaics saved in reverse order due to 'sSliceArray.ucImageNumb'\n");
 				printWarning(" check slice direction\n"); //never seen such an image in the wild.... sliceDir may need to be reversed
@@ -1174,52 +1145,52 @@ tse3d: T2*/
 		}
 		//ASL specific tags - Danny J.J. Wang http://www.loft-lab.org
 		if (strstr(pulseSequenceDetails,"ep2d_pcasl")) {
-			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", sWipMemBlock.adFree[1]); //mm
-			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", sWipMemBlock.adFree[2] * (1.0/1000000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", sWipMemBlock.adFree[3]);
-			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", sWipMemBlock.adFree[4] * (1.0/1000000.0) * (1.0/1000000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", sWipMemBlock.adFree[10]);  // mT/m
-			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", sWipMemBlock.adFree[11]);  // percent
+			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
+			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
+			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0/1000000.0) * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);  // mT/m
+			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", csaAscii.adFree[11]);  // percent
 		}
 		//ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails,"ep2d_pasl")) {
-			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", sWipMemBlock.alTI[1] * (1.0/1000.0)); //ms->sec
-			json_FloatNotNan(fp, "\t\"InversionTime2\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0));
+			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", csaAscii.alTI[1] * (1.0/1000.0)); //ms->sec
+			json_FloatNotNan(fp, "\t\"InversionTime2\": %g,\n", csaAscii.alTI[0] * (1.0/1000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
 		}
 		//ASL specific tags - 3D PASL Siemens Product http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf
 		if (strstr(pulseSequenceDetails,"tgse_pasl")) {
-			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000.0)); //ms->sec
-			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000.0));
+			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0/1000.0)); //ms->sec
+			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
 		}
 		//PASL http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
 		if (strstr(pulseSequenceDetails,"ep2d_fairest")) {
-			json_FloatNotNan(fp, "\t\"PostInversionDelay\": %g,\n", sWipMemBlock.adFree[2] * (1.0/1000.0)); //usec->sec
-			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", sWipMemBlock.adFree[4] * (1.0/1000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"PostInversionDelay\": %g,\n", csaAscii.adFree[2] * (1.0/1000.0)); //usec->sec
+			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[4] * (1.0/1000.0)); //usec -> sec
 		}
 		//ASL specific tags - Oxford (Thomas OKell)
 		bool isOxfordASL = false;
 		if (strstr(pulseSequenceDetails,"to_ep2d_VEPCASL")) { //Oxford 2D pCASL
 			isOxfordASL = true;
-			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", sWipMemBlock.alTI[2] * (1.0/1000000.0)); //ms->sec
-			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", sWipMemBlock.alTI[0] * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000000.0)); //ms->sec
+			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0/1000000.0)); //usec -> sec
 			//alTI[0]	 = 	700000
 			//alTI[2]	 = 	1800000
 
-			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[4]);
-			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[5]/1000000.0); //usec -> sec
-			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[6]/1000000.0); //usec -> sec
-			json_FloatNotNan(fp, "\t\"MeanTagGradient\": %g,\n", sWipMemBlock.adFree[0]); //mTm
-			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", sWipMemBlock.adFree[1]); //mTm
-			json_Float(fp, "\t\"TagDuration\": %g,\n", sWipMemBlock.alFree[9]/ 1000.0); //ms -> sec
-			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[10]/ 1000.0); //ms -> sec
+			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", csaAscii.alFree[4]);
+			json_Float(fp, "\t\"TagRFDuration\": %g,\n", csaAscii.alFree[5]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", csaAscii.alFree[6]/1000000.0); //usec -> sec
+			json_FloatNotNan(fp, "\t\"MeanTagGradient\": %g,\n", csaAscii.adFree[0]); //mTm
+			json_FloatNotNan(fp, "\t\"TagGradientAmplitude\": %g,\n", csaAscii.adFree[1]); //mTm
+			json_Float(fp, "\t\"TagDuration\": %g,\n", csaAscii.alFree[9]/ 1000.0); //ms -> sec
+			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", csaAscii.alFree[10]/ 1000.0); //ms -> sec
 			//report post label delay
 
 			int nPLD = 0;
 			bool isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 11; k < 31; k++) {
-				if ((isnan(sWipMemBlock.alFree[k])) || (sWipMemBlock.alFree[k] <= 0.0)) isValid = false;
+				if ((isnan(csaAscii.alFree[k])) || (csaAscii.alFree[k] <= 0.0)) isValid = false;
 				if (isValid) nPLD ++;
 			} //for k
 			if (nPLD > 0) { // record PostLabelDelays, these are listed as "PLD0","PLD1",etc in PDF
@@ -1227,7 +1198,7 @@ tse3d: T2*/
 				for (int i = 0; i < nPLD; i++) {
 					if (i != 0)
 						fprintf(fp, ",\n");
-					fprintf(fp, "\t\t%g", sWipMemBlock.alFree[i+11]/ 1000.0); //ms -> sec
+					fprintf(fp, "\t\t%g", csaAscii.alFree[i+11]/ 1000.0); //ms -> sec
 				}
 				fprintf(fp, "\t],\n");
 			}
@@ -1236,31 +1207,31 @@ tse3d: T2*/
 				if (isValid) {
 					char newstr[256];
 					sprintf(newstr, "\t\"PLD%d\": %%g,\n", k-11);
-					json_Float(fp, newstr, sWipMemBlock.alFree[k]/ 1000.0); //ms -> sec
-					if (sWipMemBlock.alFree[k] <= 0.0) isValid = false;
+					json_Float(fp, newstr, csaAscii.alFree[k]/ 1000.0); //ms -> sec
+					if (csaAscii.alFree[k] <= 0.0) isValid = false;
 				}//isValid
 			} //for k */
 			for (int k = 3; k < 11; k++) { //vessel locations
 				char newstr[256];
-				sprintf(newstr, "\t\"sWipMemBlockAdFree%d\": %%g,\n", k);
-				json_FloatNotNan(fp, newstr, sWipMemBlock.adFree[k]);
+				sprintf(newstr, "\t\"sWipMemBlock.AdFree%d\": %%g,\n", k);
+				json_FloatNotNan(fp, newstr, csaAscii.adFree[k]);
 			}
 		}
 		if (strstr(pulseSequenceDetails,"jw_tgse_VEPCASL")) { //Oxford 3D pCASL
 			isOxfordASL = true;
-			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", sWipMemBlock.alFree[6]);
-			json_Float(fp, "\t\"TagRFDuration\": %g,\n", sWipMemBlock.alFree[7]/1000000.0); //usec -> sec
-			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", sWipMemBlock.alFree[8]/1000000.0); //usec -> sec
-			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", sWipMemBlock.alFree[9]/1000.0); //ms -> sec
-			json_Float(fp, "\t\"Tag0\": %g,\n", sWipMemBlock.alFree[10]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"Tag1\": %g,\n", sWipMemBlock.alFree[11]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"Tag2\": %g,\n", sWipMemBlock.alFree[12]/1000.0); //DelayTimeInTR usec -> sec
-			json_Float(fp, "\t\"Tag3\": %g,\n", sWipMemBlock.alFree[13]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", csaAscii.alFree[6]);
+			json_Float(fp, "\t\"TagRFDuration\": %g,\n", csaAscii.alFree[7]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"TagRFSeparation\": %g,\n", csaAscii.alFree[8]/1000000.0); //usec -> sec
+			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", csaAscii.alFree[9]/1000.0); //ms -> sec
+			json_Float(fp, "\t\"Tag0\": %g,\n", csaAscii.alFree[10]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"Tag1\": %g,\n", csaAscii.alFree[11]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"Tag2\": %g,\n", csaAscii.alFree[12]/1000.0); //DelayTimeInTR usec -> sec
+			json_Float(fp, "\t\"Tag3\": %g,\n", csaAscii.alFree[13]/1000.0); //DelayTimeInTR usec -> sec
 
 			int nPLD = 0;
 			bool isValid = true; //detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 30; k < 38; k++) {
-				if ((isnan(sWipMemBlock.alFree[k])) || (sWipMemBlock.alFree[k] <= 0.0)) isValid = false;
+				if ((isnan(csaAscii.alFree[k])) || (csaAscii.alFree[k] <= 0.0)) isValid = false;
 				if (isValid) nPLD ++;
 			} //for k
 			if (nPLD > 0) { // record PostLabelDelays, these are listed as "PLD0","PLD1",etc in PDF
@@ -1268,40 +1239,40 @@ tse3d: T2*/
 				for (int i = 0; i < nPLD; i++) {
 					if (i != 0)
 						fprintf(fp, ",\n");
-					fprintf(fp, "\t\t%g", sWipMemBlock.alFree[i+30]/ 1000.0); //ms -> sec
+					fprintf(fp, "\t\t%g", csaAscii.alFree[i+30]/ 1000.0); //ms -> sec
 				}
 				fprintf(fp, "\t],\n");
 			}
 			/*
-			json_Float(fp, "\t\"PLD0\": %g,\n", sWipMemBlock.alFree[30]/1000.0);
-			json_Float(fp, "\t\"PLD1\": %g,\n", sWipMemBlock.alFree[31]/1000.0);
-			json_Float(fp, "\t\"PLD2\": %g,\n", sWipMemBlock.alFree[32]/1000.0);
-			json_Float(fp, "\t\"PLD3\": %g,\n", sWipMemBlock.alFree[33]/1000.0);
-			json_Float(fp, "\t\"PLD4\": %g,\n", sWipMemBlock.alFree[34]/1000.0);
-			json_Float(fp, "\t\"PLD5\": %g,\n", sWipMemBlock.alFree[35]/1000.0);
+			json_Float(fp, "\t\"PLD0\": %g,\n", csaAscii.alFree[30]/1000.0);
+			json_Float(fp, "\t\"PLD1\": %g,\n", csaAscii.alFree[31]/1000.0);
+			json_Float(fp, "\t\"PLD2\": %g,\n", csaAscii.alFree[32]/1000.0);
+			json_Float(fp, "\t\"PLD3\": %g,\n", csaAscii.alFree[33]/1000.0);
+			json_Float(fp, "\t\"PLD4\": %g,\n", csaAscii.alFree[34]/1000.0);
+			json_Float(fp, "\t\"PLD5\": %g,\n", csaAscii.alFree[35]/1000.0);
 			*/
 		}
 		if (isOxfordASL) { //properties common to 2D and 3D ASL
 			//labelling plane
-			fprintf(fp, "\t\"TagPlaneDThickness\": %g,\n", sWipMemBlock.dThickness);
-			fprintf(fp, "\t\"TagPlaneUlShape\": %g,\n", sWipMemBlock.ulShape);
-			fprintf(fp, "\t\"TagPlaneSPositionDTra\": %g,\n", sWipMemBlock.sPositionDTra);
-			fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", sWipMemBlock.sNormalDTra);
+			fprintf(fp, "\t\"TagPlaneDThickness\": %g,\n", csaAscii.dThickness);
+			fprintf(fp, "\t\"TagPlaneUlShape\": %g,\n", csaAscii.ulShape);
+			fprintf(fp, "\t\"TagPlaneSPositionDTra\": %g,\n", csaAscii.sPositionDTra);
+			fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", csaAscii.sNormalDTra);
 		}
 		//general properties
-		if (partialFourier > 0) {
+		if (csaAscii.partialFourier > 0) {
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
-			if (partialFourier == 1) pf = 0.5; // 4/8
-			if (partialFourier == 2) pf = 0.625; // 5/8
-			if (partialFourier == 4) pf = 0.75;
-			if (partialFourier == 8) pf = 0.875;
+			if (csaAscii.partialFourier == 1) pf = 0.5; // 4/8
+			if (csaAscii.partialFourier == 2) pf = 0.625; // 5/8
+			if (csaAscii.partialFourier == 4) pf = 0.75;
+			if (csaAscii.partialFourier == 8) pf = 0.875;
 			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
 		}
-		if (interpInt > 0) {
+		if (csaAscii.interp > 0) {
 			interp = true;
 			fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
 		}
-		if (baseResolution > 0) fprintf(fp, "\t\"BaseResolution\": %d,\n", baseResolution );
+		if (csaAscii.baseResolution > 0) fprintf(fp, "\t\"BaseResolution\": %d,\n", csaAscii.baseResolution );
 		if (shimSetting[0] != 0.0) {
 			fprintf(fp, "\t\"ShimSetting\": [\n");
 			for (int i = 0; i < 8; i++) {
@@ -1312,17 +1283,17 @@ tse3d: T2*/
 			fprintf(fp, "\t],\n");
 		}
 		if (d.CSA.numDti > 0) { //
-			if (difBipolar == 1) fprintf(fp, "\t\"DiffusionScheme\": \"Bipolar\",\n" );
-			if (difBipolar == 2) fprintf(fp, "\t\"DiffusionScheme\": \"Monopolar\",\n" );
+			if (csaAscii.difBipolar == 1) fprintf(fp, "\t\"DiffusionScheme\": \"Bipolar\",\n" );
+			if (csaAscii.difBipolar == 2) fprintf(fp, "\t\"DiffusionScheme\": \"Monopolar\",\n" );
 		}
 		//DelayTimeInTR
 		// https://groups.google.com/forum/#!topic/bids-discussion/nmg1BOVH1SU
 		// https://groups.google.com/forum/#!topic/bids-discussion/seD7AtJfaFE
 		json_Float(fp, "\t\"DelayTime\": %g,\n", delayTimeInTR/ 1000000.0); //DelayTimeInTR usec -> sec
-		json_Float(fp, "\t\"TxRefAmp\": %g,\n", txRefAmp);
-		json_Float(fp, "\t\"PhaseResolution\": %g,\n", phaseResolution);
+		json_Float(fp, "\t\"TxRefAmp\": %g,\n", csaAscii.txRefAmp);
+		json_Float(fp, "\t\"PhaseResolution\": %g,\n", csaAscii.phaseResolution);
 		json_Float(fp, "\t\"PhaseOversampling\": %g,\n", phaseOversampling); //usec -> sec
-		json_Float(fp, "\t\"VendorReportedEchoSpacing\": %g,\n", echoSpacing / 1000000.0); //usec -> sec
+		json_Float(fp, "\t\"VendorReportedEchoSpacing\": %g,\n", csaAscii.echoSpacing / 1000000.0); //usec -> sec
 		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
@@ -1336,16 +1307,16 @@ tse3d: T2*/
 		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
 		if (strlen(d.protocolName) < 1)  //insert protocol name if it exists in CSA but not DICOM header: https://github.com/nipy/heudiconv/issues/80
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
-		if (refLinesPE > 0)
-			fprintf(fp, "\t\"RefLinesPE\": %d,\n", refLinesPE);
+		if (csaAscii.refLinesPE > 0)
+			fprintf(fp, "\t\"RefLinesPE\": %d,\n", csaAscii.refLinesPE);
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
-		if (parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
+		if (csaAscii.parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
-				d.accelFactPE = parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
+				d.accelFactPE = csaAscii.parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
 				//fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
 			}
-			if (parallelReductionFactorInPlane != (int)(d.accelFactPE))
-				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), parallelReductionFactorInPlane);
+			if (csaAscii.parallelReductionFactorInPlane != (int)(d.accelFactPE))
+				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), csaAscii.parallelReductionFactorInPlane);
 		}
 	} else { //e.g. Siemens Vida does not have CSA header, but has many attributes
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
@@ -1466,93 +1437,12 @@ tse3d: T2*/
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	/*if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (d.CSA.sliceTiming[0] >= 0.0)) {
-   		//note for these systems slice timing is initially reported in seconds, whereas Siemens CSA slice timing in msec!
-   		// dcm2niix 20190704: CSA.sliceTiming should be converted to msec, see checkSliceTiming() this resolves midnight crossings
+	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
-   		for (int i = 0; i < h->dim[3]; i++) {
-				if (i != 0)
-					fprintf(fp, ",\n");
-				if (d.CSA.protocolSliceNumber1 < 0)
-					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[(h->dim[3]-1) - i] / 1000.0);
-				else
-					fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i]  / 1000.0);
-			}
-		fprintf(fp, "\t],\n");
-	}
-	*/
-	//start: rescue Siemens Slice Timing using ucMode
-	//prior to 20190704 if ((!d.isXA10A) && (!d.is3DAcq) && (d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.sliceTiming[0] >= 0.0)) {
-   	if ((h->dim[3] > 2) && (h->dim[3] < kMaxEPI3D) && (ucMode > 0) && (ucMode != 3) && (ucMode < 5) && (delayTimeInTR >= 0.0) && (!d.is3DAcq) && (d.CSA.sliceTiming[0] < 0.0)) {
-   		//issue 309: resolve Siemens slice timing if MosaicRefAcqTimes is missing
-   		//clones conditional for sSliceArray.ucMode in dicm2nii.m
-   		// 1/2/4: Asc/Desc/Inter
-   		//json_Float(fp, "\t\"DelayTime\": %g,\n", delayTimeInTR/ 1000000.0); //DelayTimeInTR usec -> sec
-		int nSL = h->dim[3];
-		float trSec = d.TR / 1000.0;
-		float delaySec = delayTimeInTR/ 1000000.0;
-		float taSec = trSec - delaySec;
-		float sliceTiming[kMaxEPI3D];
-		for (int i = 0; i < nSL; i++)
-				sliceTiming[i] = i * taSec/nSL * 1000.0; //expected in ms
-		if (ucMode == 1) //asc
-			for (int i = 0; i < nSL; i++)
-				d.CSA.sliceTiming[i] = sliceTiming[i];
-		if (ucMode == 2) //desc
-			for (int i = 0; i < nSL; i++)
-				d.CSA.sliceTiming[i] = sliceTiming[(nSL-1) - i];
-		if (ucMode == 4) { //int
-			int oddInc = 0; //for slices 1,3,5
-			int evenInc = (nSL+1) / 2; //for 4 slices 0,1,2,3 we will order [2,0,3,1] for 5 slices [0,3,1,4,2]
-			if (nSL % 2 == 0) { //Siemens interleaved for acquisitions with odd number of slices https://www.mccauslandcenter.sc.edu/crnl/tools/stc
-				oddInc = evenInc;
-				evenInc = 0;
-			}
-			for (int i = 0; i < nSL; i++) {
-				if (i % 2 == 0) {//odd slice 1,3,etc [indexed from 0]!
-					d.CSA.sliceTiming[i] = sliceTiming[oddInc];
-					//printf("%d %d\n", i, oddInc);
-					oddInc += 1;
-				} else { //even slice
-					d.CSA.sliceTiming[i] = sliceTiming[evenInc];
-					//printf("%d %d %d\n", i, evenInc, nSL);
-					evenInc += 1;
-				}
-			}
-		} //if ucMode == 3 int
-		//dicm2nii provides sSliceArray.ucImageNumb - similar to protocolSliceNumber1
-		//if asc_header(s, 'sSliceArray.ucImageNumb'), t = t(nSL:-1:1); end % rev-num
-
-   	} //end: rescue Siemens Slice Timing using ucMode
-   	if (((d.manufacturer == kMANUFACTURER_UIH) || (d.manufacturer == kMANUFACTURER_GE) || (d.isXA10A)) && (h->dim[3] > 2) && (h->dim[3] < kMaxEPI3D) && (!d.is3DAcq) && (d.CSA.protocolSliceNumber1 < 0) && (d.CSA.sliceTiming[0] >= 0.0) ) {
-   		//slice order was flipped!
-   		//if (opts.isVerbose)
-   			printMessage("Slices were spatially flipped, so slice times are flipped\n");
-   		float sliceTiming[kMaxEPI3D];
-   		int nSL = h->dim[3];
-		for (int i = 0; i < nSL; i++)
-			sliceTiming[i] = d.CSA.sliceTiming[i];
-		for (int i = 0; i < nSL; i++)
-			d.CSA.sliceTiming[i] = sliceTiming[(nSL-1)-i];
-
-	}
-   	if ((!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
-   		fprintf(fp, "\t\"SliceTiming\": [\n");
-   		if (d.CSA.protocolSliceNumber1 > 1) {
-   			//https://github.com/rordenlab/dcm2niix/issues/40
-   			//equivalent to dicm2nii "s.SliceTiming = s.SliceTiming(end:-1:1);"
-			for (int i = (h->dim[3]-1); i >= 0; i--) {
-				if (d.CSA.sliceTiming[i] < 0.0) break;
-				if (i != (h->dim[3]-1))
-					fprintf(fp, ",\n");
-				fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
-			}
-   		} else {
-			for (int i = 0; i < h->dim[3]; i++) {
-				if (i != 0)
-					fprintf(fp, ",\n");
-				fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
-			}
+		for (int i = 0; i < h->dim[3]; i++) {
+			if (i != 0)
+				fprintf(fp, ",\n");
+			fprintf(fp, "\t\t%g", d.CSA.sliceTiming[i] / 1000.0 );
 		}
 		fprintf(fp, "\t],\n");
 	}
@@ -2835,31 +2725,15 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
             images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
         }
     }
-
     // Slice timing
     if (data.CSA.sliceTiming[0] >= 0.0 && (data.manufacturer == kMANUFACTURER_UIH || data.manufacturer == kMANUFACTURER_GE || (data.manufacturer == kMANUFACTURER_SIEMENS && !data.isXA10A))) {
         std::vector<double> sliceTimes;
-        if (data.manufacturer == kMANUFACTURER_SIEMENS && data.CSA.protocolSliceNumber1 > 1) {
-            //https://github.com/rordenlab/dcm2niix/issues/40
-            for (int i=header.dim[3]-1; i>=0; i--) {
-                if (data.CSA.sliceTiming[i] < 0.0)
-                    break;
-                sliceTimes.push_back(data.CSA.sliceTiming[i] / 1000.0); //slice time in msec
-            }
-        } else if (data.manufacturer != kMANUFACTURER_SIEMENS && data.CSA.protocolSliceNumber1 < 0) {
-            for (int i=header.dim[3]-1; i>=0; i--)
-                sliceTimes.push_back(data.CSA.sliceTiming[i]);
-        } else {
-        	#pragma message ("Please test R specific code: at this stage all slice times should be in msec due to changes in checkSliceTiming() 20190704")
-        	for (int i=header.dim[3]-1; i>=0; i--) {
-                if (data.CSA.sliceTiming[i] < 0.0)
-                    break;
-                sliceTimes.push_back(data.CSA.sliceTiming[i]); //slice time in msec
-            }
-            //for (int i=0; i<header.dim[3]; i++)
-            //    sliceTimes.push_back(data.CSA.sliceTiming[i] / (data.manufacturer == kMANUFACTURER_SIEMENS ? 1000.0 : 1.0));
+        #pragma message ("Please test R specific code: at this stage all slice times should be in msec due to changes in checkSliceTiming() 20190704")
+        for (int i=header.dim[3]-1; i>=0; i--) {
+        	if (data.CSA.sliceTiming[i] < 0.0)
+            	break;
+            sliceTimes.push_back(data.CSA.sliceTiming[i]); //slice time in msec
         }
-
         images->addAttribute("sliceTiming", sliceTimes);
     }
 
@@ -4271,6 +4145,112 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
 }//checkSliceTiming()
 
+void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
+	//we can often read GE slice timing from TriggerTime (0018,1060) or RTIA Timer (0021,105E)
+	// if both of these methods fail, we can often guess based on slice order stored in the Private Protocol Data Block (0025,101B)
+	// this is referred to as "rescue" as we only know the TR, not the TA. So assumes continuous scans with no gap
+	if (d->is3DAcq) return; //no need for slice times
+	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
+	if (nSL < 2) return;
+	if (d->manufacturer != kMANUFACTURER_GE) return;
+	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
+	#ifdef myReadGeProtocolBlock
+	//GE final desperate attempt to determine slice order
+	// GE does not provide a good estimate for TA: here we use TR, which will be wrong for sparse designs
+	// Also, unclear what happens if slice order is flipped
+	// Therefore, we warning the user that we are guessing
+	int viewOrderGE = -1;
+	int sliceOrderGE = -1;
+	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE);
+	if (ok != EXIT_SUCCESS) {
+		printWarning("Unable to decode GE protocol block\n");
+		return;
+	}
+	if ((sliceOrderGE < 0) || (sliceOrderGE > 1)) return;
+	// 0=sequential/1=interleaved
+	printWarning("Guessing slice times using ProtocolBlock SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
+	int nOdd = nSL / 2;
+	float secPerSlice = d->TR/nSL; //should be TA not TR! We do not know TR
+	if (sliceOrderGE == 0) {
+		for (int i = 0; i < nSL; i++)
+			d->CSA.sliceTiming[i] = i * secPerSlice;
+	} else {
+		for (int i = 0; i < nSL; i++) {
+			if (i % 2 == 0) { //ODD slices since we index from 0!
+				d->CSA.sliceTiming[i] = (i/2) * secPerSlice;
+				//printf("%g\n", d->CSA.sliceTiming[i]);
+			} else {
+				d->CSA.sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
+				//printf("%g\n", d->CSA.sliceTiming[i]);
+			}
+		} //for each slice
+	} //if interleaved
+	#endif
+}
+
+void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
+	if ((d->CSA.protocolSliceNumber1 == 0) || ((d->CSA.protocolSliceNumber1 == 1))) return; //slices not flipped
+	if (d->is3DAcq) return; //no need for slice times
+	if (d->CSA.sliceTiming[0] < 0.0) return; //no slice times
+	if (nSL > kMaxEPI3D) return;
+	if (nSL < 2) return;
+	if (verbose)
+   		printMessage("Slices were spatially flipped, so slice times are flipped\n");
+   	d->CSA.protocolSliceNumber1 = 0;
+   	float sliceTiming[kMaxEPI3D];
+   	for (int i = 0; i < nSL; i++)
+		sliceTiming[i] = d->CSA.sliceTiming[i];
+	for (int i = 0; i < nSL; i++)
+		d->CSA.sliceTiming[i] = sliceTiming[(nSL-1)-i];
+}
+
+void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
+	if (d->is3DAcq) return; //no need for slice times
+	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
+	if (nSL < 2) return;
+	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
+	float shimSetting[8];
+	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+	TCsaAscii csaAscii;
+	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	int ucMode = csaAscii.ucMode;
+	if ((ucMode < 1) || (ucMode == 3) || (ucMode > 4)) return;
+	float trSec = d->TR / 1000.0;
+	float delaySec = csaAscii.delayTimeInTR/ 1000000.0;
+	float taSec = trSec - delaySec;
+	float sliceTiming[kMaxEPI3D];
+	for (int i = 0; i < nSL; i++)
+			sliceTiming[i] = i * taSec/nSL * 1000.0; //expected in ms
+	if (ucMode == 1) //asc
+		for (int i = 0; i < nSL; i++)
+			d->CSA.sliceTiming[i] = sliceTiming[i];
+	if (ucMode == 2) //desc
+		for (int i = 0; i < nSL; i++)
+			d->CSA.sliceTiming[i] = sliceTiming[(nSL-1) - i];
+	if (ucMode == 4) { //int
+		int oddInc = 0; //for slices 1,3,5
+		int evenInc = (nSL+1) / 2; //for 4 slices 0,1,2,3 we will order [2,0,3,1] for 5 slices [0,3,1,4,2]
+		if (nSL % 2 == 0) { //Siemens interleaved for acquisitions with odd number of slices https://www.mccauslandcenter.sc.edu/crnl/tools/stc
+			oddInc = evenInc;
+			evenInc = 0;
+		}
+		for (int i = 0; i < nSL; i++) {
+			if (i % 2 == 0) {//odd slice 1,3,etc [indexed from 0]!
+				d->CSA.sliceTiming[i] = sliceTiming[oddInc];
+				//printf("%d %d\n", i, oddInc);
+				oddInc += 1;
+			} else { //even slice
+				d->CSA.sliceTiming[i] = sliceTiming[evenInc];
+				//printf("%d %d %d\n", i, evenInc, nSL);
+				evenInc += 1;
+			}
+		}
+	} //if ucMode == 3 int
+	//dicm2nii provides sSliceArray.ucImageNumb - similar to protocolSliceNumber1
+	//if asc_header(s, 'sSliceArray.ucImageNumb'), t = t(nSL:-1:1); end % rev-num
+}
+
 void reportMat44o(char *str, mat44 A) {
     printMessage("%s = [%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1]\n",str,
            A.m[0][0],A.m[0][1],A.m[0][2],A.m[0][3],
@@ -4726,7 +4706,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	return EXIT_SUCCESS;
     }
     checkSliceTiming(&dcmList[indx0], &dcmList[indx1], opts.isVerbose);
-    int sliceDir = 0;
+    rescueSliceTimingSiemens(&dcmList[indx0], opts.isVerbose, hdr0.dim[3], nameList->str[dcmSort[0].indx]); //desperate attempts if conventional methods fail
+    rescueSliceTimingGE(&dcmList[indx0], opts.isVerbose, hdr0.dim[3], nameList->str[dcmSort[0].indx]); //desperate attempts if conventional methods fail
+	int sliceDir = 0;
     if (hdr0.dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx],dcmList[dcmSort[nConvert-1].indx] , &hdr0, true);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
@@ -4741,6 +4723,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
     		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
     }
+    reverseSliceTiming(&dcmList[indx0], opts.isVerbose, hdr0.dim[3]);
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) {
       int i = 0;

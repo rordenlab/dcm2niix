@@ -14,6 +14,8 @@ Knowing the relative timing of the acquisition for each 2D slice in a 3D volume 
 
 In general, fMRI acquired using GE product sequence (PSD) “epi” with the multiphase option will store slice timing in the Trigger Time (DICOM 0018,1060) element. In contrast, the popular PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics) does not save this tag (though in some cases it saves the RTIA Timer). Examples are [available](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Slice_timing_correction) for both the “epiRT” and “epi” sequences.
 
+If neither Trigger Time (DICOM 0018,1060) or RTIA Timer (0021,105E) store slice timing information, a final option is to decode the GE Protocol Data Block as described below. At best, this block only reports whether the acquisition was interleaved or sequential. As long as one assumes the acquisition was continuous (with no temporal gap between volumes, e.g. sparse images) on can use this value, the number of slices in the volume and the repetition time to infer slice times.
+
 ## User Define Data GE (0043,102A)
 
 This private element of the DICOM header is used to determine the phase encoding polarity. Specifically, we need to know the "Ky traversal direction" (top-down, or bottom up) and the phase encoding polarity. Unfortunately, this data is stored in a complicated, proprietary structure, that has changed with different releases of GE software. [Click here to see the definition for this structure](https://github.com/ScottHaileRobertson/GE-MRI-Tools/blob/master/GePackage/%2BGE/%2BPfile/%2BHeader/%2BRDB15/rdbm.h).
