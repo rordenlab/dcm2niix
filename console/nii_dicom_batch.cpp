@@ -179,7 +179,7 @@ bool is_exe(const char* path) { //requires #include <sys/stat.h>
 	}// is_dir()
 #endif
 
-void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
+void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isVerbose){
     //0018,1312 phase encoding is either in row or column direction
     //0043,1039 (or 0043,a039). b value (as the first number in the string).
     //0019,10bb (or 0019,a0bb). phase diffusion direction
@@ -221,9 +221,11 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
 	}
 	if (sliceDir < 0)
     	flp.v[2] = 1 - flp.v[2];
-    printMessage("Saving %d DTI gradients. GE Reorienting %s : please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->CSA.numDti, d->protocolName, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
-	if (!col)
-		printMessage(" reorienting for ROW phase-encoding untested.\n");
+    if ((isVerbose) || (!col)) {
+		printMessage("Saving %d DTI gradients. GE Reorienting %s : please validate. isCol=%d sliceDir=%d flp=%d %d %d\n", d->CSA.numDti, d->protocolName, col, sliceDir, flp.v[0], flp.v[1],flp.v[2]);
+		if (!col)
+			printWarning("Reorienting for ROW phase-encoding untested.\n");
+	}
 	bool scaledBValWarning = false;
     for (int i = 0; i < d->CSA.numDti; i++) {
         float vLen = sqrt( (vx[i].V[1]*vx[i].V[1])
@@ -272,7 +274,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
     			vx[i].V[v] = 0.0f;
 }// geCorrectBvecs()
 
-void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx){
+void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isVerbose){
     //see Matthew Robson's  http://users.fmrib.ox.ac.uk/~robson/internal/Dicom2Nifti111.m
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
@@ -325,7 +327,8 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     }  else if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) {
        printWarning("Saving %d DTI gradients. Validate vectors (matrix had a negative determinant).\n", d->CSA.numDti); //perhaps Siemens sagittal
     } else if (( d->sliceOrient == kSliceOrientTra) || (d->manufacturer != kMANUFACTURER_PHILIPS)) {
-        printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
+        if (isVerbose)
+        	printMessage("Saving %d DTI gradients. Validate vectors.\n", d->CSA.numDti);
     } else if ( d->sliceOrient == kSliceOrientUnknown)
     	printWarning("Saving %d DTI gradients. Validate vectors (image slice orientation not reported, e.g. 2001,100B).\n", d->CSA.numDti);
 	if (d->manufacturer == kMANUFACTURER_BRUKER)
@@ -545,7 +548,6 @@ typedef struct {
 	float delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
     int existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
     	difBipolar, parallelReductionFactorInPlane, refLinesPE;
-
     float alFree[kMaxWipFree] ;
     float adFree[kMaxWipFree];
     float alTI[kMaxWipFree];
@@ -872,6 +874,11 @@ void json_FloatNotNan(FILE *fp, const char *sLabel, float sVal) {
 	fprintf(fp, sLabel, sVal );
 } //json_Float
 
+void print_FloatNotNan(const char *sLabel, int iVal, float sVal) {
+	if (isnan(sVal)) return;
+	printMessage(sLabel, iVal, sVal);
+} //json_Float
+
 void json_Float(FILE *fp, const char *sLabel, float sVal) {
 	if (sVal <= 0.0) return;
 	fprintf(fp, sLabel, sVal );
@@ -897,7 +904,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 // we will use %g for floats since exponents are allowed
 // we will not set the locale, so decimal separator is always a period, as required
 //  https://www.ietf.org/rfc/rfc4627.txt
-	if ((!opts.isCreateBIDS) && (opts.isOnlyBIDS)) printMessage("Input-only mode: no BIDS/NIfTI output generated.\n");
+	if ((!opts.isCreateBIDS) && (opts.isOnlyBIDS)) printMessage("Input-only mode: no BIDS/NIfTI output generated for '%s'\n", pathoutname);
 	if (!opts.isCreateBIDS) return;
 	char txtname[2048] = {""};
 	strcpy (txtname,pathoutname);
@@ -1143,26 +1150,42 @@ tse3d: T2*/
 			}
 			d.CSA.protocolSliceNumber1 = 2;
 		}
-		//ASL specific tags - Danny J.J. Wang http://www.loft-lab.org
+		//ultra-verbose output for deciphering adFree/alFree/alTI values:
+		/*
+		if (opts.isVerbose > 1) {
+			for (int i = 0; i < kMaxWipFree; i++)
+				print_FloatNotNan("adFree[%d]=\t%g\n",i, csaAscii.adFree[i]);
+			for (int i = 0; i < kMaxWipFree; i++)
+				print_FloatNotNan("alFree[%d]=\t%g\n",i, csaAscii.alFree[i]);
+			for (int i = 0; i < kMaxWipFree; i++)
+				print_FloatNotNan("alTI[%d]=\t%g\n",i, csaAscii.alTI[i]);
+		} //verbose
+		*/
+		//ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
 		if (strstr(pulseSequenceDetails,"ep2d_pcasl")) {
 			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0/1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
-			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0/1000000.0) * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0/1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);  // mT/m
 			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", csaAscii.adFree[11]);  // percent
 		}
+		//ASL specific tags - 3D pCASL Danny J.J. Wang http://www.loft-lab.org
+		if (strstr(pulseSequenceDetails,"tgse_pcasl")) {
+			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0/1000000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);  // mT/m
+			json_FloatNotNan(fp, "\t\"T1\": %g,\n", csaAscii.adFree[12] * (1.0/1000000.0)); //usec -> sec
+		}
 		//ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails,"ep2d_pasl")) {
-			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", csaAscii.alTI[1] * (1.0/1000.0)); //ms->sec
-			json_FloatNotNan(fp, "\t\"InversionTime2\": %g,\n", csaAscii.alTI[0] * (1.0/1000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
+			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[0] * (1.0/1000000.0)); //us -> sec
+			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000000.0)); //us -> sec
 		}
 		//ASL specific tags - 3D PASL Siemens Product http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf
 		if (strstr(pulseSequenceDetails,"tgse_pasl")) {
-			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0/1000.0)); //ms->sec
-			json_FloatNotNan(fp, "\t\"InversionTime1\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
+			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0/1000000.0)); //usec->sec
+			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000000.0)); //usec -> sec
+			//json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
 		}
 		//PASL http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
 		if (strstr(pulseSequenceDetails,"ep2d_fairest")) {
@@ -1592,8 +1615,10 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 			free(vx);
 			return NULL;
         }
-        for (int i = 0; i < numDti; i++)
+        if (opts.isVerbose) {
+        	for (int i = 0; i < numDti; i++)
                 printMessage("bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
+        }
         //Stutters XINAPSE7 seem to save B=0 as B=2000, but these are not derived? https://github.com/rordenlab/dcm2niix/issues/182
         bool bZeroBvec = false;
         for (int i = 0; i < numDti; i++) {//check if all bvalues match first volume
@@ -1734,8 +1759,8 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	if (!isSequential)
 	  printMessage("DTI volumes re-ordered by ascending b-value\n");
 	dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
-    geCorrectBvecs(&dcmList[indx0],sliceDir, vx);
-    siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx);
+    geCorrectBvecs(&dcmList[indx0],sliceDir, vx, opts.isVerbose);
+    siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx, opts.isVerbose);
     if (!opts.isFlipY ) { //!FLIP_Y&& (dcmList[indx0].CSA.mosaicSlices < 2) mosaics are always flipped in the Y direction
         for (int i = 0; i < (numDti); i++) {
             if (fabs(vx[i].V[2]) > FLT_EPSILON)
@@ -3077,7 +3102,7 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     strcat (fname,".nii");
 	#if defined(_WIN64) || defined(_WIN32)
 	if ((opts.isGz) && (opts.isPipedGz))
-    	printWarning(" The 'optimal' piped gz is only available for Unix\n");
+    	printWarning("The 'optimal' piped gz is only available for Unix\n");
 	#else //if windows else Unix
 	if ((opts.isGz) && (opts.isPipedGz) && (strlen(opts.pigzname)  > 0) ) {
 		//piped gz
@@ -3094,7 +3119,8 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     	strcat(command, fname);
     	strcat(command, ".gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
 		//strcat(command, "x.gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
-        printMessage("Compress: %s\n",command);
+        if (opts.isVerbose)
+        	printMessage("Compress: %s\n",command);
     	FILE *pigzPipe;
 		if (( pigzPipe = popen(command, "w")) == NULL) {
     		printError("Unable to open pigz pipe\n");
@@ -4324,7 +4350,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         dcmList[indx0].triggerDelayTime = triggerDx;
         //next: determine gantry tilt
         if (dcmList[indx0].gantryTilt != 0.0f)
-            printMessage(" Warning: note these images have gantry tilt of %g degrees (manufacturer ID = %d)\n", dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
+            printWarning("Note these images have gantry tilt of %g degrees (manufacturer ID = %d)\n", dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
         if (hdr0.dim[3] < 2) {
             //stack volumes with multiple acquisitions
             int nAcq = 1;
@@ -4397,13 +4423,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						printWarning("Seconds between volumes varies\n");
 					// saveAs3D = true;
 					//  printWarning("Creating independent volumes as time between volumes varies\n");
-					printMessage(" OnsetTime = [");
-					for (int i = 0; i < nConvert; i++)
-							if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
-								float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
-								printMessage(" %g", trDiff);
-							}
-					printMessage(" ]\n");
+					if (opts.isVerbose) {
+						printMessage(" OnsetTime = [");
+						for (int i = 0; i < nConvert; i++)
+								if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
+									float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
+									printMessage(" %g", trDiff);
+								}
+						printMessage(" ]\n");
+					}
 				} //if trVaries
             } //if PET
             //next: detect variable inter-slice distance
@@ -4422,15 +4450,17 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                     sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
                     sliceMMarray[0] = 0.0f;
                     printWarning("Interslice distance varies in this volume (incompatible with NIfTI format).\n");
-                    printMessage("Dimensions %d %d %d %d nAcq %d nConvert %d\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], nAcq, nConvert);
-                    printMessage(" Distance from first slice:\n");
-                    printMessage("dx=[0");
-                    for (int i = 1; i < nConvert; i++) {
-                        float dx0 = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
-                        printMessage(" %g", dx0);
-                        sliceMMarray[i] = dx0;
+                    if (opts.isVerbose) {
+						printMessage("Dimensions %d %d %d %d nAcq %d nConvert %d\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], nAcq, nConvert);
+						printMessage(" Distance from first slice:\n");
+						printMessage("dx=[0");
+						for (int i = 1; i < nConvert; i++) {
+							float dx0 = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+							printMessage(" %g", dx0);
+							sliceMMarray[i] = dx0;
+						}
+						printMessage("]\n");
                     }
-                    printMessage("]\n");
                     #ifndef myInstanceNumberOrderIsNotSpatial
                     //kludge to handle single volume without instance numbers (0020,0013), e.g. https://www.morphosource.org/Detail/MediaDetail/Show/media_id/8430
 					bool isInconsistenSliceDir = false;
@@ -4464,21 +4494,24 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					int imageNumRange = 1 + abs( dcmList[dcmSort[nConvert-1].indx].imageNum -  dcmList[dcmSort[0].indx].imageNum);
 					if ((imageNumRange > 1) && (imageNumRange != nConvert)) {
 						printWarning("Missing images? Expected %d images, but instance number (0020,0013) ranges from %d to %d\n", nConvert, dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[nConvert-1].indx].imageNum);
-						printMessage("instance=[");
-						for (int i = 0; i < nConvert; i++) {
-							printMessage(" %d", dcmList[dcmSort[i].indx].imageNum);
+						if (opts.isVerbose) {
+							printMessage("instance=[");
+							for (int i = 0; i < nConvert; i++) {
+								printMessage(" %d", dcmList[dcmSort[i].indx].imageNum);
+							}
+							printMessage("]\n");
 						}
-						printMessage("]\n");
                     } //imageNum not sequential
 				} //dx varies
             } //not 4D
             if ((hdr0.dim[4] > 0) && (dxVaries) && (dx == 0.0) &&  ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UNKNOWN)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE)  || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS))  ) { //Niels Janssen has provided GE sequential multi-phase acquisitions that also require swizzling
                 swapDim3Dim4(hdr0.dim[3],hdr0.dim[4],dcmSort);
                 dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
-                printMessage("swizzling 3rd and 4th dimensions (XYTZ -> XYZT), assuming interslice distance is %f\n",dx);
+                if (opts.isVerbose)
+                	printMessage("Swizzling 3rd and 4th dimensions (XYTZ -> XYZT), assuming interslice distance is %f\n",dx);
             }
             if ((dx == 0.0 ) && (!dxVaries)) { //all images are the same slice - 16 Dec 2014
-                printMessage(" Warning: all images appear to be a single slice - please check slice/vector orientation\n");
+                printWarning("All images appear to be a single slice - please check slice/vector orientation\n");
                 hdr0.dim[3] = 1;
                 hdr0.dim[4] = nConvert;
                 hdr0.dim[0] = 4;
@@ -5099,7 +5132,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
 		if (strstr(d1.sequenceName, "_ep_b") && strstr(d2.sequenceName, "_ep_b") && (strstr(d1.softwareVersions, "VB13") || strstr(d1.softwareVersions, "VB12"))  ) {
 			//Siemens B12/B13 users with a "DWI" but not "DTI" license would ofter create multi-series acquisitions
 			if (!warnings->forceStackSeries)
-        		printMessage("diffusion images stacked despite varying series number (early Siemens DTI).\n");
+        		printMessage("Diffusion images stacked despite varying series number (early Siemens DTI).\n");
         	warnings->forceStackSeries = true;
         	isForceStackSeries = true;
 		}
@@ -5125,14 +5158,14 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     if ((!isSameStudyInstanceUID) && (!isSameTime)) return false;
     if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
         if (!warnings->bitDepthVaries)
-        	printMessage("slices not stacked: dimensions or bit-depth varies\n");
+        	printMessage("Slices not stacked: dimensions or bit-depth varies\n");
         warnings->bitDepthVaries = true;
         return false;
     }
     #ifndef myIgnoreStudyTime
     if (!isSameTime) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
-    		printMessage("slices not stacked: Study Date/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+    		printMessage("Slices not stacked: Study Date/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
     	warnings->dateTimeVaries = true;
     	return false;
     }
@@ -5144,22 +5177,22 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || ((d1.isHasReal != d2.isHasReal))) {
     	if (!warnings->phaseVaries)
-        	printMessage("slices not stacked: some are phase/real/imaginary maps, others are not. Use 'merge 2D slices' option to force stacking\n");
+        	printMessage("Slices not stacked: some are phase/real/imaginary maps, others are not. Use 'f 2D slices' option to force stacking\n");
     	warnings->phaseVaries = true;
     	return false;
     }
     if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
         if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
-        	printMessage("slices not stacked: X-Ray Exposure varies (exposure %g, %g; number %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        	printMessage("Slices not stacked: X-Ray Exposure varies (exposure %g, %g; number %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         if ((!warnings->echoVaries) && (!d1.isXRay)) //for MRI
-        	printMessage("slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
+        	printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         warnings->echoVaries = true;
         *isMultiEcho = true;
         return false;
     }
     if (d1.coilCrc != d2.coilCrc) {
         if (!warnings->coilVaries)
-        	printMessage("slices not stacked: coil varies\n");
+        	printMessage("Slices not stacked: coil varies\n");
         warnings->coilVaries = true;
         *isCoilVaries = true;
         return false;
@@ -5170,14 +5203,14 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     	warnings->nameEmpty = true;
     } else if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
         if (!warnings->nameVaries)
-        	printMessage("slices not stacked: protocol name varies '%s' != '%s'\n", d1.protocolName, d2.protocolName);
+        	printMessage("Slices not stacked: protocol name varies '%s' != '%s'\n", d1.protocolName, d2.protocolName);
         warnings->nameVaries = true;
         return false;
     }
     if ((!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) ||  !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
     		!isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) ||  !isSameFloatGE(d1.orient[6], d2.orient[6]) ) ) {
         if ((!warnings->orientVaries) && (!d1.isNonParallelSlices))
-        	printMessage("slices not stacked: orientation varies (vNav or localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
+        	printMessage("Slices not stacked: orientation varies (vNav or localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
                d1.orient[1], d1.orient[2], d1.orient[3],d1.orient[4], d1.orient[5], d1.orient[6],
                d2.orient[1], d2.orient[2], d2.orient[3],d2.orient[4], d2.orient[5], d2.orient[6]);
         warnings->orientVaries = true;
@@ -5186,12 +5219,12 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if (d1.acquNum != d2.acquNum) {
         if (!warnings->acqNumVaries)
-        	printMessage("slices stacked despite varying acquisition numbers (if this is not desired recompile with 'mySegmentByAcq')\n");
+        	printMessage("Slices stacked despite varying acquisition numbers (if this is not desired recompile with 'mySegmentByAcq')\n");
         warnings->acqNumVaries = true;
     }
     if ((!isForceStackSeries) && (d1.seriesUidCrc != d2.seriesUidCrc)) {
         if (!warnings->seriesUidVaries)
-        	printMessage("slices not stacked: series instance UID varies (duplicates all other properties)\n");
+        	printMessage("Slices not stacked: series instance UID varies (duplicates all other properties)\n");
         warnings->seriesUidVaries = true;
         return false;
     }
@@ -6018,14 +6051,16 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
         #ifdef myDisableZLib
         printMessage("Compression requires %s in the same folder as the executable http://macappstore.org/pigz/\n",opts->pigzname);
 		#else //myUseZLib
- 		printMessage("Compression will be faster with %s in the same folder as the executable http://macappstore.org/pigz/\n",opts->pigzname);
+		if (opts->isVerbose > 0)
+ 			printMessage("Compression will be faster with %s in the same folder as the executable http://macappstore.org/pigz/\n",opts->pigzname);
 		#endif
         strcpy(opts->pigzname,"");
       #else
         #ifdef myDisableZLib
         printMessage("Compression requires %s in the same folder as the executable\n",opts->pigzname);
 		#else //myUseZLib
- 		printMessage("Compression will be faster with %s in the same folder as the executable\n",opts->pigzname);
+		if (opts->isVerbose > 0)
+ 			printMessage("Compression will be faster with %s in the same folder as the executable\n",opts->pigzname);
 		#endif
         strcpy(opts->pigzname,"");
        #endif
@@ -6079,13 +6114,15 @@ void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
 	  #ifdef myDisableZLib
     	printMessage("Compression requires 'pigz' to be installed http://macappstore.org/pigz/\n");
       #else //myUseZLib
-    	printMessage("Compression will be faster with 'pigz' installed http://macappstore.org/pigz/\n");
+      	if (opts->isVerbose > 0)
+    		printMessage("Compression will be faster with 'pigz' installed http://macappstore.org/pigz/\n");
       #endif
 	#else //if APPLE else ...
 	  #ifdef myDisableZLib
     	printMessage("Compression requires 'pigz' to be installed\n");
       #else //myUseZLib
-    	printMessage("Compression will be faster with 'pigz' installed\n");
+      	if (opts->isVerbose > 0)
+    		printMessage("Compression will be faster with 'pigz' installed\n");
       #endif
     #endif
 	return;

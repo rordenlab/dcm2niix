@@ -1164,7 +1164,7 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
 } //csaIsPhaseMap()
 
 void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3DAcq) {
-	if (is3DAcq) //we expect 3D sequences to be simultaneous
+	if ((is3DAcq) || (itemsOK < 1)) //we expect 3D sequences to be simultaneous
     	return;
 	if (itemsOK > kMaxEPI3D) {
 		printError("Please increase kMaxEPI3D and recompile\n");
@@ -1214,6 +1214,10 @@ void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3D
 		printMessage("\n");
 	CSA->slice_start = minTimeIndex;
 	CSA->slice_end = maxTimeIndex;
+	if (minTimeIndex == maxTimeIndex) {
+		if (isVerbose)
+			printMessage("No variability in slice times (3D EPI?)\n");
+	}
 	if (nTimeZero < 2) { //not for multi-band, not 3D
 		if (minTimeIndex == 1)
 			CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
@@ -4648,7 +4652,7 @@ double TE = 0.0; //most recent echo time recorded
                     #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
                     d.compressionScheme = kCompressJPEGLS;
                     #else
-                    printMessage("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
+                    printWarning("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                     #endif
                 } else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
@@ -4671,7 +4675,7 @@ double TE = 0.0; //most recent echo time recorded
                 	if (lLength < 1) //"1.2.840.10008.1.2"
                     	printWarning("Missing transfer syntax: assuming default (1.2.840.10008.1.2)\n");
                     else {
-                    	printMessage("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
+                    	printWarning("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
                     	d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                     }
                 }
