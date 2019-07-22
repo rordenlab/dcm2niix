@@ -101,6 +101,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
+    printf("  --progress : report progress (y/n, default n)\n");
     #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
 	printf("  -u : up-to-date check\n");
 	#endif
@@ -219,6 +220,18 @@ int checkUpToDate() {
 
 #endif //shell script for UNIX only
 
+void showXML() {
+//https://www.slicer.org/wiki/Documentation/Nightly/Developers/SlicerExecutionModel#XML_Schema
+    printf("<?xml version=""1.0"" encoding=""utf-8""?>\n");
+    printf("<executable>\n");
+    printf("<title>dcm2niix</title>\n");
+    printf("<description>DICOM importer</description>\n");
+    printf("  <parameters>\n");
+    printf("    At least one parameter\n");
+    printf("  </parameters>\n");
+    printf("</executable>\n");
+}
+
 //#define mydebugtest
 int main(int argc, const char * argv[])
 {
@@ -249,9 +262,19 @@ int main(int argc, const char * argv[])
     int lastCommandArg = 0;
     while (i < (argc)) { //-1 as final parameter is DICOM directory
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
-            if (argv[i][1] == 'h')
+            if (argv[i][1] == 'h') {
                 showHelp(argv, opts);
-            else if ((argv[i][1] == 'a') && ((i+1) < argc)) { //adjacent DICOMs
+            } else if (( ! strcmp(argv[1], "--progress")) && ((i+1) < argc)) {
+				i++;
+				if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isProgress = 0;
+                else
+                    opts.isProgress = 1;
+                if (argv[i][0] == '2') opts.isProgress = 2; //logorrheic
+            } else if ( ! strcmp(argv[1], "--xml"))  {
+				showXML();
+				return EXIT_SUCCESS;
+            } else if ((argv[i][1] == 'a') && ((i+1) < argc)) { //adjacent DICOMs
 				i++;
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))

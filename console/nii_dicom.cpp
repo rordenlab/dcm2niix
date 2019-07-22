@@ -2484,13 +2484,9 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
     int dim4to7 = 1;
     for (int i = 4; i < 8; i++)
         if (hdr->dim[i] > 1) dim4to7 = dim4to7 * hdr->dim[i];
-    int sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
+    size_t sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
     size_t volBytes = sliceBytes * hdr->dim[3];
-//#ifdef _MSC_VER
 	unsigned char * slice = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes));
-//#else
-//	unsigned char slice[sliceBytes];
-//#endif
     for (int vol = 0; vol < dim4to7; vol++) { //for each 2D slice
         size_t slBottom = vol*volBytes;
         size_t slTop = ((vol+1)*volBytes)-sliceBytes;
@@ -2503,9 +2499,7 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
             slBottom += sliceBytes;
         } //for Z
     } //for each volume
-//#ifdef _MSC_VER
 	free(slice);
-//#endif
     return bImg;
 } // nii_flipImgZ()
 
