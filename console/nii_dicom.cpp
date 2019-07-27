@@ -1193,10 +1193,10 @@ void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3D
 	int maxTimeIndex = minTimeIndex;
 	minTimeValue = CSA->sliceTiming[0];
 	maxTimeValue = minTimeValue;
-	if (isVerbose)
+	if (isVerbose > 1)
 		printMessage("   sliceTimes %g\t", CSA->sliceTiming[0]);
 	for (int z = 1; z < itemsOK; z++) { //find index and value of fastest time
-		if (isVerbose)
+		if (isVerbose > 1)
 			printMessage("%g\t",  CSA->sliceTiming[z]);
 		if (CSA->sliceTiming[z] == 0)
 			nTimeZero++;
@@ -1210,7 +1210,7 @@ void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3D
 		}
 		if (CSA->sliceTiming[z] == timeValue1) CSA->multiBandFactor++;
 	}
-	if (isVerbose)
+	if (isVerbose > 1)
 		printMessage("\n");
 	CSA->slice_start = minTimeIndex;
 	CSA->slice_end = maxTimeIndex;
@@ -1298,7 +1298,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 CSA->sliceNormV[1] = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
                 CSA->sliceNormV[2] = lFloats[2];
                 CSA->sliceNormV[3] = lFloats[3];
-                if (isVerbose)
+                if (isVerbose > 1)
                     printMessage("   SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
             } else if (strcmp(tagCSA.name, "SliceMeasurementDuration") == 0)
                 CSA->sliceMeasurementDuration = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);

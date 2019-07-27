@@ -94,7 +94,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     char max16Ch = 'n';
     if (opts.isMaximize16BitRange) max16Ch = 'y';
     printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n, default %c)\n", max16Ch);
-    printf("  -m : merge 2D slices from same series regardless of study time, echo, coil, orientation, etc. (y/n, default n)\n");
+    printf("  -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
     printf("  -n : only convert this series number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
@@ -360,9 +360,11 @@ int main(int argc, const char * argv[])
                 i++;
                 if (invalidParam(i, argv)) return 0;
                 if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isForceStackSameSeries = false;
+                    opts.isForceStackSameSeries = 0;
                 if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')  || (argv[i][0] == '1'))
-                    opts.isForceStackSameSeries = true;
+                    opts.isForceStackSameSeries = 1;
+				if ((argv[i][0] == '2'))
+                    opts.isForceStackSameSeries = 2;
                 if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
                     opts.isForceStackDCE = false;
 

@@ -547,7 +547,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 #define kMaxWipFree 64
 typedef struct {
 	float delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
-    int existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
+    int phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
     	difBipolar, parallelReductionFactorInPlane, refLinesPE;
     float alFree[kMaxWipFree] ;
     float adFree[kMaxWipFree];
@@ -562,6 +562,7 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  	csaAscii->phaseOversampling = 0.0;
  	csaAscii->phaseResolution = 0.0;
  	csaAscii->txRefAmp = 0.0;
+ 	csaAscii->phaseEncodingLines = 0;
  	csaAscii->existUcImageNumb = 0;
  	csaAscii->ucMode = -1;
  	csaAscii->baseResolution = 0;
@@ -618,9 +619,8 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		#endif
 
-
-
-
+		char keyStrLns[] = "sKSpace.lPhaseEncodingLines";
+		csaAscii->phaseEncodingLines = readKey(keyStrLns, keyPos, csaLengthTrim);
 		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
 		csaAscii->existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
 		char keyStrUcMode[] = "sSliceArray.ucMode";
@@ -1142,6 +1142,10 @@ tse3d: T2*/
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TCsaAscii csaAscii;
 		siemensCsaAscii(filename, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		if ((d.phaseEncodingLines < 1) && (csaAscii.phaseEncodingLines > 0))
+			d.phaseEncodingLines = csaAscii.phaseEncodingLines;
+		//if (d.phaseEncodingLines != csaAscii.phaseEncodingLines) //e.g. phaseOversampling
+		//	printWarning("PhaseEncodingLines reported in DICOM (%d) header does not match value CSA-ASCII (%d) %s\n", d.phaseEncodingLines, csaAscii.phaseEncodingLines, pathoutname);
 		delayTimeInTR = csaAscii.delayTimeInTR;
 		phaseOversampling = csaAscii.phaseOversampling;
 		if (csaAscii.existUcImageNumb > 0) {
@@ -1316,7 +1320,7 @@ tse3d: T2*/
 		json_Float(fp, "\t\"DelayTime\": %g,\n", delayTimeInTR/ 1000000.0); //DelayTimeInTR usec -> sec
 		json_Float(fp, "\t\"TxRefAmp\": %g,\n", csaAscii.txRefAmp);
 		json_Float(fp, "\t\"PhaseResolution\": %g,\n", csaAscii.phaseResolution);
-		json_Float(fp, "\t\"PhaseOversampling\": %g,\n", phaseOversampling); //usec -> sec
+		json_Float(fp, "\t\"PhaseOversampling\": %g,\n", phaseOversampling);
 		json_Float(fp, "\t\"VendorReportedEchoSpacing\": %g,\n", csaAscii.echoSpacing / 1000000.0); //usec -> sec
 		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
@@ -1372,6 +1376,7 @@ tse3d: T2*/
 	// We'll need this for generating a value for effectiveEchoSpacing that is consistent
 	// with the *reconstructed* data.
 	int reconMatrixPE = d.phaseEncodingLines;
+
     if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
 		if  (h->dim[1] == h->dim[2]) //phase encoding does not matter
 			reconMatrixPE = h->dim[2];
@@ -1392,7 +1397,10 @@ tse3d: T2*/
 	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the
 	// *reconstructed* data in the PE dimension
     double effectiveEchoSpacing = 0.0;
-    if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+    //next: dicm2nii's method for determining effectiveEchoSpacing if bandwidthPerPixelPhaseEncode is unknown, see issue 315
+	//if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode <= 0.0) && (d.CSA.sliceMeasurementDuration >= 0))
+	//	effectiveEchoSpacing =  d.CSA.sliceMeasurementDuration / (reconMatrixPE * 1000.0);
+	if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
 	    effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
@@ -1407,7 +1415,6 @@ tse3d: T2*/
 	derivedEchoSpacing = bandwidthPerPixelPhaseEncode * trueESfactor * reconMatrixPE;
 	if (derivedEchoSpacing != 0) derivedEchoSpacing = 1/derivedEchoSpacing;
 	json_Float(fp, "\t\"DerivedVendorReportedEchoSpacing\": %g,\n", derivedEchoSpacing);
-
     //TotalReadOutTime: Really should be called "EffectiveReadOutTime", by analogy with "EffectiveEchoSpacing".
 	// But BIDS spec calls it "TotalReadOutTime".
 	// So, we DO NOT USE EchoTrainLength, because not trying to compute the actual (physical) readout time.
@@ -5204,7 +5211,8 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     	return false;
     }
     #endif
-    if (opts->isForceStackSameSeries) {
+    if ((opts->isForceStackSameSeries == 1) || ((opts->isForceStackSameSeries == 2) && (d1.isXRay) )) {
+    	// "isForceStackSameSeries == 2" will automatically stack CT scans but not MR
     	//if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum))
     	if ((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum))
     		*isMultiEcho = true;
@@ -6151,7 +6159,7 @@ int findpathof(char *pth, const char *exe) {
 
 #ifndef USING_R
 void readFindPigz (struct TDCMopts *opts, const char * argv[]) {
-    #if defined(_WIN64) || defined(_WIN32)
+	#if defined(_WIN64) || defined(_WIN32)
     strcpy(opts->pigzname,"pigz.exe");
     if (!is_exe(opts->pigzname)) {
       #if defined(__APPLE__)
@@ -6261,7 +6269,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
     opts->isOneDirAtATime = false;
     opts->isRenameNotConvert = false;
-    opts->isForceStackSameSeries = false;
+    opts->isForceStackSameSeries = 2; //automatic: stack CTs, do not stack MRI
     opts->isForceStackDCE = true;
     opts->isIgnoreDerivedAnd2D = false;
     opts->isPhilipsFloatNotDisplayScaling = true;

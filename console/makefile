@@ -19,7 +19,8 @@ endif
 ifneq ($(OS),Windows_NT)
 	OS = $(shell uname)
  	ifeq "$(OS)" "Darwin"
-		CFLAGS=-dead_strip -O3
+		#CFLAGS=-dead_strip -O3
+		CFLAGS=
 		#CFLAGS=-O2
 	endif
 endif
