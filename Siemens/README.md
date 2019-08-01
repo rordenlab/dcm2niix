@@ -22,13 +22,15 @@ Private Tags
 
 ```
 
+In theory, the public DICOM tag 'Frame Acquisition Date Time' (0018,9074) and the private tag 'Time After Start' (0021,1104) should each allow one to infer slice timing. The tag 0018,9074 uses the DT (date time) format, for example "20190621095520.330000" providing the YYYYYMMDDHHMMSS. Unfortunately, the Siemens de-identification routines will scramble these values, as time of data could be considered an identifiable attribute. The tag 0021,1104 is saved in DS (decimal string) format, for example "4.635" reporting the number of seconds since acquisition started. Be aware that some [Siemens Vida multi-band sequences](https://github.com/rordenlab/dcm2niix/issues/303) appear to fill these tags with the single-band times rather than the actual acquisition times. Therefore, neither of these two methods is perfectly reliable in determining slice timing.
+
 ## CSA Header
 
-Many crucial Siemens parameters are stored in the [proprietary CSA header](http://nipy.org/nibabel/dicom/siemens_csa.html). This has a binary section that allows quick reading for many useful parameters. It also includes an ASCII text portion that includes a lot of information but is slow to parse and poorly curated.
+Many crucial Siemens parameters are stored in the [proprietary CSA header](http://nipy.org/nibabel/dicom/siemens_csa.html). This has a binary section that allows quick reading for many useful parameters. It also includes an ASCII text portion that includes a lot of information but is slow to parse and poorly curated. Be aware that Siemens Vida scanners do not generate a CSA header.
 
 ## Slice Timing
 
-The CSA header provides [slice timing](https://www.mccauslandcenter.sc.edu/crnl/tools/stc), and therefore dcm2niix should provide accurate slice timing information for non-XA10 datasets. For archival studies, be aware that some sequences [incorrectly reported slice timing](https://github.com/rordenlab/dcm2niix/issues/126).
+For Siemens images created with software versions B15 through E11, the proprietary [CSA Image Header (0029,1010)](https://nipy.org/nibabel/dicom/siemens_csa.html) contains the array MosaicRefAcqTimes that provides [slice timing](https://www.mccauslandcenter.sc.edu/crnl/tools/stc). Earlier Siemens Software (e.g. A25 through B13) sometimes populates the tag sSliceArray.ucMode in the [CSA Series Header (0029, 1020)](https://nipy.org/nibabel/dicom/siemens_csa.html) where the values [1, 2, and 4](https://github.com/xiangruili/dicm2nii/issues/18) correspond to Ascending, Descending and Interleaved acquisitions. Therefore dcm2niix typically is able to provide accurate slice timing information for non-Vida datasets (the prior section describes Vida slice timing issues seen with the XA software series). Some Siemens DICOMs stroe slice timings in the private tag [0019,1029](https://github.com/rordenlab/dcm2niix/issues/296). In theory, this could be used when the CSA header is missing. For archival studies, be aware that some sequences [incorrectly reported slice timing](https://github.com/rordenlab/dcm2niix/issues/126). The [SPM slice timing wiki](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Siemens_scanners) provides further information on Siemens slice timing.
 
 ## Total Readout Time
 

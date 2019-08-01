@@ -335,10 +335,11 @@ int verify_slice_dir (struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_
     	flip = ((sliceV.v[0]+sliceV.v[1]+sliceV.v[2]) < 0);
     	//printMessage("verify slice dir %g %g %g\n",sliceV.v[0],sliceV.v[1],sliceV.v[2]);
     	if (isVerbose) { //1st pass only
-			if (!d.isDerived) //do not warn user if image is derived
+			if (!d.isDerived) {//do not warn user if image is derived
 				printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
-			else
+			} else {
 				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image)\n");
+            }
     	}
     }
     if (flip) {
@@ -514,11 +515,17 @@ mat44 xform_mat(struct TDICOMdata d) {
 	} else if (true) {
 //SliceNormalVector TO DO
 		printMessage("Not completed");
+#ifndef USING_R
 		exit(2);
+#endif
 		return R44;
 	}
 	printMessage("Unable to determine spatial transform\n");
+#ifndef USING_R
 	exit(1);
+#else
+    return R44;
+#endif
 }
 
 mat44 set_nii_header(struct TDICOMdata d) {
@@ -653,9 +660,9 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
         sprintf(dtxt, ";mb=%d", d.CSA.multiBandFactor);
         strcat(txt,dtxt);
     }
-    // GCC 8 warns about truncation using snprintf; using strncpy instead seems to keep it happy
+    // GCC 8 warns about truncation using snprintf
     // snprintf(h->descrip,80, "%s",txt);
-    strncpy(h->descrip, txt, 79);
+    memcpy(h->descrip, txt, 79);
     h->descrip[79] = '\0';
 
     if (strlen(d.imageComments) > 0)
@@ -788,6 +795,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isSegamiOasis = false; //these images do not store spatial coordinates
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
+    d.isDiffusion = false;
     d.isVectorFromBMatrix = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
     d.isXA10A = false; //https://github.com/rordenlab/dcm2niix/issues/236
@@ -823,9 +831,9 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.patientAge, "");
     d.CSA.bandwidthPerPixelPhaseEncode = 0.0;
     d.CSA.mosaicSlices = 0;
-    d.CSA.sliceNormV[1] = 1.0;
+    d.CSA.sliceNormV[1] = 0.0;
     d.CSA.sliceNormV[2] = 0.0;
-    d.CSA.sliceNormV[3] = 0.0;
+    d.CSA.sliceNormV[3] = 1.0; //default Siemens Image Numbering is F>>H https://www.mccauslandcenter.sc.edu/crnl/tools/stc
     d.CSA.sliceOrder = NIFTI_SLICE_UNKNOWN;
     d.CSA.slice_start = 0;
     d.CSA.slice_end = 0;
@@ -1014,6 +1022,14 @@ int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //rea
     return lBuffer[3]+(lBuffer[2]<<8)+(lBuffer[1]<<16)+(lBuffer[0]<<24); //shortint vs word?
 } //dcmInt()
 
+
+uint32_t dcmAttributeTag (unsigned char lBuffer[], bool littleEndian) {
+    // read Attribute Tag (AT) value
+    // return in Group + (Element << 16) format
+    if (littleEndian)
+        return lBuffer[0]+(lBuffer[1]<<8)+(lBuffer[2]<<16)+(lBuffer[3]<<24);
+    return lBuffer[1]+(lBuffer[0]<<8)+(lBuffer[3]<<16)+(lBuffer[2]<<24);
+} //dcmInt()
 /*
 //the code below trims strings after integer
 // does not appear required not http://en.cppreference.com/w/cpp/string/byte/atoi
@@ -1147,7 +1163,86 @@ bool csaIsPhaseMap (unsigned char buff[], int nItems) {
     return false;
 } //csaIsPhaseMap()
 
-//int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, struct TDTI4D *dti4D) {
+void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3DAcq) {
+	if ((is3DAcq) || (itemsOK < 1)) //we expect 3D sequences to be simultaneous
+    	return;
+	if (itemsOK > kMaxEPI3D) {
+		printError("Please increase kMaxEPI3D and recompile\n");
+		return;
+	}
+	float maxTimeValue, minTimeValue, timeValue1;
+	minTimeValue = CSA->sliceTiming[0];
+	for (int z = 0; z < itemsOK; z++)
+		if (CSA->sliceTiming[z] < minTimeValue)
+		 minTimeValue = CSA->sliceTiming[z];
+	//CSA can report negative slice times
+	// https://neurostars.org/t/slice-timing-illegal-values-in-fmriprep/1516/8
+	// Nov 1, 2018 <siemens-healthineers.com> wrote:
+	//  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
+	if (minTimeValue < 0) {
+		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
+		for (int z = 0; z < itemsOK; z++)
+			CSA->sliceTiming[z] = CSA->sliceTiming[z] - minTimeValue;
+	}
+	CSA->multiBandFactor = 1;
+	timeValue1 = CSA->sliceTiming[0];
+	int nTimeZero = 0;
+	if (CSA->sliceTiming[0] == 0)
+			nTimeZero++;
+	int minTimeIndex = 0;
+	int maxTimeIndex = minTimeIndex;
+	minTimeValue = CSA->sliceTiming[0];
+	maxTimeValue = minTimeValue;
+	if (isVerbose > 1)
+		printMessage("   sliceTimes %g\t", CSA->sliceTiming[0]);
+	for (int z = 1; z < itemsOK; z++) { //find index and value of fastest time
+		if (isVerbose > 1)
+			printMessage("%g\t",  CSA->sliceTiming[z]);
+		if (CSA->sliceTiming[z] == 0)
+			nTimeZero++;
+		if (CSA->sliceTiming[z] < minTimeValue) {
+			minTimeValue = CSA->sliceTiming[z];
+			minTimeIndex = (float) z;
+		}
+		if (CSA->sliceTiming[z] > maxTimeValue) {
+			maxTimeValue = CSA->sliceTiming[z];
+			maxTimeIndex = (float) z;
+		}
+		if (CSA->sliceTiming[z] == timeValue1) CSA->multiBandFactor++;
+	}
+	if (isVerbose > 1)
+		printMessage("\n");
+	CSA->slice_start = minTimeIndex;
+	CSA->slice_end = maxTimeIndex;
+	if (minTimeIndex == maxTimeIndex) {
+		if (isVerbose)
+			printMessage("No variability in slice times (3D EPI?)\n");
+	}
+	if (nTimeZero < 2) { //not for multi-band, not 3D
+		if (minTimeIndex == 1)
+			CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
+		else if (minTimeIndex == (itemsOK-2))
+			CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 2,4,1,3 or   5,2,4,1,3
+		else if ((minTimeIndex == 0) && (CSA->sliceTiming[1] < CSA->sliceTiming[2]))
+			CSA->sliceOrder = NIFTI_SLICE_SEQ_INC; // e.g. 1,2,3,4
+		else if ((minTimeIndex == 0) && (CSA->sliceTiming[1] > CSA->sliceTiming[2]))
+			CSA->sliceOrder = NIFTI_SLICE_ALT_INC; //e.g. 1,3,2,4
+		else if ((minTimeIndex == (itemsOK-1)) && (CSA->sliceTiming[itemsOK-3] > CSA->sliceTiming[itemsOK-2]))
+			CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC; //e.g. 4,3,2,1  or 5,4,3,2,1
+		else if ((minTimeIndex == (itemsOK-1)) && (CSA->sliceTiming[itemsOK-3] < CSA->sliceTiming[itemsOK-2]))
+			CSA->sliceOrder = NIFTI_SLICE_ALT_DEC; //e.g.  4,2,3,1 or 3,5,2,4,1
+		else {
+			if (!is3DAcq) //we expect 3D sequences to be simultaneous
+				printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
+		}
+	}
+	if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1) && (nTimeZero < itemsOK)) {
+		if (isVerbose)
+			printMessage(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
+		CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
+	}
+} //checkSliceTimes()
+
 int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, int isVerbose, bool is3DAcq) {
     //see also http://afni.nimh.nih.gov/pub/dist/src/siemens_dicom_csa.c
     //printMessage("%c%c%c%c\n",buff[0],buff[1],buff[2],buff[3]);
@@ -1203,98 +1298,25 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
                 CSA->sliceNormV[1] = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
                 CSA->sliceNormV[2] = lFloats[2];
                 CSA->sliceNormV[3] = lFloats[3];
-                if (isVerbose)
+                if (isVerbose > 1)
                     printMessage("   SliceNormalVector %f %f %f\n",CSA->sliceNormV[1],CSA->sliceNormV[2],CSA->sliceNormV[3]);
             } else if (strcmp(tagCSA.name, "SliceMeasurementDuration") == 0)
                 CSA->sliceMeasurementDuration = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
                 CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat (&buff[lPos], 3,lFloats, &itemsOK);
             else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)  ){
-				float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
-                csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
-                float maxTimeValue, minTimeValue, timeValue1;
-                 for (int z = 0; z < kMaxEPI3D; z++)
-        			CSA->sliceTiming[z] = -1.0;
-        		minTimeValue = sliceTimes[1];
-        		if (itemsOK <= kMaxEPI3D) {
-                	for (int z = 1; z <= itemsOK; z++) {
-                		CSA->sliceTiming[z-1] = sliceTimes[z];
-                		if (sliceTimes[z] < minTimeValue)
-                			minTimeValue = sliceTimes[z];
-                	}
-                } else
-                	printError("Please increase kMaxEPI3D and recompile\n");
-                //CSA can report negative slice times
-                // https://neurostars.org/t/slice-timing-illegal-values-in-fmriprep/1516/8
-                // Nov 1, 2018 <siemens-healthineers.com> wrote:
-                //  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
-                if (minTimeValue < 0) {
-                	printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
-                	for (int z = 1; z <= itemsOK; z++) {
-                		sliceTimes[z] = sliceTimes[z] - minTimeValue;
-                		CSA->sliceTiming[z-1] = sliceTimes[z];
-                	}
+				if (itemsOK > kMaxEPI3D) {
+					printError("Please increase kMaxEPI3D and recompile\n");
+				} else {
+					float * sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
+					csaMultiFloat (&buff[lPos], tagCSA.nitems,sliceTimes, &itemsOK);
+                 	for (int z = 0; z < kMaxEPI3D; z++)
+        				CSA->sliceTiming[z] = -1.0;
+                 	for (int z = 0; z < itemsOK; z++)
+        				CSA->sliceTiming[z] = sliceTimes[z+1];
+					free(sliceTimes);
+					checkSliceTimes(CSA, itemsOK, isVerbose, is3DAcq);
                 }
-                CSA->multiBandFactor = 1;
-                timeValue1 = sliceTimes[1];
-                int nTimeZero = 0;
-                if (sliceTimes[1] == 0)
-                    	nTimeZero++;
-                int minTimeIndex = 1;
-                int maxTimeIndex = minTimeIndex;
-                minTimeValue = sliceTimes[1];
-                maxTimeValue = minTimeValue;
-                if (isVerbose)
-                    printMessage("   sliceTimes %g\t", sliceTimes[1]);
-				for (int z = 2; z <= itemsOK; z++) { //find index and value of fastest time
-                    if (isVerbose)
-                        printMessage("%g\t",  sliceTimes[z]);
-                    if (sliceTimes[z] == 0)
-                    	nTimeZero++;
-                    if (sliceTimes[z] < minTimeValue) {
-						minTimeValue = sliceTimes[z];
-						minTimeIndex = (float) z;
-					}
-                    if (sliceTimes[z] > maxTimeValue) {
-                        maxTimeValue = sliceTimes[z];
-                        maxTimeIndex = (float) z;
-                    }
-                    if (sliceTimes[z] == timeValue1) CSA->multiBandFactor++;
-				}
-                if (isVerbose)
-                    printMessage("\n");
-                CSA->slice_start = minTimeIndex -1;
-                CSA->slice_end = maxTimeIndex -1;
-                if (minTimeIndex == 2)
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC2;// e.g. 3,1,4,2
-                else if (minTimeIndex == (itemsOK-1))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC2;// e.g. 2,4,1,3 or   5,2,4,1,3
-                else if ((minTimeIndex == 1) && (sliceTimes[2] < sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_INC; // e.g. 1,2,3,4
-                else if ((minTimeIndex == 1) && (sliceTimes[2] > sliceTimes[3]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_INC; //e.g. 1,3,2,4
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] > sliceTimes[itemsOK-1]))
-                    CSA->sliceOrder = NIFTI_SLICE_SEQ_DEC; //e.g. 4,3,2,1  or 5,4,3,2,1
-                else if ((minTimeIndex == itemsOK) && (sliceTimes[itemsOK-2] < sliceTimes[itemsOK-1]))
-                    CSA->sliceOrder = NIFTI_SLICE_ALT_DEC; //e.g.  4,2,3,1 or 3,5,2,4,1
-                else {
-                    /*NSMutableArray *sliceTimesNS = [NSMutableArray arrayWithCapacity:tagCSA.nitems];
-                     for (int z = 1; z <= itemsOK; z++)
-                     [sliceTimesNS addObject:[NSNumber numberWithFloat:sliceTimes[z]]];
-                     NSLog(@" Warning: unable to determine slice order for %lu slice mosaic: %@",(unsigned long)[sliceTimesNS count],sliceTimesNS );
-                     */
-                    if (!is3DAcq) //we expect 3D sequences to be simultaneous
-                    	printWarning("Unable to determine slice order from CSA tag MosaicRefAcqTimes\n");
-                }
-                if ((CSA->sliceOrder != NIFTI_SLICE_UNKNOWN) && (nTimeZero > 1)) {
-                	if (isVerbose)
-                		printMessage(" Multiband x%d sequence: setting slice order as UNKNOWN (instead of %d)\n", nTimeZero, CSA->sliceOrder);
-                	CSA->sliceOrder = NIFTI_SLICE_UNKNOWN;
-
-                }
-//#ifdef _MSC_VER
-				free(sliceTimes);
-//#endif
             } else if (strcmp(tagCSA.name, "ProtocolSliceNumber") == 0)
                 CSA->protocolSliceNumber1 = (int) round (csaMultiFloat (&buff[lPos], 1,lFloats, &itemsOK));
             else if (strcmp(tagCSA.name, "PhaseEncodingDirectionPositive") == 0)
@@ -2462,13 +2484,9 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
     int dim4to7 = 1;
     for (int i = 4; i < 8; i++)
         if (hdr->dim[i] > 1) dim4to7 = dim4to7 * hdr->dim[i];
-    int sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
+    size_t sliceBytes = hdr->dim[1] * hdr->dim[2] * hdr->bitpix/8;
     size_t volBytes = sliceBytes * hdr->dim[3];
-//#ifdef _MSC_VER
 	unsigned char * slice = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes));
-//#else
-//	unsigned char slice[sliceBytes];
-//#endif
     for (int vol = 0; vol < dim4to7; vol++) { //for each 2D slice
         size_t slBottom = vol*volBytes;
         size_t slTop = ((vol+1)*volBytes)-sliceBytes;
@@ -2481,9 +2499,7 @@ unsigned char * nii_flipImgZ(unsigned char* bImg, struct nifti_1_header *hdr){
             slBottom += sliceBytes;
         } //for Z
     } //for each volume
-//#ifdef _MSC_VER
 	free(slice);
-//#endif
     return bImg;
 } // nii_flipImgZ()
 
@@ -2629,8 +2645,15 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
     }
 	fseek(file, 0, SEEK_END);
 	long fileLen=ftell(file);
-    if (fileLen < (imgszRead+hdr.vox_offset)) {
-        printMessage("File not large enough to store image data: %s\n", imgname);
+    if (fileLen < (imgszRead+(long) hdr.vox_offset)) {
+        //previously  (fileLen < (imgszRead+hdr.vox_offset))
+        // FileSize < (ImageSize+HeaderSize): 42399788 < (42398702+1086)
+		// FileSize < (ImageSize+HeaderSize): 42399788 < ( 42399792.00)
+        //note hdr.vox_offset is a float, and without a type-cast it can lead to unusual values
+        //https://www.nitrc.org/forum/message.php?msg_id=27155
+        printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu+%lu) \n", fileLen, imgszRead, (long)hdr.vox_offset);
+        //printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
+        printWarning("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
 	fseek(file, (long) hdr.vox_offset, SEEK_SET);
@@ -3636,7 +3659,7 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
 void set_orientation0018_9089(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,
                               bool isLittleEndian);
 void set_isAtFirstPatientPosition_tvd(struct TVolumeDiffusion* ptvd, bool iafpp);
-void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
+int set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf);
 void set_diffusion_directionPhilips(struct TVolumeDiffusion* ptvd, float vec, const int axis);
 void set_diffusion_directionGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf,  int axis);
 void set_bVal(struct TVolumeDiffusion* ptvd, float b);
@@ -3690,7 +3713,7 @@ void set_directionality0018_9075(struct TVolumeDiffusion* ptvd, unsigned char* i
     _update_tvd(ptvd);
 } //set_directionality0018_9075()
 
-void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
+int set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf) {
     //see Series 16 https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/ge-mr750-dwi-b-vals#table b750 = 1000000750\8\0\0 b1500 = 1000001500\8\0\0
     int bVal = dcmStrInt(lLength, inbuf);
     bVal = (bVal % 10000);
@@ -3698,6 +3721,7 @@ void set_bValGE(struct TVolumeDiffusion* ptvd, int lLength, unsigned char* inbuf
     //printf("(0043,1039) '%s' Slop_int_6 -->%d  \n", inbuf, bVal);
     //dd.CSA.numDti = 1;   // Always true for GE.
     _update_tvd(ptvd);
+    return bVal;
 } //set_bValGE()
 
 // axis: 0 -> x, 1 -> y , 2 -> z
@@ -4000,6 +4024,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kManufacturersModelName 0x0008+(0x1090 << 16 )
 #define  kDerivationDescription 0x0008+(0x2111 << 16 )
 #define  kComplexImageComponent (uint32_t) 0x0008+(0x9208 << 16 )//'0008' '9208' 'CS' 'ComplexImageComponent'
+#define  kAcquisitionContrast (uint32_t) 0x0008+(0x9209 << 16 )//'0008' '9209' 'CS' 'AcquisitionContrast'
 #define  kPatientName 0x0010+(0x0010 << 16 )
 #define  kPatientID 0x0010+(0x0020 << 16 )
 #define  kAccessionNumber 0x0008+(0x0050 << 16 )
@@ -4066,6 +4091,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 //  https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
 #define  kDiffusionBValueSiemens  0x0019+(0x100C<< 16 ) //IS
+#define  kSliceTimeSiemens 0x0019+(0x1029<< 16) ///FD
 #define  kDiffusionGradientDirectionSiemens  0x0019+(0x100E<< 16 ) //FD
 #define  kNumberOfDiffusionDirectionGE 0x0019+(0x10E0<< 16) ///DS NumberOfDiffusionDirection:UserData24
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
@@ -4092,6 +4118,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
+#define  kDimensionIndexPointer 0x0020+uint32_t(0x9165<< 16 )
 //Private Group 21 as Used by Siemens:
 #define  kSequenceVariant21 0x0021+(0x105B<< 16 )//CS
 #define  kPATModeText 0x0021+(0x1009<< 16 )//LO, see kImaPATModeText
@@ -4193,6 +4220,8 @@ double TE = 0.0; //most recent echo time recorded
     int locationsInAcquisitionGE = 0;
     int PETImageIndex = 0;
     int inStackPositionNumber = 0;
+    uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
+    size_t dimensionIndexPointerCounter = 0;
     int maxInStackPositionNumber = 0;
     //int temporalPositionIdentifier = 0;
     int locationsInAcquisitionPhilips = 0;
@@ -4214,6 +4243,16 @@ double TE = 0.0; //most recent echo time recorded
     	groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
     	if (groupElement != kStart)
         	printMessage("DICOM appears corrupt: first group:element should be 0x0002:0x0000 '%s'\n",  fname);
+    } else { //no isPart10prefix - need to work out if this is explicit VR!
+    	if (isVerbose > 1)
+    		printMessage("DICOM preamble and prefix missing: this is not a valid DICOM image.\n");
+    	//See Toshiba Aquilion images from  https://www.aliza-dicom-viewer.com/download/datasets
+    	lLength = buffer[4] | (buffer[5] << 8) | (buffer[6] << 16) | (buffer[7] << 24);
+    	if (lLength > fileLen) {
+    		if (isVerbose > 1)
+    			printMessage("Guessing this is an explicit VR image.\n");
+    		d.isExplicitVR = true;
+    	}
     }
     char vr[2];
     //float intenScalePhilips = 0.0;
@@ -4227,6 +4266,7 @@ double TE = 0.0; //most recent echo time recorded
     bool isOrient = false;
     //bool isDcm4Che = false;
     bool isMoCo = false;
+    bool isPaletteColor = false;
     bool isInterpolated = false;
     bool isIconImageSequence = false;
     bool isSwitchToImplicitVR = false;
@@ -4346,9 +4386,24 @@ double TE = 0.0; //most recent echo time recorded
 				printError("Too many slices to track dimensions. Only up to %d are supported\n", kMaxSlice2D);
 				break;
 			}
+            uint32_t dimensionIndexOrder[MAX_NUMBER_OF_DIMENSIONS];
+            for(size_t i = 0; i < nDimIndxVal; i++)
+                dimensionIndexOrder[i] = i;
+
+            // Bruker Enhanced MR IOD: reorder dimensions to ensure InStackPositionNumber corresponds to the first one
+            // This will ensure correct ordering of slices in 4D datasets
+            if (d.manufacturer == kMANUFACTURER_BRUKER) {
+                for(size_t i = 1; i < dimensionIndexPointerCounter; i++){
+                    if (dimensionIndexPointer[i] == kInStackPositionNumber){
+                        //swap with first
+                        dimensionIndexOrder[i] = 0;
+                        dimensionIndexOrder[0] = i;
+                    }
+                }
+            }
 			int ndim = nDimIndxVal;
 			for (int i = 0; i < ndim; i++)
-				dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[i];
+				dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
 			dcmDim[numDimensionIndexValues].TE = TE;
 			dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
 			dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
@@ -4450,10 +4505,19 @@ double TE = 0.0; //most recent echo time recorded
                     lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
                 lPos += 4;
             } else if ( ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'N'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'C'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'R'))
                        || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'T'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'V'))
                        || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'B'))
+                       || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'D'))
+                       || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'F'))
+                       || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'L'))
+                       | ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'V'))
                        || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'W'))
+                       || ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'V'))
                        ) { //VR= UN, OB, OW, SQ  || ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'Q'))
+                //for example of UC/UR/UV/OD/OF/OL/OV/SV see VR conformance test https://www.aliza-dicom-viewer.com/download/datasets
                 lPos = lPos + 4;  //skip 2 byte VR string and 2 reserved bytes = 4 bytes
                 if (d.isLittleEndian)
                     lLength = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
@@ -4601,7 +4665,7 @@ double TE = 0.0; //most recent echo time recorded
                     #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
                     d.compressionScheme = kCompressJPEGLS;
                     #else
-                    printMessage("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
+                    printWarning("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n",transferSyntax);
                     d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                     #endif
                 } else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
@@ -4624,7 +4688,7 @@ double TE = 0.0; //most recent echo time recorded
                 	if (lLength < 1) //"1.2.840.10008.1.2"
                     	printWarning("Missing transfer syntax: assuming default (1.2.840.10008.1.2)\n");
                     else {
-                    	printMessage("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
+                    	printWarning("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n",transferSyntax);
                     	d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
                     }
                 }
@@ -4783,6 +4847,13 @@ double TE = 0.0; //most recent echo time recorded
                 if (isImaginary) d.isHasImaginary = true;
                 if (isMagnitude) d.isHasMagnitude = true;
                 break;
+            case kAcquisitionContrast:
+                char acqContrast[kDICOMStr];
+                dcmStr(lLength, &buffer[lPos], acqContrast);
+                if (((int) strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
+                    d.isDiffusion = true;
+                break;
+
             case kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
@@ -4872,9 +4943,11 @@ double TE = 0.0; //most recent echo time recorded
                 break;
             //in theory, 0018,9074 could provide XA10 slice time information, but scrambled by XA10 de-identification: better to use 0021,1104
             //case kFrameAcquisitionDateTime: {
+            // //(0018,9074) DT [20190621095516.140000] YYYYMMDDHHMMSS
+            // //see https://github.com/rordenlab/dcm2niix/issues/303
             //	char dateTime[kDICOMStr];
             //	dcmStr (lLength, &buffer[lPos], dateTime);
-            //	printf("%s\n", dateTime);
+            //	printf("%s\tkFrameAcquisitionDateTime\n", dateTime);
             //}
             case kDiffusionDirectionality : {// 0018, 9075
                 set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
@@ -4904,6 +4977,23 @@ double TE = 0.0; //most recent echo time recorded
             	d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
             	d.CSA.numDti = 1;
             	break;
+            case kSliceTimeSiemens : {//Array of FD (64-bit double)
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	if ((lLength < 8) || ((lLength % 8) != 0)) break;
+            	int nSlicesTimes = lLength / 8;
+            	if (nSlicesTimes > kMaxEPI3D) break;
+            	d.CSA.mosaicSlices = nSlicesTimes;
+            	//printf(">>>> %d\n", nSlicesTimes);
+            	//issue 296: for images de-identified to remove readCSAImageHeader
+            	for (int z = 0; z < nSlicesTimes; z++)
+        			d.CSA.sliceTiming[z] = dcmFloatDouble(8, &buffer[lPos+(z*8)],d.isLittleEndian);
+				//for (int z = 0; z < nSlicesTimes; z++)
+        		//	printf("%d>>>%g\n", z+1, d.CSA.sliceTiming[z]);
+				checkSliceTimes(&d.CSA, nSlicesTimes, isVerbose, d.is3DAcq);
+            	//d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
+            	//d.CSA.numDti = 1;
+            	break; }
+
             case kDiffusionGradientDirectionSiemens : {
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
 				float v[4];
@@ -5017,6 +5107,9 @@ double TE = 0.0; //most recent echo time recorded
 				//printf("<%d>\n",inStackPositionNumber);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
 				break;
+            case kDimensionIndexPointer:
+                dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos],d.isLittleEndian);
+                break;
 			case kFrameContentSequence :
             	//if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //see https://github.com/rordenlab/dcm2niix/issues/241
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
@@ -5043,7 +5136,8 @@ double TE = 0.0; //most recent echo time recorded
  				char interp[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], interp);
                 if (strcmp(interp, "PALETTE_COLOR") == 0)
-                	printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
+                	isPaletteColor = true;
+                	//printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
             	break; }
             case kPlanarRGB:
                 d.isPlanarRGB = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -5093,10 +5187,14 @@ double TE = 0.0; //most recent echo time recorded
                 //printMessage("p%gs%d\n",  d.accelFactPE, multiBandFactor);
 				break; }
 			case kTimeAfterStart:
+				//0021,1104 see  https://github.com/rordenlab/dcm2niix/issues/303
+				// 0021,1104 6@159630 DS  4.635
+				// 0021,1104 2@161164 DS  0
 				if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
 				if (acquisitionTimesGE_UIH >= kMaxEPI3D) break;
 				d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
-                //printf("%d %g\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
+				d.CSA.sliceTiming[acquisitionTimesGE_UIH] *= 1000.0; //convert sec to msec
+                //printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
             	break;
             case kPhaseEncodingDirectionPositive: {
@@ -5800,8 +5898,10 @@ double TE = 0.0; //most recent echo time recorded
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kDiffusionBFactorGE :
-                if (d.manufacturer == kMANUFACTURER_GE)
-                  set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
+                if (d.manufacturer == kMANUFACTURER_GE) {
+                  d.CSA.dtiV[0] = (float)set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
+                  d.CSA.numDti = 1;
+                }
                 break;
             case kGeiisFlag:
                 if ((lLength > 4) && (buffer[lPos]=='G') && (buffer[lPos+1]=='E') && (buffer[lPos+2]=='I')  && (buffer[lPos+3]=='I')) {
@@ -5881,6 +5981,7 @@ double TE = 0.0; //most recent echo time recorded
                 break;
         } //switch/case for groupElement
 
+#ifndef USING_R
         if (isVerbose > 1) {
         	//dcm2niix i fast because it does not use a dictionary.
         	// this is a very incomplete DICOM header report, and not a substitute for tools like dcmdump
@@ -5941,6 +6042,7 @@ double TE = 0.0; //most recent echo time recorded
             	printMessage("%s\n", str);
 	    	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
+#endif
         lPos = lPos + (lLength);
         //printMessage("%d\n",d.imageStart);
     	//printMessage(" DWI bxyz %g %g %g %g %d\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], d.CSA.numDti);
@@ -5950,10 +6052,11 @@ double TE = 0.0; //most recent echo time recorded
     //printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     //printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     if (encapsulatedDataFragmentStart > 0) {
-        if (encapsulatedDataFragments > 1)
+        if (encapsulatedDataFragments > 1) {
         	printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
-    	else
+    	} else {
     		d.imageStart = encapsulatedDataFragmentStart;
+        }
     } else if ((isEncapsulatedData) && (d.imageStart < 128)) {
     	//http://www.dclunie.com/medical-image-faq/html/part6.html
 		//Uncompressed data (unencapsulated) is sent in DICOM as a series of raw bytes or words (little or big endian) in the Value field of the Pixel Data element (7FE0,0010). Encapsulated data on the other hand is sent not as raw bytes or words but as Fragments contained in Items that are the Value field of Pixel Data
@@ -5970,7 +6073,7 @@ double TE = 0.0; //most recent echo time recorded
 		// 20161117131643.80000 -> date 20161117 time 131643.80000
 		//printMessage("acquisitionDateTime %s\n",acquisitionDateTimeTxt);
     	char acquisitionDateTxt[kDICOMStr];
-        strncpy(acquisitionDateTxt, acquisitionDateTimeTxt, kYYYYMMDDlen);
+        memcpy(acquisitionDateTxt, acquisitionDateTimeTxt, kYYYYMMDDlen);
 		acquisitionDateTxt[kYYYYMMDDlen] = '\0'; // IMPORTANT!
         d.acquisitionDate = atof(acquisitionDateTxt);
         char acquisitionTimeTxt[kDICOMStr];
@@ -5986,8 +6089,8 @@ double TE = 0.0; //most recent echo time recorded
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
-    	//printMessage("Check number of slices, discrepancy between tags (0054,0081; 0020,1002; 0021,104F)\n");
-    	if (d.locationsInAcquisition < locationsInAcquisitionGE) d.locationsInAcquisition = locationsInAcquisitionGE;
+    	if (isVerbose)  printMessage("Check number of slices, discrepancy between tags (0020,1002; 0021,104F; 0054,0081) (%d vs %d) %s\n", locationsInAcquisitionGE, d.locationsInAcquisition, fname);
+    	if (locationsInAcquisitionGE < d.locationsInAcquisition) d.locationsInAcquisition = locationsInAcquisitionGE;
     }
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;
@@ -6022,6 +6125,11 @@ double TE = 0.0; //most recent echo time recorded
     //    d.seriesNum = d.seriesNum + (100*coilNum);
     //if (d.echoNum > 1) //segment images with multiple echoes
     //    d.seriesNum = d.seriesNum + (kEchoMult*d.echoNum);
+    if (isPaletteColor) {
+    	d.isValid = false;
+    	d.isDerived = true; //to my knowledge, palette images always derived
+    	printWarning("Photometric Interpretation 'PALETTE COLOR' not supported\n");
+    }
     if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) ) {
         //dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
@@ -6093,7 +6201,7 @@ if (d.isHasPhase)
 				d.patientPositionLast[k] = patientPositionEndPhilips[k];
 			}
     }
-	if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
+    if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
 	if (isVerbose) {
@@ -6106,9 +6214,14 @@ if (d.isHasPhase)
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
-    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132)) {
-    	printError("Conversion aborted due to corrupt file: %s\n", fname);
+    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132) && (!d.isRawDataStorage)) {
+    	//20190524: Philips MR 55.1 creates non-image files that report kDim1/kDim2 - we can detect them since 0008,0016 reports "RawDataStorage"
+    	printError("Conversion aborted due to corrupt file: %s %d %d\n", fname, d.xyzDim[1], d.xyzDim[2]);
+#ifdef USING_R
+        Rf_error("Irrecoverable error during conversion");
+#else
     	exit (kEXIT_CORRUPT_FILE_FOUND);
+#endif
     }
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
@@ -6128,19 +6241,17 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
-    	if (d.manufacturer != kMANUFACTURER_BRUKER) { //only single sample Bruker - perhaps use 0020,9057 to identify if space or time is 3rd dimension
     	//sort dimensions
 #ifdef USING_R
         std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
 #else
         qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 #endif
-		}
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++)
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
-		if ((d.manufacturer != kMANUFACTURER_BRUKER) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		if ( !(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;
@@ -6257,8 +6368,9 @@ if (d.isHasPhase)
     	d.isLocalizer = true;
 	}
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
-	if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
-		d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
+	// Andrey Fedorov has requested keeping GE bvalues, see issue 264
+	//if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
+	//	d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
     if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
     if ((numDimensionIndexValues+2) < MAX_NUMBER_OF_DIMENSIONS)

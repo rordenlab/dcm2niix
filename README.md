@@ -71,7 +71,11 @@ In rare case if cmake fails with the message like `"Generator: execution of make
 As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000, [JPEG-LS](https://github.com/team-charls/charls) (this option requires a  c++14 compiler), as well as using the high performance Cloudflare zlib library (this option requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
 
 ```bash
+git clone https://github.com/rordenlab/dcm2niix.git
+cd dcm2niix
+mkdir build && cd build
 cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
+make
 ```
 
 **optional batch processing version:**
@@ -100,6 +104,7 @@ If you have any problems with the cmake build script described above or want to 
 
 The following tools exploit dcm2niix
 
+  - [dcm2niix can help convert data from the Adolescent Brain Cognitive Development (ABCD) DICOM to BIDS](https://github.com/ABCD-STUDY/abcd-dicom2bids)
   - [bidsify](https://github.com/spinoza-rec/bidsify) is a Python project that uses dcm2niix to convert DICOM and Philips PAR/REC images to the BIDS standard.
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
@@ -122,8 +127,9 @@ The following tools exploit dcm2niix
   - [neurodocker](https://github.com/kaczmarj/neurodocker) generates [custom](https://github.com/rordenlab/dcm2niix/issues/138) Dockerfiles given specific versions of neuroimaging software.
   - [NeuroElf](http://neuroelf.net) can use dcm2niix to convert DICOM images.
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
-  - [PNL-nipype](https://github.com/pnlbwh/Dummy-PNL-nipype) is a Python script that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables).
+  - [PNL-nipype](https://github.com/pnlbwh/Dummy-PNL-nipype) is a Python script that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
   - The [SlicerDcm2nii extension](https://github.com/Slicer/ExtensionsIndex/blob/master/SlicerDcm2nii.s4ext) is one method to import DICOM data into Slicer.
+  - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).
