@@ -4243,6 +4243,16 @@ double TE = 0.0; //most recent echo time recorded
     	groupElement = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
     	if (groupElement != kStart)
         	printMessage("DICOM appears corrupt: first group:element should be 0x0002:0x0000 '%s'\n",  fname);
+    } else { //no isPart10prefix - need to work out if this is explicit VR!
+    	if (isVerbose > 1)
+    		printMessage("DICOM preamble and prefix missing: this is not a valid DICOM image.\n");
+    	//See Toshiba Aquilion images from  https://www.aliza-dicom-viewer.com/download/datasets
+    	lLength = buffer[4] | (buffer[5] << 8) | (buffer[6] << 16) | (buffer[7] << 24);
+    	if (lLength > fileLen) {
+    		if (isVerbose > 1)
+    			printMessage("Guessing this is an explicit VR image.\n");
+    		d.isExplicitVR = true;
+    	}
     }
     char vr[2];
     //float intenScalePhilips = 0.0;
@@ -4495,10 +4505,19 @@ double TE = 0.0; //most recent echo time recorded
                     lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
                 lPos += 4;
             } else if ( ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'N'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'C'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'R'))
                        || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'T'))
+                       || ((buffer[lPos] == 'U') && (buffer[lPos+1] == 'V'))
                        || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'B'))
+                       || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'D'))
+                       || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'F'))
+                       || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'L'))
+                       | ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'V'))
                        || ((buffer[lPos] == 'O') && (buffer[lPos+1] == 'W'))
+                       || ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'V'))
                        ) { //VR= UN, OB, OW, SQ  || ((buffer[lPos] == 'S') && (buffer[lPos+1] == 'Q'))
+                //for example of UC/UR/UV/OD/OF/OL/OV/SV see VR conformance test https://www.aliza-dicom-viewer.com/download/datasets
                 lPos = lPos + 4;  //skip 2 byte VR string and 2 reserved bytes = 4 bytes
                 if (d.isLittleEndian)
                     lLength = buffer[lPos] | (buffer[lPos+1] << 8) | (buffer[lPos+2] << 16) | (buffer[lPos+3] << 24);
