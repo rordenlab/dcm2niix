@@ -4276,6 +4276,7 @@ void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const
 	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
 	if (nSL < 2) return;
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
+#ifdef myReadAsciiCsa
 	float shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	TCsaAscii csaAscii;
@@ -4315,6 +4316,7 @@ void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const
 	} //if ucMode == 3 int
 	//dicm2nii provides sSliceArray.ucImageNumb - similar to protocolSliceNumber1
 	//if asc_header(s, 'sSliceArray.ucImageNumb'), t = t(nSL:-1:1); end % rev-num
+#endif
 }
 
 void sliceTimingUIH(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
