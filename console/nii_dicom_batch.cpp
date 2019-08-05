@@ -2759,14 +2759,14 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
             images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
         }
     }
-    // Slice timing
+    
+    // Slice timing (stored in seconds)
     if (data.CSA.sliceTiming[0] >= 0.0 && (data.manufacturer == kMANUFACTURER_UIH || data.manufacturer == kMANUFACTURER_GE || (data.manufacturer == kMANUFACTURER_SIEMENS && !data.isXA10A))) {
         std::vector<double> sliceTimes;
-        #pragma message ("Please test R specific code: at this stage all slice times should be in msec due to changes in checkSliceTiming() 20190704")
-        for (int i=header.dim[3]-1; i>=0; i--) {
-        	if (data.CSA.sliceTiming[i] < 0.0)
-            	break;
-            sliceTimes.push_back(data.CSA.sliceTiming[i]); //slice time in msec
+        for (int i=0; i<header.dim[3]; i++) {
+            if (data.CSA.sliceTiming[i] < 0.0)
+                break;
+            sliceTimes.push_back(data.CSA.sliceTiming[i] / 1000.0);
         }
         images->addAttribute("sliceTiming", sliceTimes);
     }
