@@ -4101,7 +4101,7 @@ void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		printWarning("Images sorted by instance number  [0020,0013](%d..%d), but AcquisitionTime [0008,0032] suggests a different order (%g..%g) \n", d->imageNum,d1->imageNum, d->acquisitionTime,d1->acquisitionTime);
 }
 
-void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose) {
+void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose, int isForceSliceTimeHHMMSS) {
 //detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
 //modified 20190704: this function now ensures all slice times are in msec
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
@@ -4110,6 +4110,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 		nSlices++;
 	if (nSlices < 1) return;
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
+	if (isForceSliceTimeHHMMSS) isSliceTimeHHMMSS = true;
 	//if (d->isXA10A) isSliceTimeHHMMSS = true; //for XA10 use TimeAfterStart 0x0021,0x1104 -> Siemens de-identification can corrupt acquisition ties https://github.com/rordenlab/dcm2niix/issues/236
 	if (isSliceTimeHHMMSS) {//handle midnight crossing
 		for (int i = 0; i < nSlices; i++)
@@ -4125,7 +4126,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 		float kNoonSec = 43200;
 		if ((maxT - minT) > kNoonSec) { //volume started before midnight but ended next day!
 			//identify and fix 'Cinderella error' where clock resets at midnight: untested
-			printWarning("UIH acquisition crossed midnight: check slice timing\n");
+			printWarning("Acquisition crossed midnight: check slice timing\n");
 			for (int i = 0; i < nSlices; i++)
 				if (d->CSA.sliceTiming[i] > kNoonSec) d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - kMidnightSec;
 						minT = d->CSA.sliceTiming[0];
@@ -4269,6 +4270,25 @@ void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
 		sliceTiming[i] = d->CSA.sliceTiming[i];
 	for (int i = 0; i < nSL; i++)
 		d->CSA.sliceTiming[i] = sliceTiming[(nSL-1)-i];
+}
+
+int sliceTimingSiemens2D(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
+	//only for Siemens 2D images, use acquisitionTime
+	uint64_t indx0 = dcmSort[0].indx; //first volume
+    if (!(dcmList[indx0].manufacturer == kMANUFACTURER_SIEMENS)) return 0;
+	if (dcmList[indx0].is3DAcq) return 0; //no need for slice times
+	if (dcmList[indx0].CSA.sliceTiming[0] >= 0.0) return 0; //slice times calculated
+	if (dcmList[indx0].CSA.mosaicSlices > 1) return 0;
+    if (nConvert != (hdr->dim[3]*hdr->dim[4])) return 0;
+    if (hdr->dim[3] > (kMaxEPI3D-1)) return 0;
+    int nZero = 0; //infer multiband: E11C may not populate kPATModeText
+    for (int v = 0; v < hdr->dim[3]; v++) {
+		dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime; //nb format is HHMMSS we need to handle midnight-crossing and convert to ms,  see checkSliceTiming()
+		if (dcmList[indx0].CSA.sliceTiming[v] == dcmList[indx0].CSA.sliceTiming[0]) nZero++;
+	}
+	if ((dcmList[indx0].CSA.multiBandFactor < 2) && (nZero > 1))
+		dcmList[indx0].CSA.multiBandFactor = nZero;	
+	return 1;
 }
 
 void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
@@ -4433,8 +4453,9 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	struct TDICOMdata * d1 = &dcmList[indx1];
 	sliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	checkSliceTiming(d0, d1, verbose);
+	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS);
     rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
     rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
     if (hdr->dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1] , hdr, true);
