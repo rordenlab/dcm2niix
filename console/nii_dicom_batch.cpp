@@ -4293,7 +4293,7 @@ int sliceTimingSiemens2D(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, st
 
 void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
 	if (d->is3DAcq) return; //no need for slice times
-	if (d->CSA.multiBandFactor >= 1) return; //pattern of multiband slice order unknown
+	if (d->CSA.multiBandFactor > 1) return; //pattern of multiband slice order unknown
 	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
 	if (d->CSA.mosaicSlices < 2) return; //20190807 E11C 2D (not mosaic) files do not report mosaicAcqTimes or multi-band factor.
 	if (nSL < 2) return;
@@ -4354,8 +4354,7 @@ void sliceTimingUIH(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 void sliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
 	//GE check slice timing >>>
 	uint64_t indx0 = dcmSort[0].indx; //first volume
-	//printf("XXX %d\n", indx0);
-    if (!(dcmList[indx0].manufacturer == kMANUFACTURER_GE)) return;
+	if (!(dcmList[indx0].manufacturer == kMANUFACTURER_GE)) return;
 	bool GEsliceTiming_x0018x1060 = false;
 	if ((hdr->dim[3] < (kMaxEPI3D-1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
 		//GE: 1st method for "epi" PSD
