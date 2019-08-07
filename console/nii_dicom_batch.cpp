@@ -4274,6 +4274,7 @@ void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
 void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
 	if (d->is3DAcq) return; //no need for slice times
 	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
+	if (d->CSA.mosaicSlices < 2) return; //20190807 E11C 2D (not mosaic) files do not report mosaicAcqTimes or multi-band factor.
 	if (nSL < 2) return;
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
 #ifdef myReadAsciiCsa
