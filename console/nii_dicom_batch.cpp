@@ -1490,9 +1490,9 @@ tse3d: T2*/
 	if (d.phaseEncodingRC == 'R') fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n" );
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
-	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
-	//fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
-    fprintf(fp, "}\n");
+	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMdate );
+	//fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );kDCMdate
+	fprintf(fp, "}\n");
     fclose(fp);
 }// nii_SaveBIDS()
 
@@ -2337,7 +2337,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     #ifdef myMultiEchoFilenameSkipEcho1
     if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
     #else
-    if ((!isEchoReported) && (dcm.isMultiEcho)) { //multiple echoes saved as same series
+    if ((!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
     #endif
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
@@ -2859,7 +2859,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     fprintf(fp,"NRRD0005\n");
     fprintf(fp,"# Complete NRRD file format specification at:\n");
     fprintf(fp,"# http://teem.sourceforge.net/nrrd/format.html\n");
-    fprintf(fp,"# dcm2niix NRRD export transforms by Tashrif Billah\n");
+    fprintf(fp,"# dcm2niix %s NRRD export transforms by Tashrif Billah\n", kDCMdate);
     char rgbNoneStr[10] = {""};
 	//type tag
     switch (hdr.datatype) {
@@ -4817,10 +4817,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     for(int i = 0; i < nConvert; ++i)
       dcmList[dcmSort[i].indx].converted2NII = 1;
     if (opts.numSeries < 0) { //report series number but do not convert
-    	if (segVol >= 0) {
-    		printMessage("\t%ld.%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, segVol-1, pathoutname);
+    	int segVolEcho = segVol;
+    	if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+    		segVolEcho = dcmList[dcmSort[0].indx].echoNum+1;
+    	if (segVolEcho >= 0) {
+    		printMessage("\t%u.%d\t%s\n", dcmList[dcmSort[0].indx].seriesUidCrc, segVolEcho-1, pathoutname);
+    		//printMessage("\t%ld.%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, segVol-1, pathoutname);
     	} else {
-    		printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
+    		printMessage("\t%u\t%s\n", dcmList[dcmSort[0].indx].seriesUidCrc, pathoutname);
+    		//printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
         }
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
@@ -4832,11 +4837,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) {
       int i = 0;
-      float seriesNum = (float) dcmList[dcmSort[0].indx].seriesNum;
-      if (segVol > 0)
-      	seriesNum = seriesNum + ((float) segVol - 1.0) / 10.0; //n.b. we will have problems if segVol > 9. However, 9 distinct TEs/scalings/PhaseMag seems unlikely
+      //double seriesNum = (double) dcmList[dcmSort[0].indx].seriesNum;
+      double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
+      int segVolEcho = segVol;
+      if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+      		segVolEcho = dcmList[dcmSort[0].indx].echoNum+1;
+      if (segVolEcho > 0)
+      	seriesNum = seriesNum + ((double) segVolEcho - 1.0) / 10.0;
       for (; i < opts.numSeries; i++) {
-        if (isSameFloatGE(opts.seriesNumber[i], seriesNum)) {
+        if (isSameDouble(opts.seriesNumber[i], seriesNum)) { 
         //if (opts.seriesNumber[i] == dcmList[dcmSort[0].indx].seriesNum) {
           break;
         }

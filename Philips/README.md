@@ -16,6 +16,23 @@ In general it is recommended that you archive and convert DICOM images as they a
 
 Therefore, dcm2niix will ignore the IPP enclosed in 2005,140F unless no alternative exists.
 
+## Image Scaling
+
+dcm2niix losslessy copies the raw data from DICOM to NIfTI format. These values are typically stored as 16-bit integers in the range -32768..32767. Both the DICOM and NIfTI formats describe how scaling intercept and slope values can be used to convert these raw values into calibrated values. For example, with an intercept of 0 and slope of 0.01 the raw value of 50 would be converted to 0.5. 
+
+Unlike other vendors, Philips can store different scaling factors in their DICOM header. For most MRI modalities where the intensity brightness is relative, this has no impact. However, for modalities like ASL it can have an impact. The NIfTI format requires a single intensity intercept and slope is chosen. Therefore, dcm2niix will choose the "Real World" values if provided. If these are not available, dcm2niix will choose either the "precise" (default) or "display" (if the user choose "-p n") value. dcm2niix will also populate the folllowing tags in the BIDS header that allow the user to select between different intensity scaling formats: "PhilipsRescaleSlope", "PhilipsRescaleIntercept", "PhilipsScaleSlope", "UsePhilipsFloatNotDisplayScaling" (where "1" indicates NIfTI uses precise value, and "0" indicates display values)., "PhilipsRWVSlope" and "PhilipsRWVIntercept".
+
+The relevant DICOM tags are
+RS = rescale slope ([0028,1053](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1053)))
+RI = rescale intercept ([0028,1052](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1052)))
+SS = scale slope (2005,100E)
+RealWorldIntercept = (0040,9224) 
+Real World Slope = (0040,9225)
+The transformation formulas are:
+R = raw value, P = precise value, D = displayed value
+D = R * RS + RI
+P = D/(RS * SS)
+
 ## Derived parametric maps stored with raw diffusion data
 
 Some Philips diffusion DICOM images include derived image(s) along with the images. Other manufacturers save these derived images as a separate series number, and the DICOM standard seems ambiguous on whether it is allowable to mix raw and derived data in the same series (see PS 3.3-2008, C.7.6.1.1.2-3). In practice, many Philips diffusion images append [derived parametric maps](http://www.revisemri.com/blog/2008/diffusion-tensor-imaging/) with the original data. With Philips, appending the derived isotropic image is optional  - it is only created for the 'clinical' DTI schemes for radiography analysis and is triggered if the first three vectors in the gradient table are the unit X,Y and Z vectors. For conventional DWI, the result is the conventional mean of the ADC  X,Y,Z for DTI it the conventional mean of the 3 principle Eigen vectors. As scientists, we want to discard these derived images, as they will disrupt data processing and we can generate better parametric maps after we have applied undistortion methods such as [Eddy and Topup](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy/UsersGuide). The current version of dcm2niix uses the Diffusion Directionality (0018,9075) tag to detect B=0 unweighted ("NONE"), B-weighted ("DIRECTIONAL"), and derived ("ISOTROPIC") images. Note that the Dimension Index Values (0020,9157) tag provides an alternative approach to discriminate these images. Here are sample tags from a Philips enhanced image that includes and derived map (3rd dimension is "1" while the other images set this to "2").

@@ -4005,6 +4005,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
 #define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
+#define  kDirectoryRecordSequence 0x0004+(0x1220 << 16 )
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
 #define  kStudyDate 0x0008+(0x0020 << 16 )
@@ -4716,6 +4717,10 @@ double TE = 0.0; //most recent echo time recorded
 				if((slen < 5) || (strstr(saeTxt, "oasis") == NULL) ) break;
                 d.isSegamiOasis = true;
             	break; }
+            case kDirectoryRecordSequence: {
+                d.isRawDataStorage = true;
+                break;       
+            }
             case kImageTypeTag: {
             	dcmStr (lLength, &buffer[lPos], d.imageType);
                 int slen;
