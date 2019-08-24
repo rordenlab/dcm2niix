@@ -6384,6 +6384,12 @@ if (d.isHasPhase)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-2] = d.echoNum;
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
+    if ((d.isValid) && (d.seriesUidCrc == 0)) {
+	    if (d.seriesNum < 1) 
+	        d.seriesUidCrc = 1; //no series information
+	    else
+	        d.seriesUidCrc = d.seriesNum; //file does not have Series UID, use series number instead   
+	}
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
 		d.seriesNum = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
     getFileName(d.imageBaseName, fname);
