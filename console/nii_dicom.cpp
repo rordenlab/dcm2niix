@@ -970,6 +970,7 @@ inline bool littleEndianPlatform ()
     return (*((char *) &value) == 1);
 }
 
+#ifdef MY_OLD //this code works on Intel but not some older systems https://github.com/rordenlab/dcm2niix/issues/327
 float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
     bool swap = (littleEndian != littleEndianPlatform());
@@ -1010,6 +1011,51 @@ double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[],
     //printMessage("swapped val = %f\n",retVal);
     return retVal;
 } //dcmFloatDouble()
+#else
+
+float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
+    //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
+    if (lByteLength < 4) return 0.0;
+    bool swap = (littleEndian != littleEndianPlatform());
+    union {
+        uint32_t i;
+        float f;
+        uint8_t c[4];
+  } i,o;
+  memcpy(&i.i, (char*)&lBuffer[0], 4);
+  //printf("%02x%02x%02x%02x\n",i.c[0], i.c[1], i.c[2], i.c[3]);
+    if (!swap) return i.f;
+  o.c[0] = i.c[3];
+  o.c[1] = i.c[2];
+  o.c[2] = i.c[1];
+  o.c[3] = i.c[0];
+  //printf("swp %02x%02x%02x%02x\n",o.c[0], o.c[1], o.c[2], o.c[3]);
+  return o.f;
+} //dcmFloat()
+
+double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[],
+                      const bool littleEndian) {//read binary 64-bit float
+    //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
+    if (lByteLength < 8) return 0.0;
+    bool swap = (littleEndian != littleEndianPlatform());
+    union {
+        uint32_t i;
+        double d;
+        uint8_t c[8];
+  } i,o;
+  memcpy(&i.i, (char*)&lBuffer[0], 8);
+  if (!swap) return i.d;
+  o.c[0] = i.c[7];
+  o.c[1] = i.c[6];
+  o.c[2] = i.c[5];
+  o.c[3] = i.c[4];
+  o.c[4] = i.c[3];
+  o.c[5] = i.c[2];
+  o.c[6] = i.c[1];
+  o.c[7] = i.c[0];
+  return o.d;
+} //dcmFloatDouble()
+#endif
 
 int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //read binary 16 or 32 bit integer
     if (littleEndian) {
@@ -5063,6 +5109,12 @@ double TE = 0.0; //most recent echo time recorded
 				}
 				patientPositionNum++;
 				isAtFirstPatientPosition = true;
+				
+				
+				//char dx[kDICOMStr];
+                //dcmStr (lLength, &buffer[lPos], dx);
+				//printMessage("*%s*", dx);
+				
 				dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &patientPosition[0]); //slice position
 				if (isnan(d.patientPosition[1])) {
 					//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
@@ -5082,7 +5134,7 @@ double TE = 0.0; //most recent echo time recorded
 				} //if not first slice in file
 				set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
 				//if (isAtFirstPatientPosition) numFirstPatientPosition++;
-				if (isVerbose == 1) //verbose > 1 will report full DICOM tag
+				if (isVerbose > 0) //verbose > 1 will report full DICOM tag
 					printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 				break; }
             case kInPlanePhaseEncodingDirection:

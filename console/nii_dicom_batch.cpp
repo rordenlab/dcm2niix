@@ -375,7 +375,7 @@ void nii_saveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 //  this is not recommended: poorly documented
 //  it is better to stick to the binary portion of the Siemens CSA image header
 
-#if defined(_WIN64) || defined(_WIN32) || defined(__sun)
+#if  defined(_WIN64) || defined(_WIN32) || defined(__sun) || (defined(__APPLE__) && defined(__POWERPC__))
 //https://opensource.apple.com/source/Libc/Libc-1044.1.2/string/FreeBSD/memmem.c
 /*-
  * Copyright (c) 2005 Pascal Gloor <pascal.gloor@spale.com>
@@ -515,6 +515,12 @@ void readKeyStr(const char * key,  char * buffer, int remLength, char* outStr) {
 	}
 } //readKeyStr()
 
+inline bool littleEndianPlatformCsa ()
+{
+    uint32_t value = 1;
+    return (*((char *) &value) == 1);
+}
+
 int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     //returns offset to ASCII Phoenix data
     if (lLength < 36) return 0;
@@ -527,8 +533,8 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     TCSAitem itemCSA;
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
-        //if (!littleEndianPlatform())
-        //    nifti_swap_4bytes(1, &tagCSA.nitems);
+        if (!littleEndianPlatformCsa())
+            nifti_swap_4bytes(1, &tagCSA.nitems);
         //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         lPos +=sizeof(tagCSA);
         if (strcmp(tagCSA.name, "MrPhoenixProtocol") == 0)
@@ -536,8 +542,8 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
         for (int lI = 1; lI <= tagCSA.nitems; lI++) {
                 memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
                 lPos +=sizeof(itemCSA);
-                //if (!littleEndianPlatform())
-                //    nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+                if (!littleEndianPlatformCsa())
+                    nifti_swap_4bytes(1, &itemCSA.xx2_Len);
                 lPos += ((itemCSA.xx2_Len +3)/4)*4;
         }
     }
@@ -558,7 +564,7 @@ typedef struct {
 void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, int csaLength, float* shimSetting, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
- 	csaAscii->delayTimeInTR = -0.001;
+    csaAscii->delayTimeInTR = -0.001;
  	csaAscii->phaseOversampling = 0.0;
  	csaAscii->phaseResolution = 0.0;
  	csaAscii->txRefAmp = 0.0;
@@ -618,7 +624,6 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		#endif
-
 		char keyStrLns[] = "sKSpace.lPhaseEncodingLines";
 		csaAscii->phaseEncodingLines = readKey(keyStrLns, keyPos, csaLengthTrim);
 		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
@@ -4830,7 +4835,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
-    if (sliceDir < 0) {
+	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
@@ -4854,7 +4859,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         return EXIT_SUCCESS;
       }
     }
-    nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
+	nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
     int * volOrderIndex = nii_saveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
@@ -4870,7 +4875,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     #ifndef USING_R
     fflush(stdout); //show immediately if run from MRIcroGL GUI
     #endif
-    //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
+	//~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
     //hdr0.pixdim[3] = dxNoTilt;
     if (hdr0.dim[3] < 2)
@@ -4912,10 +4917,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	} //avoid div/0: cosine not zero
     } //if gantry tilt
  	//end: gantry tilt we need to save the shear in the transform
-
+    int returnCode = EXIT_FAILURE;
 #ifndef myNoSave
     // Indicates success or failure of the (last) save
-    int returnCode = EXIT_FAILURE;
     //printMessage(" x--> %d ----\n", nConvert);
     if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
         imgM = nii_planar2rgb(imgM, &hdr0, true); //NIfTI is packed while Analyze was planar
@@ -4972,7 +4976,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 #ifdef USING_R
     // Note that for R, only one image should be created per series
     // Hence this extra test
-    if (returnCode != EXIT_SUCCESS)
+	if (returnCode != EXIT_SUCCESS)
         returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
     if (returnCode == EXIT_SUCCESS)
         nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts, nameList->str[dcmSort[0].indx]);
