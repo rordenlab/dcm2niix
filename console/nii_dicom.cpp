@@ -5592,6 +5592,9 @@ double TE = 0.0; //most recent echo time recorded
                 isIconImageSequence = true;
             	break;
 			case kPMSCT_RLE1 :
+			    //https://groups.google.com/forum/#!topic/comp.protocols.dicom/8HuP_aNy9Pc
+				//https://discourse.slicer.org/t/fail-to-load-pet-ct-gemini/8158/3
+				// d.compressionScheme = kCompressPMSCT_RLE1; //force RLE 
 				if (d.compressionScheme != kCompressPMSCT_RLE1) break;
 				d.imageStart = (int)lPos + (int)lFileOffset;
 				d.imageBytes = lLength;
@@ -6106,6 +6109,8 @@ double TE = 0.0; //most recent echo time recorded
 
     } //while d.imageStart == 0
     free (buffer);
+    if (d.bitsStored < 0) d.isValid = false;
+    if (d.bitsStored == 1) printWarning("1-bit binary DICOMs not supported\n"); //maybe not valid - no examples to test
     //printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     //printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     if (encapsulatedDataFragmentStart > 0) {
@@ -6271,9 +6276,10 @@ if (d.isHasPhase)
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
-    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132) && (!d.isRawDataStorage)) {
+    if ((d.isValid) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132) && (!d.isRawDataStorage)) {
     	//20190524: Philips MR 55.1 creates non-image files that report kDim1/kDim2 - we can detect them since 0008,0016 reports "RawDataStorage"
-    	printError("Conversion aborted due to corrupt file: %s %d %d\n", fname, d.xyzDim[1], d.xyzDim[2]);
+    	//see https://neurostars.org/t/dcm2niix-error-from-philips-dicom-qsm-data-can-this-be-skipped/4883
+    	printError("Conversion aborted due to corrupt file: %s %dx%d %d\n", fname, d.xyzDim[1], d.xyzDim[2], d.imageStart);
 #ifdef USING_R
         Rf_error("Irrecoverable error during conversion");
 #else

@@ -704,7 +704,7 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		//check if ANY csaAscii.adFree tags exist
 		keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		if (!keyPosFree) { //"Wip" -> "WiP", modern -> old Siemens
-			strcpy(keyStrAdFree, "sWipMemBlock.adFree[");
+			strcpy(keyStrAdFree, "sWiPMemBlock.adFree[");
 			keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		}
 		if (keyPosFree) {
@@ -1172,7 +1172,7 @@ tse3d: T2*/
 		} //verbose
 		*/
 		//ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
-		if (strstr(pulseSequenceDetails,"ep2d_pcasl")) {
+		if ((strstr(pulseSequenceDetails,"ep2d_pcasl")) || (strstr(pulseSequenceDetails,"ep2d_pcasl_UI_PHC"))) {
 			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0/1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);

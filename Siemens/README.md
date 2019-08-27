@@ -47,6 +47,58 @@ One often wants to determine [echo spacing, bandwidth, ](https://support.brainvo
 
 Diffusion specific parameters are described on the [NA-MIC](https://www.na-mic.org/wiki/NAMIC_Wiki:DTI:DICOM_for_DWI_and_DTI#Private_vendor:_Siemens) website. Gradient vectors are reported with respect to the scanner bore, and dcm2niix will attempt to re-orient these to [FSL format](http://justinblaber.org/brief-introduction-to-dwmri/) [bvec files](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FDT/FAQ#What_conventions_do_the_bvecs_use.3F). For the Vida, see the Vida section for specific diffusion details.
 
+## Arterial Spin Labeling
+
+Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BASIL) can help process arterial spin labeling data. These tools require sequence details. These details differ between different sequences. If you create a BIDS JSON file with dcm2niix, the following tags will be created, using the same names used in the Siemens sequence PDFs. Note different sequences provide different values.
+
+ep2d_pcasl, ep2d_pcasl_UI_PHC //pCASL 2D [Danny J.J. Wang](http://www.loft-lab.org)
+ - LabelOffset
+ - PostLabelDelay
+ - NumRFBlocks
+ - RFGap
+ - MeanGzx10
+ - PhiAdjust
+
+tgse_pcasl //pCASL 3D [Danny J.J. Wang](http://www.loft-lab.org)
+ - RFGap
+ - MeanGzx10
+ - T1
+
+ep2d_pasl //PASL 2D Siemens Product
+ - InversionTime
+ - SaturationStopTime
+
+tgse_pasl //PASL 3D [Siemens Product](http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf)
+ - BolusDuration
+ - InversionTime
+
+ep2d_fairest //PASL 2D http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
+ - PostInversionDelay
+ - PostLabelDelay
+
+to_ep2d_VEPCASL //pCASL 2D specific tags - Oxford (Thomas OKell)
+ - InversionTime
+ - BolusDuration
+ - TagRFFlipAngle
+ - TagRFDuration
+ - TagRFSeparation
+ - MeanTagGradient
+ - TagGradientAmplitude
+ - TagDuration
+ - MaximumT1Opt
+ - InitialPostLabelDelay [Array]
+  
+jw_tgse_VEPCASL //pCASL 3D Oxford
+ - TagRFFlipAngle
+ - TagRFDuration
+ - TagRFSeparation
+ - MaximumT1Opt
+ - Tag0
+ - Tag1
+ - Tag2
+ - Tag3
+ - InitialPostLabelDelay [Array]
+ 
 ## Sample Datasets
 
  - [Slice timing dataset](httphttps://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Slice_timing_corrections://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage).
