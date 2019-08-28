@@ -82,6 +82,20 @@ Likewise, the BIDS tag "PhaseEncodingDirection" allows tools like [eddy](https:/
 
 Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not calculate this from Philips DICOMs. If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only inlfuences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
 
+## Non-Image DICOMs
+
+NIfTI is an image format, while DICOM is a multi-purpose format that can store videos (MPEG) or other data. Specifically, some Philips systems save Exam Cards and other non-image data as DICOM files. In these case, dcm2niix should skip these files, as they can not be represented in NIfTI. You can discriminate these files by reading the [MediaStorageSOPClassUID (0002,0002)](https://github.com/rordenlab/dcm2niix/issues/328).
+
+- MR Image Storage = 1.2.840.10008.5.1.4.1.1.4
+- Enhanced MR Image Storage = 1.2.840.10008.5.1.4.1.1.4.1
+- MR Spectroscopy Storage = 1.2.840.10008.5.1.4.1.1.4.2
+- Secondary Capture Image Storage = 1.2.840.10008.5.1.4.1.1.7
+- Grayscale Softcopy Presentation State = 1.2.840.10008.5.1.4.1.1.11.1
+- Raw Data Storage = 1.2.840.10008.5.1.4.1.1.66
+- (Old) Private MR Spectrum Storage = 1.3.46.670589.11.0.0.12.1
+- (Old) Private MR Series Data Storage = 1.3.46.670589.11.0.0.12.2
+- (Old) Private MR Examcard Storage = 1.3.46.670589.11.0.0.12.4 
+
 ## General variations
 
 Prior versions of dcm2niix used different methods to sort images. However, these have proved unreliable The undocumented tags SliceNumberMrPhilips (2001,100A). In theory, InStackPositionNumber (0020,9057) should be present in all enhanced files, but has not proved reliable (perhaps not in older Philips images or DICOM images that were modified after leaving the scanner). MRImageGradientOrientationNumber (2005,1413) is complicated by the inclusion of derived images. Therefore, current versions of dcm2niix do not generally depend on any of these.

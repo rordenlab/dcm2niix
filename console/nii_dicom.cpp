@@ -4670,9 +4670,14 @@ double TE = 0.0; //most recent echo time recorded
          		char mediaUID[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], mediaUID);
                 //Philips "XX_" files
+                //see https://github.com/rordenlab/dcm2niix/issues/328
                 if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL) d.isRawDataStorage = true;
+                if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.1") != NULL) d.isRawDataStorage = true; //Private MR Spectrum Storage
+                if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.2") != NULL) d.isRawDataStorage = true; //Private MR Series Data Storage
+                if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.4") != NULL) d.isRawDataStorage = true; //Private MR Examcard Storage
                 if (d.isRawDataStorage) d.isDerived = true;
-         		//Philips "PS_" files
+                if (d.isRawDataStorage) printMessage("Skipping non-image DICOM: %s\n", fname);
+                //Philips "PS_" files
                 if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.11.1") != NULL) d.isGrayscaleSoftcopyPresentationState = true;
                 if (d.isGrayscaleSoftcopyPresentationState) d.isDerived = true;
                 break;
