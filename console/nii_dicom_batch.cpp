@@ -515,12 +515,6 @@ void readKeyStr(const char * key,  char * buffer, int remLength, char* outStr) {
 	}
 } //readKeyStr()
 
-inline bool littleEndianPlatformCsa ()
-{
-    uint32_t value = 1;
-    return (*((char *) &value) == 1);
-}
-
 int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     //returns offset to ASCII Phoenix data
     if (lLength < 36) return 0;
@@ -533,7 +527,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     TCSAitem itemCSA;
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
-        if (!littleEndianPlatformCsa())
+        if (!littleEndianPlatform())
             nifti_swap_4bytes(1, &tagCSA.nitems);
         //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         lPos +=sizeof(tagCSA);
@@ -542,7 +536,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
         for (int lI = 1; lI <= tagCSA.nitems; lI++) {
                 memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
                 lPos +=sizeof(itemCSA);
-                if (!littleEndianPlatformCsa())
+                if (!littleEndianPlatform())
                     nifti_swap_4bytes(1, &itemCSA.xx2_Len);
                 lPos += ((itemCSA.xx2_Len +3)/4)*4;
         }
@@ -2796,12 +2790,6 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 
 #else
 
-inline bool littleEndianPlatformNRRD ()
-{
-    uint32_t value = 1;
-    return (*((char *) &value) == 1);
-}
-
 int pigz_File(char * fname, struct TDCMopts opts, size_t imgsz) {
 	//given "/dir/file.nii" creates "/dir/file.nii.gz"
 	char blockSize[768];
@@ -2919,7 +2907,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     	fprintf(fp,"\n");
     }
     //byteskip only for .nhdr, not .nrrd
-	if (littleEndianPlatformNRRD()) //raw data in native format
+	if (littleEndianPlatform()) //raw data in native format
 		fprintf(fp,"endian: little\n");
 	else
 		fprintf(fp,"endian: big\n");
@@ -3075,6 +3063,24 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
+	//swap endian from big->little or little->big
+	// must be told which is native to detect datatype and number of voxels
+	// one could also auto-detect: hdr->sizeof_hdr==348
+	if (!isNative) swap_nifti_header(hdr);
+	int nVox = 1;
+    for (int i = 1; i < 8; i++)
+        if (hdr->dim[i] > 1) nVox = nVox * hdr->dim[i];
+	int bitpix = hdr->bitpix;
+	int datatype = hdr->datatype;
+	if (isNative) swap_nifti_header(hdr);
+	if (datatype == DT_RGBA32) return;
+	//n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
+	if (bitpix == 16) nifti_swap_2bytes(nVox, im);
+	if (bitpix == 32) nifti_swap_4bytes(nVox, im);
+	if (bitpix == 64) nifti_swap_8bytes(nVox, im);
+}
+
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     if (opts.isSaveNRRD) {
@@ -3106,7 +3112,9 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
 			if ((imgsz+hdr.vox_offset) <  kMaxPigz)
 				printWarning(" Hint: using external compressor (pigz) should help.\n");
 		} else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  kMaxGz) ) { //use internal compressor
+			if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)    	
 			writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel, false);
+			if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
 			return EXIT_SUCCESS;
 		}
 		#endif
@@ -3140,21 +3148,25 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     		printError("Unable to open pigz pipe\n");
         	return EXIT_FAILURE;
     	}
+    	if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)
     	fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
     	uint32_t pad = 0;
     	fwrite(&pad, sizeof( pad), 1, pigzPipe);
     	fwrite(&im[0], imgsz, 1, pigzPipe);
     	pclose(pigzPipe);
+    	if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
 		return EXIT_SUCCESS;
     }
 	#endif
     FILE *fp = fopen(fname, "wb");
     if (!fp) return EXIT_FAILURE;
+    if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)
     fwrite(&hdr, sizeof(hdr), 1, fp);
     uint32_t pad = 0;
     fwrite(&pad, sizeof( pad), 1, fp);
     fwrite(&im[0], imgsz, 1, fp);
     fclose(fp);
+    if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
     if ((opts.isGz) &&  (strlen(opts.pigzname)  > 0) ) {
     	#ifndef myDisableGzSizeLimits
     	if ((imgsz+hdr.vox_offset) >  kMaxPigz) {
@@ -6313,6 +6325,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isCrop = false;
     opts->isRotate3DAcq = true;
     opts->isGz = false;
+    opts->isSaveNativeEndian = true;
     opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;

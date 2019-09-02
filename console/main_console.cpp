@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include "nii_dicom_batch.h"
 #include "nii_dicom.h"
+#include "nifti1_io_core.h"
 #include <math.h>
 
 #if !defined(_WIN64) && !defined(_WIN32)
@@ -127,7 +128,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
-    printf("  --progress : Slicer format progress information\n");
+    printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
+   	printf("  --progress : Slicer format progress information\n");
    	printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
     printf(" Defaults stored in Windows registry\n");
@@ -150,6 +152,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		printf("  -z : gz compress images (y/o/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
+   	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
    	printf("  --progress : Slicer format progress information\n");
    	printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
@@ -270,17 +273,27 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h') {
                 showHelp(argv, opts);
-            } else if ( ! strcmp(argv[1], "--version")) {
+            } else if (( ! strcmp(argv[i], "--big-endian")) && ((i+1) < argc)) {
+				i++;
+				if ((littleEndianPlatform()) && ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))) { 
+                    opts.isSaveNativeEndian = false;
+                    printf("NIfTI data will be big-endian (byte-swapped)\n");
+                }
+                if ((!littleEndianPlatform()) && ((argv[i][0] == 'n') || (argv[i][0] == 'N'))) {
+                    opts.isSaveNativeEndian = false;
+                    printf("NIfTI data will be little-endian\n");
+                }
+            } else if ( ! strcmp(argv[i], "--version")) {
 				printf("%s\n", kDCMdate);
             	return kEXIT_REPORT_VERSION;
-            } else if (( ! strcmp(argv[1], "--progress")) && ((i+1) < argc)) {
+            } else if (( ! strcmp(argv[i], "--progress")) && ((i+1) < argc)) {
 				i++;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isProgress = 0;
                 else
                     opts.isProgress = 1;
                 if (argv[i][0] == '2') opts.isProgress = 2; //logorrheic
-            } else if ( ! strcmp(argv[1], "--xml"))  {
+            } else if ( ! strcmp(argv[i], "--xml"))  {
 				showXML();
 				return EXIT_SUCCESS;
             } else if ((argv[i][1] == 'a') && ((i+1) < argc)) { //adjacent DICOMs
@@ -290,7 +303,6 @@ int main(int argc, const char * argv[])
                     opts.isOneDirAtATime = false;
                 else
                     opts.isOneDirAtATime = true;
-
            } else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
             	opts.gzLevel = abs((int)strtol(argv[i], NULL, 10));
             	if (opts.gzLevel > 11)

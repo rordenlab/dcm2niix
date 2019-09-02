@@ -964,12 +964,6 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = 
 //#endif
 } //dcmStr()
 
-inline bool littleEndianPlatform ()
-{
-    uint32_t value = 1;
-    return (*((char *) &value) == 1);
-}
-
 #ifdef MY_OLD //this code works on Intel but not some older systems https://github.com/rordenlab/dcm2niix/issues/327
 float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian

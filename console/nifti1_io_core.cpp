@@ -17,6 +17,7 @@
 
 #include <stdbool.h> //requires VS 2015 or later
 #include "nifti1_io_core.h"
+#include "nifti1.h"
 #include <math.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -30,6 +31,7 @@
 #endif
 
 #include "print.h"
+
 
 #ifndef USING_R
 void nifti_swap_8bytes( size_t n , void *ar )    // 4 bytes at a time
@@ -79,6 +81,68 @@ void nifti_swap_2bytes( size_t n , void *ar )    // 2 bytes at a time
     return ;
 }
 #endif
+
+/*-------------------------------------------------------------------------*/
+/*! Byte swap NIFTI-1 file header in various places and ways.
+
+    If is_nifti, swap all (even UNUSED) fields of NIfTI header.
+    Else, swap as a nifti_analyze75 struct.
+*//*---------------------------------------------------------------------- */
+void swap_nifti_header( struct nifti_1_header *h  )
+{
+
+   /* otherwise, swap all NIFTI fields */
+
+   nifti_swap_4bytes(1, &h->sizeof_hdr);
+   nifti_swap_4bytes(1, &h->extents);
+   nifti_swap_2bytes(1, &h->session_error);
+
+   nifti_swap_2bytes(8, h->dim);
+   nifti_swap_4bytes(1, &h->intent_p1);
+   nifti_swap_4bytes(1, &h->intent_p2);
+   nifti_swap_4bytes(1, &h->intent_p3);
+
+   nifti_swap_2bytes(1, &h->intent_code);
+   nifti_swap_2bytes(1, &h->datatype);
+   nifti_swap_2bytes(1, &h->bitpix);
+   nifti_swap_2bytes(1, &h->slice_start);
+
+   nifti_swap_4bytes(8, h->pixdim);
+
+   nifti_swap_4bytes(1, &h->vox_offset);
+   nifti_swap_4bytes(1, &h->scl_slope);
+   nifti_swap_4bytes(1, &h->scl_inter);
+   nifti_swap_2bytes(1, &h->slice_end);
+
+   nifti_swap_4bytes(1, &h->cal_max);
+   nifti_swap_4bytes(1, &h->cal_min);
+   nifti_swap_4bytes(1, &h->slice_duration);
+   nifti_swap_4bytes(1, &h->toffset);
+   nifti_swap_4bytes(1, &h->glmax);
+   nifti_swap_4bytes(1, &h->glmin);
+
+   nifti_swap_2bytes(1, &h->qform_code);
+   nifti_swap_2bytes(1, &h->sform_code);
+
+   nifti_swap_4bytes(1, &h->quatern_b);
+   nifti_swap_4bytes(1, &h->quatern_c);
+   nifti_swap_4bytes(1, &h->quatern_d);
+   nifti_swap_4bytes(1, &h->qoffset_x);
+   nifti_swap_4bytes(1, &h->qoffset_y);
+   nifti_swap_4bytes(1, &h->qoffset_z);
+
+   nifti_swap_4bytes(4, h->srow_x);
+   nifti_swap_4bytes(4, h->srow_y);
+   nifti_swap_4bytes(4, h->srow_z);
+
+   return ;
+}
+
+bool littleEndianPlatform ()
+{
+    uint32_t value = 1;
+    return (*((char *) &value) == 1);
+}
 
 int isSameFloat (float a, float b) {
     return (fabs (a - b) <= FLT_EPSILON);

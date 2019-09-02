@@ -30,7 +30,7 @@ extern "C" {
 #define MAX_NUM_SERIES 16
 
     struct TDCMopts {
-        bool isSaveNRRD, isOneDirAtATime, isRenameNotConvert, isMaximize16BitRange, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isRotate3DAcq, isCrop;
+        bool isSaveNativeEndian, isSaveNRRD, isOneDirAtATime, isRenameNotConvert, isMaximize16BitRange, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isRotate3DAcq, isCrop;
         int isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
         double seriesNumber[MAX_NUM_SERIES]; //requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
