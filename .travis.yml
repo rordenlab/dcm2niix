@@ -34,8 +34,7 @@ script:
   - cd dcm_qa_uih && ./batch.sh && cd -
 
 before_deploy:
-  - export DATE=`date +%-d-%b-%Y`
-  - zip -j dcm2niix_${DATE}_${TARGET}.zip build/bin/*
+  - zip -j dcm2niix_${TARGET}.zip build/bin/*
   - sleep 300 # make sure appveyor deployment is done, thus proper release name is set
 
 deploy:
