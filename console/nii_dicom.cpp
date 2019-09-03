@@ -2691,8 +2691,8 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
 		// FileSize < (ImageSize+HeaderSize): 42399788 < ( 42399792.00)
         //note hdr.vox_offset is a float, and without a type-cast it can lead to unusual values
         //https://www.nitrc.org/forum/message.php?msg_id=27155
-        printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu+%lu) \n", fileLen, imgszRead, (long)hdr.vox_offset);
-        //printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
+        printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu+%ld) \n", fileLen, imgszRead, (long)hdr.vox_offset);
+        //printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
         printWarning("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
