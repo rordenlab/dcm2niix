@@ -20,6 +20,7 @@
 #include "nifti1.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <ctype.h>
 #include <string.h>
