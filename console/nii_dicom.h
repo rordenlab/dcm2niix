@@ -43,7 +43,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMdate "v1.0.20190720"
+#define kDCMdate "v1.0.20190902"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -97,7 +97,7 @@ static const int kCompressC3 = 2; //obsolete JPEG lossless
 static const int kCompress50 = 3; //obsolete JPEG lossy
 static const int kCompressRLE = 4; //run length encoding
 static const int kCompressPMSCT_RLE1 = 5; //see rle2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
-static const int kCompressJPEGLS = 5; //LoCo JPEG-LS
+static const int kCompressJPEGLS = 6; //LoCo JPEG-LS
 #ifdef myEnableJasper
     static const int kCompressSupport = kCompressYes; //JASPER for JPEG2000
 #else

@@ -16,6 +16,23 @@ In general it is recommended that you archive and convert DICOM images as they a
 
 Therefore, dcm2niix will ignore the IPP enclosed in 2005,140F unless no alternative exists.
 
+## Image Scaling
+
+dcm2niix losslessy copies the raw data from DICOM to NIfTI format. These values are typically stored as 16-bit integers in the range -32768..32767. Both the DICOM and NIfTI formats describe how scaling intercept and slope values can be used to convert these raw values into calibrated values. For example, with an intercept of 0 and slope of 0.01 the raw value of 50 would be converted to 0.5. 
+
+Unlike other vendors, Philips can store different scaling factors in their DICOM header. For most MRI modalities where the intensity brightness is relative, this has no impact. However, for modalities like ASL it can have an impact. The NIfTI format requires a single intensity intercept and slope is chosen. Therefore, dcm2niix will choose the "Real World" values if provided. If these are not available, dcm2niix will choose either the "precise" (default) or "display" (if the user choose "-p n") value. dcm2niix will also populate the folllowing tags in the BIDS header that allow the user to select between different intensity scaling formats: "PhilipsRescaleSlope", "PhilipsRescaleIntercept", "PhilipsScaleSlope", "UsePhilipsFloatNotDisplayScaling" (where "1" indicates NIfTI uses precise value, and "0" indicates display values)., "PhilipsRWVSlope" and "PhilipsRWVIntercept".
+
+The relevant DICOM tags are
+RS = rescale slope ([0028,1053](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1053)))
+RI = rescale intercept ([0028,1052](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1052)))
+SS = scale slope (2005,100E)
+RealWorldIntercept = (0040,9224) 
+Real World Slope = (0040,9225)
+The transformation formulas are:
+R = raw value, P = precise value, D = displayed value
+D = R * RS + RI
+P = D/(RS * SS)
+
 ## Derived parametric maps stored with raw diffusion data
 
 Some Philips diffusion DICOM images include derived image(s) along with the images. Other manufacturers save these derived images as a separate series number, and the DICOM standard seems ambiguous on whether it is allowable to mix raw and derived data in the same series (see PS 3.3-2008, C.7.6.1.1.2-3). In practice, many Philips diffusion images append [derived parametric maps](http://www.revisemri.com/blog/2008/diffusion-tensor-imaging/) with the original data. With Philips, appending the derived isotropic image is optional  - it is only created for the 'clinical' DTI schemes for radiography analysis and is triggered if the first three vectors in the gradient table are the unit X,Y and Z vectors. For conventional DWI, the result is the conventional mean of the ADC  X,Y,Z for DTI it the conventional mean of the 3 principle Eigen vectors. As scientists, we want to discard these derived images, as they will disrupt data processing and we can generate better parametric maps after we have applied undistortion methods such as [Eddy and Topup](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy/UsersGuide). The current version of dcm2niix uses the Diffusion Directionality (0018,9075) tag to detect B=0 unweighted ("NONE"), B-weighted ("DIRECTIONAL"), and derived ("ISOTROPIC") images. Note that the Dimension Index Values (0020,9157) tag provides an alternative approach to discriminate these images. Here are sample tags from a Philips enhanced image that includes and derived map (3rd dimension is "1" while the other images set this to "2").
@@ -64,6 +81,20 @@ Philips DICOMs do not contain all the information desired by many neuroscientist
 Likewise, the BIDS tag "PhaseEncodingDirection" allows tools like [eddy](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy) and [TOPUP](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup) to undistort images. While the Philips DICOM header distinguishes the phase encoding axis (e.g. anterior-posterior vs left-right) it does not encode the polarity (A->P vs P->A).
 
 Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not calculate this from Philips DICOMs. If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only inlfuences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
+
+## Non-Image DICOMs
+
+NIfTI is an image format, while DICOM is a multi-purpose format that can store videos (MPEG) or other data. Specifically, some Philips systems save Exam Cards and other non-image data as DICOM files. In these case, dcm2niix should skip these files, as they can not be represented in NIfTI. You can discriminate these files by reading the [MediaStorageSOPClassUID (0002,0002)](https://github.com/rordenlab/dcm2niix/issues/328).
+
+- MR Image Storage = 1.2.840.10008.5.1.4.1.1.4
+- Enhanced MR Image Storage = 1.2.840.10008.5.1.4.1.1.4.1
+- MR Spectroscopy Storage = 1.2.840.10008.5.1.4.1.1.4.2
+- Secondary Capture Image Storage = 1.2.840.10008.5.1.4.1.1.7
+- Grayscale Softcopy Presentation State = 1.2.840.10008.5.1.4.1.1.11.1
+- Raw Data Storage = 1.2.840.10008.5.1.4.1.1.66
+- (Old) Private MR Spectrum Storage = 1.3.46.670589.11.0.0.12.1
+- (Old) Private MR Series Data Storage = 1.3.46.670589.11.0.0.12.2
+- (Old) Private MR Examcard Storage = 1.3.46.670589.11.0.0.12.4 
 
 ## General variations
 

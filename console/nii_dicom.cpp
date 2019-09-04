@@ -964,12 +964,7 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = 
 //#endif
 } //dcmStr()
 
-inline bool littleEndianPlatform ()
-{
-    uint32_t value = 1;
-    return (*((char *) &value) == 1);
-}
-
+#ifdef MY_OLD //this code works on Intel but not some older systems https://github.com/rordenlab/dcm2niix/issues/327
 float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
     //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
     bool swap = (littleEndian != littleEndianPlatform());
@@ -1010,6 +1005,51 @@ double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[],
     //printMessage("swapped val = %f\n",retVal);
     return retVal;
 } //dcmFloatDouble()
+#else
+
+float dcmFloat(int lByteLength, unsigned char lBuffer[], bool littleEndian) {//read binary 32-bit float
+    //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
+    if (lByteLength < 4) return 0.0;
+    bool swap = (littleEndian != littleEndianPlatform());
+    union {
+        uint32_t i;
+        float f;
+        uint8_t c[4];
+  } i,o;
+  memcpy(&i.i, (char*)&lBuffer[0], 4);
+  //printf("%02x%02x%02x%02x\n",i.c[0], i.c[1], i.c[2], i.c[3]);
+    if (!swap) return i.f;
+  o.c[0] = i.c[3];
+  o.c[1] = i.c[2];
+  o.c[2] = i.c[1];
+  o.c[3] = i.c[0];
+  //printf("swp %02x%02x%02x%02x\n",o.c[0], o.c[1], o.c[2], o.c[3]);
+  return o.f;
+} //dcmFloat()
+
+double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[],
+                      const bool littleEndian) {//read binary 64-bit float
+    //http://stackoverflow.com/questions/2782725/converting-float-values-from-big-endian-to-little-endian
+    if (lByteLength < 8) return 0.0;
+    bool swap = (littleEndian != littleEndianPlatform());
+    union {
+        uint32_t i;
+        double d;
+        uint8_t c[8];
+  } i,o;
+  memcpy(&i.i, (char*)&lBuffer[0], 8);
+  if (!swap) return i.d;
+  o.c[0] = i.c[7];
+  o.c[1] = i.c[6];
+  o.c[2] = i.c[5];
+  o.c[3] = i.c[4];
+  o.c[4] = i.c[3];
+  o.c[5] = i.c[2];
+  o.c[6] = i.c[1];
+  o.c[7] = i.c[0];
+  return o.d;
+} //dcmFloatDouble()
+#endif
 
 int dcmInt (int lByteLength, unsigned char lBuffer[], bool littleEndian) { //read binary 16 or 32 bit integer
     if (littleEndian) {
@@ -2651,8 +2691,8 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
 		// FileSize < (ImageSize+HeaderSize): 42399788 < ( 42399792.00)
         //note hdr.vox_offset is a float, and without a type-cast it can lead to unusual values
         //https://www.nitrc.org/forum/message.php?msg_id=27155
-        printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu+%lu) \n", fileLen, imgszRead, (long)hdr.vox_offset);
-        //printMessage("FileSize < (ImageSize+HeaderSize): %lu < (%lu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
+        printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu+%ld) \n", fileLen, imgszRead, (long)hdr.vox_offset);
+        //printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
         printWarning("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
@@ -4005,6 +4045,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kTransferSyntax 0x0002+(0x0010 << 16)
 #define  kImplementationVersionName 0x0002+(0x0013 << 16)
 #define  kSourceApplicationEntityTitle 0x0002+(0x0016 << 16 )
+#define  kDirectoryRecordSequence 0x0004+(0x1220 << 16 )
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
 #define  kStudyDate 0x0008+(0x0020 << 16 )
@@ -4623,9 +4664,14 @@ double TE = 0.0; //most recent echo time recorded
          		char mediaUID[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], mediaUID);
                 //Philips "XX_" files
+                //see https://github.com/rordenlab/dcm2niix/issues/328
                 if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL) d.isRawDataStorage = true;
+                if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.1") != NULL) d.isRawDataStorage = true; //Private MR Spectrum Storage
+                if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.2") != NULL) d.isRawDataStorage = true; //Private MR Series Data Storage
+                if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.4") != NULL) d.isRawDataStorage = true; //Private MR Examcard Storage
                 if (d.isRawDataStorage) d.isDerived = true;
-         		//Philips "PS_" files
+                if (d.isRawDataStorage) printMessage("Skipping non-image DICOM: %s\n", fname);
+                //Philips "PS_" files
                 if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.11.1") != NULL) d.isGrayscaleSoftcopyPresentationState = true;
                 if (d.isGrayscaleSoftcopyPresentationState) d.isDerived = true;
                 break;
@@ -4716,6 +4762,10 @@ double TE = 0.0; //most recent echo time recorded
 				if((slen < 5) || (strstr(saeTxt, "oasis") == NULL) ) break;
                 d.isSegamiOasis = true;
             	break; }
+            case kDirectoryRecordSequence: {
+                d.isRawDataStorage = true;
+                break;       
+            }
             case kImageTypeTag: {
             	dcmStr (lLength, &buffer[lPos], d.imageType);
                 int slen;
@@ -5058,6 +5108,12 @@ double TE = 0.0; //most recent echo time recorded
 				}
 				patientPositionNum++;
 				isAtFirstPatientPosition = true;
+				
+				
+				//char dx[kDICOMStr];
+                //dcmStr (lLength, &buffer[lPos], dx);
+				//printMessage("*%s*", dx);
+				
 				dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &patientPosition[0]); //slice position
 				if (isnan(d.patientPosition[1])) {
 					//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
@@ -5077,7 +5133,7 @@ double TE = 0.0; //most recent echo time recorded
 				} //if not first slice in file
 				set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
 				//if (isAtFirstPatientPosition) numFirstPatientPosition++;
-				if (isVerbose == 1) //verbose > 1 will report full DICOM tag
+				if (isVerbose > 0) //verbose > 1 will report full DICOM tag
 					printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 				break; }
             case kInPlanePhaseEncodingDirection:
@@ -5535,6 +5591,9 @@ double TE = 0.0; //most recent echo time recorded
                 isIconImageSequence = true;
             	break;
 			case kPMSCT_RLE1 :
+			    //https://groups.google.com/forum/#!topic/comp.protocols.dicom/8HuP_aNy9Pc
+				//https://discourse.slicer.org/t/fail-to-load-pet-ct-gemini/8158/3
+				// d.compressionScheme = kCompressPMSCT_RLE1; //force RLE 
 				if (d.compressionScheme != kCompressPMSCT_RLE1) break;
 				d.imageStart = (int)lPos + (int)lFileOffset;
 				d.imageBytes = lLength;
@@ -6049,6 +6108,8 @@ double TE = 0.0; //most recent echo time recorded
 
     } //while d.imageStart == 0
     free (buffer);
+    if (d.bitsStored < 0) d.isValid = false;
+    if (d.bitsStored == 1) printWarning("1-bit binary DICOMs not supported\n"); //maybe not valid - no examples to test
     //printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     //printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     if (encapsulatedDataFragmentStart > 0) {
@@ -6214,9 +6275,10 @@ if (d.isHasPhase)
         if (d.CSA.dtiV[0] > 0)
         	printMessage(" DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
     }
-    if ((d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132) && (!d.isRawDataStorage)) {
+    if ((d.isValid) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1) && (d.imageStart < 132) && (!d.isRawDataStorage)) {
     	//20190524: Philips MR 55.1 creates non-image files that report kDim1/kDim2 - we can detect them since 0008,0016 reports "RawDataStorage"
-    	printError("Conversion aborted due to corrupt file: %s %d %d\n", fname, d.xyzDim[1], d.xyzDim[2]);
+    	//see https://neurostars.org/t/dcm2niix-error-from-philips-dicom-qsm-data-can-this-be-skipped/4883
+    	printError("Conversion aborted due to corrupt file: %s %dx%d %d\n", fname, d.xyzDim[1], d.xyzDim[2], d.imageStart);
 #ifdef USING_R
         Rf_error("Irrecoverable error during conversion");
 #else
@@ -6379,6 +6441,12 @@ if (d.isHasPhase)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-2] = d.echoNum;
     if (numDimensionIndexValues < MAX_NUMBER_OF_DIMENSIONS) //https://github.com/rordenlab/dcm2niix/issues/221
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-1] = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
+    if ((d.isValid) && (d.seriesUidCrc == 0)) {
+	    if (d.seriesNum < 1) 
+	        d.seriesUidCrc = 1; //no series information
+	    else
+	        d.seriesUidCrc = d.seriesNum; //file does not have Series UID, use series number instead   
+	}
     if (d.seriesNum < 1) //https://github.com/rordenlab/dcm2niix/issues/218
 		d.seriesNum = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
     getFileName(d.imageBaseName, fname);

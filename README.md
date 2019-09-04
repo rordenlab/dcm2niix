@@ -37,7 +37,8 @@ Command line usage is described in the [NITRC wiki](https://www.nitrc.org/plugin
 
 There are a couple ways to install dcm2niix
  - [Github Releases](https://github.com/rordenlab/dcm2niix/releases) provides the latest compiled executables. This is an excellent option for MacOS and Windows users. However, the provided Linux executable requires a recent version of Linux, so the provided Unix executable is not suitable for all distributions.
- - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a holy build box, so it should run on any Linux distribution.
+ - Assuming the program `curl` is installed on your computer (e.g. Windows 10 build 1803 or later), you can download the latest Github release with the command. This allows you to download the latest stable release with a single line of code. For Linux (note prior comment regarding older distributions): `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_lnx.zip`. For MacOS: `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac.zip`. For Windows: `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_win.zip`. 
+ - [MRIcroGL (stable)](https://www.nitrc.org/projects/mricrogl) or [MRIcroGL (development)](https://github.com/neurolabusc/MRIcroGL/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a holy build box, so it should run on any Linux distribution.
  - If you have a MacOS computer with Homebrew you can run `brew install dcm2niix`.
  - If you have Conda, [`conda install -c conda-forge dcm2niix`](https://anaconda.org/conda-forge/dcm2niix) on Linux, MacOS or Windows.
  - On Debian Linux computers you can run `sudo apt-get install dcm2niix`.
@@ -88,11 +89,11 @@ If you have any problems with the cmake build script described above or want to 
 
 ## Alternatives
 
- - [dcm2nii](http://www.mccauslandcenter.sc.edu/mricro/mricron/dcm2nii.htm) is the predecessor of dcm2niix. It is deprecated for modern images, but does handle image formats that predate DICOM (proprietary Elscint, GE and Siemens formats).
+ - [dcm2nii](https://people.cas.sc.edu/rorden/mricron/dcm2nii.html) is the predecessor of dcm2niix. It is deprecated for modern images, but does handle image formats that predate DICOM (proprietary Elscint, GE and Siemens formats).
  - [dicm2nii](http://www.mathworks.com/matlabcentral/fileexchange/42997-dicom-to-nifti-converter) is written in Matlab. The Matlab language makes this very scriptable.
  - [dicom2nifti](https://github.com/icometrix/dicom2nifti) uses the scriptable Python wrapper utilizes the [high performance  GDCMCONV](http://gdcm.sourceforge.net/wiki/index.php/Gdcmconv) executables.
  - [dicomtonifti](https://github.com/dgobbi/vtk-dicom/wiki/dicomtonifti) leverages [VTK](https://www.vtk.org/).
- - [dinifti](http://cbi.nyu.edu/software/dinifti.php) is focused on conversion of Siemens data.
+ - [dinifti](http://as.nyu.edu/cbi/resources/Software/DINIfTI.html) is focused on conversion of Siemens data.
  - [DWIConvert](https://github.com/BRAINSia/BRAINSTools/tree/master/DWIConvert) converts DICOM images to NRRD and NIfTI formats.
  - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) has great support for various vendors.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package. In my limited experience this tool works well for GE and Siemens data, but fails with Philips 4D datasets.

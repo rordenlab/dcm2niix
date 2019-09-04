@@ -30,7 +30,14 @@ Many crucial Siemens parameters are stored in the [proprietary CSA header](http:
 
 ## Slice Timing
 
-For Siemens images created with software versions B15 through E11, the proprietary [CSA Image Header (0029,1010)](https://nipy.org/nibabel/dicom/siemens_csa.html) contains the array MosaicRefAcqTimes that provides [slice timing](https://www.mccauslandcenter.sc.edu/crnl/tools/stc). Earlier Siemens Software (e.g. A25 through B13) sometimes populates the tag sSliceArray.ucMode in the [CSA Series Header (0029, 1020)](https://nipy.org/nibabel/dicom/siemens_csa.html) where the values [1, 2, and 4](https://github.com/xiangruili/dicm2nii/issues/18) correspond to Ascending, Descending and Interleaved acquisitions. Therefore dcm2niix typically is able to provide accurate slice timing information for non-Vida datasets (the prior section describes Vida slice timing issues seen with the XA software series). Some Siemens DICOMs stroe slice timings in the private tag [0019,1029](https://github.com/rordenlab/dcm2niix/issues/296). In theory, this could be used when the CSA header is missing. For archival studies, be aware that some sequences [incorrectly reported slice timing](https://github.com/rordenlab/dcm2niix/issues/126). The [SPM slice timing wiki](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Siemens_scanners) provides further information on Siemens slice timing.
+
+See the [dcm_qa_stc](https://github.com/neurolabusc/dcm_qa_stc) repository with sample data that exhibits different methods used by Siemens to record slice timing.
+
+Older software (e.g. A25 through B13) sometimes populates the tag sSliceArray.ucMode in the [CSA Series Header (0029, 1020)](https://nipy.org/nibabel/dicom/siemens_csa.html) where the values [1, 2, and 4](https://github.com/xiangruili/dicm2nii/issues/18) correspond to Ascending, Descending and Interleaved acquisitions.
+
+For software versions B15 through E11 where all slices of a volume are stored as a single mosaic file, the proprietary [CSA Image Header (0029,1010)](https://nipy.org/nibabel/dicom/siemens_csa.html) contains the array MosaicRefAcqTimes that provides [slice timing](https://www.mccauslandcenter.sc.edu/crnl/tools/stc). For volumes where each 2D slice is saved as a separate DICOM file, one can infer slice order from the DICOM tag Acquisition Time (0008,0032).
+
+ The prior section describes Vida slice timing issues seen with the XA software series. In brief, dcm2niix will use Frame Acquisition Time (0018,9074) to determine slice times. Some Siemens DICOMs store slice timings in the private tag [0019,1029](https://github.com/rordenlab/dcm2niix/issues/296). In theory, this could be used when the CSA header is missing. For archival studies, be aware that some sequences [incorrectly reported slice timing](https://github.com/rordenlab/dcm2niix/issues/126). The [SPM slice timing wiki](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Siemens_scanners) provides further information on Siemens slice timing.
 
 ## Total Readout Time
 
@@ -40,6 +47,58 @@ One often wants to determine [echo spacing, bandwidth, ](https://support.brainvo
 
 Diffusion specific parameters are described on the [NA-MIC](https://www.na-mic.org/wiki/NAMIC_Wiki:DTI:DICOM_for_DWI_and_DTI#Private_vendor:_Siemens) website. Gradient vectors are reported with respect to the scanner bore, and dcm2niix will attempt to re-orient these to [FSL format](http://justinblaber.org/brief-introduction-to-dwmri/) [bvec files](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FDT/FAQ#What_conventions_do_the_bvecs_use.3F). For the Vida, see the Vida section for specific diffusion details.
 
+## Arterial Spin Labeling
+
+Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BASIL) can help process arterial spin labeling data. These tools require sequence details. These details differ between different sequences. If you create a BIDS JSON file with dcm2niix, the following tags will be created, using the same names used in the Siemens sequence PDFs. Note different sequences provide different values.
+
+ep2d_pcasl, ep2d_pcasl_UI_PHC //pCASL 2D [Danny J.J. Wang](http://www.loft-lab.org)
+ - LabelOffset
+ - PostLabelDelay
+ - NumRFBlocks
+ - RFGap
+ - MeanGzx10
+ - PhiAdjust
+
+tgse_pcasl //pCASL 3D [Danny J.J. Wang](http://www.loft-lab.org)
+ - RFGap
+ - MeanGzx10
+ - T1
+
+ep2d_pasl //PASL 2D Siemens Product
+ - InversionTime
+ - SaturationStopTime
+
+tgse_pasl //PASL 3D [Siemens Product](http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf)
+ - BolusDuration
+ - InversionTime
+
+ep2d_fairest //PASL 2D http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
+ - PostInversionDelay
+ - PostLabelDelay
+
+to_ep2d_VEPCASL //pCASL 2D specific tags - Oxford (Thomas OKell)
+ - InversionTime
+ - BolusDuration
+ - TagRFFlipAngle
+ - TagRFDuration
+ - TagRFSeparation
+ - MeanTagGradient
+ - TagGradientAmplitude
+ - TagDuration
+ - MaximumT1Opt
+ - InitialPostLabelDelay [Array]
+  
+jw_tgse_VEPCASL //pCASL 3D Oxford
+ - TagRFFlipAngle
+ - TagRFDuration
+ - TagRFSeparation
+ - MaximumT1Opt
+ - Tag0
+ - Tag1
+ - Tag2
+ - Tag3
+ - InitialPostLabelDelay [Array]
+ 
 ## Sample Datasets
 
  - [Slice timing dataset](httphttps://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Slice_timing_corrections://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage).

@@ -375,7 +375,7 @@ void nii_saveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 //  this is not recommended: poorly documented
 //  it is better to stick to the binary portion of the Siemens CSA image header
 
-#if defined(_WIN64) || defined(_WIN32) || defined(__sun)
+#if  defined(_WIN64) || defined(_WIN32) || defined(__sun) || (defined(__APPLE__) && defined(__POWERPC__))
 //https://opensource.apple.com/source/Libc/Libc-1044.1.2/string/FreeBSD/memmem.c
 /*-
  * Copyright (c) 2005 Pascal Gloor <pascal.gloor@spale.com>
@@ -527,8 +527,8 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
     TCSAitem itemCSA;
     for (int lT = 1; lT <= lnTag; lT++) {
         memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
-        //if (!littleEndianPlatform())
-        //    nifti_swap_4bytes(1, &tagCSA.nitems);
+        if (!littleEndianPlatform())
+            nifti_swap_4bytes(1, &tagCSA.nitems);
         //printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
         lPos +=sizeof(tagCSA);
         if (strcmp(tagCSA.name, "MrPhoenixProtocol") == 0)
@@ -536,8 +536,8 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
         for (int lI = 1; lI <= tagCSA.nitems; lI++) {
                 memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
                 lPos +=sizeof(itemCSA);
-                //if (!littleEndianPlatform())
-                //    nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+                if (!littleEndianPlatform())
+                    nifti_swap_4bytes(1, &itemCSA.xx2_Len);
                 lPos += ((itemCSA.xx2_Len +3)/4)*4;
         }
     }
@@ -558,7 +558,7 @@ typedef struct {
 void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, int csaLength, float* shimSetting, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
- 	csaAscii->delayTimeInTR = -0.001;
+    csaAscii->delayTimeInTR = -0.001;
  	csaAscii->phaseOversampling = 0.0;
  	csaAscii->phaseResolution = 0.0;
  	csaAscii->txRefAmp = 0.0;
@@ -618,7 +618,6 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		if ((keyPosEnd) && ((keyPosEnd - keyPos) < csaLengthTrim)) //ignore binary data at end
 			csaLengthTrim = (int)(keyPosEnd - keyPos);
 		#endif
-
 		char keyStrLns[] = "sKSpace.lPhaseEncodingLines";
 		csaAscii->phaseEncodingLines = readKey(keyStrLns, keyPos, csaLengthTrim);
 		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
@@ -699,7 +698,7 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		//check if ANY csaAscii.adFree tags exist
 		keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		if (!keyPosFree) { //"Wip" -> "WiP", modern -> old Siemens
-			strcpy(keyStrAdFree, "sWipMemBlock.adFree[");
+			strcpy(keyStrAdFree, "sWiPMemBlock.adFree[");
 			keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		}
 		if (keyPosFree) {
@@ -1167,7 +1166,7 @@ tse3d: T2*/
 		} //verbose
 		*/
 		//ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
-		if (strstr(pulseSequenceDetails,"ep2d_pcasl")) {
+		if ((strstr(pulseSequenceDetails,"ep2d_pcasl")) || (strstr(pulseSequenceDetails,"ep2d_pcasl_UI_PHC"))) {
 			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0/1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
@@ -1490,9 +1489,9 @@ tse3d: T2*/
 	if (d.phaseEncodingRC == 'R') fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n" );
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
-	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );
-	//fprintf(fp, "\t\"DicomConversion\": [\"dcm2niix\", \"%s\"]\n", kDCMvers );
-    fprintf(fp, "}\n");
+	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMdate );
+	//fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );kDCMdate
+	fprintf(fp, "}\n");
     fclose(fp);
 }// nii_SaveBIDS()
 
@@ -2337,7 +2336,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     #ifdef myMultiEchoFilenameSkipEcho1
     if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
     #else
-    if ((!isEchoReported) && (dcm.isMultiEcho)) { //multiple echoes saved as same series
+    if ((!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
     #endif
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
@@ -2759,14 +2758,14 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
             images->addAttribute("phaseEncodingSign", data.CSA.phaseEncodingDirectionPositive == 0 ? -1 : 1);
         }
     }
-    // Slice timing
+    
+    // Slice timing (stored in seconds)
     if (data.CSA.sliceTiming[0] >= 0.0 && (data.manufacturer == kMANUFACTURER_UIH || data.manufacturer == kMANUFACTURER_GE || (data.manufacturer == kMANUFACTURER_SIEMENS && !data.isXA10A))) {
         std::vector<double> sliceTimes;
-        #pragma message ("Please test R specific code: at this stage all slice times should be in msec due to changes in checkSliceTiming() 20190704")
-        for (int i=header.dim[3]-1; i>=0; i--) {
-        	if (data.CSA.sliceTiming[i] < 0.0)
-            	break;
-            sliceTimes.push_back(data.CSA.sliceTiming[i]); //slice time in msec
+        for (int i=0; i<header.dim[3]; i++) {
+            if (data.CSA.sliceTiming[i] < 0.0)
+                break;
+            sliceTimes.push_back(data.CSA.sliceTiming[i] / 1000.0);
         }
         images->addAttribute("sliceTiming", sliceTimes);
     }
@@ -2790,12 +2789,6 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 }
 
 #else
-
-inline bool littleEndianPlatformNRRD ()
-{
-    uint32_t value = 1;
-    return (*((char *) &value) == 1);
-}
 
 int pigz_File(char * fname, struct TDCMopts opts, size_t imgsz) {
 	//given "/dir/file.nii" creates "/dir/file.nii.gz"
@@ -2859,7 +2852,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     fprintf(fp,"NRRD0005\n");
     fprintf(fp,"# Complete NRRD file format specification at:\n");
     fprintf(fp,"# http://teem.sourceforge.net/nrrd/format.html\n");
-    fprintf(fp,"# dcm2niix NRRD export transforms by Tashrif Billah\n");
+    fprintf(fp,"# dcm2niix %s NRRD export transforms by Tashrif Billah\n", kDCMdate);
     char rgbNoneStr[10] = {""};
 	//type tag
     switch (hdr.datatype) {
@@ -2914,7 +2907,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     	fprintf(fp,"\n");
     }
     //byteskip only for .nhdr, not .nrrd
-	if (littleEndianPlatformNRRD()) //raw data in native format
+	if (littleEndianPlatform()) //raw data in native format
 		fprintf(fp,"endian: little\n");
 	else
 		fprintf(fp,"endian: big\n");
@@ -3070,6 +3063,24 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
+	//swap endian from big->little or little->big
+	// must be told which is native to detect datatype and number of voxels
+	// one could also auto-detect: hdr->sizeof_hdr==348
+	if (!isNative) swap_nifti_header(hdr);
+	int nVox = 1;
+    for (int i = 1; i < 8; i++)
+        if (hdr->dim[i] > 1) nVox = nVox * hdr->dim[i];
+	int bitpix = hdr->bitpix;
+	int datatype = hdr->datatype;
+	if (isNative) swap_nifti_header(hdr);
+	if (datatype == DT_RGBA32) return;
+	//n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
+	if (bitpix == 16) nifti_swap_2bytes(nVox, im);
+	if (bitpix == 32) nifti_swap_4bytes(nVox, im);
+	if (bitpix == 64) nifti_swap_8bytes(nVox, im);
+}
+
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     if (opts.isSaveNRRD) {
@@ -3101,7 +3112,9 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
 			if ((imgsz+hdr.vox_offset) <  kMaxPigz)
 				printWarning(" Hint: using external compressor (pigz) should help.\n");
 		} else if  ((opts.isGz) &&  (strlen(opts.pigzname)  < 1) &&  ((imgsz+hdr.vox_offset) <  kMaxGz) ) { //use internal compressor
+			if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)    	
 			writeNiiGz (niiFilename, hdr,  im, imgsz, opts.gzLevel, false);
+			if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
 			return EXIT_SUCCESS;
 		}
 		#endif
@@ -3135,21 +3148,25 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
     		printError("Unable to open pigz pipe\n");
         	return EXIT_FAILURE;
     	}
+    	if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)
     	fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
     	uint32_t pad = 0;
     	fwrite(&pad, sizeof( pad), 1, pigzPipe);
     	fwrite(&im[0], imgsz, 1, pigzPipe);
     	pclose(pigzPipe);
+    	if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
 		return EXIT_SUCCESS;
     }
 	#endif
     FILE *fp = fopen(fname, "wb");
     if (!fp) return EXIT_FAILURE;
+    if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)
     fwrite(&hdr, sizeof(hdr), 1, fp);
     uint32_t pad = 0;
     fwrite(&pad, sizeof( pad), 1, fp);
     fwrite(&im[0], imgsz, 1, fp);
     fclose(fp);
+    if (!opts.isSaveNativeEndian) swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
     if ((opts.isGz) &&  (strlen(opts.pigzname)  > 0) ) {
     	#ifndef myDisableGzSizeLimits
     	if ((imgsz+hdr.vox_offset) >  kMaxPigz) {
@@ -4101,7 +4118,7 @@ void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 		printWarning("Images sorted by instance number  [0020,0013](%d..%d), but AcquisitionTime [0008,0032] suggests a different order (%g..%g) \n", d->imageNum,d1->imageNum, d->acquisitionTime,d1->acquisitionTime);
 }
 
-void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose) {
+void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose, int isForceSliceTimeHHMMSS) {
 //detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
 //modified 20190704: this function now ensures all slice times are in msec
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
@@ -4110,6 +4127,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 		nSlices++;
 	if (nSlices < 1) return;
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
+	if (isForceSliceTimeHHMMSS) isSliceTimeHHMMSS = true;
 	//if (d->isXA10A) isSliceTimeHHMMSS = true; //for XA10 use TimeAfterStart 0x0021,0x1104 -> Siemens de-identification can corrupt acquisition ties https://github.com/rordenlab/dcm2niix/issues/236
 	if (isSliceTimeHHMMSS) {//handle midnight crossing
 		for (int i = 0; i < nSlices; i++)
@@ -4125,7 +4143,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 		float kNoonSec = 43200;
 		if ((maxT - minT) > kNoonSec) { //volume started before midnight but ended next day!
 			//identify and fix 'Cinderella error' where clock resets at midnight: untested
-			printWarning("UIH acquisition crossed midnight: check slice timing\n");
+			printWarning("Acquisition crossed midnight: check slice timing\n");
 			for (int i = 0; i < nSlices; i++)
 				if (d->CSA.sliceTiming[i] > kNoonSec) d->CSA.sliceTiming[i] = d->CSA.sliceTiming[i] - kMidnightSec;
 						minT = d->CSA.sliceTiming[0];
@@ -4271,11 +4289,33 @@ void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
 		d->CSA.sliceTiming[i] = sliceTiming[(nSL-1)-i];
 }
 
+int sliceTimingSiemens2D(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
+	//only for Siemens 2D images, use acquisitionTime
+	uint64_t indx0 = dcmSort[0].indx; //first volume
+    if (!(dcmList[indx0].manufacturer == kMANUFACTURER_SIEMENS)) return 0;
+	if (dcmList[indx0].is3DAcq) return 0; //no need for slice times
+	if (dcmList[indx0].CSA.sliceTiming[0] >= 0.0) return 0; //slice times calculated
+	if (dcmList[indx0].CSA.mosaicSlices > 1) return 0;
+    if (nConvert != (hdr->dim[3]*hdr->dim[4])) return 0;
+    if (hdr->dim[3] > (kMaxEPI3D-1)) return 0;
+    int nZero = 0; //infer multiband: E11C may not populate kPATModeText
+    for (int v = 0; v < hdr->dim[3]; v++) {
+		dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime; //nb format is HHMMSS we need to handle midnight-crossing and convert to ms,  see checkSliceTiming()
+		if (dcmList[indx0].CSA.sliceTiming[v] == dcmList[indx0].CSA.sliceTiming[0]) nZero++;
+	}
+	if ((dcmList[indx0].CSA.multiBandFactor < 2) && (nZero > 1))
+		dcmList[indx0].CSA.multiBandFactor = nZero;	
+	return 1;
+}
+
 void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
 	if (d->is3DAcq) return; //no need for slice times
+	if (d->CSA.multiBandFactor > 1) return; //pattern of multiband slice order unknown
 	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
+	if (d->CSA.mosaicSlices < 2) return; //20190807 E11C 2D (not mosaic) files do not report mosaicAcqTimes or multi-band factor.
 	if (nSL < 2) return;
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
+#ifdef myReadAsciiCsa
 	float shimSetting[8];
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	TCsaAscii csaAscii;
@@ -4315,6 +4355,7 @@ void rescueSliceTimingSiemens(struct TDICOMdata * d, int verbose, int nSL, const
 	} //if ucMode == 3 int
 	//dicm2nii provides sSliceArray.ucImageNumb - similar to protocolSliceNumber1
 	//if asc_header(s, 'sSliceArray.ucImageNumb'), t = t(nSL:-1:1); end % rev-num
+#endif
 }
 
 void sliceTimingUIH(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
@@ -4330,8 +4371,7 @@ void sliceTimingUIH(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 void sliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
 	//GE check slice timing >>>
 	uint64_t indx0 = dcmSort[0].indx; //first volume
-	//printf("XXX %d\n", indx0);
-    if (!(dcmList[indx0].manufacturer == kMANUFACTURER_GE)) return;
+	if (!(dcmList[indx0].manufacturer == kMANUFACTURER_GE)) return;
 	bool GEsliceTiming_x0018x1060 = false;
 	if ((hdr->dim[3] < (kMaxEPI3D-1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
 		//GE: 1st method for "epi" PSD
@@ -4430,8 +4470,9 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	struct TDICOMdata * d1 = &dcmList[indx1];
 	sliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	checkSliceTiming(d0, d1, verbose);
+	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS);
     rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
     rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
     if (hdr->dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1] , hdr, true);
@@ -4793,26 +4834,35 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     for(int i = 0; i < nConvert; ++i)
       dcmList[dcmSort[i].indx].converted2NII = 1;
     if (opts.numSeries < 0) { //report series number but do not convert
-    	if (segVol >= 0) {
-    		printMessage("\t%ld.%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, segVol-1, pathoutname);
+    	int segVolEcho = segVol;
+    	if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+    		segVolEcho = dcmList[dcmSort[0].indx].echoNum+1;
+    	if (segVolEcho >= 0) {
+    		printMessage("\t%u.%d\t%s\n", dcmList[dcmSort[0].indx].seriesUidCrc, segVolEcho-1, pathoutname);
+    		//printMessage("\t%ld.%d\t%s\n", dcmList[dcmSort[0].indx].seriesNum, segVol-1, pathoutname);
     	} else {
-    		printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
+    		printMessage("\t%u\t%s\n", dcmList[dcmSort[0].indx].seriesUidCrc, pathoutname);
+    		//printMessage("\t%ld\t%s\n", dcmList[dcmSort[0].indx].seriesNum, pathoutname);
         }
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
-    if (sliceDir < 0) {
+	if (sliceDir < 0) {
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) {
       int i = 0;
-      float seriesNum = (float) dcmList[dcmSort[0].indx].seriesNum;
-      if (segVol > 0)
-      	seriesNum = seriesNum + ((float) segVol - 1.0) / 10.0; //n.b. we will have problems if segVol > 9. However, 9 distinct TEs/scalings/PhaseMag seems unlikely
+      //double seriesNum = (double) dcmList[dcmSort[0].indx].seriesNum;
+      double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
+      int segVolEcho = segVol;
+      if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+      		segVolEcho = dcmList[dcmSort[0].indx].echoNum+1;
+      if (segVolEcho > 0)
+      	seriesNum = seriesNum + ((double) segVolEcho - 1.0) / 10.0;
       for (; i < opts.numSeries; i++) {
-        if (isSameFloatGE(opts.seriesNumber[i], seriesNum)) {
+        if (isSameDouble(opts.seriesNumber[i], seriesNum)) { 
         //if (opts.seriesNumber[i] == dcmList[dcmSort[0].indx].seriesNum) {
           break;
         }
@@ -4821,7 +4871,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         return EXIT_SUCCESS;
       }
     }
-    nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
+	nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
     int * volOrderIndex = nii_saveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
@@ -4837,7 +4887,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     #ifndef USING_R
     fflush(stdout); //show immediately if run from MRIcroGL GUI
     #endif
-    //~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
+	//~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
     //~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
     //hdr0.pixdim[3] = dxNoTilt;
     if (hdr0.dim[3] < 2)
@@ -4879,10 +4929,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	} //avoid div/0: cosine not zero
     } //if gantry tilt
  	//end: gantry tilt we need to save the shear in the transform
-
+    int returnCode = EXIT_FAILURE;
 #ifndef myNoSave
     // Indicates success or failure of the (last) save
-    int returnCode = EXIT_FAILURE;
     //printMessage(" x--> %d ----\n", nConvert);
     if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
         imgM = nii_planar2rgb(imgM, &hdr0, true); //NIfTI is packed while Analyze was planar
@@ -4939,7 +4988,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 #ifdef USING_R
     // Note that for R, only one image should be created per series
     // Hence this extra test
-    if (returnCode != EXIT_SUCCESS)
+	if (returnCode != EXIT_SUCCESS)
         returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
     if (returnCode == EXIT_SUCCESS)
         nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts, nameList->str[dcmSort[0].indx]);
@@ -6276,6 +6325,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isCrop = false;
     opts->isRotate3DAcq = true;
     opts->isGz = false;
+    opts->isSaveNativeEndian = true;
     opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;

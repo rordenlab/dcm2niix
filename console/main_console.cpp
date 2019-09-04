@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include "nii_dicom_batch.h"
 #include "nii_dicom.h"
+#include "nifti1_io_core.h"
 #include <math.h>
 
 #if !defined(_WIN64) && !defined(_WIN32)
@@ -95,7 +96,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     if (opts.isMaximize16BitRange) max16Ch = 'y';
     printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n, default %c)\n", max16Ch);
     printf("  -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
-    printf("  -n : only convert this series number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
+    printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
     printf("  -o : output directory (omit to save to input folder)\n");
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
     printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
@@ -111,7 +112,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 //#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
     printf("  -w : write behavior for name conflicts (0,1,2, default 2: 0=skip duplicates, 1=overwrite, 2=add suffix)\n");
    	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquistions)\n");
-    char gzCh = 'n';
+   	    char gzCh = 'n';
     if (opts.isGz) gzCh = 'y';
 #if defined(_WIN64) || defined(_WIN32)
     //n.b. the optimal use of pigz requires pipes that are not provided for Windows
@@ -127,6 +128,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		printf("  -z : gz compress images (y/i/n/3, default %c) [y=pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
+    printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
+   	printf("  --progress : Slicer format progress information\n");
+   	printf("  --version : report version\n");
+   	printf("  --xml : Slicer format features\n");
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
     printf("  %s c:\\DICOM\\dir\n", cstr);
@@ -147,6 +152,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		printf("  -z : gz compress images (y/o/i/n/3, default %c) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]\n", gzCh);
 		#endif
     #endif
+   	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
+   	printf("  --progress : Slicer format progress information\n");
+   	printf("  --version : report version\n");
+   	printf("  --xml : Slicer format features\n");
     printf(" Defaults file : %s\n", opts.optsname);
     printf(" Examples :\n");
     printf("  %s /Users/chris/dir\n", cstr);
@@ -264,14 +273,27 @@ int main(int argc, const char * argv[])
         if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
             if (argv[i][1] == 'h') {
                 showHelp(argv, opts);
-            } else if (( ! strcmp(argv[1], "--progress")) && ((i+1) < argc)) {
+            } else if (( ! strcmp(argv[i], "--big-endian")) && ((i+1) < argc)) {
+				i++;
+				if ((littleEndianPlatform()) && ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))) { 
+                    opts.isSaveNativeEndian = false;
+                    printf("NIfTI data will be big-endian (byte-swapped)\n");
+                }
+                if ((!littleEndianPlatform()) && ((argv[i][0] == 'n') || (argv[i][0] == 'N'))) {
+                    opts.isSaveNativeEndian = false;
+                    printf("NIfTI data will be little-endian\n");
+                }
+            } else if ( ! strcmp(argv[i], "--version")) {
+				printf("%s\n", kDCMdate);
+            	return kEXIT_REPORT_VERSION;
+            } else if (( ! strcmp(argv[i], "--progress")) && ((i+1) < argc)) {
 				i++;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
                     opts.isProgress = 0;
                 else
                     opts.isProgress = 1;
                 if (argv[i][0] == '2') opts.isProgress = 2; //logorrheic
-            } else if ( ! strcmp(argv[1], "--xml"))  {
+            } else if ( ! strcmp(argv[i], "--xml"))  {
 				showXML();
 				return EXIT_SUCCESS;
             } else if ((argv[i][1] == 'a') && ((i+1) < argc)) { //adjacent DICOMs
@@ -281,7 +303,6 @@ int main(int argc, const char * argv[])
                     opts.isOneDirAtATime = false;
                 else
                     opts.isOneDirAtATime = true;
-
            } else if ((argv[i][1] >= '1') && (argv[i][1] <= '9')) {
             	opts.gzLevel = abs((int)strtol(argv[i], NULL, 10));
             	if (opts.gzLevel > 11)
@@ -468,9 +489,9 @@ int main(int argc, const char * argv[])
                 strcpy(opts.outdir,argv[i]);
             } else if ((argv[i][1] == 'n') && ((i+1) < argc)) {
               i++;
-              float seriesNumber = atof(argv[i]);
+              double seriesNumber = atof(argv[i]); 
               if (seriesNumber < 0)
-              	opts.numSeries = -1; //report series: convert none
+              	opts.numSeries = -1.0; //report series: convert none
               else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {
                   opts.seriesNumber[opts.numSeries] = seriesNumber;
                   opts.numSeries += 1;

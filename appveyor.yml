@@ -45,7 +45,7 @@ after_build:
 - ps: >-
     cd c:\projects\dcm2niix
 
-    7z a dcm2niix_$($env:DATE)_win.zip c:\projects\dcm2niix\build\bin\* >$null
+    7z a dcm2niix_win.zip c:\projects\dcm2niix\build\bin\* >$null
 
 artifacts:
   - path: dcm2niix*.zip
