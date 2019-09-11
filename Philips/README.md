@@ -72,6 +72,24 @@ Private Tags
 
 For modern Philips DICOMs, the current version of dcm2niix uses Dimension Index Values (0020,9157) to determine gradient number, which can also be found in (2005,1413). However, while 2005,1413 is always indexed from one, this is not necessarily the case for 0020,9157. For example, the ADNI DWI dataset for participant 018_S_4868 has values of 2005,1413 that range from 1..36 for the 36 directions, while 0020,9157 ranges from 2..37. The current version of dcm2niix compensates for this by re-indexing the values of 0020,9157 after all the volumes have been read.
 
+For acquiring DWI data, you can adjust your setup with from the Philips console. Specifically, in Contrast one selects Diffusion mode to DTI and adjusts the directional resolution. Options for directional resolution are `Low` which acquires 6 directions (P,M,S, plus 3 oblique), `Medium` (15 directions), `High` (32 directions) and `Opt x` where x is a number from 6 - 128 directions. DTI Elite users can also select `From File`. This will import the text file named E:\Export\dti_vectors_input.txt. This text file has a simple format. The first line is optional and is the name of the scheme - this line should not begin with a number. If the file contains a b=0 vector, it must be the first line of the file. The following lines specify the direction and bvalues. If you want to acquire more than one b=0 volume, each must specify a unique direction. One can only process these custom files with Philips FiberTrak if the same directions have been obtained for all b-values. Here is an example file that obeys these rules:
+
+```
+MyCustomDirections
+0.000	0.000	1.000	0
+0.049	-0.919	-0.391	1000
+0.726	0.301	-0.618	1000
+-0.683	0.255	-0.684	1000
+0.845	-0.502	-0.186	1000
+-0.73	-0.619	-0.288	1000
+-0.051	0.039	0.998	1000
+-0.018	0.871	-0.491	1000
+-0.444	0.494	0.747	1000
+-0.989	-0.086	-0.116	1000
+1.000	0.000	0.000	0
+
+```
+
 ## Missing Information.
 
 Philips DICOMs do not contain all the information desired by many neuroscientists. Due to this, the [BIDS](http://bids.neuroimaging.io/) files created by dcm2niix are impoverished relative to data from other vendors. This reflects a limitation in the Philips DICOMs, not dcm2niix.

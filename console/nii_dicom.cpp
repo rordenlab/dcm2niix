@@ -4300,6 +4300,7 @@ double TE = 0.0; //most recent echo time recorded
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     bool isEncapsulatedData = false;
     int multiBandFactor = 0;
+    int frequencyRows = 0;
     int numberOfImagesInMosaic = 0;
     int encapsulatedDataFragments = 0;
     int encapsulatedDataFragmentStart = 0; //position of first FFFE,E000 for compressed images
@@ -5419,6 +5420,10 @@ double TE = 0.0; //most recent echo time recorded
             			d.phaseEncodingLines = acquisitionMatrix[3];
             		if (acquisitionMatrix[2] > 0)
             			d.phaseEncodingLines = acquisitionMatrix[2];
+            		if (acquisitionMatrix[1] > 0)
+            			frequencyRows = acquisitionMatrix[1];
+            		if (acquisitionMatrix[0] > 0)
+            			frequencyRows = acquisitionMatrix[0];
             	}
             	break;
             case kFlipAngle :
@@ -6196,6 +6201,12 @@ double TE = 0.0; //most recent echo time recorded
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
         d.isValid = false;
     }
+    if ((numberOfImagesInMosaic < 1) && ((d.xyzDim[1] % frequencyRows) == 0) && ((d.xyzDim[1] / frequencyRows) > 2) && ((d.xyzDim[2] % d.phaseEncodingLines) == 0) && ((d.xyzDim[2] / d.phaseEncodingLines) > 2)  ) {
+        //n.b. in future check if frequency is in row or column direction (and same with phase)
+        // >2 avoids detecting interpolated as mosaic, in future perhaps check "isInterpolated"
+        numberOfImagesInMosaic = (d.xyzDim[1]/frequencyRows) * (d.xyzDim[2]/d.phaseEncodingLines);
+        printWarning("Guessing this is a mosaic up to %d slices (issue 337).\n",  numberOfImagesInMosaic);    
+    }    
     if ((numberOfImagesInMosaic > 1) && (d.CSA.mosaicSlices < 1))
     	d.CSA.mosaicSlices = numberOfImagesInMosaic;
     if (d.isXA10A) d.manufacturer = kMANUFACTURER_SIEMENS; //XA10A mosaics omit Manufacturer 0008,0070!

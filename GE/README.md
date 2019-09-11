@@ -35,5 +35,6 @@ In addition to the public DICOM tags, previous versions of dcm2niix attempted to
 ## Sample Datasets
 
  - [A validation dataset for dcm2niix commits](https://github.com/neurolabusc/dcm_qa_nih).
+ - [Slice timing validation](https://github.com/neurolabusc/dcm_qa_stc) for different varieties of GE EPI sequences.
  - [Examples of phase encoding polarity, slice timing and diffusion gradients](https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/).
- - The dcm2niix (wiki)[https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage] includes examples of diffusion data, slice timing, and other variations.
+ - The dcm2niix [wiki](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage) includes examples of diffusion data, slice timing, and other variations.

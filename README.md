@@ -100,6 +100,7 @@ If you have any problems with the cmake build script described above or want to 
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
  - [Plastimatch](https://www.plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [SPM12](http://www.fil.ion.ucl.ac.uk/spm/software/spm12/) is one of the most popular tools in the field. It includes DICOM to NIfTI conversion. Being based on Matlab it is easy to script.
+ - dcm2niix is largely used for converting MRI and CT DICOMs. While it should in theory support ultra sound (US) images stored as DICOMs, vendors tend to use private tags. The [SlicerHeart extension](https://github.com/SlicerHeart/SlicerHeart) is specifically designed to help 3D Slicer support this modality.
 
 ## Links
 
