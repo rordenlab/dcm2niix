@@ -4748,7 +4748,7 @@ double TE = 0.0; //most recent echo time recorded
                 printError("OSIRIX Detected\n");
             	break; }*/
             case kImplementationVersionName: {
-            	char impTxt[kDICOMStr];
+                char impTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], impTxt);
                 int slen = (int) strlen(impTxt);
 				//if ((slen > 5) && (strstr(impTxt, "dcm4che") != NULL) )
@@ -6201,7 +6201,8 @@ double TE = 0.0; //most recent echo time recorded
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
         d.isValid = false;
     }
-    if ((numberOfImagesInMosaic < 1) && ((d.xyzDim[1] % frequencyRows) == 0) && ((d.xyzDim[1] / frequencyRows) > 2) && ((d.xyzDim[2] % d.phaseEncodingLines) == 0) && ((d.xyzDim[2] / d.phaseEncodingLines) > 2)  ) {
+    
+    if ((numberOfImagesInMosaic < 1) && (!isInterpolated) && (d.phaseEncodingLines > 0)  && (frequencyRows > 0) && ((d.xyzDim[1] % frequencyRows) == 0) && ((d.xyzDim[1] / frequencyRows) > 2) && ((d.xyzDim[2] % d.phaseEncodingLines) == 0) && ((d.xyzDim[2] / d.phaseEncodingLines) > 2)  ) {
         //n.b. in future check if frequency is in row or column direction (and same with phase)
         // >2 avoids detecting interpolated as mosaic, in future perhaps check "isInterpolated"
         numberOfImagesInMosaic = (d.xyzDim[1]/frequencyRows) * (d.xyzDim[2]/d.phaseEncodingLines);
