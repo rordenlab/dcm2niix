@@ -93,8 +93,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
     char max16Ch = 'n';
-    if (opts.isMaximize16BitRange) max16Ch = 'y';
-    printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n, default %c)\n", max16Ch);
+    if (opts.isMaximize16BitRange == kMaximize16BitRange_True) max16Ch = 'y';
+    if (opts.isMaximize16BitRange == kMaximize16BitRange_Raw) max16Ch = 'o';
+    printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n/o [yes=scale, no=no, but uint16->int16, o=original], default %c)\n", max16Ch);
     printf("  -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
     printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
     printf("  -o : output directory (omit to save to input folder)\n");
@@ -373,10 +374,12 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'l') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isMaximize16BitRange = false;
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                    opts.isMaximize16BitRange = kMaximize16BitRange_Raw;
+                else if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isMaximize16BitRange = kMaximize16BitRange_False;
                 else
-                    opts.isMaximize16BitRange = true;
+                    opts.isMaximize16BitRange = kMaximize16BitRange_True;
             } else if ((argv[i][1] == 'm') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

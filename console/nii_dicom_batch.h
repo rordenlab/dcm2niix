@@ -27,11 +27,17 @@ extern "C" {
 #define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
 #define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
 
+#define kMaximize16BitRange_False 0 //e.g. raw UINT16 values 0..4095 saved as INT16 (e.g. AFNI preserves INT16 "short", converts UINT16 to float32) 
+#define kMaximize16BitRange_True 1 //e.g. raw UINT16 values 0..4095 saved as 0..61425 UINT16 (SPM free precision)
+#define kMaximize16BitRange_Raw 2 //e.g. raw UINT16 values 0..4095 saved as UINT16 (retains raw data type, AFNI would convert to float32) 
+
+
+
 #define MAX_NUM_SERIES 16
 
     struct TDCMopts {
-        bool isSaveNativeEndian, isSaveNRRD, isOneDirAtATime, isRenameNotConvert, isMaximize16BitRange, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isRotate3DAcq, isCrop;
-        int isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
+        bool isSaveNativeEndian, isSaveNRRD, isOneDirAtATime, isRenameNotConvert, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isRotate3DAcq, isCrop;
+        int isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
         double seriesNumber[MAX_NUM_SERIES]; //requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
         long numSeries;
