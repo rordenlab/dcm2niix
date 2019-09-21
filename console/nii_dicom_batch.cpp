@@ -2159,6 +2159,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcpy(pth, opts.outdir);
         int w =access(pth,W_OK);
         if (w != 0) {
+        	//should never happen except with "-b i": see kEXIT_OUTPUT_FOLDER_READ_ONLY for early termination
+        	// with "-b i" the code below generates a warning but no files are created
 			if (getcwd(pth, sizeof(pth)) != NULL) {
 				#ifdef USE_CWD_IF_OUTDIR_NO_WRITE //optional: fall back to current working directory
 				w =access(pth,W_OK);
@@ -4462,6 +4464,7 @@ void sliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 
 int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
 	int sliceDir = 0;
+	if (hdr->dim[3] < 2) return sliceDir;
 	//uint64_t indx0 = dcmSort[0].indx;
 	//uint64_t indx1 = dcmSort[1].indx;
 	struct TDICOMdata * d0 = &dcmList[dcmSort[0].indx];
@@ -6072,6 +6075,11 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (isFile) //if user passes ~/dicom/mr1.dcm we will look at all files in ~/dicom
         dropFilenameFromPath(opts->indir);
     dropTrailingFileSep(opts->indir);
+    if (!is_dir(opts->indir,true)) {
+		printError("Input folder invalid: %s\n",opts->indir);
+		return kEXIT_INPUT_FOLDER_INVALID;    		
+    }
+    
 #ifdef USING_R
     // Full file paths are only used by R/divest when reorganising DICOM files
     if (opts->isRenameNotConvert) {
@@ -6086,9 +6094,29 @@ int nii_loadDir(struct TDCMopts* opts) {
 		strcpy(opts->outdir,opts->indir);
 		#else
 		printError("Output folder invalid: %s\n",opts->outdir);
-		return EXIT_FAILURE;
+		return kEXIT_OUTPUT_FOLDER_INVALID;
 		#endif
     }
+    //check file permissions
+    if ((opts->isCreateBIDS != false) || (opts->isOnlyBIDS != true)) { //output files expected: either BIDS or images
+    	int w =access(opts->outdir,W_OK);
+    	if (w != 0) {
+    		#ifdef USE_CWD_IF_OUTDIR_NO_WRITE
+    		char outdir[512];
+    		strcpy(outdir,opts->outdir);
+			strcpy(opts->outdir,opts->indir);
+			w =access(opts->outdir,W_OK);
+			if (w != 0) {
+				printError("Unable to write to output folder: %s\n",outdir);
+				return kEXIT_OUTPUT_FOLDER_READ_ONLY;				
+			} else
+				printWarning("Writing to working directory, unable to write to output folder: %s\n",outdir);
+			#else
+    		printError("Unable to write to output folder: %s\n",opts->outdir);
+			return kEXIT_OUTPUT_FOLDER_READ_ONLY;
+    		#endif
+		}
+	}	
 #ifdef USING_R
     }
 #endif

@@ -86,6 +86,10 @@ static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Phili
 #define kEXIT_NO_VALID_FILES_FOUND  2
 #define kEXIT_REPORT_VERSION  3
 #define kEXIT_CORRUPT_FILE_FOUND  4
+#define kEXIT_INPUT_FOLDER_INVALID  5
+#define kEXIT_OUTPUT_FOLDER_INVALID  6
+#define kEXIT_OUTPUT_FOLDER_READ_ONLY  7
+
 static const int kSliceOrientUnknown = 0;
 static const int kSliceOrientTra = 1;
 static const int kSliceOrientSag = 2;

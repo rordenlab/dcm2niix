@@ -4048,6 +4048,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kDirectoryRecordSequence 0x0004+(0x1220 << 16 )
 //#define  kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define  kImageTypeTag 0x0008+(0x0008 << 16 )
+//#define  kSOPInstanceUID 0x0008+(0x0018 << 16 ) //Philips inserts time as last item, e.g. ?.?.?.YYYYMMDDHHmmSS.SSSS
+// not reliable  https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/21
 #define  kStudyDate 0x0008+(0x0020 << 16 )
 #define  kAcquisitionDate 0x0008+(0x0022 << 16 )
 #define  kAcquisitionDateTime 0x0008+(0x002A << 16 )
