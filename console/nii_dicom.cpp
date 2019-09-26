@@ -5370,8 +5370,8 @@ double TE = 0.0; //most recent echo time recorded
            	case kTriggerTime:
 				//untested method to detect slice timing for GE PSD “epi” with multiphase option
 				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
-            	if (d.manufacturer != kMANUFACTURER_GE) break;
-            	d.triggerDelayTime = dcmStrFloat(lLength, &buffer[lPos]);
+            	if (d.manufacturer != kMANUFACTURER_GE) break;            	
+            	d.triggerDelayTime = dcmStrFloat(lLength, &buffer[lPos]); //???? issue 336
             	d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.triggerDelayTime;
                 //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;

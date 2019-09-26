@@ -36,7 +36,7 @@ In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 
  - _imaginary imaginary component of complex image
  - _real real component of complex image
  - _phMag rare case where phase and magnitude are saved as the 4th dimension
- - _t  If the trigger delay time (0020,9153 or 0018,1060) is non-zero, it will be recorded in the file name. For example, the files "T1_t178.nii" and "T1_t511" suggests that the T1 scan was acquired with two cardiac trigger delays (178 and 511ms after the last R-peak).
+ - _t  If the trigger delay time (0020,9153) is non-zero, it will be recorded in the file name. For example, the files "T1_t178.nii" and "T1_t511" suggests that the T1 scan was acquired with two cardiac trigger delays (178 and 511ms after the last R-peak).
  - _ADC Philips specific case. A DWI image where derived isotropic, ADC or trace volume was appended to the series. Since this image will disrupt subsequent processing, and because subsequent processing (dwidenoise, topup, eddy) will yield better derived images, dcm2niix will also create an additional image without this volume. Therefore, the _ADC file should typically be discarded. If you want dcm2niix to discard these useless derived images, use the ignore feature ('-i y').
  - _Eq is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with variable distance between the slices of a 3D volume. NIfTI asumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume.
  - _Tilt is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with a gantry tilt that causes a skew that can not be stored in a NIfTI qForm. Therefore, the slices are resampled to remove the effect of tilt.
@@ -65,3 +65,5 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 ? (question mark)
 * (asterisk)
 ```
+
+Be warned that dcm2niix will copy all allowed characters verbatim, which can cause problems for some other tools. Consider this [sample dataset](https://github.com/neurolabusc/dcm_qa_nih/tree/master/In/20180918GE/mr_0004) where the DICOM Protocol Name (0018,1030) is 'Axial_EPI-FMRI_(Interleaved_I_to_S)'. The parentheses ("round brackets") may cause other tools issues. Consider converting this series with the command 'dcm2niix -f %s_%p ~/DICOM' to create the file '4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii'.If you now run the command 'fslhd 4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii' you will get the error '-bash: syntax error near unexpected token `(''. Therefore, it is often a good idea to use double quotes to specify the names of files. In this example 'fslhd "4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii"' will work correctly.

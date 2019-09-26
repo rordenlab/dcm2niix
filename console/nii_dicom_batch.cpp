@@ -766,7 +766,7 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder) {
+int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
 	int ret = EXIT_FAILURE;
@@ -836,8 +836,10 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 		printWarning("New XML-based GE Protocol Block is not yet supported: please report issue on dcm2niix Github page\n");
 	char keyStrSO[] = "SLICEORDER";
 	*sliceOrder  = readKeyN1(keyStrSO, (char *) pUnCmp, unCmpSz);
-	char keyStrVO[] = "VIEWORDER"; //"MATRIXX";
+	char keyStrVO[] = "VIEWORDER"; 
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
+	char keyStrMB[] = "MBACCEL";
+	*mbAccel  = readKey(keyStrMB, (char *) pUnCmp, unCmpSz);
 	if (isVerbose > 1) {
 		printMessage("GE Protocol Block %s bytes %d compressed, %d uncompressed @ %d\n", filename, geLength, unCmpSz, geOffset);
 		printMessage(" ViewOrder %d SliceOrder %d\n", *viewOrder, *sliceOrder);
@@ -2368,7 +2370,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     	if (dcm.isHasMagnitude)
     		strcat (outname,"Mag"); //Philips enhanced with BOTH phase and Magnitude in single file
     }
-    if (dcm.triggerDelayTime >= 1) {
+    if ((dcm.triggerDelayTime >= 1) && (dcm.manufacturer != kMANUFACTURER_GE)){ //issue 336 GE uses this for slice timing
     	sprintf(newstr, "_t%d", (int)roundf(dcm.triggerDelayTime));
         strcat (outname,newstr);
     }
@@ -4236,7 +4238,6 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	// if both of these methods fail, we can often guess based on slice order stored in the Private Protocol Data Block (0025,101B)
 	// this is referred to as "rescue" as we only know the TR, not the TA. So assumes continuous scans with no gap
 	if (d->is3DAcq) return; //no need for slice times
-	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated
 	if (nSL < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
@@ -4247,12 +4248,22 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	// Therefore, we warning the user that we are guessing
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
+	int mbAccel = -1;
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel);
 	if (ok != EXIT_SUCCESS) {
 		printWarning("Unable to decode GE protocol block\n");
 		return;
 	}
+	if (mbAccel > 1) {
+		d->CSA.multiBandFactor = mbAccel;
+		printWarning("Unabled to compute slice times for GE multi-band. SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
+		d->CSA.sliceTiming[0] = -1.0;
+		return;
+		
+	}
+	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated - moved here to detect multiband, see issue 336
+	
 	if ((sliceOrderGE < 0) || (sliceOrderGE > 1)) return;
 	// 0=sequential/1=interleaved
 	printWarning("Guessing slice times using ProtocolBlock SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
