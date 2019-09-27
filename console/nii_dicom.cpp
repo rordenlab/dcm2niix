@@ -728,6 +728,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.scanOptions, "");
     //strcpy(d.mrAcquisitionType, "");
     strcpy(d.seriesInstanceUID, "");
+    strcpy(d.instanceUID, "");
     strcpy(d.studyID, "");
     strcpy(d.studyInstanceUID, "");
     strcpy(d.bodyPartExamined,"");
@@ -4680,10 +4681,10 @@ double TE = 0.0; //most recent echo time recorded
                 break;
          	}
             case kMediaStorageSOPInstanceUID : {// 0002, 0003
-            	char SOPInstanceUID[kDICOMStr];
-            	dcmStr (lLength, &buffer[lPos], SOPInstanceUID);
+            	//char SOPInstanceUID[kDICOMStr];
+            	dcmStr (lLength, &buffer[lPos], d.instanceUID);
             	//printMessage(">>%s\n", d.seriesInstanceUID);
-            	d.instanceUidCrc = mz_crc32X((unsigned char*) &SOPInstanceUID, strlen(SOPInstanceUID));
+            	d.instanceUidCrc = mz_crc32X((unsigned char*) &d.instanceUID, strlen(d.instanceUID));
                 break;
             }
             case kTransferSyntax: {
@@ -6418,8 +6419,12 @@ if (d.isHasPhase)
         d.CSA.numDti = 0;
     }
     if ((d.isValid) && (d.imageNum == 0)) { //Philips non-image DICOMs (PS_*, XX_*) are not valid images and do not include instance numbers
-    	printError("Instance number (0020,0013) not found: %s\n", fname);
-        d.imageNum = 1; //not set
+    	//TYPE 1 for MR image http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0020,0013)
+    	// Only type 2 for some other DICOMs! Therefore, generate warning not error
+    	printWarning("Instance number (0020,0013) not found: %s\n", fname);
+    	d.imageNum = abs((int)d.instanceUidCrc) % 2147483647;//INT_MAX;
+    	if (d.imageNum == 0) d.imageNum = 1; //https://github.com/rordenlab/dcm2niix/issues/341
+    	//d.imageNum = 1; //not set
     }
     if ((numDimensionIndexValues < 1) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (d.seriesNum > 99999) && (philMRImageDiffBValueNumber > 0)) {
     	//Ugly kludge to distinguish Philips classic DICOM dti

@@ -2248,6 +2248,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             }
             if (f == 'N')
                 strcat (outname,dcm.patientName);
+            if (f == 'O')
+                strcat (outname,dcm.instanceUID);
             if (f == 'P') {
             	strcat (outname,dcm.protocolName);
                 if (strlen(dcm.protocolName) < 1)
@@ -2625,21 +2627,17 @@ void writeNiiGz (char * baseName, struct nifti_1_header hdr,  unsigned char* src
 int nii_saveNII (char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d)
 {
     hdr.vox_offset = 352;
-
     // Extract the basename from the full file path
     char *start = niiFilename + strlen(niiFilename);
     while (start >= niiFilename && *start != '/' && *start != kPathSeparator)
         start--;
     std::string name(++start);
-
     nifti_image *image = nifti_convert_nhdr2nim(hdr, niiFilename);
     if (image == NULL)
         return EXIT_FAILURE;
     image->data = (void *) im;
-
     ImageList *images = (ImageList *) opts.imageList;
     images->append(image, name);
-
     free(image);
     return EXIT_SUCCESS;
 }
@@ -3647,8 +3645,12 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
             mn = sliceMMarray[i] - sliceMMarray[i-1];
     }
     if (mn <= 0.0f) {
-    	printMessage("Unable to equalize slice distances: slice order not consistently ascending.\n");
-    	printMessage(" Recompiling with '-DmyInstanceNumberOrderIsNotSpatial' might help.\n");
+    	printMessage("Unable to equalize slice distances: slice order not consistently ascending:\n");
+    	printMessage("dx=[0");
+		for (int i = 1; i < hdr.dim[3]; i++)
+			printMessage(" %g", sliceMMarray[i-1]);
+		printMessage("]\n");
+		printMessage(" Recompiling with '-DmyInstanceNumberOrderIsNotSpatial' might help.\n");
     	return EXIT_FAILURE;
     }
     int slices = hdr.dim[3];
@@ -4571,6 +4573,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     unsigned char *imgM = (unsigned char *)malloc(imgsz* (uint64_t)nConvert);
     memcpy(&imgM[0], &img[0], imgsz);
     free(img);
+    bool isReorder = false;
     //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
     if (nConvert > 1) {
         //next: detect trigger time see example https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
@@ -4662,12 +4665,16 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					}
 				} //if trVaries
             } //if PET
+            
             //next: detect variable inter-slice distance
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
 			#ifdef myInstanceNumberOrderIsNotSpatial
 			if  (!isSameFloat(dx, 0.0)) //only for XYZT, not TXYZ: perhaps run for swapDim3Dim4? Extremely rare anomaly
             	if (!ensureSequentialSlicePositions(hdr0.dim[3],hdr0.dim[4], dcmSort, dcmList))
             		dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+            indx0 = dcmSort[0].indx;
+   			if (nConvert > 1) indx1 = dcmSort[1].indx;
+   			isReorder = true;
             #endif
             bool dxVaries = false;
             for (int i = 1; i < nConvert; i++)
@@ -4711,6 +4718,45 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
 						hdr0.pixdim[3] = dx;
 						isInconsistenSliceDir = false;
+						
+						//code below duplicates prior code, could be written as modular function(s)
+						
+						
+						//qball
+						
+						indx0 = dcmSort[0].indx;
+   						if (nConvert > 1) indx1 = dcmSort[1].indx;
+   						dxVaries = false;
+   						dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+   						for (int i = 1; i < nConvert; i++)
+                			if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
+                    			dxVaries = true;
+   						for (int i = 1; i < nConvert; i++)
+							sliceMMarray[i] = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+						//printf("dx=[");
+						//for (int i = 1; i < nConvert; i++)
+						//	printf("%g ", intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]) );
+						//printf("\n");
+						isReorder = true;
+						bool isInconsistenSliceDir = false;
+						int slicePositionRepeats = 1; //how many times is first position repeated
+						if (nConvert > 2) {
+							float dxPrev = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
+							if (isSameFloatGE(dxPrev, 0.0)) slicePositionRepeats++;
+							for (int i = 2; i < nConvert; i++) {
+	                        	float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
+								if (dx < dxPrev)
+									isInconsistenSliceDir = true;
+								if (isSameFloatGE(dxPrev, 0.0)) slicePositionRepeats++;
+								dxPrev = dx;
+	                    	}
+						}
+						if (!dxVaries) {
+							printMessage("Slice re-ordering resolved inter-slice distance variability.\n");
+							free(sliceMMarray);
+							sliceMMarray = NULL;	
+						}
+                    							
 					}
 					if (isInconsistenSliceDir) {
 						printMessage("Unable to equalize slice distances: slice order not consistently ascending.\n");
@@ -4771,8 +4817,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
         struct nifti_1_header hdrI;
         //double time = -1.0;
-        if (!opts.isOnlyBIDS) {
-			for (int i = 1; i < nConvert; i++) { //stack additional images
+        if ((!opts.isOnlyBIDS) && (nConvert > 1)) {
+ 			int iStart = 1;
+ 			if (isReorder) iStart = 0;
+ 			//for (int i = 1; i < nConvert; i++) { //<- works except where ensureSequentialSlicePositions() changes 1st slice
+			for (int i = iStart; i < nConvert; i++) { //stack additional images
 				indx = dcmSort[i].indx;
 				//double time2 = dcmList[dcmSort[i].indx].acquisitionTime;
 				//if (time != time2)
@@ -5829,7 +5878,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     if (opts->isProgress > 1) printMessage ("Stage 1 (Count number of DICOMs) required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
     start = clock();
 	#endif
-    if (opts->isProgress)
+	if (opts->isProgress)
     	progressPct = reportProgress(progressPct, kStage1Frac); //proportion correct, 0..100
 	// struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
@@ -5839,6 +5888,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     bool convertError = false;
     bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
 	if (isDcmExt) opts->filename[strlen(opts->filename) - 4] = 0; // "%s_%r.dcm" -> "%s_%r"
+	//consider OpenMP
+	// g++-9 -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG -fopenmp 
     for (int i = 0; i < (int)nDcm; i++ ) {
     	if ((isExt(nameList.str[i], ".par")) && (isDICOMfile(nameList.str[i]) < 1)) {
 			//strcpy(opts->indir, nameList.str[i]); //set to original file name, not path
@@ -5872,7 +5923,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     if (opts->isProgress > 1) printMessage ("Stage 2 (Read DICOM headers, Convert 4D) required %f seconds.\n",((float)(clock()-start))/CLOCKS_PER_SEC);
 	start = clock();
 	#endif
-    if (opts->isRenameNotConvert) {
+	if (opts->isRenameNotConvert) {
     	return EXIT_SUCCESS;
     }
 #ifdef USING_R
@@ -6038,8 +6089,12 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     if (opts->isProgress) progressPct = reportProgress(progressPct, 1); //proportion correct, 0..100
     free(dcmList);
     freeNameList(nameList);
-    if (convertError)
-        return EXIT_FAILURE; //at least one image failed to convert
+    if (convertError) {
+    	if (nConvertTotal == 0)
+    		return EXIT_FAILURE; //nothing converted
+    	printError("Converted %d of %lu files\n", nConvertTotal, nDcm);	
+    	return kEXIT_SOME_OK_SOME_BAD; //partial failure  
+    }
     if (nConvertTotal == 0) {
         printMessage("No valid DICOM images were found\n"); //we may have found valid DICOM files but they are not DICOM images
         return kEXIT_NO_VALID_FILES_FOUND;
@@ -6155,7 +6210,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     	return textDICOM(opts, indir);
 	if (opts->isRenameNotConvert) {
 		int nConvert = searchDirRenameDICOM(opts->indir, opts->dirSearchDepth, 0, opts);
-		if (nConvert < 0) return EXIT_FAILURE;
+		if (nConvert < 0) return kEXIT_RENAME_ERROR;
 #ifdef USING_R
 		printMessage("Renamed %d DICOMs\n", nConvert);
 #else

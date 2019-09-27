@@ -17,6 +17,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %k=studyInstanceUID (from 0020,000D)
  - %m=manufacturer short name (from 0008,0070: GE, Ph, Si, To, UI, NA)
  - %n=name of patient (from 0010,0010)
+ - %o=mediaObjectInstanceUID (0002,0003)
  - %p=protocol name (from 0018,1030)
  - %r=instance number (from 0020,0013)
  - %s=series number (from 0020,0011)

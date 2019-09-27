@@ -88,7 +88,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #else
      #define kQstr ""
     #endif
-    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
+    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
@@ -103,7 +103,6 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
-    printf("  --progress : report progress (y/n, default n)\n");
     #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
 	printf("  -u : up-to-date check\n");
 	#endif
@@ -130,8 +129,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		#endif
     #endif
     printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
-   	printf("  --progress : Slicer format progress information\n");
-   	printf("  --version : report version\n");
+   	printf("  --progress : report progress (y/n, default n)\n");
+    printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
@@ -516,10 +515,11 @@ int main(int argc, const char * argv[])
 	#endif
 	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { //sensible naming scheme for renaming option
 		//strcpy(opts.filename,argv[i]);
+		//2019 - now include "%o" to append media SOP UID, as instance number is not required to be unique
 		#if defined(_WIN64) || defined(_WIN32)
-		strcpy(opts.filename,"%t\\%s_%p\\%4r.dcm"); //nrrd or nhdr (windows folders)
+		strcpy(opts.filename,"%t\\%s_%p\\%4r_%o.dcm"); //nrrd or nhdr (windows folders)
 		#else
-		strcpy(opts.filename,"%t/%s_%p/%4r.dcm"); //nrrd or nhdr (unix folders)
+		strcpy(opts.filename,"%t/%s_%p/%4r_%o.dcm"); //nrrd or nhdr (unix folders)
 		#endif
 		printf("renaming without output filename, assuming '-f %s'\n", opts.filename);
 	}
