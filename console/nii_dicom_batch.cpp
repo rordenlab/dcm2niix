@@ -4573,7 +4573,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     unsigned char *imgM = (unsigned char *)malloc(imgsz* (uint64_t)nConvert);
     memcpy(&imgM[0], &img[0], imgsz);
     free(img);
-    bool isReorder = false;
     //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
     if (nConvert > 1) {
         //next: detect trigger time see example https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
@@ -4674,8 +4673,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             		dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
             indx0 = dcmSort[0].indx;
    			if (nConvert > 1) indx1 = dcmSort[1].indx;
-   			isReorder = true;
-            #endif
+   			#endif
             bool dxVaries = false;
             for (int i = 1; i < nConvert; i++)
                 if (!isSameFloatT(dx,intersliceDistance(dcmList[dcmSort[i-1].indx],dcmList[dcmSort[i].indx]),0.2))
@@ -4737,7 +4735,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						//for (int i = 1; i < nConvert; i++)
 						//	printf("%g ", intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]) );
 						//printf("\n");
-						isReorder = true;
 						bool isInconsistenSliceDir = false;
 						int slicePositionRepeats = 1; //how many times is first position repeated
 						if (nConvert > 2) {
@@ -4818,10 +4815,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         struct nifti_1_header hdrI;
         //double time = -1.0;
         if ((!opts.isOnlyBIDS) && (nConvert > 1)) {
- 			int iStart = 1;
- 			if (isReorder) iStart = 0;
+ 			//for (int i = 0; i < nConvert; i++)
+ 			//	printMessage("%d\t%s\n", i, nameList->str[indx]);	
+ 			//int iStart = 1;
+ 			//if (isReorder) iStart = 0;
  			//for (int i = 1; i < nConvert; i++) { //<- works except where ensureSequentialSlicePositions() changes 1st slice
-			for (int i = iStart; i < nConvert; i++) { //stack additional images
+			for (int i = 0; i < nConvert; i++) { //stack additional images
 				indx = dcmSort[i].indx;
 				//double time2 = dcmList[dcmSort[i].indx].acquisitionTime;
 				//if (time != time2)

@@ -187,4 +187,15 @@ if(BATCH_VERSION)
     list(APPEND PROGRAMS dcm2niibatch)
 endif()
 
+
+if(APPLE)
+    message("--   Adding Apple plist")
+    set_target_properties(dcm2niix PROPERTIES LINK_FLAGS "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_SOURCE_DIR}/Info.plist")
+    #Apple notarization requires a Info.plist
+    # For .app bundles, the Info.plist is a separate file, for executables it is appended as a section
+    #you can check that the Info.plist section has been inserted with either of these commands
+    # otool -l ./dcm2niix | grep info_plist -B1 -A10
+    # launchctl plist ./dcm2niix 
+endif()
+
 install(TARGETS ${PROGRAMS} DESTINATION bin)
