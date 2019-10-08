@@ -14,7 +14,6 @@ APP_SPECIFIC_PASSWORD=$DCM2NIIX_SPECIFIC_PASSWORD
 
 cd ${basedir}
 
-cd dcm2niix
 mkdir build && cd build
 cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
 make
@@ -32,20 +31,20 @@ rm -f log_file.txt
 # terminate on error
 set -e
 
-echo "\033[1;44mVerifying Info.plist\033[0m"
+echo "Verifying Info.plist"
 launchctl plist dcm2niix
 
-echo "\033[1;44mCode signing dcm2niix...\033[0m"
+echo "Code signing dcm2niix..."
 codesign -vvv --force --strict --options=runtime --timestamp -s "$CODE_SIGN_SIGNATURE" dcm2niix
 codesign --verify --verbose --strict dcm2niix
 
-echo "\033[1;44mCreating disk image...\033[0m"
+echo "Creating disk image..."
 
 hdiutil create -volname dcm2niix -srcfolder `pwd` -ov -format UDZO -layout SPUD -fs HFS+J  dcm2niix_macOS.tmp.dmg
 hdiutil convert dcm2niix_macOS.tmp.dmg -format UDZO -o dcm2niix_macOS.dmg
 
 # Notarizing with Apple...
-echo "\033[1;44mUploading...\033[0m"
+echo "Uploading..."
 xcrun altool --notarize-app -t osx --file dcm2niix_macOS.dmg --primary-bundle-id com.mricro.dcm2niix -u $APPLE_ID_USER -p $APP_SPECIFIC_PASSWORD --output-format xml > upload_log_file.txt
 
 # WARNING: if there is a 'product-errors' key in upload_log_file.txt something went wrong
@@ -55,7 +54,7 @@ xcrun altool --notarize-app -t osx --file dcm2niix_macOS.dmg --primary-bundle-id
 # now we need to query apple's server to the status of notarization
 # when the "xcrun altool --notarize-app" command is finished the output plist
 # will contain a notarization-upload->RequestUUID key which we can use to check status
-echo "\033[1;44mChecking status...\033[0m"
+echo "Checking status..."
 sleep 20
 REQUEST_UUID=`/usr/libexec/PlistBuddy -c "Print :notarization-upload:RequestUUID" upload_log_file.txt`
 while true; do
@@ -67,7 +66,7 @@ while true; do
     break
   fi
   # echo $STATUS
-  echo "\033[1;35m$STATUS\033[0m"
+  echo "$STATUS"
   sleep 10
 done
 
@@ -75,7 +74,7 @@ done
 /usr/bin/curl -o log_file.txt `/usr/libexec/PlistBuddy -c "Print :notarization-info:LogFileURL" request_log_file.txt`
 
 # staple
-echo "\033[1;44mStapling...\033[0m"
+echo "Stapling..."
 xcrun stapler staple dcm2niix_macOS.dmg
 xcrun stapler validate dcm2niix_macOS.dmg
 

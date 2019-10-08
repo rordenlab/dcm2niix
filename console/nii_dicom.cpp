@@ -12,6 +12,9 @@
 	//#define vsnprintf _vsnprintf
 	#define strcasecmp _stricmp
 	#define strncasecmp _strnicmp
+    #ifdef _WIN32
+        #pragma comment(lib, "advapi32")
+    #endif
 #else
 	#include <unistd.h>
 #endif
@@ -3918,10 +3921,10 @@ struct TDCMdim { //DimensionIndexValues
 
 void getFileNameX( char *pathParent, const char *path, int maxLen) {//if path is c:\d1\d2 then filename is 'd2'
     const char *filename = strrchr(path, '/'); //UNIX
-    if (filename == 0) {
-       filename = strrchr(path, '\\'); //Windows
-       if (filename == NULL) filename = strrchr(path, ':'); //Windows
-     }
+    const char *filenamew = strrchr(path, '\\'); //Windows
+    if (filename == NULL) filename = filenamew;
+    if ((filename != NULL) && (filenamew != NULL))
+    filename = max(filename, filenamew);
     //const char *filename = strrchr(path, kPathSeparator); //x
     if (filename == NULL) {//no path separator
         strcpy(pathParent,path);
