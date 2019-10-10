@@ -47,9 +47,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-//#ifdef myEnableOtsu
-//	#include "nii_ostu_ml.h" //provide better brain crop, but artificially reduces signal variability in air
-//#endif
 #include <time.h>  // clock_t, clock, CLOCKS_PER_SEC
 #include "nii_ortho.h"
 #if defined(_WIN64) || defined(_WIN32)
@@ -58,6 +55,7 @@
 #ifndef M_PI
 	#define M_PI 3.14159265358979323846
 #endif
+
 #if defined(_WIN64) || defined(_WIN32)
 	#define myTextFileInputLists //comment out to disable this feature: https://github.com/rordenlab/dcm2niix/issues/288
 	const char kPathSeparator ='\\';
@@ -645,8 +643,6 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		csaAscii->parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		char keyStrRef[] = "sPat.lRefLinesPE";
 		csaAscii->refLinesPE = readKey(keyStrRef, keyPos, csaLengthTrim);
-
-
 		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
 		//*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
 		//char keyStrEF[] = "sFastImaging.lEPIFactor";
@@ -3985,16 +3981,6 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	short * im16 = ( short*) im;
 	unsigned short * imu16 = (unsigned short*) im;
 	float kThresh = 0.09; //more than 9% of max brightness
-	/*#ifdef myEnableOtsu
-	// This code removes noise "haze" yielding better volume rendering and smaller gz compressed files
-	// However, it may disrupt "differennce of gaussian" segmentation estimates
-	// Therefore feature was removed from dcm2niix, which aims for lossless conversion
-	kThresh = 0.0001;
-	if (hdr.datatype == DT_UINT16)
-		maskBackgroundU16 (imu16, hdr.dim[1],hdr.dim[2],hdr.dim[3], 5,2, true);
-	else
-		maskBackground16 (im16, hdr.dim[1],hdr.dim[2],hdr.dim[3], 5,2, true);
-	#endif*/
     int ventralCrop = 0;
     //find max value for each slice
     int slices = hdr.dim[3];
@@ -4026,44 +4012,6 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 		free(sliceSums);
 		return EXIT_FAILURE;
 	}
-	/*
-	//find brightest band within 90mm of top of head
-	int ventralMaxSlice = dorsalCrop - round(90 /fabs(hdr.pixdim[3])); //brightest stripe within 90mm of apex
-    if (ventralMaxSlice < 0) ventralMaxSlice = 0;
-    int maxSlice = dorsalCrop;
-    for (int i = ventralMaxSlice; i  < dorsalCrop; i++)
-    	if (sliceSums[i] > sliceSums[maxSlice])
-    		maxSlice = i;
-	//now find
-    ventralMaxSlice = maxSlice - round(45 /fabs(hdr.pixdim[3])); //gap at least 60mm
-    if (ventralMaxSlice < 0) {
-    	free(sliceSums);
-    	return EXIT_FAILURE;
-    }
-    int ventralMinSlice = maxSlice - round(90/fabs(hdr.pixdim[3])); //gap no more than 120mm
-    if (ventralMinSlice < 0) ventralMinSlice = 0;
-	for (int i = (ventralMaxSlice-1); i >= ventralMinSlice; i--)
-		if (sliceSums[i] > sliceSums[ventralMaxSlice])
-			ventralMaxSlice = i;
-	//finally: find minima between these two points...
-    int minSlice = ventralMaxSlice;
-    for (int i = ventralMaxSlice; i  < maxSlice; i++)
-    	if (sliceSums[i] < sliceSums[minSlice])
-    		minSlice = i;
-    //printMessage("%d %d %d\n", ventralMaxSlice, minSlice, maxSlice);
-	int gap = round((maxSlice-minSlice)*0.8);//add 40% for cerebellum
-	if ((minSlice-gap) > 1)
-        ventralCrop = minSlice-gap;
-	free(sliceSums);
-	if (ventralCrop > dorsalCrop) return EXIT_FAILURE;
-	//FindDVCrop2
-	const double kMaxDVmm = 180.0;
-    double sliceMM = hdr.pixdim[3] * (dorsalCrop-ventralCrop);
-    if (sliceMM > kMaxDVmm) { //decide how many more ventral slices to remove
-        sliceMM = sliceMM - kMaxDVmm;
-        sliceMM = sliceMM / hdr.pixdim[3];
-        ventralCrop = ventralCrop + round(sliceMM);
-    }*/
     const double kMaxDVmm = 169.0;
     ventralCrop = dorsalCrop - round( kMaxDVmm / hdr.pixdim[3]);
     if (ventralCrop < 0) ventralCrop = 0;

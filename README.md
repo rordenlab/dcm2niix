@@ -1,5 +1,5 @@
-[![Build Status](https://img.shields.io/travis/rordenlab/dcm2niix/development.svg?label=develop&style=flat-square)](https://travis-ci.org/rordenlab/dcm2niix)
-[![Build status](https://img.shields.io/appveyor/ci/neurolabusc/dcm2niix/development.svg?label=develop&style=flat-square)](https://ci.appveyor.com/project/neurolabusc/dcm2niix)
+[![Build Status](https://travis-ci.org/rordenlab/dcm2niix.svg?branch=master)](https://travis-ci.org/rordenlab/dcm2niix)
+[![Build status](https://ci.appveyor.com/api/projects/status/7o0xp2fgbhadkgn1?svg=true)](https://ci.appveyor.com/project/neurolabusc/dcm2niix)
 
 ## About
 
@@ -134,6 +134,7 @@ The following tools exploit dcm2niix
   - [NeuroDebian](http://neuro.debian.net/pkgs/dcm2niix.html) provides up-to-date version of dcm2niix for Debian-based systems.
   - [neurodocker](https://github.com/kaczmarj/neurodocker) generates [custom](https://github.com/rordenlab/dcm2niix/issues/138) Dockerfiles given specific versions of neuroimaging software.
   - [NeuroElf](http://neuroelf.net) can use dcm2niix to convert DICOM images.
+  - [NiftyPET](https://niftypet.readthedocs.io/en/latest/intro.htmlNiftyPET) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
   - [PNL-nipype](https://github.com/pnlbwh/Dummy-PNL-nipype) is a Python script that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
@@ -141,4 +142,5 @@ The following tools exploit dcm2niix
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
   - The [SlicerDcm2nii extension](https://github.com/Slicer/ExtensionsIndex/blob/master/SlicerDcm2nii.s4ext) is one method to import DICOM data into Slicer.
+  - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).

@@ -3923,9 +3923,8 @@ void getFileNameX( char *pathParent, const char *path, int maxLen) {//if path is
     const char *filename = strrchr(path, '/'); //UNIX
     const char *filenamew = strrchr(path, '\\'); //Windows
     if (filename == NULL) filename = filenamew;
-    if ((filename != NULL) && (filenamew != NULL))
-    filename = std::max(filename, filenamew);
-    //const char *filename = strrchr(path, kPathSeparator); //x
+    //if ((filename != NULL) && (filenamew != NULL)) filename = std::max(filename, filenamew);
+    if ((filename != NULL) && (filenamew != NULL) && (filenamew > filename)) filename = filenamew; //for mixed file separators, e.g. "C:/dir\filenane.tmp"
     if (filename == NULL) {//no path separator
         strcpy(pathParent,path);
         return;
