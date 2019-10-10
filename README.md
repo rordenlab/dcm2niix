@@ -1,5 +1,5 @@
-[![Build Status](https://travis-ci.org/rordenlab/dcm2niix.svg?branch=master)](https://travis-ci.org/rordenlab/dcm2niix)
-[![Build status](https://ci.appveyor.com/api/projects/status/7o0xp2fgbhadkgn1?svg=true)](https://ci.appveyor.com/project/neurolabusc/dcm2niix)
+[![Build Status](https://img.shields.io/travis/rordenlab/dcm2niix/development.svg?label=develop&style=flat-square)](https://travis-ci.org/rordenlab/dcm2niix)
+[![Build status](https://img.shields.io/appveyor/ci/neurolabusc/dcm2niix/development.svg?label=develop&style=flat-square)](https://ci.appveyor.com/project/neurolabusc/dcm2niix)
 
 ## About
 
