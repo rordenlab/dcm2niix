@@ -130,6 +130,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #endif
     printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
    	printf("  --progress : report progress (y/n, default n)\n");
+    printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
     printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
     printf(" Defaults stored in Windows registry\n");
@@ -153,8 +154,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		#endif
     #endif
    	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
-   	printf("  --progress : Slicer format progress information\n");
-   	printf("  --version : report version\n");
+   	printf("  --progress : Slicer format progress information (y/n, default n)\n");
+   	printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
+    printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
     printf(" Defaults file : %s\n", opts.optsname);
     printf(" Examples :\n");
@@ -283,6 +285,8 @@ int main(int argc, const char * argv[])
                     opts.isSaveNativeEndian = false;
                     printf("NIfTI data will be little-endian\n");
                 }
+            } else if ( ! strcmp(argv[i], "--terse")) {
+				opts.isAddNamePostFixes = false;
             } else if ( ! strcmp(argv[i], "--version")) {
 				printf("%s\n", kDCMdate);
             	return kEXIT_REPORT_VERSION;

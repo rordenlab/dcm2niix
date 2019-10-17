@@ -1,4 +1,9 @@
 //#define myNoSave //do not save images to disk
+//#define myAFNI
+#ifdef myAFNI
+	#include <sys/utsname.h>  /* these 4 files are needed by the UNIQ_ */
+	#include <sys/timeb.h>
+#endif
 #ifdef _MSC_VER
 	#include <direct.h>
 	#define getcwd _getcwd
@@ -2187,6 +2192,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     }
     size_t start = 0;
     size_t pos = 0;
+	bool isAddNamePostFixes = opts.isAddNamePostFixes;
     bool isCoilReported = false;
     bool isEchoReported = false;
     bool isSeriesReported = false;
@@ -2244,8 +2250,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             }
             if (f == 'N')
                 strcat (outname,dcm.patientName);
-            if (f == 'O')
+            if (f == 'O') {
                 strcat (outname,dcm.instanceUID);
+				isAddNamePostFixes = false;
+			}
             if (f == 'P') {
             	strcat (outname,dcm.protocolName);
                 if (strlen(dcm.protocolName) < 1)
@@ -2328,7 +2336,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         newstr[pos - start] = '\0';
         strcat (outname,newstr);
     }
-    if ((!isCoilReported) && (dcm.isCoilVaries)) {
+    if ((isAddNamePostFixes) && (!isCoilReported) && (dcm.isCoilVaries)) {
         //sprintf(newstr, "_c%d", dcm.coilNum);
         //strcat (outname,newstr);
         strcat (outname, "_c");
@@ -2336,15 +2344,15 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     }
     // myMultiEchoFilenameSkipEcho1 https://github.com/rordenlab/dcm2niix/issues/237
     #ifdef myMultiEchoFilenameSkipEcho1
-    if ((!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
+    if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
     #else
-    if ((!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
+    if ((isAddNamePostFixes) && (!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
     #endif
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
         isEchoReported = true;
     }
-    if ((!isSeriesReported) && (!isEchoReported) && (dcm.echoNum > 1)) { //last resort: user provided no method to disambiguate echo number in filename
+    if ((isAddNamePostFixes) && (!isSeriesReported) && (!isEchoReported) && (dcm.echoNum > 1)) { //last resort: user provided no method to disambiguate echo number in filename
         sprintf(newstr, "_e%d", dcm.echoNum);
         strcat (outname,newstr);
         isEchoReported = true;
@@ -2357,21 +2365,22 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         sprintf(newstr, "_v%04d", dcm.gradDynVol+1); //+1 as indexed from zero
         strcat (outname,newstr);
     }*/
-    if (dcm.isHasImaginary) {
+    if ((isAddNamePostFixes) && (dcm.isHasImaginary)) {
     	strcat (outname,"_imaginary"); //has phase map
     }
-    if (dcm.isHasReal) {
+    if ((isAddNamePostFixes) && (dcm.isHasReal)) {
     	strcat (outname,"_real"); //has phase map
     }
-    if (dcm.isHasPhase) {
+    if ((isAddNamePostFixes) && (dcm.isHasPhase)) {
     	strcat (outname,"_ph"); //has phase map
     	if (dcm.isHasMagnitude)
     		strcat (outname,"Mag"); //Philips enhanced with BOTH phase and Magnitude in single file
     }
-    if ((dcm.triggerDelayTime >= 1) && (dcm.manufacturer != kMANUFACTURER_GE)){ //issue 336 GE uses this for slice timing
+    if ((isAddNamePostFixes) && (dcm.triggerDelayTime >= 1) && (dcm.manufacturer != kMANUFACTURER_GE)){ //issue 336 GE uses this for slice timing
     	sprintf(newstr, "_t%d", (int)roundf(dcm.triggerDelayTime));
         strcat (outname,newstr);
     }
+	//could add (isAddNamePostFixes) to these next two, but consequences could be catastrophic
     if (dcm.isRawDataStorage) //avoid name clash for Philips XX_ files
     	strcat (outname,"_Raw");
     if (dcm.isGrayscaleSoftcopyPresentationState) //avoid name clash for Philips PS_ files
@@ -2830,9 +2839,310 @@ int pigz_File(char * fname, struct TDCMopts opts, size_t imgsz) {
     return EXIT_SUCCESS;
 } // pigz_File()
 
+#ifdef myAFNI
+//#include <sys/utsname.h>  /* these 4 files are needed by the UNIQ_ */
+
+
+//https://github.com/afni/afni/blob/3f94a8fcf779acee4349f50af69c5c2d41d7f926/src/3ddata.h
+/*! Size of ID code string. 27 Sep 2001: increased from 16 to 32. */
+#define MCW_IDSIZE 32
+/*! Size of ID date string. */
+#define MCW_IDDATE 48
+typedef struct {
+  char str[MCW_IDSIZE] ;    /*!< Unique ID code string */
+  char date[MCW_IDDATE] ;   /*!< Date string was generated */
+} MCW_idcode ;
+
+//Amalloc.h
+#define AFMALL(typ,siz)    (typ*) calloc(1,siz)
+
+//struct timeval {
+//    long tv_sec;
+//    long tv_usec;
+//};
+
+void gettimeofday (struct timeval * tp, void * dummy)
+{
+    struct timeb tm;
+    ftime (&tm);
+    tp->tv_sec = tm.time;
+    tp->tv_usec = tm.millitm * 1000;
+}
+
+//https://raw.githubusercontent.com/afni/afni/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/thd_md5.c
+
+char * UNIQ_idcode(void)
+{
+   char *idc;
+   idc = AFMALL(char, 32) ;         /* will be output string */
+	return idc ;
+}
+
+/*----------------------------------------------------------------------
+   Fill a user-supplied buffer (length at least 32) with an idcode
+------------------------------------------------------------------------*/
+
+#define MCW_strncpy(dest,src,n) \
+ ( (void) strncpy( (dest) , (src) , (n)-1 ) , (dest)[(n)-1] = '\0' )
+
+void UNIQ_idcode_fill( char *idc )
+{
+   char *bbb ;
+   if( idc == NULL ) return ;
+   bbb = UNIQ_idcode() ;
+   strcpy(idc,bbb) ; free(bbb) ; return ;
+}
+
+MCW_idcode MCW_new_idcode(void)
+{
+   MCW_idcode newid ;
+   time_t tnow ;
+   int nn ;
+   UNIQ_idcode_fill( newid.str ) ;  /* thd_md5.c */
+   tnow = time(NULL) ;
+   MCW_strncpy( newid.date , ctime(&tnow) , MCW_IDDATE ) ;
+   nn = strlen(newid.date) ;
+   if( nn > 0 && newid.date[nn-1] == '\n' ) newid.date[nn-1] = '\0' ;
+
+   return newid ;
+}
+
+void afni_int(FILE *fp, const char *tag, int cnt, int vals[]) {
+	fprintf(fp, "type = integer-attribute\n");
+	fprintf(fp, "name = %s\n", tag);
+	fprintf(fp, "count = %d\n", cnt);
+	for (int i = 0; i < cnt; i++)
+		fprintf(fp, "%14d", vals[i]);
+	fprintf(fp, "\n");		
+	fprintf(fp, "\n");
+}
+
+void afni_flt(FILE *fp, const char *tag, int cnt, float vals[]) {
+	fprintf(fp, "type = float-attribute\n");
+	fprintf(fp, "name = %s\n", tag);
+	fprintf(fp, "count = %d\n", cnt);
+	for (int i = 0; i < cnt; i++)
+		fprintf(fp, "%14g", vals[i]);
+	fprintf(fp, "\n");		
+	fprintf(fp, "\n");
+}
+
+void afni_str(FILE *fp, const char *tag, const char *val) {
+	//TODO: convert '~' to '*'
+	fprintf(fp, "type = string-attribute\n");
+	fprintf(fp, "name = %s\n", tag);
+	fprintf(fp, "count = %lu\n", strlen(val)+1);
+	fprintf(fp, "'%s~\n", val);	
+	fprintf(fp, "\n");
+}
+
+void minMax(struct nifti_1_header hdr, unsigned char* im, int vol, float *min, float *max) { //vol indexed from 0
+	*min = 0.0;
+	*max = 0.0;
+	int nVox = hdr.dim[1] * hdr.dim[2] * hdr.dim[3];
+	float fmin, fmax;
+	if ((vol >= hdr.dim[4]) && (nVox < 1) ) return;
+ 	int lo = vol * nVox;
+	int hi = lo + nVox;
+	if (hdr.datatype == DT_INT16) {
+		int16_t * vs = (int16_t*) im;
+		int16_t imin = vs[lo]; 
+		int16_t imax = vs[lo];
+		for (int i = lo; i < hi; i++) {
+			if (vs[i] < imin) imin = vs[i];
+			if (vs[i] > imax) imax = vs[i];
+		}
+		fmin = imin;
+		fmax = imax;
+	}
+	if (hdr.datatype == DT_UINT16) {
+		uint16_t * vs = (uint16_t*) im;
+		uint16_t imin = vs[lo];
+		uint16_t imax = vs[lo];
+		for (int i = lo; i < hi; i++) {
+			if (vs[i] < imin) imin = vs[i];
+			if (vs[i] > imax) imax = vs[i];
+		}
+		fmin = imin;
+		fmax = imax;
+	}
+	if (hdr.datatype == DT_INT32) {
+		int32_t * vs = (int32_t*) im;
+		int32_t imin = vs[lo];
+		int32_t imax = vs[lo];
+		for (int i = lo; i < hi; i++) {
+			if (vs[i] < imin) imin = vs[i];
+			if (vs[i] > imax) imax = vs[i];
+		}
+		fmin = imin;
+		fmax = imax;
+	}	
+	if (hdr.datatype == DT_FLOAT32) {
+		float * vs = (float*) im;
+		fmin = vs[lo];
+		fmax = vs[lo];
+		for (int i = lo; i < hi; i++) {
+			if (vs[i] < fmin) fmin = vs[i];
+			if (vs[i] > fmax) fmax = vs[i];
+		}
+	}
+	*min = (fmin*hdr.scl_slope)+hdr.scl_inter;
+	*max = (fmax*hdr.scl_slope)+hdr.scl_inter;
+}
+
+//to do
+// spatial 
+// history
+// idcode
+int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
+//https://raw.githubusercontent.com/afni/afni/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/matlab/README.attributes
+	int n, nDim = hdr.dim[0];
+    printMessage("AFNI writer is experimental\n");
+    if (nDim < 1) return EXIT_FAILURE;
+	int nVol = hdr.dim[4];
+	if (nVol < 1) nVol = 1;
+    bool isGz = opts.isGz;
+	size_t imgsz = nii_ImgBytes(hdr);
+	if  ((isGz) && (imgsz >=  2147483647)) {
+		printWarning("Saving huge image uncompressed (many GZip tools have 2 Gb limit).\n");
+		isGz = false;
+	}
+	char fname[2048] = {""};
+	strcpy (fname, niiFilename);
+    strcat (fname,".HEAD"); //nrrd or nhdr
+    FILE *fp = fopen(fname, "w");
+    //HISTORY_NOTE
+    afni_str(fp, "TYPESTRING", "3DIM_HEAD_ANAT");
+	//IDCODE_STRING see: MCW_idcode MCW_new_idcode(void)
+	//IDCODE_DATE
+	int ints[8] = {0,2,0,-999,-999,-999,-999,-999};
+    if (d.is3DAcq) ints[1] = 0;//ANAT_SPGR_TYPE
+	afni_int(fp, "SCENE_DATA", 8, ints);
+	//"Nearly Useless Attributes"
+	afni_str(fp, "LABEL_1", "dcm2niix");
+	afni_str(fp, "LABEL_2", "dcm2niix");
+	afni_str(fp, "DATASET_NAME", "dcm2niix");
+	//Orient specific
+	/*#define ORI_R2L_TYPE  0  Right to Left
+	#define ORI_L2R_TYPE  1   Left to Right
+	#define ORI_P2A_TYPE  2   Posterior to Anterior
+	#define ORI_A2P_TYPE  3   Anterior to Posterior
+	#define ORI_I2S_TYPE  4   Inferior to Superior
+	#define ORI_S2I_TYPE  5   Superior to Inferior*/
+	afni_int(fp, "ORIENT_SPECIFIC", 3, ints);
+    //Three numbers giving the xyz-coordinates of the center of the 1st voxel in the dataset.  
+	//The order of these numbers is the same as the order of the xyz-axes (cf. ORIENT_SPECIFIC).
+    //However, the AFNI convention is that R-L, A-P, and I-S are negative-to-positive.
+    float flts3[3] = {0, 0, 0};
+    afni_flt(fp, "ORIGIN", 3, flts3);
+	//Three numbers giving the (x,y,z) voxel sizes, in the same order as ORIENT_SPECIFIC.  That is, [0] = x-delta, [1] = y-delta, and
+    //[2] = z-delta.  These values may be negative; in the example
+    //above, where the y-axis is P-A, then y-delta would be negative
+	//TO DO: negative
+    flts3[0] = hdr.pixdim[1];
+    flts3[1] = hdr.pixdim[2];
+    flts3[2] = hdr.pixdim[3];	
+    afni_flt(fp, "DELTA", 3, flts3);
+    
+    float flts12[12] = {0,0,0, 0,0,0, 0,0,0, 0,0,0};
+    afni_flt(fp, "IJK_TO_DICOM", 12, flts12);
+    afni_flt(fp, "IJK_TO_DICOM_REAL", 12, flts12);
+	//
+ 	//xxx
+	//minMax(hdr, im, vol, &min, &max)
+    //afni_flt(fp, "", 4, flts12);
+	float * mnmxs = (float *) malloc(sizeof(float)*nVol*2);
+	for (int vol = 0; vol < nVol; vol++) {
+		float fmin, fmax;
+		minMax(hdr, im, vol, &fmin, &fmax);
+		mnmxs[vol*2] = fmin;
+		mnmxs[(vol*2)+1] = fmax;
+	}
+	afni_flt(fp, "BRICK_STATS", nVol*2, mnmxs);	
+	free(mnmxs);
+    
+    afni_int(fp, "TAXIS_NUMS", 8, ints);
+    afni_flt(fp, "TAXIS_FLOATS", 8, flts12);
+    //--TAXIS_OFFSETS -- slice times
+    if ((d.CSA.sliceTiming[0] >= 0.0) && (hdr.dim[3] > 1)) {
+	    afni_flt(fp, "TAXIS_OFFSETS", hdr.dim[3], d.CSA.sliceTiming);	
+	}
+    //[0] = Number of spatial dimensions (must be 3)
+    //[1] = Number of sub-bricks in the dataset
+    ints[0] = 3;
+    ints[1] = nVol;
+    afni_int(fp, "DATASET_RANK", 8, ints);
+    int ints5[5] = {0,1,2,0,0};
+    ints5[0] = hdr.dim[1];
+    ints5[1] = hdr.dim[2];
+    ints5[2] = hdr.dim[3]; 
+    afni_int(fp, "DATASET_DIMENSIONS", 5, ints5);
+    
+	//BRICK_TYPES = hdr.datatype
+    //0 = byte    (unsigned char; 1 byte)
+    //1 = short   (2 bytes, signed)
+    //3 = float   (4 bytes, assumed to be IEEE format)
+    //5 = complex (8 bytes: real+imaginary parts)
+	//BRIK requires scl_slope = 1, scl_inter = 0 and can not handle UINT16, INT32
+	bool isForceFloat = false;
+	if (hdr.datatype == DT_UINT16) isForceFloat = true;
+	if (hdr.datatype == DT_INT32) isForceFloat = true;
+	if (!isSameFloat(hdr.scl_inter, 0.0)) isForceFloat = true;
+	if (!isSameFloat(hdr.scl_slope, 1.0)) isForceFloat = true;
+	int dt = 3; //float
+	if ((hdr.datatype == DT_INT16) && (!isForceFloat)) dt = 1;
+	if ((hdr.datatype == DT_UINT8) && (!isForceFloat)) dt = 0;
+	int * dts = (int *) malloc(sizeof(int)*nVol);
+	for (int i = 0; i < nVol; i++)
+		dts[i] = dt;
+	afni_int(fp, "BRICK_TYPES", nVol, dts);	
+    free(dts);
+	//BRICK_FLOAT_FACS
+    float * facs = (float *) malloc(sizeof(float)*nVol);
+	for (int i = 0; i < nVol; i++)
+		dts[i] = 0.0;
+	afni_flt(fp, "BRICK_FLOAT_FACS", nVol, facs);	
+	free(facs);
+    afni_str(fp, "TEMPLATE_SPACE", "ORIG");
+    int ints1[1] = {0};
+    afni_int(fp, "INT_CMAP", 1, ints1);
+    afni_str(fp, "BYTEORDER_STRING", "LSB_FIRST");
+	fclose(fp);
+	//below save BRIK
+	strcpy (fname, niiFilename); //without gz
+	strcat (fname,".BRIK");
+    fp = fopen(fname, "wb");
+	if (isForceFloat) {
+		int nVox = hdr.dim[1] * hdr.dim[2] * hdr.dim[3] * nVol;
+		float * vxs = (float *) malloc(sizeof(float)*nVox);
+		if (hdr.datatype == DT_UINT16) {
+			uint16_t * u16 = (uint16_t*) im;
+			for (int i = 0; i < nVox; i++)
+				vxs[i] = u16[i] * hdr.scl_slope + hdr.scl_inter;
+		} else if (hdr.datatype == DT_INT16) {
+			int16_t * i16 = (int16_t*) im;
+			for (int i = 0; i < nVox; i++)
+				vxs[i] = i16[i] * hdr.scl_slope + hdr.scl_inter;
+		} else  if (hdr.datatype == DT_INT32) {
+			int32_t * i32 = (int32_t*) im;
+			for (int i = 0; i < nVox; i++)
+				vxs[i] = i32[i] * hdr.scl_slope + hdr.scl_inter;
+		} else {
+			printError("Unsupported BRIK export\n");
+		}
+		fwrite(&vxs[0], sizeof(float)*nVox, 1, fp);
+		free(vxs);    
+	} else
+    	fwrite(&im[0], imgsz, 1, fp);
+    fclose(fp);
+    if (!isGz) return EXIT_SUCCESS;
+    return pigz_File(fname, opts, imgsz);
+} // nii_saveAFNI()
+#endif // myAFNI
+
 int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
 	int n, nDim = hdr.dim[0];
-    printMessage("NRRD writer is experimental\n");
+    //printMessage("NRRD writer is experimental\n");
     if (nDim < 1) return EXIT_FAILURE;
     bool isGz = opts.isGz;
 	size_t imgsz = nii_ImgBytes(hdr);
@@ -6367,6 +6677,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isRotate3DAcq = true;
     opts->isGz = false;
     opts->isSaveNativeEndian = true;
+	opts->isAddNamePostFixes = true; //e.g. "_e2" added for second echo 
     opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;
