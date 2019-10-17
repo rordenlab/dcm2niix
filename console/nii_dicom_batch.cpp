@@ -3940,7 +3940,7 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
     if ((nVox2D < 1) || (hdr.dim[0] != 3) ) return EXIT_FAILURE;
-    if ((hdr.datatype !=  DT_FLOAT32) && (hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
+    if ((hdr.datatype !=  DT_FLOAT32) && (hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16) && (hdr.dim[3] >= 3)) {
         printMessage("Only able to make equidistant slices from 8,16,24-bit integer or 32-bit float data with at least 3 slices.");
         return EXIT_FAILURE;
     }
@@ -3966,7 +3966,6 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
         mn = (sliceMMarray[hdr.dim[3]-1]) / (slices-1);
     }
     //printMessage("-->%g mn slices %d orig %d\n", mn, slices, hdr.dim[3]);
-    if (slices < 3) return EXIT_FAILURE;
     struct nifti_1_header hdrX = hdr;
     hdrX.dim[3] = slices;
     hdrX.pixdim[3] = mn;
