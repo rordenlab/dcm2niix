@@ -1055,7 +1055,13 @@ tse3d: T2*/
 			} else
 				isSep = true;
 		}
-		fprintf(fp, "\"],\n");
+		if ((d.isHasPhase) &&  (strstr(d.imageType, "_PHASE_") == NULL) ) 
+			fprintf(fp,"\", \"PHASE"); //"_IMAGINARY_"
+		if ((d.isHasReal) &&  (strstr(d.imageType, "_REAL_") == NULL) )
+			fprintf(fp,"\", \"REAL");
+		if ((d.isHasImaginary) &&  (strstr(d.imageType, "_IMAGINARY_") == NULL) ) 
+			fprintf(fp,"\", \"IMAGINARY");
+		fprintf(fp, "\"],\n");	
 	}
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
@@ -2252,7 +2258,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                 strcat (outname,dcm.patientName);
             if (f == 'O') {
                 strcat (outname,dcm.instanceUID);
-				isAddNamePostFixes = false;
+                if (strlen(dcm.instanceUID) > 0)
+					isAddNamePostFixes = false;
 			}
             if (f == 'P') {
             	strcat (outname,dcm.protocolName);
@@ -2840,73 +2847,6 @@ int pigz_File(char * fname, struct TDCMopts opts, size_t imgsz) {
 } // pigz_File()
 
 #ifdef myAFNI
-//#include <sys/utsname.h>  /* these 4 files are needed by the UNIQ_ */
-
-
-//https://github.com/afni/afni/blob/3f94a8fcf779acee4349f50af69c5c2d41d7f926/src/3ddata.h
-/*! Size of ID code string. 27 Sep 2001: increased from 16 to 32. */
-#define MCW_IDSIZE 32
-/*! Size of ID date string. */
-#define MCW_IDDATE 48
-typedef struct {
-  char str[MCW_IDSIZE] ;    /*!< Unique ID code string */
-  char date[MCW_IDDATE] ;   /*!< Date string was generated */
-} MCW_idcode ;
-
-//Amalloc.h
-#define AFMALL(typ,siz)    (typ*) calloc(1,siz)
-
-//struct timeval {
-//    long tv_sec;
-//    long tv_usec;
-//};
-
-void gettimeofday (struct timeval * tp, void * dummy)
-{
-    struct timeb tm;
-    ftime (&tm);
-    tp->tv_sec = tm.time;
-    tp->tv_usec = tm.millitm * 1000;
-}
-
-//https://raw.githubusercontent.com/afni/afni/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/thd_md5.c
-
-char * UNIQ_idcode(void)
-{
-   char *idc;
-   idc = AFMALL(char, 32) ;         /* will be output string */
-	return idc ;
-}
-
-/*----------------------------------------------------------------------
-   Fill a user-supplied buffer (length at least 32) with an idcode
-------------------------------------------------------------------------*/
-
-#define MCW_strncpy(dest,src,n) \
- ( (void) strncpy( (dest) , (src) , (n)-1 ) , (dest)[(n)-1] = '\0' )
-
-void UNIQ_idcode_fill( char *idc )
-{
-   char *bbb ;
-   if( idc == NULL ) return ;
-   bbb = UNIQ_idcode() ;
-   strcpy(idc,bbb) ; free(bbb) ; return ;
-}
-
-MCW_idcode MCW_new_idcode(void)
-{
-   MCW_idcode newid ;
-   time_t tnow ;
-   int nn ;
-   UNIQ_idcode_fill( newid.str ) ;  /* thd_md5.c */
-   tnow = time(NULL) ;
-   MCW_strncpy( newid.date , ctime(&tnow) , MCW_IDDATE ) ;
-   nn = strlen(newid.date) ;
-   if( nn > 0 && newid.date[nn-1] == '\n' ) newid.date[nn-1] = '\0' ;
-
-   return newid ;
-}
-
 void afni_int(FILE *fp, const char *tag, int cnt, int vals[]) {
 	fprintf(fp, "type = integer-attribute\n");
 	fprintf(fp, "name = %s\n", tag);
@@ -2928,11 +2868,22 @@ void afni_flt(FILE *fp, const char *tag, int cnt, float vals[]) {
 }
 
 void afni_str(FILE *fp, const char *tag, const char *val) {
-	//TODO: convert '~' to '*'
 	fprintf(fp, "type = string-attribute\n");
 	fprintf(fp, "name = %s\n", tag);
 	fprintf(fp, "count = %lu\n", strlen(val)+1);
-	fprintf(fp, "'%s~\n", val);	
+	if (strrchr(path, '~')!= null {
+		fprintf(fp, "'%s~\n", val);	
+	} else {
+		//convert '~' to '*'
+		fprintf(fp, "'");
+		for (int i = 0; i < strlen(val); i++) {
+			if (val[i] == '~')
+				fprintf(fp, "*");
+			else
+				fprintf(fp, "%c", val[i]);
+		}
+		fprintf(fp, "~\n");
+	}
 	fprintf(fp, "\n");
 }
 
@@ -3939,9 +3890,9 @@ int nii_saveNII3Deq(char * niiFilename, struct nifti_1_header hdr, unsigned char
     //sliceMMarray = 0.0 3.0 6.0 12.0 22.0 <- ascending distance from first slice
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     int nVox2D = hdr.dim[1]*hdr.dim[2];
-    if ((nVox2D < 1) || (hdr.dim[0] != 3) ) return EXIT_FAILURE;
+    if ((nVox2D < 1) || (hdr.dim[0] != 3) || (hdr.dim[3] < 3)) return EXIT_FAILURE;
     if ((hdr.datatype !=  DT_FLOAT32) && (hdr.datatype != DT_UINT8) && (hdr.datatype != DT_RGB24) && (hdr.datatype != DT_INT16)) {
-        printMessage("Only able to make equidistant slices from 8,16,24-bit integer or 32-bit float data with at least 3 slices.");
+        printMessage("Only able to make equidistant slices from 8,16,24-bit integer or 32-bit float image data.");
         return EXIT_FAILURE;
     }
     float mn = sliceMMarray[1] - sliceMMarray[0];

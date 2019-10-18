@@ -905,7 +905,9 @@ uint32_t mz_crc32X(unsigned char *ptr, size_t buf_len)
   return ~crcu32;
 }
 
-void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false) {
+
+
+void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false, bool isSpaceToUnderscore = true) {
     if (lLength < 1) return;
 //#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lLength + 1));
@@ -944,7 +946,13 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = 
             if (c == 255) cString[i] = 'y';
         }
     for (int i = 0; i < lLength; i++)
-        if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13)) cString[i] = '_';
+        if ((cString[i]<1) || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13)) cString[i] = '_';
+    if (!isSpaceToUnderscore) {
+   		if (cString[lLength-1]==' ') cString[lLength-1] = '_'; //only remove trailing space, e.g. Philips Image Type with odd length
+    } else {
+    	for (int i = 0; i < lLength; i++)
+        	if (cString[i]==' ') cString[i] = '_';
+    }
     int len = 1;
     for (int i = 1; i < lLength; i++) { //remove repeated "_"
         if ((cString[i-1]!='_') || (cString[i]!='_')) {
@@ -4303,6 +4311,7 @@ double TE = 0.0; //most recent echo time recorded
     char vr[2];
     //float intenScalePhilips = 0.0;
     char acquisitionDateTimeTxt[kDICOMStr] = "";
+    char imageType1st[kDICOMStr] = "";
     bool isEncapsulatedData = false;
     int multiBandFactor = 0;
     int frequencyRows = 0;
@@ -4773,8 +4782,11 @@ double TE = 0.0; //most recent echo time recorded
                 break;       
             }
             case kImageTypeTag: {
-            	dcmStr (lLength, &buffer[lPos], d.imageType);
-                int slen;
+            	bool is1st = strlen(d.imageType) == 0;
+            	dcmStr (lLength, &buffer[lPos], d.imageType, false, false); //<-distinguish spaces from pathdelim: [ORIGINAL\PHASE MAP\FFE] should return "PHASE MAP" not "PHASE_MAP"
+            	if (is1st)
+            		strcpy(imageType1st, d.imageType);
+            	int slen;
                 slen = (int) strlen(d.imageType);
 				if((slen > 5) && strstr(d.imageType, "_MOCO_") ) {
                 	//d.isDerived = true; //this would have 'i- y' skip MoCo images
@@ -6302,6 +6314,8 @@ if (d.isHasPhase)
     	exit (kEXIT_CORRUPT_FILE_FOUND);
 #endif
     }
+    if (numDimensionIndexValues > 1)
+    	strcpy(d.imageType, imageType1st); //for multi-frame datasets, return name of book, not name of last chapter
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
     	if (isVerbose > 1) { //
