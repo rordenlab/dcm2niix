@@ -1,9 +1,4 @@
 //#define myNoSave //do not save images to disk
-//#define myAFNI
-#ifdef myAFNI
-	#include <sys/utsname.h>  /* these 4 files are needed by the UNIQ_ */
-	#include <sys/timeb.h>
-#endif
 #ifdef _MSC_VER
 	#include <direct.h>
 	#define getcwd _getcwd
@@ -2259,7 +2254,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
             if (f == 'O') {
                 strcat (outname,dcm.instanceUID);
                 if (strlen(dcm.instanceUID) > 0)
-					isAddNamePostFixes = false;
+					isAddNamePostFixes = false; //should be unique, so no need to post-fix
 			}
             if (f == 'P') {
             	strcat (outname,dcm.protocolName);
@@ -2846,250 +2841,6 @@ int pigz_File(char * fname, struct TDCMopts opts, size_t imgsz) {
     return EXIT_SUCCESS;
 } // pigz_File()
 
-#ifdef myAFNI
-void afni_int(FILE *fp, const char *tag, int cnt, int vals[]) {
-	fprintf(fp, "type = integer-attribute\n");
-	fprintf(fp, "name = %s\n", tag);
-	fprintf(fp, "count = %d\n", cnt);
-	for (int i = 0; i < cnt; i++)
-		fprintf(fp, "%14d", vals[i]);
-	fprintf(fp, "\n");		
-	fprintf(fp, "\n");
-}
-
-void afni_flt(FILE *fp, const char *tag, int cnt, float vals[]) {
-	fprintf(fp, "type = float-attribute\n");
-	fprintf(fp, "name = %s\n", tag);
-	fprintf(fp, "count = %d\n", cnt);
-	for (int i = 0; i < cnt; i++)
-		fprintf(fp, "%14g", vals[i]);
-	fprintf(fp, "\n");		
-	fprintf(fp, "\n");
-}
-
-void afni_str(FILE *fp, const char *tag, const char *val) {
-	fprintf(fp, "type = string-attribute\n");
-	fprintf(fp, "name = %s\n", tag);
-	fprintf(fp, "count = %lu\n", strlen(val)+1);
-	if (strrchr(path, '~')!= null {
-		fprintf(fp, "'%s~\n", val);	
-	} else {
-		//convert '~' to '*'
-		fprintf(fp, "'");
-		for (int i = 0; i < strlen(val); i++) {
-			if (val[i] == '~')
-				fprintf(fp, "*");
-			else
-				fprintf(fp, "%c", val[i]);
-		}
-		fprintf(fp, "~\n");
-	}
-	fprintf(fp, "\n");
-}
-
-void minMax(struct nifti_1_header hdr, unsigned char* im, int vol, float *min, float *max) { //vol indexed from 0
-	*min = 0.0;
-	*max = 0.0;
-	int nVox = hdr.dim[1] * hdr.dim[2] * hdr.dim[3];
-	float fmin, fmax;
-	if ((vol >= hdr.dim[4]) && (nVox < 1) ) return;
- 	int lo = vol * nVox;
-	int hi = lo + nVox;
-	if (hdr.datatype == DT_INT16) {
-		int16_t * vs = (int16_t*) im;
-		int16_t imin = vs[lo]; 
-		int16_t imax = vs[lo];
-		for (int i = lo; i < hi; i++) {
-			if (vs[i] < imin) imin = vs[i];
-			if (vs[i] > imax) imax = vs[i];
-		}
-		fmin = imin;
-		fmax = imax;
-	}
-	if (hdr.datatype == DT_UINT16) {
-		uint16_t * vs = (uint16_t*) im;
-		uint16_t imin = vs[lo];
-		uint16_t imax = vs[lo];
-		for (int i = lo; i < hi; i++) {
-			if (vs[i] < imin) imin = vs[i];
-			if (vs[i] > imax) imax = vs[i];
-		}
-		fmin = imin;
-		fmax = imax;
-	}
-	if (hdr.datatype == DT_INT32) {
-		int32_t * vs = (int32_t*) im;
-		int32_t imin = vs[lo];
-		int32_t imax = vs[lo];
-		for (int i = lo; i < hi; i++) {
-			if (vs[i] < imin) imin = vs[i];
-			if (vs[i] > imax) imax = vs[i];
-		}
-		fmin = imin;
-		fmax = imax;
-	}	
-	if (hdr.datatype == DT_FLOAT32) {
-		float * vs = (float*) im;
-		fmin = vs[lo];
-		fmax = vs[lo];
-		for (int i = lo; i < hi; i++) {
-			if (vs[i] < fmin) fmin = vs[i];
-			if (vs[i] > fmax) fmax = vs[i];
-		}
-	}
-	*min = (fmin*hdr.scl_slope)+hdr.scl_inter;
-	*max = (fmax*hdr.scl_slope)+hdr.scl_inter;
-}
-
-//to do
-// spatial 
-// history
-// idcode
-int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
-//https://raw.githubusercontent.com/afni/afni/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/matlab/README.attributes
-	int n, nDim = hdr.dim[0];
-    printMessage("AFNI writer is experimental\n");
-    if (nDim < 1) return EXIT_FAILURE;
-	int nVol = hdr.dim[4];
-	if (nVol < 1) nVol = 1;
-    bool isGz = opts.isGz;
-	size_t imgsz = nii_ImgBytes(hdr);
-	if  ((isGz) && (imgsz >=  2147483647)) {
-		printWarning("Saving huge image uncompressed (many GZip tools have 2 Gb limit).\n");
-		isGz = false;
-	}
-	char fname[2048] = {""};
-	strcpy (fname, niiFilename);
-    strcat (fname,".HEAD"); //nrrd or nhdr
-    FILE *fp = fopen(fname, "w");
-    //HISTORY_NOTE
-    afni_str(fp, "TYPESTRING", "3DIM_HEAD_ANAT");
-	//IDCODE_STRING see: MCW_idcode MCW_new_idcode(void)
-	//IDCODE_DATE
-	int ints[8] = {0,2,0,-999,-999,-999,-999,-999};
-    if (d.is3DAcq) ints[1] = 0;//ANAT_SPGR_TYPE
-	afni_int(fp, "SCENE_DATA", 8, ints);
-	//"Nearly Useless Attributes"
-	afni_str(fp, "LABEL_1", "dcm2niix");
-	afni_str(fp, "LABEL_2", "dcm2niix");
-	afni_str(fp, "DATASET_NAME", "dcm2niix");
-	//Orient specific
-	/*#define ORI_R2L_TYPE  0  Right to Left
-	#define ORI_L2R_TYPE  1   Left to Right
-	#define ORI_P2A_TYPE  2   Posterior to Anterior
-	#define ORI_A2P_TYPE  3   Anterior to Posterior
-	#define ORI_I2S_TYPE  4   Inferior to Superior
-	#define ORI_S2I_TYPE  5   Superior to Inferior*/
-	afni_int(fp, "ORIENT_SPECIFIC", 3, ints);
-    //Three numbers giving the xyz-coordinates of the center of the 1st voxel in the dataset.  
-	//The order of these numbers is the same as the order of the xyz-axes (cf. ORIENT_SPECIFIC).
-    //However, the AFNI convention is that R-L, A-P, and I-S are negative-to-positive.
-    float flts3[3] = {0, 0, 0};
-    afni_flt(fp, "ORIGIN", 3, flts3);
-	//Three numbers giving the (x,y,z) voxel sizes, in the same order as ORIENT_SPECIFIC.  That is, [0] = x-delta, [1] = y-delta, and
-    //[2] = z-delta.  These values may be negative; in the example
-    //above, where the y-axis is P-A, then y-delta would be negative
-	//TO DO: negative
-    flts3[0] = hdr.pixdim[1];
-    flts3[1] = hdr.pixdim[2];
-    flts3[2] = hdr.pixdim[3];	
-    afni_flt(fp, "DELTA", 3, flts3);
-    
-    float flts12[12] = {0,0,0, 0,0,0, 0,0,0, 0,0,0};
-    afni_flt(fp, "IJK_TO_DICOM", 12, flts12);
-    afni_flt(fp, "IJK_TO_DICOM_REAL", 12, flts12);
-	//
- 	//xxx
-	//minMax(hdr, im, vol, &min, &max)
-    //afni_flt(fp, "", 4, flts12);
-	float * mnmxs = (float *) malloc(sizeof(float)*nVol*2);
-	for (int vol = 0; vol < nVol; vol++) {
-		float fmin, fmax;
-		minMax(hdr, im, vol, &fmin, &fmax);
-		mnmxs[vol*2] = fmin;
-		mnmxs[(vol*2)+1] = fmax;
-	}
-	afni_flt(fp, "BRICK_STATS", nVol*2, mnmxs);	
-	free(mnmxs);
-    
-    afni_int(fp, "TAXIS_NUMS", 8, ints);
-    afni_flt(fp, "TAXIS_FLOATS", 8, flts12);
-    //--TAXIS_OFFSETS -- slice times
-    if ((d.CSA.sliceTiming[0] >= 0.0) && (hdr.dim[3] > 1)) {
-	    afni_flt(fp, "TAXIS_OFFSETS", hdr.dim[3], d.CSA.sliceTiming);	
-	}
-    //[0] = Number of spatial dimensions (must be 3)
-    //[1] = Number of sub-bricks in the dataset
-    ints[0] = 3;
-    ints[1] = nVol;
-    afni_int(fp, "DATASET_RANK", 8, ints);
-    int ints5[5] = {0,1,2,0,0};
-    ints5[0] = hdr.dim[1];
-    ints5[1] = hdr.dim[2];
-    ints5[2] = hdr.dim[3]; 
-    afni_int(fp, "DATASET_DIMENSIONS", 5, ints5);
-    
-	//BRICK_TYPES = hdr.datatype
-    //0 = byte    (unsigned char; 1 byte)
-    //1 = short   (2 bytes, signed)
-    //3 = float   (4 bytes, assumed to be IEEE format)
-    //5 = complex (8 bytes: real+imaginary parts)
-	//BRIK requires scl_slope = 1, scl_inter = 0 and can not handle UINT16, INT32
-	bool isForceFloat = false;
-	if (hdr.datatype == DT_UINT16) isForceFloat = true;
-	if (hdr.datatype == DT_INT32) isForceFloat = true;
-	if (!isSameFloat(hdr.scl_inter, 0.0)) isForceFloat = true;
-	if (!isSameFloat(hdr.scl_slope, 1.0)) isForceFloat = true;
-	int dt = 3; //float
-	if ((hdr.datatype == DT_INT16) && (!isForceFloat)) dt = 1;
-	if ((hdr.datatype == DT_UINT8) && (!isForceFloat)) dt = 0;
-	int * dts = (int *) malloc(sizeof(int)*nVol);
-	for (int i = 0; i < nVol; i++)
-		dts[i] = dt;
-	afni_int(fp, "BRICK_TYPES", nVol, dts);	
-    free(dts);
-	//BRICK_FLOAT_FACS
-    float * facs = (float *) malloc(sizeof(float)*nVol);
-	for (int i = 0; i < nVol; i++)
-		dts[i] = 0.0;
-	afni_flt(fp, "BRICK_FLOAT_FACS", nVol, facs);	
-	free(facs);
-    afni_str(fp, "TEMPLATE_SPACE", "ORIG");
-    int ints1[1] = {0};
-    afni_int(fp, "INT_CMAP", 1, ints1);
-    afni_str(fp, "BYTEORDER_STRING", "LSB_FIRST");
-	fclose(fp);
-	//below save BRIK
-	strcpy (fname, niiFilename); //without gz
-	strcat (fname,".BRIK");
-    fp = fopen(fname, "wb");
-	if (isForceFloat) {
-		int nVox = hdr.dim[1] * hdr.dim[2] * hdr.dim[3] * nVol;
-		float * vxs = (float *) malloc(sizeof(float)*nVox);
-		if (hdr.datatype == DT_UINT16) {
-			uint16_t * u16 = (uint16_t*) im;
-			for (int i = 0; i < nVox; i++)
-				vxs[i] = u16[i] * hdr.scl_slope + hdr.scl_inter;
-		} else if (hdr.datatype == DT_INT16) {
-			int16_t * i16 = (int16_t*) im;
-			for (int i = 0; i < nVox; i++)
-				vxs[i] = i16[i] * hdr.scl_slope + hdr.scl_inter;
-		} else  if (hdr.datatype == DT_INT32) {
-			int32_t * i32 = (int32_t*) im;
-			for (int i = 0; i < nVox; i++)
-				vxs[i] = i32[i] * hdr.scl_slope + hdr.scl_inter;
-		} else {
-			printError("Unsupported BRIK export\n");
-		}
-		fwrite(&vxs[0], sizeof(float)*nVox, 1, fp);
-		free(vxs);    
-	} else
-    	fwrite(&im[0], imgsz, 1, fp);
-    fclose(fp);
-    if (!isGz) return EXIT_SUCCESS;
-    return pigz_File(fname, opts, imgsz);
-} // nii_saveAFNI()
-#endif // myAFNI
 
 int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
 	int n, nDim = hdr.dim[0];
@@ -4891,16 +4642,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 if (dxVaries) {
                     sliceMMarray = (float *) malloc(sizeof(float)*nConvert);
                     sliceMMarray[0] = 0.0f;
+                    for (int i = 1; i < nConvert; i++)
+						sliceMMarray[i] = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
                     printWarning("Interslice distance varies in this volume (incompatible with NIfTI format).\n");
                     if (opts.isVerbose) {
 						printMessage("Dimensions %d %d %d %d nAcq %d nConvert %d\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], nAcq, nConvert);
 						printMessage(" Distance from first slice:\n");
 						printMessage("dx=[0");
-						for (int i = 1; i < nConvert; i++) {
-							float dx0 = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]);
-							printMessage(" %g", dx0);
-							sliceMMarray[i] = dx0;
-						}
+						for (int i = 1; i < nConvert; i++)
+							printMessage(" %g", sliceMMarray[i]);
 						printMessage("]\n");
                     }
                     #ifndef myInstanceNumberOrderIsNotSpatial
@@ -4925,12 +4675,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
 						hdr0.pixdim[3] = dx;
 						isInconsistenSliceDir = false;
-						
 						//code below duplicates prior code, could be written as modular function(s)
-						
-						
-						//qball
-						
 						indx0 = dcmSort[0].indx;
    						if (nConvert > 1) indx1 = dcmSort[1].indx;
    						dxVaries = false;
