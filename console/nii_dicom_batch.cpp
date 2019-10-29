@@ -3485,7 +3485,6 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
 	}
 	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
 		imOut32[v] = pixelPaddingValue;
-
 	//copy skewed voxels
 	for (int s = 0; s < hdrIn.dim[3]; s++) { //for each slice
 		float sliceMM = s * hdrIn.pixdim[3];

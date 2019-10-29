@@ -5061,7 +5061,6 @@ double TE = 0.0; //most recent echo time recorded
             	//d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
             	//d.CSA.numDti = 1;
             	break; }
-
             case kDiffusionGradientDirectionSiemens : {
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
 				float v[4];

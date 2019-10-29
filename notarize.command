@@ -22,7 +22,6 @@ cd bin
 
 # Clean up temporary files
 rm -f dcm2niix_macOS.dmg
-rm -f dcm2niix_macOS.tmp.dmg
 rm -f upload_log_file.txt
 rm -f request_log_file.txt
 rm -f log_file.txt
@@ -40,8 +39,7 @@ codesign --verify --verbose --strict dcm2niix
 
 echo "Creating disk image..."
 
-hdiutil create -volname dcm2niix -srcfolder `pwd` -ov -format UDZO -layout SPUD -fs HFS+J  dcm2niix_macOS.tmp.dmg
-hdiutil convert dcm2niix_macOS.tmp.dmg -format UDZO -o dcm2niix_macOS.dmg
+hdiutil create -volname dcm2niix -srcfolder `pwd` -ov -format UDZO -layout SPUD -fs HFS+J  dcm2niix_macOS.dmg
 
 # Notarizing with Apple...
 echo "Uploading..."
