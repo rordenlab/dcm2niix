@@ -1591,9 +1591,9 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     //https://github.com/rordenlab/dcm2niix/issues/352
     bool allB0 = dcmList[indx0].isDiffusion;
     if (dcmList[indx0].isDerived) allB0 = false; //e.g. FA map
-    if (numDti == numVol) allB0 = false;
+    if ((numDti == numVol) && (numDti > 1)) allB0 = false;
     if (numDti > 1) allB0 = false;
-    if ((numDti == 1) && (dti4D->S[0].V[0] > 0.0)) allB0 = false;
+    if ((numDti == 1) && (dti4D->S[0].V[0] > 50.0)) allB0 = false;
     if (allB0) { 
 		if (opts.isVerbose)
 			printMessage("Diffusion image without gradients: assuming %d volume B=0 series\n", numVol);
