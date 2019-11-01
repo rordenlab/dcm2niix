@@ -4800,6 +4800,8 @@ double TE = 0.0; //most recent echo time recorded
                 	d.isDerived = true;
 				if((slen > 5) && strstr(d.imageType, "_FA_") )
                 	d.isDerived = true;
+				if((slen > 12) && strstr(d.imageType, "_DIFFUSION_") )
+                	d.isDiffusion = true;
 				//if (strcmp(transferSyntax, "ORIGINAL_PRIMARY_M_ND_MOSAIC") == 0)
                 if((slen > 5) && !strcmp(d.imageType + slen - 6, "MOSAIC") )
                 	isMosaic = true;
@@ -4921,7 +4923,6 @@ double TE = 0.0; //most recent echo time recorded
                 if (((int) strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
                     d.isDiffusion = true;
                 break;
-
             case kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);

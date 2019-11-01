@@ -1579,13 +1579,49 @@ bool isAllZeroFloat(float v1, float v2, float v3) {
 	return true;
 }
 
-int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, int * numADC) {
+int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TDCMopts opts, int sliceDir, struct TDTI4D *dti4D, int * numADC, int numVol) {
     //reports non-zero if any volumes should be excluded (e.g. philip stores an ADC maps)
-    //to do: works with 3D mosaics and 4D files, must remove repeated volumes for 2D sequences....
     *numADC = 0;
     if (opts.isOnlyBIDS) return NULL;
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
+#ifdef USING_R
+	//R might want to pad zeros
+#else    
+    //https://github.com/rordenlab/dcm2niix/issues/352
+    bool allB0 = dcmList[indx0].isDiffusion;
+    if (dcmList[indx0].isDerived) allB0 = false; //e.g. FA map
+    if (numDti == numVol) allB0 = false;
+    if (numDti > 1) allB0 = false;
+    if ((numDti == 1) && (dti4D->S[0].V[0] > 0.0)) allB0 = false;
+    if (allB0) { 
+		if (opts.isVerbose)
+			printMessage("Diffusion image without gradients: assuming %d volume B=0 series\n", numVol);
+	    char sep = '\t';
+		if (opts.isCreateBIDS)
+            sep = ' ';
+        //save bval
+        char txtname[2048] = {""};
+        strcpy (txtname,pathoutname);
+		strcat (txtname,".bval");
+		FILE *fp = fopen(txtname, "w");
+		for (int i = 0; i < (numVol); i++)
+			fprintf(fp, "%d%c", 0, sep);
+		fprintf(fp, "\n");
+		fclose(fp);
+		//save bvec
+		strcpy (txtname,pathoutname);
+		strcat (txtname,".bvec");
+		fp = fopen(txtname, "w");
+		for (int v = 0; v < (3); v++) {
+			for (int i = 0; i < (numVol); i++)
+				fprintf(fp, "%d%c", 0, sep);
+			fprintf(fp, "\n");
+		}
+		fclose(fp);
+    } 
+#endif    
+    
     if (numDti < 1) return NULL;
     if ((numDti < 3) && (nConvert < 3)) return NULL;
     TDTI * vx = NULL;
@@ -4888,7 +4924,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     }
 	nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
-    int * volOrderIndex = nii_saveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC);
+	int * volOrderIndex = nii_saveDTI(pathoutname,nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC, hdr0.dim[4]);
     PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
     if ((dcmList[dcmSort[0].indx].bitsStored == 12) && (dcmList[dcmSort[0].indx].bitsAllocated == 16))
     	nii_mask12bit(imgM, &hdr0);
