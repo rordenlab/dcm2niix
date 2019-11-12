@@ -684,6 +684,7 @@ struct TDICOMdata clear_dicom_data() {
     struct TDICOMdata d;
     //d.dti4D = NULL;
     d.locationsInAcquisition = 0;
+    d.locationsInAcquisitionConflict = 0; //for GE  discrepancy between tags 0020,1002; 0021,104F; 0054,0081
     d.modality = kMODALITY_UNKNOWN;
     d.effectiveEchoSpacingGE = 0;
     for (int i=0; i < 4; i++) {
@@ -6172,8 +6173,13 @@ double TE = 0.0; //most recent echo time recorded
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
-    	if (isVerbose)  printMessage("Check number of slices, discrepancy between tags (0020,1002; 0021,104F; 0054,0081) (%d vs %d) %s\n", locationsInAcquisitionGE, d.locationsInAcquisition, fname);
-    	if (locationsInAcquisitionGE < d.locationsInAcquisition) d.locationsInAcquisition = locationsInAcquisitionGE;
+    	if (isVerbose)  
+    		printMessage("Check number of slices, discrepancy between tags (0020,1002; 0021,104F; 0054,0081) (%d vs %d) %s\n", locationsInAcquisitionGE, d.locationsInAcquisition, fname);
+    	if (locationsInAcquisitionGE < d.locationsInAcquisition) {
+    		d.locationsInAcquisitionConflict = d.locationsInAcquisition;
+    		d.locationsInAcquisition = locationsInAcquisitionGE;
+    	} else
+    		d.locationsInAcquisitionConflict = locationsInAcquisitionGE;
     }
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionGE;

@@ -112,6 +112,8 @@ The following tools exploit dcm2niix
 
   - [abcd-dicom2bids](https://github.com/DCAN-Labs/abcd-dicom2bids) selectively downloads high quality ABCD datasets. 
   - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
+  - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
+  - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.
   - [dcm2niix can help convert data from the Adolescent Brain Cognitive Development (ABCD) DICOM to BIDS](https://github.com/ABCD-STUDY/abcd-dicom2bids)
   - [bidsify](https://github.com/spinoza-rec/bidsify) is a Python project that uses dcm2niix to convert DICOM and Philips PAR/REC images to the BIDS standard.
@@ -137,6 +139,7 @@ The following tools exploit dcm2niix
   - [NeuroDebian](http://neuro.debian.net/pkgs/dcm2niix.html) provides up-to-date version of dcm2niix for Debian-based systems.
   - [neurodocker](https://github.com/kaczmarj/neurodocker) generates [custom](https://github.com/rordenlab/dcm2niix/issues/138) Dockerfiles given specific versions of neuroimaging software.
   - [NeuroElf](http://neuroelf.net) can use dcm2niix to convert DICOM images.
+  - [Neuroinformatics Database (NiDB)](https://github.com/gbook/nidb) is designed to store, retrieve, analyze, and share neuroimaging data. It uses dcm2niix for image QA and handling some formats. 
   - [NiftyPET](https://niftypet.readthedocs.io/en/latest/intro.htmlNiftyPET) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
   - [PNL-nipype](https://github.com/pnlbwh/Dummy-PNL-nipype) is a Python script that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.

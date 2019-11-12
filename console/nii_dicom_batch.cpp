@@ -4585,6 +4585,20 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             if ((dcmList[indx0].manufacturer == kMANUFACTURER_SIEMENS) && (isSameFloat(dcmList[indx0].TR ,0.0f))) {
                 nConvert = siemensCtKludge(nConvert, dcmSort,dcmList);
             }
+            //resolve GE  discrepancy between tags 0020,1002; 0021,104F; 0054,0081
+            // e.g. T1 scans can be interpolated in the slice direction, so choose large number
+            // EPI can report total number of slices (dim3*dim4), so choose smaller number
+            if ((nAcq == 1 ) && (dcmList[indx0].locationsInAcquisitionConflict > 0) && ((nConvert % dcmList[indx0].locationsInAcquisitionConflict) == 0)) {
+           		//printMessage(" >>>%d %d %d %d\n", nAcq, nConvert, dcmList[indx0].locationsInAcquisitionConflict, dcmList[indx0].locationsInAcquisition);
+ 				nAcq = 0;
+                for (int i = 0; i < nConvert; i++)
+                    if (isSamePosition(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx])) nAcq++;
+                int nAcqConflict = nConvert/dcmList[indx0].locationsInAcquisitionConflict;
+                if (nAcq == nAcqConflict) {
+                	printMessage("Resolved discrepancy between tags (0020,1002; 0021,104F; 0054,0081)\n");
+                	dcmList[indx0].locationsInAcquisition = dcmList[indx0].locationsInAcquisitionConflict;
+                }    
+            }
             if ((nAcq == 1 ) && (dcmList[indx0].locationsInAcquisition > 0)) nAcq = nConvert/dcmList[indx0].locationsInAcquisition;
             if (nAcq < 2 ) {
                 nAcq = 0;
