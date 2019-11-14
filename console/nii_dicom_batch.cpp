@@ -3096,10 +3096,17 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 	fclose(fp);
     if (!isGz) return EXIT_SUCCESS;
     //below: gzip file
+    #ifdef myDisableZLib
+	if  (strlen(opts.pigzname)  < 1) { //internal compression
+    	printError("Compiled without gz support, unable to compress %s\n", fname);
+    	return EXIT_FAILURE;
+    }
+	#else
     if  (strlen(opts.pigzname)  < 1) { //internal compression
     	writeNiiGz (fname, hdr, im, imgsz, opts.gzLevel, true);
     	return EXIT_SUCCESS;
     }
+	#endif
 	//below pigz
 	strcpy (fname, niiFilename); //without gz
 	strcat (fname,".raw");
@@ -3500,11 +3507,9 @@ unsigned char * nii_saveNII3DtiltFloat32(char * niiFilename, struct nifti_1_head
         // printMessage("Adjusting origin for %d pixels padding (float)\n", pxOffset);
         adjustOriginForNegativeTilt(hdr, pxOffset);
     }
-
 	int nVox2D = hdr->dim[1]*hdr->dim[2];
 	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 4);// *4 as 32-bits per voxel, sizeof(float) );
 	float * imOut32 = ( float*) imOut;
-
 	//set surrounding voxels to padding (if present) or darkest observed value
 	bool hasPixelPaddingValue = !isnan(d.pixelPaddingValue);
 	float pixelPaddingValue;
@@ -3607,11 +3612,9 @@ unsigned char * nii_saveNII3Dtilt(char * niiFilename, struct nifti_1_header * hd
         // printMessage("Adjusting origin for %d pixels padding (short)\n", pxOffset);
         adjustOriginForNegativeTilt(hdr, pxOffset);
     }
-
 	int nVox2D = hdr->dim[1]*hdr->dim[2];
 	unsigned char * imOut = (unsigned char *)malloc(nVox2D * hdrIn.dim[3] * 2);// *2 as 16-bits per voxel, sizeof( short) );
 	short * imOut16 = ( short*) imOut;
-
 	//set surrounding voxels to padding (if present) or darkest observed value
 	bool hasPixelPaddingValue = !isnan(d.pixelPaddingValue);
 	short pixelPaddingValue;
@@ -4846,6 +4849,16 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
 	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert);
+    #ifdef myReportSliceFilenames 
+    if (sliceDir < 0) {
+     	for (int i = nConvert; i > 0; --i)
+			printMessage("|%d|%s\n", i, nameList->str[dcmSort[i].indx]);	 
+     
+     } else {
+     	for (int i = 0; i < nConvert; i++)
+			printMessage("|%d|%s\n", i, nameList->str[dcmSort[i].indx]);	 
+     }
+    #endif
     //move before headerDcm2Nii2 checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
     char pathoutname[2048] = {""};
     if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
