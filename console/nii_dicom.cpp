@@ -828,6 +828,8 @@ struct TDICOMdata clear_dicom_data() {
     d.numberOfDiffusionDirectionGE = -1;
     d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
     d.rtia_timerGE = -1.0;
+    d.rawDataRunNumberGE = -1;
+    d.maxEchoNumGE = -1;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -4150,13 +4152,14 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusionGradientDirectionSiemens  0x0019+(0x100E<< 16 ) //FD
 #define  kNumberOfDiffusionDirectionGE 0x0019+(0x10E0<< 16) ///DS NumberOfDiffusionDirection:UserData24
 #define  kLastScanLoc  0x0019+(0x101B<< 16 )
+#define  kRawDataRunNumberGE 0x0019+(0x10A2<< 16 ) //SL
+#define  kMaxEchoNumGE 0x0019+(0x10a9<< 16 ) //DS
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS phase diffusion direction
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS frequency diffusion direction
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS slice diffusion direction
 #define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
-//#define  kRawDataRunNumberGE  0x0019+(0x10a2<< 16 ) //SL
 #define  kStudyID 0x0020+(0x0010 << 16 )
 #define  kSeriesNum 0x0020+(0x0011 << 16 )
 #define  kAcquNum 0x0020+(0x0012 << 16 )
@@ -5086,6 +5089,22 @@ double TE = 0.0; //most recent echo time recorded
                  printMessage("last scan location %f\n,",dcmStrFloat(lLength, &buffer[lPos]));
 
                  break;*/
+			//GE bug: multiple echos can create identical instance numbers
+            //  in theory, one could detect as kRawDataRunNumberGE varies
+            //  sliceN of echoE will have the same value for all timepoints
+            //  this value does not appear indexed
+            //  different echoes record same echo time.
+            //  use multiEchoSortGEDICOM.py to salvage
+            case kRawDataRunNumberGE :
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+                d.rawDataRunNumberGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
+            case kMaxEchoNumGE :
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+                d.maxEchoNumGE = round(dcmStrFloat(lLength, &buffer[lPos]));
+                break;
             case kDiffusionDirectionGEX :
                 if (d.manufacturer == kMANUFACTURER_GE)
                   set_diffusion_directionGE(&volDiffusion, lLength, (&buffer[lPos]), 0);
@@ -5101,17 +5120,6 @@ double TE = 0.0; //most recent echo time recorded
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-            //GE bug: multiple echos can create identical instance numbers
-            //  in theory, one could detect as kRawDataRunNumberGE varies
-            //  sliceN of echoE will have the same value for all timepoints
-            //  this value does not appear indexed
-            //  different echoes record same echo time.
-            //  use multiEchoSortGEDICOM.py to salvage
-            //case kRawDataRunNumberGE :
-            //	if (d.manufacturer != kMANUFACTURER_GE)
-            //		break;
-            //    d.rawDataRunNumberGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-            //    break;
             case kStudyInstanceUID : // 0020, 000D
                 dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
                 break;

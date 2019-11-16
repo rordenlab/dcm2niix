@@ -2346,6 +2346,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 			}
 			if (f == 'X')
 				strcat (outname,dcm.studyID);
+			if ((f == 'Y') && (dcm.rawDataRunNumberGE >= 0)) {
+                sprintf(newstr, "%d", dcm.rawDataRunNumberGE);
+                strcat (outname,newstr);
+            }	
             if (f == 'Z')
                 strcat (outname,dcm.sequenceName);
             if ((f >= '0') && (f <= '9')) {
@@ -2361,6 +2365,13 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                     sprintf(zeroPad,"%%0%dd",f - '0');
                     sprintf(newstr, zeroPad, dcm.imageNum);
                     isImageNumReported = true;
+                    strcat (outname,newstr);
+                    pos++; // e.g. %3f requires extra increment: skip both number and following character
+                }
+                if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'Y') && (dcm.rawDataRunNumberGE >= 0)) {
+                    char zeroPad[12] = {""};
+                    sprintf(zeroPad,"%%0%dd",f - '0');
+                    sprintf(newstr, zeroPad, dcm.rawDataRunNumberGE);
                     strcat (outname,newstr);
                     pos++; // e.g. %3f requires extra increment: skip both number and following character
                 }
@@ -3406,16 +3417,18 @@ void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int 
     //printMessage("max16= %d vox=%d %fms\n",max16, nVox, ((double)(clock()-start))/1000);
     if (max16 > 32767) {
         if (isVerbose > 0)
-        	printMessage("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
+        	printMessage("Note: 16-bit UNSIGNED integer image. Some tools will convert to 32-bit.\n");
     }
-    else
+    else {
         hdr->datatype = DT_INT16;
+     	printMessage("UINT16->INT16 Future release will change default. github.com/rordenlab/dcm2niix/issues/338\n");     
+    }
 } //nii_check16bitUnsigned()
 #else
 void nii_check16bitUnsigned(unsigned char *img, struct nifti_1_header *hdr, int isVerbose){
     if (hdr->datatype != DT_UINT16) return;
 	if (isVerbose < 1) return;
-	printMessage("Note: rare 16-bit UNSIGNED integer image. Older tools may require 32-bit conversion\n");
+	printMessage("Note: 16-bit UNSIGNED integer image. Some tools will convert to 32-bit.\n");
 }
 #endif
 
@@ -4240,6 +4253,9 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	if (d->is3DAcq) return; //no need for slice times
 	if (nSL < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
+	if (d->maxEchoNumGE > 0) 
+		printWarning("GE sequence with %d echoes. See https://github.com/rordenlab/dcm2niix/issues/359\n", d->maxEchoNumGE);	
+	
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
 	#ifdef myReadGeProtocolBlock
 	//GE final desperate attempt to determine slice order
@@ -6447,7 +6463,8 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     #else
     	opts->gzLevel = MZ_DEFAULT_LEVEL; //-1;
     #endif
-    opts->isMaximize16BitRange = false; //e.g. if INT16 image has range 0..500 scale to be 0..50000 with hdr.scl_slope =  hdr.scl_slope * 0.01
+    opts->isMaximize16BitRange = kMaximize16BitRange_False; //e.g. if INT16 image has range 0..500 scale to be 0..50000 with hdr.scl_slope =  hdr.scl_slope * 0.01
+    //opts->isMaximize16BitRange = kMaximize16BitRange_Raw; //future version will use this option as default: preserve UINT16 even if it can be losslessly converted to INT16 
     opts->isFlipY = true; //false: images in raw DICOM orientation, true: image rows flipped to cartesian coordinates
     opts->isRGBplanar = false; //false for NIfTI (RGBRGB...), true for Analyze (RRR..RGGG..GBBB..B)
     opts->isCreateBIDS =  true;

@@ -92,7 +92,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
-    char max16Ch = 'n';
+	char max16Ch = 'n';
     if (opts.isMaximize16BitRange == kMaximize16BitRange_True) max16Ch = 'y';
     if (opts.isMaximize16BitRange == kMaximize16BitRange_Raw) max16Ch = 'o';
     printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n/o [yes=scale, no=no, but uint16->int16, o=original], default %c)\n", max16Ch);
