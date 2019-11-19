@@ -100,6 +100,10 @@ Likewise, the BIDS tag "PhaseEncodingDirection" allows tools like [eddy](https:/
 
 Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not calculate this from Philips DICOMs. If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only inlfuences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
 
+## Partial Volumes
+
+NIfTI expects all 3D volumes of a  4D series to have the same number of series (e.g. a time series of 3D fMRI volumes, or a diffusion set with 3D volumes with different gradients applied). If a fMRI sequence is aborted part way through, it is possible that a Philips scanner will only save part of the final volume. An example would be where the total slices (9970) does not equal Dynamics (290) x slices (35) = 10150. Current versions of dcm2niix expect complete volumes. You can repair your data using the console or a Python script, as discussed in [issue 357](https://github.com/rordenlab/dcm2niix/issues/357). To resolve this situation by hand you could also [rename](RENAMING.md) your DICOM files with a call like `./dcm2niix -r y -f %t/%s_%p_%4y_%2r.dcm ~/out 0020,0100`. In this example, the [`%4y`](FILENAMING.md) parameter adds the volume (Temporal Position, 0020,0100) to the filename, allowing you to identify volumes with missing slices.
+
 ## Non-Image DICOMs
 
 NIfTI is an image format, while DICOM is a multi-purpose format that can store videos (MPEG) or other data. Specifically, some Philips systems save Exam Cards and other non-image data as DICOM files. In these case, dcm2niix should skip these files, as they can not be represented in NIfTI. You can discriminate these files by reading the [MediaStorageSOPClassUID (0002,0002)](https://github.com/rordenlab/dcm2niix/issues/328).

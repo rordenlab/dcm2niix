@@ -18,15 +18,18 @@ You request the output file name with the `-f` argument. For example, consider y
  - %l=local procedure step description (from 0040,0254)
  - %m=manufacturer short name (from 0008,0070: GE, Ph, Si, To, UI, NA)
  - %n=name of patient (from 0010,0010)
- - %o=mediaObjectInstanceUID (0002,0003)
+ - %o=mediaObjectInstanceUID (0002,0003)*
  - %p=protocol name (from 0018,1030)
- - %r=instance number (from 0020,0013)
+ - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)
  - %u=acquisition number (from 0020,0012)
  - %v=vendor long name (from 0008,0070: GE, Philips, Siemens, Toshiba, UIH, NA)
  - %x=study ID (from 0020,0010)
+ - %y=youth in series: GE RawDataRunNumber ([0019,10A2](https://github.com/rordenlab/dcm2niix/issues/359)) else TemporalPosition ([0020,0100](https://github.com/rordenlab/dcm2niix/issues/357))*
  - %z=sequence name (from 0018,0024)
+ 
+* Attributes listed above with an asterisk (*) are likely to vary within a series, and are typically not useful for DICOM to NIfTI conversion (where all images from a series are stacked together). These attributes can be useful for [renaming](RENAMING.md) DICOM images
 
 ## File Name Post-fixes: Image Disambiguation
 

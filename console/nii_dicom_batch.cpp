@@ -2346,8 +2346,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 			}
 			if (f == 'X')
 				strcat (outname,dcm.studyID);
-			if ((f == 'Y') && (dcm.rawDataRunNumberGE >= 0)) {
-                sprintf(newstr, "%d", dcm.rawDataRunNumberGE);
+			if ((f == 'Y') && (dcm.rawDataRunNumber >= 0)) {
+                sprintf(newstr, "%d", dcm.rawDataRunNumber); //GE (0019,10A2) else (0020,0100)
                 strcat (outname,newstr);
             }	
             if (f == 'Z')
@@ -2368,10 +2368,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                     strcat (outname,newstr);
                     pos++; // e.g. %3f requires extra increment: skip both number and following character
                 }
-                if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'Y') && (dcm.rawDataRunNumberGE >= 0)) {
+                if ((pos<strlen(inname)) && (toupper(inname[pos+1]) == 'Y') && (dcm.rawDataRunNumber >= 0)) {
                     char zeroPad[12] = {""};
                     sprintf(zeroPad,"%%0%dd",f - '0');
-                    sprintf(newstr, zeroPad, dcm.rawDataRunNumberGE);
+                    sprintf(newstr, zeroPad, dcm.rawDataRunNumber); //GE (0019,10A2) else (0020,0100)
                     strcat (outname,newstr);
                     pos++; // e.g. %3f requires extra increment: skip both number and following character
                 }

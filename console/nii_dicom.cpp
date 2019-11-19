@@ -828,7 +828,7 @@ struct TDICOMdata clear_dicom_data() {
     d.numberOfDiffusionDirectionGE = -1;
     d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
     d.rtia_timerGE = -1.0;
-    d.rawDataRunNumberGE = -1;
+    d.rawDataRunNumber = -1;
     d.maxEchoNumGE = -1;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
@@ -4170,6 +4170,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kOrientationACR 0x0020+(0x0035 << 16 )
 //#define  kTemporalPositionIdentifier 0x0020+(0x0100 << 16 ) //IS
 #define  kOrientation 0x0020+(0x0037 << 16 )
+#define  kTemporalPosition 0x0020+(0x0100 << 16 ) //IS 
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
 #define  kFrameContentSequence 0x0020+uint32_t(0x9111<< 16 ) //SQ
@@ -5098,7 +5099,7 @@ double TE = 0.0; //most recent echo time recorded
             case kRawDataRunNumberGE :
             	if (d.manufacturer != kMANUFACTURER_GE)
             		break;
-                d.rawDataRunNumberGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                d.rawDataRunNumber = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
             case kMaxEchoNumGE :
             	if (d.manufacturer != kMANUFACTURER_GE)
@@ -6032,6 +6033,11 @@ double TE = 0.0; //most recent echo time recorded
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
                 isOrient = true;
                 break; }
+            case kTemporalPosition :
+                if (d.manufacturer == kMANUFACTURER_GE)
+            		break; //for GE use kRawDataRunNumber
+                d.rawDataRunNumber =  dcmStrInt(lLength, &buffer[lPos]);
+                break;
             case kImagesInAcquisition :
                 imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
@@ -6484,6 +6490,9 @@ if (d.isHasPhase)
 	//	d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
     if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
+    if (((numDimensionIndexValues+3) < MAX_NUMBER_OF_DIMENSIONS) and (d.rawDataRunNumber > 0))
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-4] = d.rawDataRunNumber;
+    
     if ((numDimensionIndexValues+2) < MAX_NUMBER_OF_DIMENSIONS)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-3] = d.instanceUidCrc;
     if ((numDimensionIndexValues+1) < MAX_NUMBER_OF_DIMENSIONS)
