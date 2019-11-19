@@ -5771,7 +5771,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts* o
         return 0;
     }
 	if (opts->isVerbose > 0)
-		printMessage("Found %lu items in %s\n", dir.n_files, path);
+		printMessage("Found %zu items in %s\n", dir.n_files, path); //%lu -> %zu
     for (size_t i=0; i<dir.n_files; i++) {
         // If this directory entry is a subdirectory, search it recursively
         tinydir_file &file = dir._files[i];
@@ -6123,7 +6123,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     if (convertError) {
     	if (nConvertTotal == 0)
     		return EXIT_FAILURE; //nothing converted
-    	printError("Converted %d of %lu files\n", nConvertTotal, nDcm);	
+    	printError("Converted %d of %zu files\n", nConvertTotal, nDcm);	
+    	//printError("Converted %d of %lu files\n", nConvertTotal, nDcm);	
     	return kEXIT_SOME_OK_SOME_BAD; //partial failure  
     }
     if (nConvertTotal == 0) {

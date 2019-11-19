@@ -6490,9 +6490,8 @@ if (d.isHasPhase)
 	//	d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
     if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
     	printWarning("interpolated protocol '%s' may be unsuitable for dwidenoise/mrdegibbs. %s\n", d.protocolName, fname);
-    if (((numDimensionIndexValues+3) < MAX_NUMBER_OF_DIMENSIONS) and (d.rawDataRunNumber > 0))
-    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-4] = d.rawDataRunNumber;
-    
+    if (((numDimensionIndexValues+3) < MAX_NUMBER_OF_DIMENSIONS) && (d.rawDataRunNumber > 0))
+    	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-4] = d.rawDataRunNumber; 
     if ((numDimensionIndexValues+2) < MAX_NUMBER_OF_DIMENSIONS)
     	d.dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS-3] = d.instanceUidCrc;
     if ((numDimensionIndexValues+1) < MAX_NUMBER_OF_DIMENSIONS)
