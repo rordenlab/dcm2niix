@@ -4868,7 +4868,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     #ifdef myReportSliceFilenames 
     if (sliceDir < 0) {
      	for (int i = nConvert; i > 0; --i)
-			printMessage("|%d|%s\n", i, nameList->str[dcmSort[i].indx]);	 
+			printMessage("|%d|%s\n", i, nameList->str[dcmSort[i-1].indx]);	 
      
      } else {
      	for (int i = 0; i < nConvert; i++)

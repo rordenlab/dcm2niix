@@ -27,6 +27,7 @@ ifneq ($(OS),Windows_NT)
 		#you can check that the Info.plist section has been inserted with either of these commands
 		# otool -l ./dcm2niix | grep info_plist -B1 -A10
 		# launchctl plist ./dcm2niix 
+		#MacOS links g++ to clang++, for gcc install via homebrew and replace g++ with /usr/local/bin/gcc-9		
 	endif
 endif
 all:
