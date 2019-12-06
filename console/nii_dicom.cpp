@@ -5715,7 +5715,7 @@ double TE = 0.0; //most recent echo time recorded
               //     (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 
               //if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-              if((d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+              if((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
                 //for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
                 float v[4];
                 //dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
@@ -6450,10 +6450,12 @@ if (d.isHasPhase)
 			d.CSA.numDti = maxGradNum - off;
 		}
 	}*/
-    if (d.CSA.numDti >= kMaxDTI4D) {
+	if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [recompile with increased kMaxDTI4D] detected=%d, max = %d\n", d.CSA.numDti, kMaxDTI4D);
         d.CSA.numDti = 0;
     }
+    if ((hasDwiDirectionality) && (d.CSA.numDti < 1))
+    	d.CSA.numDti = 1;
     if ((d.isValid) && (d.imageNum == 0)) { //Philips non-image DICOMs (PS_*, XX_*) are not valid images and do not include instance numbers
     	//TYPE 1 for MR image http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0020,0013)
     	// Only type 2 for some other DICOMs! Therefore, generate warning not error

@@ -278,7 +278,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
     // requires PatientPosition 0018,5100 is HFS (head first supine)
-    if ((d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
+    if ((d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
     if (d->manufacturer == kMANUFACTURER_UIH) {
     	for (int i = 0; i < d->CSA.numDti; i++) {
@@ -1621,7 +1621,6 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 		fclose(fp);
     } 
 #endif    
-    
     if (numDti < 1) return NULL;
     if ((numDti < 3) && (nConvert < 3)) return NULL;
     TDTI * vx = NULL;
@@ -4820,6 +4819,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             hdr0.dim[5] = nConvert;
             hdr0.dim[0] = 5;
         }
+        if ((dcmList[indx0].manufacturer == kMANUFACTURER_TOSHIBA) && (dcmList[indx0].CSA.numDti < 1) && (nConvert > 1) && ( hdr0.dim[4] > 1)) {
+        	//TOSHIBA omits 0018,9087 from B=0 volumes in diffusion series. Since most diffusion series start with B=0 volume, this would cause us to detect a diffusion series
+        	for (int i = 1; i < nConvert; i++)
+        		if (dcmList[dcmSort[i].indx].CSA.numDti > 0)
+					dcmList[indx0].CSA.numDti =1;		      
+        }
+        
         /*if (nConvert > 1) { //next determine if TR is true time between volumes
         	double startTime = dcmList[indx0].acquisitionTime;
         	double endTime = startTime;

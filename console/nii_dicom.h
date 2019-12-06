@@ -43,7 +43,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMdate "v1.0.20191111"
+#define kDCMdate "v1.0.20191206"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
