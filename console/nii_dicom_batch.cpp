@@ -4529,6 +4529,10 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
+    if ((iVaries) && (opts.isForceStackSameSeries = 1)) { 
+    	printWarning("Merging series even though intensity scaling varies between slices.\n");
+    	iVaries = false;
+    }
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
@@ -5101,6 +5105,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	//this wrapper does nothing if all the images share the same echo time and scale
 	// however, it segments images when these properties vary
 	uint64_t indx = dcmSort[0].indx;
+    if ((dcmList[indx].isScaleOrTEVaries) && (opts.isForceStackSameSeries = 1)) { 
+    	printWarning("Merging series even though intensity scaling varies between slices.\n");
+    	dcmList[indx].isScaleOrTEVaries = false;
+    }
 	if ((!dcmList[indx].isScaleOrTEVaries) || (dcmList[indx].xyzDim[4] < 2))
 		return saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, -1);
 	if ((dcmList[indx].xyzDim[4]) && (dti4D->sliceOrder[0] < 0)) {
