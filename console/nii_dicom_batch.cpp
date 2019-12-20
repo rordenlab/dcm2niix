@@ -1098,7 +1098,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"PhilipsRWVSlope\": %g,\n", d.RWVScale );
 		fprintf(fp, "\t\"PhilipsRWVIntercept\": %g,\n", d.RWVIntercept );
 	}
-	if ((d.intenScalePhilips != 0) && (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
+	if ((!d.isScaleVariesEnh) && (d.intenScalePhilips != 0) && (d.manufacturer == kMANUFACTURER_PHILIPS)) { //for details, see PhilipsPrecise()
 		fprintf(fp, "\t\"PhilipsRescaleSlope\": %g,\n", d.intenScale );
 		fprintf(fp, "\t\"PhilipsRescaleIntercept\": %g,\n", d.intenIntercept );
 		fprintf(fp, "\t\"PhilipsScaleSlope\": %g,\n", d.intenScalePhilips );
@@ -3976,6 +3976,7 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
 
 void PhilipsPrecise(struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling, struct nifti_1_header *h, int verbose) {
 	if (d->manufacturer != kMANUFACTURER_PHILIPS) return; //not Philips
+	if (d->isScaleVariesEnh) return; //issue363 rescaled before slice reordering
 	if (!isSameFloatGE(0.0, d->RWVScale)) {
 		h->scl_slope = d->RWVScale;
     	h->scl_inter = d->RWVIntercept;
@@ -4529,10 +4530,6 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
-    if ((iVaries) && (opts.isForceStackSameSeries = 1)) { 
-    	printWarning("Merging series even though intensity scaling varies between slices.\n");
-    	iVaries = false;
-    }
     float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
@@ -4545,6 +4542,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	if (isnan(dcmList[indx0].gantryTilt)) return EXIT_FAILURE;
     }
     #endif //newTilt see issue 254
+    if (dcmList[indx0].isScaleVariesEnh) //issue363
+    	iVaries = true;
     if ((dcmList[indx].isXA10A) && (dcmList[indx].CSA.mosaicSlices < 0)) {
     	printMessage("Siemens XA10 Mosaics are not primary images and lack vital data.\n");
     	printMessage(" See https://github.com/rordenlab/dcm2niix/issues/236\n");
@@ -4585,7 +4584,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     if (opts.isVerbose)
         printMessage("Converting %s\n",nameList->str[indx]);
     if (img == NULL) return EXIT_FAILURE;
-    //if (iVaries) img = nii_iVaries(img, &hdr0);
     size_t imgsz = nii_ImgBytes(hdr0);
     unsigned char *imgM = (unsigned char *)malloc(imgsz* (uint64_t)nConvert);
     memcpy(&imgM[0], &img[0], imgsz);
@@ -5105,10 +5103,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	//this wrapper does nothing if all the images share the same echo time and scale
 	// however, it segments images when these properties vary
 	uint64_t indx = dcmSort[0].indx;
-    if ((dcmList[indx].isScaleOrTEVaries) && (opts.isForceStackSameSeries = 1)) { 
-    	printWarning("Merging series even though intensity scaling varies between slices.\n");
-    	dcmList[indx].isScaleOrTEVaries = false;
-    }
 	if ((!dcmList[indx].isScaleOrTEVaries) || (dcmList[indx].xyzDim[4] < 2))
 		return saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4D, -1);
 	if ((dcmList[indx].xyzDim[4]) && (dti4D->sliceOrder[0] < 0)) {
@@ -5164,26 +5158,61 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		dcmList[indx].CSA.numDti = nDti;
 	}
 	//save each series
+	bool isScaleVariesEnh = dcmList[indx].isScaleVariesEnh; //issue363: any variation in any image
 	for (int s = 1; s <= series; s++) {
-		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
+		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) { //for each volume
 			 if (dti4D->gradDynVol[i] == s) {
 			 	//dti4D->gradDynVol[i] = s;
 				//nVol ++;
 				dcmList[indx].TE = dti4D->TE[i];
-				dcmList[indx].intenScale = dti4D->intenScale[i];
-				dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
+				//dcmList[indx].intenScale = dti4D->intenScale[i];
+				//dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
+				//dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
+				//dcmList[indx].RWVScale = dti4D->RWVScale[i];
+				//dcmList[indx].RWVIntercept = dti4D->RWVIntercept[i];
 				dcmList[indx].isHasPhase = dti4D->isPhase[i];
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
-				dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
-				dcmList[indx].RWVScale = dti4D->RWVScale[i];
-				dcmList[indx].RWVIntercept = dti4D->RWVIntercept[i];
 				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i];
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
 				break;
 			}
 		}
+		dcmList[indx].isScaleVariesEnh = false;
+		if (isScaleVariesEnh)  { //check if intensity scale varies for this particular output image, this will force 32-bit output
+			int nz = 0;
+			for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) { //for each volume
+				if (dti4D->gradDynVol[i] == s) {
+					for (int z = 0; z < dcmList[indx].xyzDim[3]; z++) { //for each slice
+						int ix = (i * dcmList[indx].xyzDim[3]) + z;
+						dti4Ds.intenScale[nz] = dti4D->intenScale[ix];
+						dti4Ds.intenIntercept[nz] = dti4D->intenIntercept[ix];
+						dti4Ds.intenScalePhilips[nz] = dti4D->intenScalePhilips[ix];
+						dti4Ds.RWVIntercept[nz] = dti4D->RWVIntercept[ix];
+						dti4Ds.RWVScale[nz] = dti4D->RWVScale[ix];			
+						nz ++;
+					} //for z: each slice	
+				} //if series matches
+			} //for each volume
+			for (int i = 0; i < nz; i++) {
+				if (dti4Ds.intenIntercept[i] != dti4Ds.intenIntercept[0]) dcmList[indx].isScaleVariesEnh = true;
+				if (dti4Ds.intenScale[i] != dti4Ds.intenScale[0]) dcmList[indx].isScaleVariesEnh = true;
+				if (dti4Ds.intenScalePhilips[i] != dti4Ds.intenScalePhilips[0]) dcmList[indx].isScaleVariesEnh = true;
+			}
+			//in case scale doe not vary
+			dcmList[indx].intenScale = dti4Ds.intenScale[0];
+			dcmList[indx].intenIntercept = dti4Ds.intenIntercept[0];
+			dcmList[indx].intenScalePhilips = dti4Ds.intenScalePhilips[0];
+			dcmList[indx].RWVIntercept = dti4Ds.RWVIntercept[0];
+			dcmList[indx].RWVScale = dti4Ds.RWVScale[0];
+		} //if isScaleVariesEnh
+		
+		if (dcmList[indx].isScaleVariesEnh) printf("Varies\n");
+		if (!dcmList[indx].isScaleVariesEnh) printf("no Varies\n");
+		printf("%g %g %g\n", dcmList[indx].intenScale, dcmList[indx].intenIntercept, dcmList[indx].intenScalePhilips);
+		//continue;
+		
 		if (s > 1) dcmList[indx].CSA.numDti = 0; //only save bvec for first type (magnitude)
 		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, &dti4Ds, s);
         if (ret2 != EXIT_SUCCESS) ret = ret2; //return EXIT_SUCCESS only if ALL are successful

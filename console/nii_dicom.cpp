@@ -808,6 +808,7 @@ struct TDICOMdata clear_dicom_data() {
     d.RWVScale = 0.0;
     d.RWVIntercept = 0.0;
     d.isScaleOrTEVaries = false;
+    d.isScaleVariesEnh = false; //issue363
     d.bitsAllocated = 16;//bits
     d.bitsStored = 0;
     d.samplesPerPixel = 1;
@@ -2128,9 +2129,9 @@ int	kbval = 33; //V3: 27
 				TE = cols[kTEcho];
             dti4D->triggerDelayTime[vol] = cols[kTriggerTime];
 			if (dti4D->TE[vol] < 0) dti4D->TE[vol] = 0; //used to detect sparse volumes
-			dti4D->intenIntercept[vol] = cols[kRI];
-			dti4D->intenScale[vol] = cols[kRS];
-			dti4D->intenScalePhilips[vol] = cols[kSS];
+			//dti4D->intenIntercept[vol] = cols[kRI];
+			//dti4D->intenScale[vol] = cols[kRS];
+			//dti4D->intenScalePhilips[vol] = cols[kSS];
 			dti4D->isReal[vol] = isReal;
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
@@ -2142,14 +2143,20 @@ int	kbval = 33; //V3: 27
     			if ((vol+1) > d.CSA.numDti)
     				d.CSA.numDti = vol+1;
 			}
+			if (numSlice2D < kMaxSlice2D) {//issue 363: intensity can vary with each 2D slice of 4D volume
+				//printf("%d %g %g\n", numSlice2D, cols[kRI], cols[kRS]);
+            	dti4D->intenIntercept[numSlice2D] = cols[kRI];
+				dti4D->intenScale[numSlice2D] = cols[kRS];
+				dti4D->intenScalePhilips[numSlice2D] = cols[kSS];
+			}
 			//if (slice == 1) printWarning("%d\n", (int)cols[kEcho]);
 			slice = slice + (vol * d.xyzDim[3]);
 			//offset images by type: mag+0,real+1, imag+2,phase+3
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
 			//printWarning("%d\t%d\n", slice -1, numSlice2D);
-            if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
-				dti4D->sliceOrder[slice -1] = numSlice2D;
+			if ((slice >= 0)  && (slice < kMaxSlice2D)  && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
+				dti4D->sliceOrder[slice -1] = numSlice2D;	
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
 			}
 			numSlice2D++;
@@ -2172,9 +2179,9 @@ int	kbval = 33; //V3: 27
     	if (dti4D->TE[i] > -1.0) {
 			dti4D->TE[maxVol] = dti4D->TE[i];
 			dti4D->triggerDelayTime[maxVol] = dti4D->triggerDelayTime[i];
-			dti4D->intenIntercept[maxVol] = dti4D->intenIntercept[i];
-			dti4D->intenScale[maxVol] = dti4D->intenScale[i];
-			dti4D->intenScalePhilips[maxVol] = dti4D->intenScalePhilips[i];
+			//dti4D->intenIntercept[maxVol] = dti4D->intenIntercept[i];
+			//dti4D->intenScale[maxVol] = dti4D->intenScale[i];
+			//dti4D->intenScalePhilips[maxVol] = dti4D->intenScalePhilips[i];
 			dti4D->isReal[maxVol] = dti4D->isReal[i];
 			dti4D->isImaginary[maxVol] = dti4D->isImaginary[i];
 			dti4D->isPhase[maxVol] = dti4D->isPhase[i];
@@ -2204,6 +2211,27 @@ int	kbval = 33; //V3: 27
             		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels);
         d.isValid = false;
+    }
+    for (int i = 0; i < numSlice2D; i++) { //issue363
+		if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleVariesEnh = true;
+		if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleVariesEnh = true;
+		if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleVariesEnh = true;
+		//printf("%g --> %g\n", dti4D->intenIntercept[i], dti4D->intenScale[i]);
+    }
+    if (d.isScaleVariesEnh) {
+    	printWarning("PAR/REC intensity scaling varies between slices (please validate output).\n");
+    	TDTI4D tmp;
+    	for (int i = 0; i < numSlice2D; i++) { //issue363
+			tmp.intenIntercept[i] = dti4D->intenIntercept[i];
+			tmp.intenScale[i] = dti4D->intenScale[i];
+			tmp.intenScalePhilips[i] = dti4D->intenScalePhilips[i];
+		}
+		for (int i = 0; i < numSlice2D; i++) {
+			int j = dti4D->sliceOrder[i];
+			dti4D->intenIntercept[i] = tmp.intenIntercept[j];
+			dti4D->intenScale[i] = tmp.intenScale[j];
+        	dti4D->intenScalePhilips[i] = tmp.intenScalePhilips[j];
+        }
     }
     d.isScaleOrTEVaries = true;
 	if (numSlice2D > kMaxSlice2D) {
@@ -2407,9 +2435,10 @@ int	kbval = 33; //V3: 27
     if (maxVol > 0) { //maxVol indexed from 0
 		for (int i = 1; i <= maxVol; i++) {
 			//if (dti4D->gradDynVol[i] > d.maxGradDynVol) d.maxGradDynVol = dti4D->gradDynVol[i];
-			if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleOrTEVaries = true;
-			if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleOrTEVaries = true;
-			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleOrTEVaries = true;
+			//issue363 slope/intercept can vary for each 2D slice, not only between 3D volumes in a 4D time series
+			//if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleOrTEVaries = true;
+			//if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleOrTEVaries = true;
+			//if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isPhase[i] != dti4D->isPhase[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isReal[i] != dti4D->isReal[0]) d.isScaleOrTEVaries = true;
 			if (dti4D->isImaginary[i] != dti4D->isImaginary[0]) d.isScaleOrTEVaries = true;
@@ -2788,7 +2817,7 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
     return bImg;
 } //nii_rgb2Planar()
 
-unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr){
+unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr, struct TDTI4D *dti4D){
     //each DICOM image can have its own intesity scaling, whereas NIfTI requires the same scaling for all images in a file
     //WARNING: do this BEFORE nii_check16bitUnsigned!!!!
     //if (hdr->datatype != DT_INT16) return img;
@@ -2816,15 +2845,29 @@ unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr){
             img32[i] = (float) img32i[i];
     }
     free (img); //release previous image
-    for (int i=0; i < nVox; i++)
-        img32[i] = (img32[i]* hdr->scl_slope)+hdr->scl_inter;
+    if (dti4D != NULL) { //enhanced dataset, intensity varies across slices of a single file 
+    	if (dti4D->RWVScale[0] != 0.0) printWarning("Intensity scale/slope using 0028,1053 and 0028,1052"); //to do: real-world values and precise values
+    	int dim1to2 = hdr->dim[1]*hdr->dim[2];
+    	int slice = -1;
+    	//(0028,1052) SS = scale slope (2005,100E) RealWorldIntercept = (0040,9224) Real World Slope = (0040,9225)
+    	//printf("vol\tRS(0028,1053)\tRI(0028,1052)\tSS(2005,100E)\trwS(0040,9225)\trwI(0040,9224)\n");	
+    	for (int i=0; i < nVox; i++) { //issue 363 
+    		if ((i % dim1to2) == 0) {
+    			slice++;			 
+    			//printf("%d\t%g\t%g\t%g\t%g\t%g\n", slice, dti4D->intenScale[slice], dti4D->intenIntercept[slice],dti4D->intenScalePhilips[slice], dti4D->RWVScale[slice], dti4D->RWVIntercept[slice]);
+    		}
+        	img32[i] = (img32[i]* dti4D->intenScale[slice])+dti4D->intenIntercept[slice];
+        }
+    } else { //
+    	for (int i=0; i < nVox; i++)
+        	img32[i] = (img32[i]* hdr->scl_slope)+hdr->scl_inter;
+    }
     hdr->scl_slope = 1;
     hdr->scl_inter = 0;
     hdr->datatype = DT_FLOAT;
     hdr->bitpix = 32;
     return (unsigned char*) img32;
 } //nii_iVaries()
-
 
 /*unsigned char * nii_reorderSlicesX(unsigned char* bImg, struct nifti_1_header *hdr, struct TDTI4D *dti4D) {
 //Philips can save slices in any random order... rearrange all of them
@@ -3610,17 +3653,19 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
          img = nii_flipImgY(img, hdr);
          #endif*/
     }
-    if ((!dcm.isFloat) && (iVaries)) img = nii_iVaries(img, hdr);
+    if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) //must do afte
+    	img = nii_iVaries(img, hdr, dti4D);
     int nAcq = dcm.locationsInAcquisition;
     if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3]%nAcq)==0) && (hdr->dim[3]>nAcq) ) {
         hdr->dim[4] = hdr->dim[3]/nAcq;
         hdr->dim[3] = nAcq;
         hdr->dim[0] = 4;
     }
-    //~ if ((hdr->dim[0] > 3) && (dcm.patientPositionSequentialRepeats > 1) && (dcm.sliceOrder == NULL)) //swizzle 3rd and 4th dimension (Philips stores time as 3rd dimension)
-    //~     img = nii_XYTZ_XYZT(img, hdr,dcm.patientPositionSequentialRepeats);
-	if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
+    if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
     	img = nii_reorderSlicesX(img, hdr, dti4D);
+    if ((dti4D != NULL) && (!dcm.isFloat) && (iVaries)) 
+    	img = nii_iVaries(img, hdr, dti4D);
+    
     //~
     /*if (((dcm.patientPositionSequentialRepeats * 2) == dcm.patientPositionRepeats) && (dcm.isHasPhase) && (dcm.isHasMagnitude)) {
     	hdr->dim[3] = hdr->dim[3] / 2;
@@ -4476,6 +4521,9 @@ double TE = 0.0; //most recent echo time recorded
 			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
 			dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
 			dcmDim[numDimensionIndexValues].V[0] = -1.0;
+			//printf("%g\n", d.intenScalePhilips); xxxxxxx
+			//xxxxxxx  printf("%d\t%g\t%g\t%g\t%g\t%g\n", numDimensionIndexValues, d.intenScale, d.intenIntercept, d.intenScalePhilips, d.RWVScale, d.RWVIntercept);
+
 			#ifdef MY_DEBUG
 			if (numDimensionIndexValues < 19) {
 				printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
@@ -6354,6 +6402,18 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
+/*    	for (int i = 0; i < numberOfFrames; i++) {
+    		//issue 363: Philips can provide unique slope/intercept for each slice of volume. Do this BEFORE sort
+			dti4D->intenScale[i] =  dcmDim[i].intenScale;
+			dti4D->intenIntercept[i] =  dcmDim[i].intenIntercept;
+			dti4D->intenScalePhilips[i] =  dcmDim[i].intenScalePhilips;
+			dti4D->RWVIntercept[i] =  dcmDim[i].RWVIntercept;
+			dti4D->RWVScale[i] =  dcmDim[i].RWVScale;
+			if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleVariesEnh = true;
+			if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleVariesEnh = true;
+			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleVariesEnh = true;
+			//printf("%g >>> %g\n", dcmDim[i].intenScale, dcmDim[i].intenIntercept);
+		}*/
     	//sort dimensions
 #ifdef USING_R
         std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
@@ -6362,8 +6422,18 @@ if (d.isHasPhase)
 #endif
 		//for (int i = 0; i < numberOfFrames; i++)
 		//	printf("diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
-		for (int i = 0; i < numberOfFrames; i++)
+		for (int i = 0; i < numberOfFrames; i++)  {
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
+			dti4D->intenScale[i] =  dcmDim[i].intenScale;
+			dti4D->intenIntercept[i] =  dcmDim[i].intenIntercept;
+			dti4D->intenScalePhilips[i] =  dcmDim[i].intenScalePhilips;
+			dti4D->RWVIntercept[i] =  dcmDim[i].RWVIntercept;
+			dti4D->RWVScale[i] =  dcmDim[i].RWVScale;
+			if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleVariesEnh = true;
+			if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleVariesEnh = true;
+			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleVariesEnh = true;
+			
+		}
 		if ( !(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
@@ -6374,26 +6444,31 @@ if (d.isHasPhase)
 			for (int i = 0; i < d.xyzDim[4]; i++) {
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
 				dti4D->TE[i] =  dcmDim[j+(i * d.xyzDim[3])].TE;
-				dti4D->intenScale[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScale;
-				dti4D->intenIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].intenIntercept;
+				
 				dti4D->isPhase[i] =  dcmDim[j+(i * d.xyzDim[3])].isPhase;
 				dti4D->isReal[i] =  dcmDim[j+(i * d.xyzDim[3])].isReal;
 				dti4D->isImaginary[i] =  dcmDim[j+(i * d.xyzDim[3])].isImaginary;
-				dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
-				dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
-				dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
 				dti4D->triggerDelayTime[i] =  dcmDim[j+(i * d.xyzDim[3])].triggerDelayTime;
 				dti4D->S[i].V[0] = dcmDim[j+(i * d.xyzDim[3])].V[0];
 				dti4D->S[i].V[1] = dcmDim[j+(i * d.xyzDim[3])].V[1];
 				dti4D->S[i].V[2] = dcmDim[j+(i * d.xyzDim[3])].V[2];
 				dti4D->S[i].V[3] = dcmDim[j+(i * d.xyzDim[3])].V[3];
+				//printf("te=\t%g\tscl=\t%g\tintercept=\t%g\n",dti4D->TE[i], dti4D->intenScale[i],dti4D->intenIntercept[i]);
 				if (dti4D->TE[i] != d.TE) isTEvaries = true;
-				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
-				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
 				if (dti4D->isPhase[i] != isPhase) d.isScaleOrTEVaries = true;
 				if (dti4D->triggerDelayTime[i] != d.triggerDelayTime) d.isScaleOrTEVaries = true;
 				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary) d.isScaleOrTEVaries = true;
+				
+				//dti4D->intenScale[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScale;
+				//dti4D->intenIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].intenIntercept;
+				//dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
+				//dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
+				//dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
+				//if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
+				//if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
+				
+				
 			}
 			if((isScaleVaries) || (isTEvaries)) d.isScaleOrTEVaries = true;
 			if (isTEvaries) d.isMultiEcho = true;
