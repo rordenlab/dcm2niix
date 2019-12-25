@@ -2879,7 +2879,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
     // See the nii_SaveBIDS() function for details
     int reconMatrixPE = data.phaseEncodingLines;
     if ((header.dim[2] > 0) && (header.dim[1] > 0)) {
-        if (header.dim[2] == header.dim[2]) //phase encoding does not matter
+        if (header.dim[1] == header.dim[2]) //phase encoding does not matter
             reconMatrixPE = header.dim[2];
         else if (data.phaseEncodingRC =='C')
             reconMatrixPE = header.dim[2];
