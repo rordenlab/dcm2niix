@@ -2218,7 +2218,7 @@ int	kbval = 33; //V3: 27
 		if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleVariesEnh = true;
 		//printf("%g --> %g\n", dti4D->intenIntercept[i], dti4D->intenScale[i]);
     }
-    if (d.isScaleVariesEnh) {
+    if (d.isScaleVariesEnh) { //juggle to sorted order, required for subsequent rescaling
     	printWarning("PAR/REC intensity scaling varies between slices (please validate output).\n");
     	TDTI4D tmp;
     	for (int i = 0; i < numSlice2D; i++) { //issue363
@@ -6092,9 +6092,11 @@ double TE = 0.0; //most recent echo time recorded
             case kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if (isIconImageSequence) {
-                	int imgBytes = (d.xyzDim[1] * d.xyzDim[2] * int(d.bitsAllocated / 8));
-                	if (imgBytes == lLength)
-                		isIconImageSequence = false;
+                	//20200116 see example from Tashrif Bilah that saves GEIIS thumbnails uncompressed
+                	//  therefore, the next couple lines are not a perfect detection for GEIIS thumbnail icons
+                	//int imgBytes = (d.xyzDim[1] * d.xyzDim[2] * int(d.bitsAllocated / 8));
+                	//if (imgBytes == lLength)
+                	//	isIconImageSequence = false;
 					if ((isIconImageSequence) && (sqDepth < 1)) printWarning("Assuming 7FE0,0010 refers to an icon not the main image\n");
 
                 }
