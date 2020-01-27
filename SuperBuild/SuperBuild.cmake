@@ -30,7 +30,7 @@ if(USE_STATIC_RUNTIME)
             unset(STATIC_LIBCXX CACHE)
             # Only on some Centos/Redhat systems
             message(FATAL_ERROR
-                "\"USE_STATIC_RUNTIME\" set to ON but \"libstdcxx.a\" not found! \
+                "\"USE_STATIC_RUNTIME\" set to ON but \"libstdc++.a\" not found! Set it to OFF or \
                  \"yum install libstdc++-static\" to resolve the error.")
         endif()
     endif()
