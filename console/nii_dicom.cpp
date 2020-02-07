@@ -3993,6 +3993,24 @@ void getFileName( char *pathParent, const char *path) {//if path is c:\d1\d2 the
 getFileNameX(pathParent, path, kDICOMStr);
 }
 
+struct fidx
+{
+    float value;
+    int index;
+};
+
+int cmp(const void *a, const void *b)
+{
+    struct fidx *a1 = (struct fidx *)a;
+    struct fidx *a2 = (struct fidx *)b;
+    if ((*a1).value > (*a2).value)
+        return -1;
+    else if ((*a1).value < (*a2).value)
+        return 1;
+    else
+        return 0;
+}
+
 #ifdef USING_R
 
 // True iff dcm1 sorts *before* dcm2
@@ -4389,11 +4407,15 @@ double TE = 0.0; //most recent echo time recorded
     bool isImaginary = false;
     bool isMagnitude = false;
     d.seriesNum = -1;
+    vec3 sliceV; //cross-product of kOrientation 0020,0037
+    sliceV.v[0] = NAN;
     float patientPositionPrivate[4] = {NAN, NAN, NAN, NAN};
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     //float patientPositionPublic[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
+    float sliceMM[kMaxSlice2D];
+    int nSliceMM = 0;
 	//struct TDTI philDTI[kMaxDTI4D];
     //for (int i = 0; i < kMaxDTI4D; i++)
     //	philDTI[i].V[0] = -1;
@@ -4652,6 +4674,11 @@ double TE = 0.0; //most recent echo time recorded
                 lLength = buffer[lPos+3] | (buffer[lPos+2] << 8) | (buffer[lPos+1] << 16) | (buffer[lPos] << 24);
             lPos += 4;  //we have loaded the 32-bit length
             if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+            	vr[0] = 'S';
+            	vr[1] = 'Q';
+            	lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
+            }
+            if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
             	vr[0] = 'S';
             	vr[1] = 'Q';
             	lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
@@ -5184,8 +5211,6 @@ double TE = 0.0; //most recent echo time recorded
 				}
 				patientPositionNum++;
 				isAtFirstPatientPosition = true;
-				
-				
 				//char dx[kDICOMStr];
                 //dcmStr (lLength, &buffer[lPos], dx);
 				//printMessage("*%s*", dx);
@@ -5211,6 +5236,12 @@ double TE = 0.0; //most recent echo time recorded
 				//if (isAtFirstPatientPosition) numFirstPatientPosition++;
 				if (isVerbose > 0) //verbose > 1 will report full DICOM tag
 					printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
+				if ((isOrient) && (nSliceMM < kMaxSlice2D)) {
+					vec3 pos = setVec3(patientPosition[1], patientPosition[2], patientPosition[3]);
+					sliceMM[nSliceMM] = dotProduct(pos, sliceV);
+					nSliceMM++;
+				} 
+				
 				break; }
             case kInPlanePhaseEncodingDirection:
                 d.phaseEncodingRC = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
@@ -6079,6 +6110,10 @@ double TE = 0.0; //most recent echo time recorded
                		}
                 }
                 dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
+                vec3 readV = setVec3(d.orient[1],d.orient[2],d.orient[3]);
+				vec3 phaseV = setVec3(d.orient[4],d.orient[5],d.orient[6]);
+				sliceV = crossProduct(readV ,phaseV);
+                //printf("sliceV %g %g %g\n", sliceV.v[0], sliceV.v[1], sliceV.v[2]);
                 isOrient = true;
                 break; }
             case kTemporalPosition :
@@ -6384,6 +6419,20 @@ if (d.isHasPhase)
     	exit (kEXIT_CORRUPT_FILE_FOUND);
 #endif
     }
+    if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { //issue 372
+    	fidx* objects = (fidx*)malloc(sizeof(struct fidx) * numberOfFrames);
+    	for (int i = 0; i < numberOfFrames; i++)	{
+        	objects[i].value = sliceMM[i];
+        	objects[i].index = i;
+    	}
+    	qsort(objects, numberOfFrames, sizeof(struct fidx), cmp);
+    	numDimensionIndexValues = numberOfFrames;
+    	for (int i = 0; i < numberOfFrames; i++) {
+    		//	printf("%d > %g\n", objects[i].index, objects[i].value);	
+    		dcmDim[objects[i].index].dimIdx[0] = i;
+    	}
+    	free(objects);		
+    }  //issue 372 
     if (numDimensionIndexValues > 1)
     	strcpy(d.imageType, imageType1st); //for multi-frame datasets, return name of book, not name of last chapter
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
@@ -6404,19 +6453,7 @@ if (d.isHasPhase)
 				if (mn[i] != mx[i])
 					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
     	} //verbose > 1
-/*    	for (int i = 0; i < numberOfFrames; i++) {
-    		//issue 363: Philips can provide unique slope/intercept for each slice of volume. Do this BEFORE sort
-			dti4D->intenScale[i] =  dcmDim[i].intenScale;
-			dti4D->intenIntercept[i] =  dcmDim[i].intenIntercept;
-			dti4D->intenScalePhilips[i] =  dcmDim[i].intenScalePhilips;
-			dti4D->RWVIntercept[i] =  dcmDim[i].RWVIntercept;
-			dti4D->RWVScale[i] =  dcmDim[i].RWVScale;
-			if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleVariesEnh = true;
-			if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleVariesEnh = true;
-			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleVariesEnh = true;
-			//printf("%g >>> %g\n", dcmDim[i].intenScale, dcmDim[i].intenIntercept);
-		}*/
-    	//sort dimensions
+		//sort dimensions
 #ifdef USING_R
         std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
 #else

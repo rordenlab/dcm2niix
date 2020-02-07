@@ -1440,7 +1440,9 @@ tse3d: T2*/
 	//next two conditionals updated: make GE match Siemens
 	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) phPos = 1;
     if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) phPos = 0;
-	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos < 0)) {
+    bool isSkipPhaseEncodingAxis = d.is3DAcq;
+    if (d.echoTrainLength > 1) isSkipPhaseEncodingAxis = false; //issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
+	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
 		//when phase encoding axis is known but we do not know phase encoding polarity
 		// https://github.com/rordenlab/dcm2niix/issues/163
 		// This will typically correspond with InPlanePhaseEncodingDirectionDICOM
@@ -1449,7 +1451,8 @@ tse3d: T2*/
 		else if (d.phaseEncodingRC == 'R')
 				fprintf(fp, "\t\"PhaseEncodingAxis\": \"i\",\n");
 	}
-	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!d.is3DAcq) && (phPos >= 0)) {
+	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!isSkipPhaseEncodingAxis) && (phPos >= 0)) {
+		//printf("%ld %d %d %c %d\n", d.seriesNum, d.echoTrainLength, isSkipPhaseEncodingAxis, d.phaseEncodingRC, phPos); //test issue 371
 		if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
 			fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
 		else if (d.phaseEncodingRC == 'R')
@@ -2801,7 +2804,10 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 
     // Phase encoding polarity
     // We only save these attributes if both direction and polarity are known
-    if (((data.phaseEncodingRC == 'R') || (data.phaseEncodingRC == 'C')) &&  (!data.is3DAcq) && ((data.CSA.phaseEncodingDirectionPositive == 1) || (data.CSA.phaseEncodingDirectionPositive == 0))) {
+    bool isSkipPhaseEncodingAxis = data.is3DAcq;
+    if (data.echoTrainLength > 1) isSkipPhaseEncodingAxis = false; //issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
+	
+    if (((data.phaseEncodingRC == 'R') || (data.phaseEncodingRC == 'C')) &&  (!isSkipPhaseEncodingAxis) && ((data.CSA.phaseEncodingDirectionPositive == 1) || (data.CSA.phaseEncodingDirectionPositive == 0))) {
         if (data.phaseEncodingRC == 'C') {
             images->addAttribute("phaseEncodingDirection", "j");
             // Notice the XOR (^): the sense of phaseEncodingDirectionPositive
@@ -4998,7 +5004,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     else
         fflush(stdout); //GUI buffers printf, display all results
 #endif
-    if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
+    if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (dcmList[dcmSort[0].indx].echoTrainLength <= 1) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
         imgM = nii_setOrtho(imgM, &hdr0); //printMessage("ortho %d\n", echoInt (33));
     else if (opts.isFlipY)//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
         imgM = nii_flipY(imgM, &hdr0);
