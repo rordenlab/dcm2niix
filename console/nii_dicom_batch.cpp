@@ -1969,7 +1969,7 @@ float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int i
     //while (ret >= 89.99) ret -= 90;
     //while (ret <= -89.99) ret += 90;
 	if (isSameFloatGE(ret, 0.0)) return 0.0;
-    if ((isVerbose) || (isnan(ret)))  {
+	if ((isVerbose) || (isnan(ret)))  {
     	printMessage("Gantry Tilt Parameters (see issue 253)\n");
     	printMessage(" Read ="); vecRep(read_vector);
     	printMessage(" Phase ="); vecRep(phase_vector);
@@ -4543,7 +4543,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     if (nConvert > 1) indx1 = dcmSort[1].indx;
     uint64_t indxEnd = dcmSort[nConvert-1].indx;
     #ifdef newTilt //see issue 254
-    if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) {
+    if (( (nConvert > 1) || (dcmList[indx0].xyzDim[3] > 1)) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) { //issue372: enhanced DICOMs can also have gantry tilt
     	dcmList[indx0].gantryTilt = computeGantryTiltPrecise(dcmList[indx0], dcmList[indxEnd], opts.isVerbose);
     	if (isnan(dcmList[indx0].gantryTilt)) return EXIT_FAILURE;
     }

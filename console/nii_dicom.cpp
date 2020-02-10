@@ -3999,14 +3999,14 @@ struct fidx
     int index;
 };
 
-int cmp(const void *a, const void *b)
+int fcmp(const void *a, const void *b)
 {
     struct fidx *a1 = (struct fidx *)a;
     struct fidx *a2 = (struct fidx *)b;
     if ((*a1).value > (*a2).value)
-        return -1;
-    else if ((*a1).value < (*a2).value)
         return 1;
+    else if ((*a1).value < (*a2).value)
+        return -1;
     else
         return 0;
 }
@@ -4198,6 +4198,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
 #define  kImagingFrequency2 0x0018+uint32_t(0x9098 << 16 ) //FD
+#define  kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define  kDiffusionBValueXX 0x0018+uint32_t(0x9602 << 16 ) //FD
 #define  kDiffusionBValueXY 0x0018+uint32_t(0x9603 << 16 ) //FD
 #define  kDiffusionBValueXZ 0x0018+uint32_t(0x9604 << 16 ) //FD
@@ -4407,16 +4408,23 @@ double TE = 0.0; //most recent echo time recorded
     bool isImaginary = false;
     bool isMagnitude = false;
     d.seriesNum = -1;
+    //start issue 372:
     vec3 sliceV; //cross-product of kOrientation 0020,0037
     sliceV.v[0] = NAN;
+    float sliceMM[kMaxSlice2D];
+    int nSliceMM = 0;
+    float minSliceMM = INFINITY;
+    float maxSliceMM = -INFINITY;
+    float minPatientPosition[4] = {NAN, NAN, NAN, NAN};
+    float maxPatientPosition[4] = {NAN, NAN, NAN, NAN};
+    //end issue 372
+    float frameAcquisitionDuration = 0.0; //issue369
     float patientPositionPrivate[4] = {NAN, NAN, NAN, NAN};
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     //float patientPositionPublic[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     float patientPositionEndPhilips[4] = {NAN, NAN, NAN, NAN};
     float patientPositionStartPhilips[4] = {NAN, NAN, NAN, NAN};
-    float sliceMM[kMaxSlice2D];
-    int nSliceMM = 0;
-	//struct TDTI philDTI[kMaxDTI4D];
+    //struct TDTI philDTI[kMaxDTI4D];
     //for (int i = 0; i < kMaxDTI4D; i++)
     //	philDTI[i].V[0] = -1;
     //array for storing DimensionIndexValues
@@ -4543,9 +4551,6 @@ double TE = 0.0; //most recent echo time recorded
 			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
 			dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
 			dcmDim[numDimensionIndexValues].V[0] = -1.0;
-			//printf("%g\n", d.intenScalePhilips); xxxxxxx
-			//xxxxxxx  printf("%d\t%g\t%g\t%g\t%g\t%g\n", numDimensionIndexValues, d.intenScale, d.intenIntercept, d.intenScalePhilips, d.RWVScale, d.RWVIntercept);
-
 			#ifdef MY_DEBUG
 			if (numDimensionIndexValues < 19) {
 				printMessage("dimensionIndexValues0020x9157[%d] = [", numDimensionIndexValues);
@@ -5239,6 +5244,16 @@ double TE = 0.0; //most recent echo time recorded
 				if ((isOrient) && (nSliceMM < kMaxSlice2D)) {
 					vec3 pos = setVec3(patientPosition[1], patientPosition[2], patientPosition[3]);
 					sliceMM[nSliceMM] = dotProduct(pos, sliceV);
+					if (sliceMM[nSliceMM] < minSliceMM) {
+						minSliceMM = sliceMM[nSliceMM];
+						for (int k = 0; k < 4; k++)
+							minPatientPosition[k] = patientPosition[k];
+					}
+					if (sliceMM[nSliceMM] > maxSliceMM) {
+						maxSliceMM = sliceMM[nSliceMM];
+						for (int k = 0; k < 4; k++)
+							maxPatientPosition[k] = patientPosition[k];
+					}
 					nSliceMM++;
 				} 
 				
@@ -5825,6 +5840,9 @@ double TE = 0.0; //most recent echo time recorded
 			//	break;
             case kImagingFrequency2 :
             	d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	break;
+            case kFrameAcquisitionDuration :
+            	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
             	break;
             case kDiffusionBValueXX : {
             	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
@@ -6425,14 +6443,22 @@ if (d.isHasPhase)
         	objects[i].value = sliceMM[i];
         	objects[i].index = i;
     	}
-    	qsort(objects, numberOfFrames, sizeof(struct fidx), cmp);
+    	qsort(objects, numberOfFrames, sizeof(struct fidx), fcmp);
     	numDimensionIndexValues = numberOfFrames;
     	for (int i = 0; i < numberOfFrames; i++) {
     		//	printf("%d > %g\n", objects[i].index, objects[i].value);	
     		dcmDim[objects[i].index].dimIdx[0] = i;
     	}
-    	free(objects);		
+    	for (int i = 0; i < 4; i++)	{
+    		d.patientPosition[i] = minPatientPosition[i];
+    		d.patientPositionLast[i] = maxPatientPosition[i];
+    	}
+    	//printf("%g -> %g\n", objects[0].value, objects[numberOfFrames-1].value);	
+    	//printf("%g %g %g -> %g %g %g\n", d.patientPosition[1], d.patientPosition[2], d.patientPosition[3], 	d.patientPositionLast[1], d.patientPositionLast[2], d.patientPositionLast[3]);
+    	free(objects);
     }  //issue 372 
+    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (frameAcquisitionDuration > 0.0)) //issue369
+    	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %ds Perhaps TR = %gs (assuming 1 delete volume)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4], frameAcquisitionDuration/(1000.0 *(float)(d.xyzDim[4]+1.0)));
     if (numDimensionIndexValues > 1)
     	strcpy(d.imageType, imageType1st); //for multi-frame datasets, return name of book, not name of last chapter
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
@@ -6471,7 +6497,6 @@ if (d.isHasPhase)
 			if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleVariesEnh = true;
 			if (dti4D->intenScale[i] != dti4D->intenScale[0]) d.isScaleVariesEnh = true;
 			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0]) d.isScaleVariesEnh = true;
-			
 		}
 		if ( !(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
@@ -6483,7 +6508,6 @@ if (d.isHasPhase)
 			for (int i = 0; i < d.xyzDim[4]; i++) {
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
 				dti4D->TE[i] =  dcmDim[j+(i * d.xyzDim[3])].TE;
-				
 				dti4D->isPhase[i] =  dcmDim[j+(i * d.xyzDim[3])].isPhase;
 				dti4D->isReal[i] =  dcmDim[j+(i * d.xyzDim[3])].isReal;
 				dti4D->isImaginary[i] =  dcmDim[j+(i * d.xyzDim[3])].isImaginary;
@@ -6498,7 +6522,6 @@ if (d.isHasPhase)
 				if (dti4D->triggerDelayTime[i] != d.triggerDelayTime) d.isScaleOrTEVaries = true;
 				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary) d.isScaleOrTEVaries = true;
-				
 				//dti4D->intenScale[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScale;
 				//dti4D->intenIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].intenIntercept;
 				//dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
@@ -6506,8 +6529,6 @@ if (d.isHasPhase)
 				//dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
 				//if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
 				//if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
-				
-				
 			}
 			if((isScaleVaries) || (isTEvaries)) d.isScaleOrTEVaries = true;
 			if (isTEvaries) d.isMultiEcho = true;
