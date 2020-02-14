@@ -6284,14 +6284,21 @@ double TE = 0.0; //most recent echo time recorded
 		d.acquisitionTime = atof(acquisitionTimeTxt);
     }
     d.dateTime = (atof(d.studyDate)* 1000000) + atof(d.studyTime);
-    //printMessage("slices in Acq %d %d\n",d.locationsInAcquisition,locationsInAcquisitionPhilips);
+    //printMessage("slices in Acq %d %d %g %g\n",locationsInAcquisitionGE, d.locationsInAcquisition, d.xyzMM[3], d.zSpacing);
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.locationsInAcquisition == 0))
         d.locationsInAcquisition = locationsInAcquisitionPhilips;
     if ((d.manufacturer == kMANUFACTURER_GE) && (imagesInAcquisition > 0))
         d.locationsInAcquisition = imagesInAcquisition; //e.g. if 72 slices acquired but interpolated as 144
     if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition > 0)  &&  (locationsInAcquisitionGE > 0) && (d.locationsInAcquisition != locationsInAcquisitionGE) ) {
-    	if (isVerbose)  
+    	if (isVerbose)
     		printMessage("Check number of slices, discrepancy between tags (0020,1002; 0021,104F; 0054,0081) (%d vs %d) %s\n", locationsInAcquisitionGE, d.locationsInAcquisition, fname);
+    	/* SAH.start: Fix for ZIP2 */
+    	int zipFactor = (int) roundf(d.xyzMM[3] / d.zSpacing);
+    	if (zipFactor > 1) {
+    		printMessage("Issue 373: Check for ZIP2 Factor: %d  SliceThickness+SliceGap: %f, SpacingBetweenSlices: %f \n", zipFactor, d.xyzMM[3], d.zSpacing);
+    		locationsInAcquisitionGE *= zipFactor; // Multiply number of slices by ZIP factor. Do this prior to checking for conflict below (?).
+    	}
+    	/* SAH.end */
     	if (locationsInAcquisitionGE < d.locationsInAcquisition) {
     		d.locationsInAcquisitionConflict = d.locationsInAcquisition;
     		d.locationsInAcquisition = locationsInAcquisitionGE;
