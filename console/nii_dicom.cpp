@@ -769,6 +769,7 @@ struct TDICOMdata clear_dicom_data() {
     //~ d.numberOfDynamicScans = 0;
     d.echoNum = 1;
     d.echoTrainLength = 0;
+    d.waterFatShift = 0.0;
     d.phaseFieldofView = 0.0;
     d.dwellTime = 0;
     d.protocolBlockStartGE = 0;
@@ -4189,6 +4190,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
+#define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
@@ -4304,7 +4306,9 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kDiffusionDirectionPhilips  0x2001+(0x1004 << 16 )//CS Diffusion Direction
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
+#define  kEPIFactorPhilips 0x2001+(0x1013 << 16 ) //SL
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
+#define  kWaterFatShiftPhilips 0x2001+(0x1022 << 16 ) //FL
 //#define  kNumberOfLocationsPhilips  0x2001+(0x1015 << 16 ) //SS
 //#define  kStackSliceNumber  0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define  kNumberOfDynamicScans  0x2001+(0x1081 << 16 )//'2001' '1081' 'IS' 'NumberOfDynamicScans'
@@ -4333,6 +4337,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
 	//double contentTime = 0.0;
+	int echoTrainLengthPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
 	int sqDepth = 0;
 	int acquisitionTimesGE_UIH = 0;
@@ -5091,6 +5096,10 @@ double TE = 0.0; //most recent echo time recorded
             case kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
+            case kParallelReductionFactorInPlane:
+            	if (d.manufacturer == kMANUFACTURER_SIEMENS) break;
+            	d.accelFactPE = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+            	break;
             case kAcquisitionDuration:
             	//n.b. used differently by different vendors https://github.com/rordenlab/dcm2niix/issues/225
             	d.acquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5896,11 +5905,21 @@ double TE = 0.0; //most recent echo time recorded
 						patientPositionEndPhilips[k] = patientPositionPrivate[k];
             	}
             	break; }
+            case kEPIFactorPhilips :
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+                echoTrainLengthPhil = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
             case kNumberOfSlicesMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
                 locationsInAcquisitionPhilips = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 //printMessage("====> locationsInAcquisitionPhilips\t%d\n", locationsInAcquisitionPhilips);
+				break;
+			case kWaterFatShiftPhilips :
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+            	d.waterFatShift = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
 				break;
 			case kDiffusionDirectionRL:
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
@@ -6464,6 +6483,8 @@ if (d.isHasPhase)
     	//printf("%g %g %g -> %g %g %g\n", d.patientPosition[1], d.patientPosition[2], d.patientPosition[3], 	d.patientPositionLast[1], d.patientPositionLast[2], d.patientPositionLast[3]);
     	free(objects);
     }  //issue 372 
+    if ((d.echoTrainLength == 0) && (echoTrainLengthPhil)) 
+    	d.echoTrainLength = echoTrainLengthPhil;
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (frameAcquisitionDuration > 0.0)) //issue369
     	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %ds Perhaps TR = %gs (assuming 1 delete volume)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4], frameAcquisitionDuration/(1000.0 *(float)(d.xyzDim[4]+1.0)));
     if (numDimensionIndexValues > 1)

@@ -1407,6 +1407,17 @@ tse3d: T2*/
 	    effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
+    if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0)) {
+    	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
+    	//https://github.com/poldracklab/sdcflows/issues/5
+    	float etl = (float)d.echoTrainLength;
+    	float wfs = d.waterFatShift;
+    	float fstrength = d.fieldStrength;
+        float wfd_ppm = 3.4;  // water-fat diff in ppm
+        float g_ratio_mhz_t = 42.57;  // gyromagnetic ratio for proton (1H) in MHz/T
+        float wfs_hz = fstrength * wfd_ppm * g_ratio_mhz_t;
+        effectiveEchoSpacing = wfs / (wfs_hz * etl);
+    }
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
 	// i.e., should match "echoSpacing" extracted from the ASCII CSA header, when that exists
