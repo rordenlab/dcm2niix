@@ -3654,8 +3654,8 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
          img = nii_flipImgY(img, hdr);
          #endif*/
     }
-    if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) //must do afte
-    	img = nii_iVaries(img, hdr, dti4D);
+    if ((dcm.xyzDim[4]<2) && (!dcm.isFloat) && (iVaries)) //must do afte
+    	img = nii_iVaries(img, hdr, NULL);
     int nAcq = dcm.locationsInAcquisition;
     if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3]%nAcq)==0) && (hdr->dim[3]>nAcq) ) {
         hdr->dim[4] = hdr->dim[3]/nAcq;
@@ -3664,7 +3664,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
     }
     if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
     	img = nii_reorderSlicesX(img, hdr, dti4D);
-    if ((dti4D != NULL) && (!dcm.isFloat) && (iVaries)) 
+    if ((dcm.xyzDim[4]>=2) && (!dcm.isFloat) && (iVaries)) 
     	img = nii_iVaries(img, hdr, dti4D);
     
     //~
