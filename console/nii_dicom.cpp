@@ -1647,6 +1647,8 @@ int isSameFloatGE (float a, float b) {
 
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
 struct TDICOMdata d = clear_dicom_data();
+dti4D->sliceOrder[0] = -1;
+dti4D->intenScale[0] = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty
 strcpy(d.sequenceName, ""); //erase dummy with empty
@@ -2238,6 +2240,7 @@ int	kbval = 33; //V3: 27
 	if (numSlice2D > kMaxSlice2D) {
 		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
 		dti4D->sliceOrder[0] = -1;
+		dti4D->intenScale[0] = 0.0;
 	}
 	if ((maxSlice-minSlice+1) != d.xyzDim[3]) {
 		int numSlice = (maxSlice - minSlice)+1;
@@ -2846,7 +2849,7 @@ unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr, stru
             img32[i] = (float) img32i[i];
     }
     free (img); //release previous image
-    if (dti4D != NULL) { //enhanced dataset, intensity varies across slices of a single file 
+    if ((dti4D != NULL) && (dti4D->intenScale[0] != 0.0)) { //enhanced dataset, intensity varies across slices of a single file 
     	if (dti4D->RWVScale[0] != 0.0) printWarning("Intensity scale/slope using 0028,1053 and 0028,1052"); //to do: real-world values and precise values
     	int dim1to2 = hdr->dim[1]*hdr->dim[2];
     	int slice = -1;
@@ -3655,7 +3658,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
          #endif*/
     }
     if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) //must do afte
-    	img = nii_iVaries(img, hdr, dti4D);
+    	img = nii_iVaries(img, hdr, NULL);
     int nAcq = dcm.locationsInAcquisition;
     if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3]%nAcq)==0) && (hdr->dim[3]>nAcq) ) {
         hdr->dim[4] = hdr->dim[3]/nAcq;
@@ -4052,6 +4055,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     strcpy(d.sequenceName, ""); //erase dummy with empty
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 	dti4D->sliceOrder[0] = -1;
+	dti4D->intenScale[0] = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
     struct stat s;
     if( stat(fname,&s) == 0 ) {
