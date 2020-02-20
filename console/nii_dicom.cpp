@@ -6488,7 +6488,7 @@ if (d.isHasPhase)
     	free(objects);
     }  //issue 372 
     if ((d.echoTrainLength == 0) && (echoTrainLengthPhil)) 
-    	d.echoTrainLength = echoTrainLengthPhil;
+    	d.echoTrainLength = echoTrainLengthPhil+1; //+1 to convert "EPI factor" to echo train length
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (frameAcquisitionDuration > 0.0)) //issue369
     	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %ds Perhaps TR = %gs (assuming 1 delete volume)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4], frameAcquisitionDuration/(1000.0 *(float)(d.xyzDim[4]+1.0)));
     if (numDimensionIndexValues > 1)

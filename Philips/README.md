@@ -98,7 +98,7 @@ Philips DICOMs do not contain all the information desired by many neuroscientist
 
 Likewise, the BIDS tag "PhaseEncodingDirection" allows tools like [eddy](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy) and [TOPUP](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup) to undistort images. While the Philips DICOM header distinguishes the phase encoding axis (e.g. anterior-posterior vs left-right) it does not encode the polarity (A->P vs P->A).
 
-Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not calculate this from Philips DICOMs. If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only inlfuences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
+Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not confidently calculate this from Philips DICOMs (though on can [appoximate it if you make a few assumptions](https://github.com/nipreps/sdcflows/issues/5)). If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only influences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
 
 ## Partial Volumes
 

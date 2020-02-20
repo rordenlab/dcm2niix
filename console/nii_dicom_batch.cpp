@@ -1410,6 +1410,7 @@ tse3d: T2*/
     if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0)) {
     	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
     	//https://github.com/poldracklab/sdcflows/issues/5
+    	//TODO: use accelFactPE to infer if partial-Fourier, check for interpolated resolution
     	float etl = (float)d.echoTrainLength;
     	float wfs = d.waterFatShift;
     	float fstrength = d.fieldStrength;

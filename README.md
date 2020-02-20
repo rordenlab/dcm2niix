@@ -91,6 +91,10 @@ The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` 
 
 If you have any problems with the cmake build script described above or want to customize the software see the [COMPILE.md file for details on manual compilation](./COMPILE.md).
 
+## Referencing
+
+ - Li X, Morgan PS, Ashburner J, Smith J, Rorden C (2016) The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 264:47-56. doi: 10.1016/j.jneumeth.2016.03.001. [PMID: 26945974](https://www.ncbi.nlm.nih.gov/pubmed/26945974) 
+
 ## Alternatives
 
  - [dcm2nii](https://people.cas.sc.edu/rorden/mricron/dcm2nii.html) is the predecessor of dcm2niix. It is deprecated for modern images, but does handle image formats that predate DICOM (proprietary Elscint, GE and Siemens formats).
