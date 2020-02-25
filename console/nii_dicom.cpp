@@ -4204,7 +4204,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
 #define  kImagingFrequency2 0x0018+uint32_t(0x9098 << 16 ) //FD
-#define  kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
+//#define  kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define  kDiffusionBValueXX 0x0018+uint32_t(0x9602 << 16 ) //FD
 #define  kDiffusionBValueXY 0x0018+uint32_t(0x9603 << 16 ) //FD
 #define  kDiffusionBValueXZ 0x0018+uint32_t(0x9604 << 16 ) //FD
@@ -4313,6 +4313,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kEPIFactorPhilips 0x2001+(0x1013 << 16 ) //SL
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
 #define  kWaterFatShiftPhilips 0x2001+(0x1022 << 16 ) //FL
+//#define  kMRSeriesAcquisitionNumber 0x2001+(0x107B << 16 ) //IS
 //#define  kNumberOfLocationsPhilips  0x2001+(0x1015 << 16 ) //SS
 //#define  kStackSliceNumber  0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define  kNumberOfDynamicScans  0x2001+(0x1081 << 16 )//'2001' '1081' 'IS' 'NumberOfDynamicScans'
@@ -4323,7 +4324,8 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kMRStackOffcentreAP 0x2005+(0x1078 << 16)
 #define  kMRStackOffcentreFH 0x2005+(0x1079 << 16)
 #define  kMRStackOffcentreRL 0x2005+(0x107A << 16)
-#define  kPhilipsSlope 0x2005+(0x100E << 16 )
+#define  kPhilipsSlope 0x2005+(0x100E << 16 )  
+#define  kMRImageDynamicScanBeginTime 0x2005+(0x10a0 << 16) //FL
 #define  kDiffusionDirectionRL 0x2005+(0x10B0 << 16)
 #define  kDiffusionDirectionAP 0x2005+(0x10B1 << 16)
 #define  kDiffusionDirectionFH 0x2005+(0x10B2 << 16)
@@ -4365,6 +4367,7 @@ double TE = 0.0; //most recent echo time recorded
     //int minGradNum = kMaxDTI4D + 1;
     //int maxGradNum = -1;
     int numberOfDynamicScans = 0;
+    //int mRSeriesAcquisitionNumber = 0;
     uint32_t lLength;
     uint32_t groupElement;
     long lPos = 0;
@@ -4424,10 +4427,12 @@ double TE = 0.0; //most recent echo time recorded
     int nSliceMM = 0;
     float minSliceMM = INFINITY;
     float maxSliceMM = -INFINITY;
+    float minDynamicScanBeginTime = INFINITY;
+    float maxDynamicScanBeginTime = -INFINITY;
     float minPatientPosition[4] = {NAN, NAN, NAN, NAN};
     float maxPatientPosition[4] = {NAN, NAN, NAN, NAN};
     //end issue 372
-    float frameAcquisitionDuration = 0.0; //issue369
+    //float frameAcquisitionDuration = 0.0; //issue369
     float patientPositionPrivate[4] = {NAN, NAN, NAN, NAN};
     float patientPosition[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
     //float patientPositionPublic[4] = {NAN, NAN, NAN, NAN}; //used to compute slice direction for Philips 4D
@@ -5596,6 +5601,14 @@ double TE = 0.0; //most recent echo time recorded
                 if ((lLength == 4) && (d.manufacturer == kMANUFACTURER_PHILIPS))
                     d.intenScalePhilips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
+                
+            case kMRImageDynamicScanBeginTime: { //FL
+                if (lLength != 4) break;
+                float dyn = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                if (dyn < minDynamicScanBeginTime) minDynamicScanBeginTime = dyn;
+                if (dyn > maxDynamicScanBeginTime) maxDynamicScanBeginTime = dyn;
+                break;
+            }
             case kIntercept :
                 d.intenIntercept = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -5660,10 +5673,12 @@ double TE = 0.0; //most recent echo time recorded
             	printMessage("StackSliceNumber %d\n",stackSliceNumber);
             	break;
 			}*/
+			//case kMRSeriesAcquisitionNumber: // 0x2001+(0x107B << 16 ) //IS
+			//	mRSeriesAcquisitionNumber =  dcmStrInt(lLength, &buffer[lPos]);
+            //   break;
 			case kNumberOfDynamicScans:
                 //~d.numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
                 numberOfDynamicScans =  dcmStrInt(lLength, &buffer[lPos]);
-
                 break;
             case	kMRAcquisitionType: //detect 3D acquisition: we can reorient these without worrying about slice time correct or BVEC/BVAL orientation
             	if (lLength > 1) d.is2DAcq = (buffer[lPos]=='2') && (toupper(buffer[lPos+1]) == 'D');
@@ -5854,9 +5869,9 @@ double TE = 0.0; //most recent echo time recorded
             case kImagingFrequency2 :
             	d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	break;
-            case kFrameAcquisitionDuration :
-            	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
-            	break;
+            //case kFrameAcquisitionDuration :
+            //	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
+            //	break;
             case kDiffusionBValueXX : {
             	if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //other manufacturers provide bvec directly, rather than bmatrix
             	double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
@@ -6489,8 +6504,18 @@ if (d.isHasPhase)
     }  //issue 372 
     if ((d.echoTrainLength == 0) && (echoTrainLengthPhil)) 
     	d.echoTrainLength = echoTrainLengthPhil+1; //+1 to convert "EPI factor" to echo train length
-    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (frameAcquisitionDuration > 0.0)) //issue369
-    	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %ds Perhaps TR = %gs (assuming 1 delete volume)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4], frameAcquisitionDuration/(1000.0 *(float)(d.xyzDim[4]+1.0)));
+    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (minDynamicScanBeginTime < maxDynamicScanBeginTime)) { //issue369
+    	float TR = 1000.0 * ((maxDynamicScanBeginTime-minDynamicScanBeginTime) / (d.xyzDim[4]-1)); //-1 : fence post problem
+    	if (fabs(TR - d.TR) > 0.001) {
+    		printWarning("Assuming TR = %gms, not 0018,0080 = %gms (see issue 369)\n", TR, d.TR);
+    		d.TR = TR;
+    	}    	
+    }
+    //	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %d (see issue 369)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4]);
+    
+    //printf("%g %g\n", minDynamicScanBeginTime, maxDynamicScanBeginTime);
+    //if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (frameAcquisitionDuration > 0.0)) //issue369
+    //	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %d (see issue 369)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4]);
     if (numDimensionIndexValues > 1)
     	strcpy(d.imageType, imageType1st); //for multi-frame datasets, return name of book, not name of last chapter
     if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
