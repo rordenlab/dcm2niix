@@ -1411,13 +1411,19 @@ tse3d: T2*/
     	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
     	//https://github.com/poldracklab/sdcflows/issues/5
     	//TODO: use accelFactPE to infer if partial-Fourier, check for interpolated resolution
+    	// EchoSpacing 1/BW/EPI_factor https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1308&L=FSL&D=0&P=113520
+    	// this formula from https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
+    	// https://neurostars.org/t/consolidating-epi-echo-spacing-and-readout-time-for-philips-scanner/4406
+    	// In case acceleration like SENSE or GRAPPA is used, the echo spacing needs to be divided by the acceleration factor, for example if echo spacing is 0.5ms with factor 2, then effective echo spacing is 0.5/2 = 0.25ms.
     	float etl = (float)d.echoTrainLength;
     	float wfs = d.waterFatShift;
     	float fstrength = d.fieldStrength;
         float wfd_ppm = 3.4;  // water-fat diff in ppm
         float g_ratio_mhz_t = 42.57;  // gyromagnetic ratio for proton (1H) in MHz/T
         float wfs_hz = fstrength * wfd_ppm * g_ratio_mhz_t;
-        effectiveEchoSpacing = wfs / (wfs_hz * etl);
+        //not yet confident
+        // https://github.com/rordenlab/dcm2niix/issues
+        //effectiveEchoSpacing = wfs / (wfs_hz * etl);
     }
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
