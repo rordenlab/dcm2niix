@@ -116,6 +116,7 @@ The following tools exploit dcm2niix
 
   - [abcd-dicom2bids](https://github.com/DCAN-Labs/abcd-dicom2bids) selectively downloads high quality ABCD datasets. 
   - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
+  - [BIDS Toolbox](https://github.com/cardiff-brain-research-imaging-centre/bids-toolbox) is a web service for the creation and manipulation of BIDS datasets, using dcm2niix for importing DICOM data.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.
@@ -130,6 +131,7 @@ The following tools exploit dcm2niix
   - [dcm2niix_afni](https://afni.nimh.nih.gov/pub/dist/doc/program_help/dcm2niix_afni.html) is a version of dcm2niix included with the [AFNI](https://afni.nimh.nih.gov/) distribution.
   - [dcm2niiXL](https://github.com/neurolabusc/dcm2niiXL) is a shell script and tuned compilation of dcm2niix designed for accelerated conversion of extra large datasets.
   - [DICOM2BIDS](https://github.com/klsea/DICOM2BIDS) is a Python 2 script for creating BIDS files.
+  - [dcmwrangle](https://github.com/jbteves/dcmwrangle) a Python interactive and static tool for organizing dicoms.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
@@ -150,6 +152,7 @@ The following tools exploit dcm2niix
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
+  - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
   - The [SlicerDcm2nii extension](https://github.com/Slicer/ExtensionsIndex/blob/master/SlicerDcm2nii.s4ext) is one method to import DICOM data into Slicer.
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.

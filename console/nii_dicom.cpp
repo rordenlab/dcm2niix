@@ -4198,6 +4198,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
+#define  kInversionTimes  0x0018+uint32_t(0x9079<< 16 ) //FD
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
 #define  kDiffusion_bValue  0x0018+uint32_t(0x9087<< 16 ) // FD
 #define  kDiffusionOrientation  0x0018+uint32_t(0x9089<< 16 ) // FD, seen in enhanced
@@ -4242,6 +4243,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kTemporalPosition 0x0020+(0x0100 << 16 ) //IS 
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
+//#define  kSliceLocation 0x0020+(0x1041 << 16 ) //DS would be useful if not optional type 3
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
 #define  kFrameContentSequence 0x0020+uint32_t(0x9111<< 16 ) //SQ
 #define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
@@ -4349,6 +4351,7 @@ double TE = 0.0; //most recent echo time recorded
 	int acquisitionTimesGE_UIH = 0;
     int sqDepth00189114 = -1;
     bool hasDwiDirectionality = false;
+    //float sliceLocation = INFINITY; //useless since this tag is optional
     //int numFirstPatientPosition = 0;
     int nDimIndxVal = -1; //tracks Philips kDimensionIndexValues
     int locationsInAcquisitionGE = 0;
@@ -5129,6 +5132,15 @@ double TE = 0.0; //most recent echo time recorded
                 if (strcmp(dir, "ISOTROPIC") == 0)
                 	isPhilipsDerived = true;
                 break; }
+            case kInversionTimes : //issue 380
+                if (lLength < 8)
+                	break;
+                if (lLength > 8) {
+                	printWarning("series reports multiple inversion times.\n");
+                	break;
+                }
+                d.TI = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	break;
             case kMREchoSequence :
             	if (d.manufacturer != kMANUFACTURER_BRUKER) break;
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
@@ -6180,6 +6192,9 @@ double TE = 0.0; //most recent echo time recorded
             case kImagesInAcquisition :
                 imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
+            //case kSliceLocation : //optional so useless, infer from image position patient (0020,0032) and image orientation (0020,0037) 
+            //	sliceLocation =  dcmStrFloat(lLength, &buffer[lPos]);
+            //	break;
             case kImageStart:
                 //if ((!geiisBug) && (!isIconImageSequence)) //do not exit for proprietary thumbnails
                 if (isIconImageSequence) {
@@ -6462,6 +6477,7 @@ if (d.isHasPhase)
     if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
+	//printMessage("%d %g\n", d.imageNum, sliceLocation); //shame this tag is optional
 	if (isVerbose) {
         printMessage("DICOM file: %s\n", fname);
         printMessage(" patient position (0020,0032)\t%g\t%g\t%g\n", d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
