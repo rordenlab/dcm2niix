@@ -1370,7 +1370,12 @@ tse3d: T2*/
 	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
-    if (d.phaseEncodingSteps > 0) fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
+    if ((d.phaseEncodingSteps > 0) && (d.isPartialFourier) && (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+    	//issue 377
+    	fprintf(fp, "\t\"PartialFourierEnabled\": \"YES\",\n" );
+    	fprintf(fp, "\t\"PhaseEncodingStepsNoPartialFourier\": %d,\n", d.phaseEncodingSteps );
+    } else if (d.phaseEncodingSteps > 0) 
+    	fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
 	if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines );
 
 	//Compute ReconMatrixPE
@@ -1423,7 +1428,7 @@ tse3d: T2*/
         float wfs_hz = fstrength * wfd_ppm * g_ratio_mhz_t;
         //not yet confident
         // https://github.com/rordenlab/dcm2niix/issues
-        //effectiveEchoSpacing = wfs / (wfs_hz * etl);
+        effectiveEchoSpacing = wfs / (wfs_hz * etl);
     }
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)

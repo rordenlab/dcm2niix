@@ -801,6 +801,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isSegamiOasis = false; //these images do not store spatial coordinates
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
+    d.isPartialFourier = false;
     d.isDiffusion = false;
     d.isVectorFromBMatrix = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
@@ -4199,6 +4200,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
 #define  kInversionTimes  0x0018+uint32_t(0x9079<< 16 ) //FD
+#define  kPartialFourier  0x0018+uint32_t(0x9081<< 16 ) //CS
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
 #define  kDiffusion_bValue  0x0018+uint32_t(0x9087<< 16 ) // FD
 #define  kDiffusionOrientation  0x0018+uint32_t(0x9089<< 16 ) // FD, seen in enhanced
@@ -4314,6 +4316,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
 #define  kEPIFactorPhilips 0x2001+(0x1013 << 16 ) //SL
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
+#define  kPartialMatrixScannedPhilips  0x2001+(0x1019 << 16 )// CS
 #define  kWaterFatShiftPhilips 0x2001+(0x1022 << 16 ) //FL
 //#define  kMRSeriesAcquisitionNumber 0x2001+(0x107B << 16 ) //IS
 //#define  kNumberOfLocationsPhilips  0x2001+(0x1015 << 16 ) //SS
@@ -5141,6 +5144,11 @@ double TE = 0.0; //most recent echo time recorded
                 }
                 d.TI = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	break;
+            case kPartialFourier : //(0018,9081) CS [YES],[NO]
+				if (lLength < 2) break;
+                if (toupper(buffer[lPos]) == 'Y')
+                	d.isPartialFourier = true;
+                break;
             case kMREchoSequence :
             	if (d.manufacturer != kMANUFACTURER_BRUKER) break;
             	if (sqDepth == 0) sqDepth = 1; //should not happen, in case faulty anonymization
@@ -5947,6 +5955,13 @@ double TE = 0.0; //most recent echo time recorded
                 locationsInAcquisitionPhilips = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 //printMessage("====> locationsInAcquisitionPhilips\t%d\n", locationsInAcquisitionPhilips);
 				break;
+			case kPartialMatrixScannedPhilips :
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+				if (lLength < 2) break;
+                if (toupper(buffer[lPos]) == 'Y')
+                	d.isPartialFourier = true;
+                break;            	
 			case kWaterFatShiftPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
