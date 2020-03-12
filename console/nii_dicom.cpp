@@ -5135,15 +5135,19 @@ double TE = 0.0; //most recent echo time recorded
                 if (strcmp(dir, "ISOTROPIC") == 0)
                 	isPhilipsDerived = true;
                 break; }
-            case kInversionTimes : //issue 380
-                if (lLength < 8)
-                	break;
-                if (lLength > 8) {
-                	printWarning("series reports multiple inversion times.\n");
-                	break;
-                }
-                d.TI = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-            	break;
+            case kInversionTimes : {//issue 380
+                if ((lLength < 8) || ((lLength % 8) != 0)) break;
+            	int nTI = lLength / 8;
+            	d.TI = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	if (nTI > 1) {
+            		bool isTIvaries = false; 
+                	for (int i = 1; i < nTI; i++) {
+        				float ti = dcmFloatDouble(8, &buffer[lPos+(i*8)],d.isLittleEndian);
+        				if (!isSameFloatGE(ti, d.TI)) isTIvaries = true;	
+        			} 
+        			if (isTIvaries) printWarning("0018,9079 reports multiple inversion times.\n");
+				}
+                break; }
             case kPartialFourier : //(0018,9081) CS [YES],[NO]
 				if (lLength < 2) break;
                 if (toupper(buffer[lPos]) == 'Y')
