@@ -2417,7 +2417,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcat (outname,dcm.coilName);
     }
     // myMultiEchoFilenameSkipEcho1 https://github.com/rordenlab/dcm2niix/issues/237
-    #ifdef myMultiEchoFilenameSkipEcho1
+	#ifdef myMultiEchoFilenameSkipEcho1
     if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
     #else
     if ((isAddNamePostFixes) && (!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
@@ -4532,9 +4532,9 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS);
-    rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
-    rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
-    if (hdr->dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1] , hdr, true);
+	rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
+	rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
+	if (hdr->dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1] , hdr, true);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
 		printWarning("Weird CSA 'ProtocolSliceNumber' (System/Miscellaneous/ImageNumbering reversed): VALIDATE SLICETIMING AND BVECS\n");
@@ -4544,8 +4544,8 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	}
 	if (sliceDir < 0) {
     	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
-    		dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
-    }
+			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
+	}
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	return sliceDir;
 } //sliceTiming()
@@ -6068,7 +6068,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     } else {
 #endif
     #ifdef myBubbleSort
-    //3: stack DICOMs with the same Series
+	//3: stack DICOMs with the same Series
     struct TWarnings warnings = setWarnings();
     for (int i = 0; i < (int)nDcm; i++ ) {
 		if ((dcmList[i].converted2NII == 0) && (dcmList[i].isValid)) {
@@ -6121,9 +6121,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 		}//convert all images of this series
     }
     #else //avoid bubble sort - dont check all images for match, only those with identical series instance UID
-    //3: stack DICOMs with the same Series
-    struct TWarnings warnings = setWarnings();
-    //sort by series instance UID ... avoids bubble-sort penalty
+	//3: stack DICOMs with the same Series
+	struct TWarnings warnings = setWarnings();
+	//sort by series instance UID ... avoids bubble-sort penalty
     TCRCsort * crcSort = (TCRCsort *)malloc(nDcm * sizeof(TCRCsort));
     for (int i = 0; i < (int)nDcm; i++ )
     	fillTCRCsort(crcSort[i], i, dcmList[i].seriesUidCrc);
@@ -6137,31 +6137,33 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 		bool isMultiEcho = false;
 		bool isNonParallelSlices = false;
 		bool isCoilVaries = false;
+		int jMax = i;
 		for (int j = i; j < (int)nDcm; j++) {
 			int ji = crcSort[j].indx;
 			if (dcmList[ii].seriesUidCrc != dcmList[ji].seriesUidCrc) break; //seriesUID no longer matches no need to examine any subsequent images
-			isMultiEcho = false;
-			isNonParallelSlices = false;
-			isCoilVaries = false;
+			jMax = j;
 			if (isSameSet(dcmList[ii], dcmList[ji], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries)) {
 				dcmList[ji].converted2NII = 1; //do not reprocess repeats
 				convertIdxs[nConvert] = ji;
 				nConvert++;
-			} else {
-				if (isNonParallelSlices) {
-					dcmList[ii].isNonParallelSlices = true;
-					dcmList[ji].isNonParallelSlices = true;
-				}
-				if (isMultiEcho) {
-					dcmList[ii].isMultiEcho = true;
-					dcmList[ji].isMultiEcho = true;
-				}
-				if (isCoilVaries) {
-					dcmList[ii].isCoilVaries = true;
-					dcmList[ji].isCoilVaries = true;
-				}
-			} //unable to stack images: mark files that may need file name dis-ambiguation
+			}
 		} //for all images with same seriesUID as first one
+		//issue 381: ensure all images are informed if there are variations in echo, parallel slices, coil name:
+		if (isMultiEcho)
+			for (int j = i; j <= jMax; j++) {
+				int ji = crcSort[j].indx;
+				dcmList[ji].isMultiEcho = true;
+			}
+		if (isNonParallelSlices)
+			for (int j = i; j <= jMax; j++) {
+				int ji = crcSort[j].indx;
+				dcmList[ji].isNonParallelSlices = true;
+			}
+		if (isCoilVaries)
+			for (int j = i; j <= jMax; j++) {
+				int ji = crcSort[j].indx;
+				dcmList[ji].isCoilVaries = true;
+			}
 		TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 		for (int j = 0; j < nConvert; j++)
 			fillTDCMsort(dcmSort[j], convertIdxs[j], dcmList[convertIdxs[j]]);
