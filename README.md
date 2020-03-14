@@ -116,6 +116,7 @@ The following tools exploit dcm2niix
 
   - [abcd-dicom2bids](https://github.com/DCAN-Labs/abcd-dicom2bids) selectively downloads high quality ABCD datasets. 
   - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
+  - [BiDirect_BIDS_Converter](https://github.com/wulms/BiDirect_BIDS_Converter) for conversion from DICOM to the BIDS standard.
   - [BIDS Toolbox](https://github.com/cardiff-brain-research-imaging-centre/bids-toolbox) is a web service for the creation and manipulation of BIDS datasets, using dcm2niix for importing DICOM data.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
@@ -134,9 +135,9 @@ The following tools exploit dcm2niix
   - [dcmwrangle](https://github.com/jbteves/dcmwrangle) a Python interactive and static tool for organizing dicoms.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
-  - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
-  - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
   - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
+  - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
+  - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [LEAD-DBS](http://www.lead-dbs.org/) uses dcm2niix for [DICOM import](https://github.com/leaddbs/leaddbs/blob/master/ea_dicom_import.m).
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).

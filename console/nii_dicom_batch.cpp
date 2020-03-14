@@ -1414,9 +1414,8 @@ tse3d: T2*/
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0)) {
     	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
-    	//https://github.com/poldracklab/sdcflows/issues/5
-    	//TODO: use accelFactPE to infer if partial-Fourier, check for interpolated resolution
-    	// EchoSpacing 1/BW/EPI_factor https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1308&L=FSL&D=0&P=113520
+    	//https://github.com/rordenlab/dcm2niix/issues/377
+        // EchoSpacing 1/BW/EPI_factor https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1308&L=FSL&D=0&P=113520
     	// this formula from https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
     	// https://neurostars.org/t/consolidating-epi-echo-spacing-and-readout-time-for-philips-scanner/4406
     	// In case acceleration like SENSE or GRAPPA is used, the echo spacing needs to be divided by the acceleration factor, for example if echo spacing is 0.5ms with factor 2, then effective echo spacing is 0.5/2 = 0.25ms.
@@ -1426,8 +1425,6 @@ tse3d: T2*/
         float wfd_ppm = 3.4;  // water-fat diff in ppm
         float g_ratio_mhz_t = 42.57;  // gyromagnetic ratio for proton (1H) in MHz/T
         float wfs_hz = fstrength * wfd_ppm * g_ratio_mhz_t;
-        //not yet confident
-        // https://github.com/rordenlab/dcm2niix/issues
         effectiveEchoSpacing = wfs / (wfs_hz * etl);
     }
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
@@ -3220,7 +3217,8 @@ int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im
 	#else //if windows else Unix
 	if ((opts.isGz) && (opts.isPipedGz) && (strlen(opts.pigzname)  > 0) ) {
 		//piped gz
-    	printMessage(" Optimal piped gz will fail if pigz version < 2.3.4.\n");
+		if (opts.isVerbose)
+    		printMessage(" Optimal piped gz will fail if pigz version < 2.3.4.\n");
     	char command[768];
     	strcpy(command, "\"" );
     	strcat(command, opts.pigzname );
@@ -4557,6 +4555,21 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
            A.m[2][0],A.m[2][1],A.m[2][2],A.m[2][3]);
 }*/
 
+/*int issue377(struct TDICOMdata d, struct nifti_1_header *h) {
+	int reconMatrixPE = d.phaseEncodingLines;
+
+    if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
+		if  (h->dim[1] == h->dim[2]) //phase encoding does not matter
+			reconMatrixPE = h->dim[2];
+		else if (d.phaseEncodingRC =='C')
+			reconMatrixPE = h->dim[2]; //see dcm_qa: NOPF_NOPAT_NOPOS_PERES100_ES0P59_BW2222_200PFOV_AP_0034
+		else if (d.phaseEncodingRC =='R')
+			reconMatrixPE = h->dim[1];
+    }
+    printf("%ld\t%s\t%d\t%g\t%g\t%d\t%g\n", d.seriesNum, d.protocolName, d.echoTrainLength, d.waterFatShift, d.imagingFrequency, reconMatrixPE, d.pixelBandwidth); 
+	return 0;
+}*/
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
@@ -4922,6 +4935,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         free(imgM);
         return EXIT_FAILURE;
     }
+    //return issue377(dcmList[indx0], &hdr0);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output

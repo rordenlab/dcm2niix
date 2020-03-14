@@ -4159,6 +4159,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kPatientAge 0x0010+(0x1010 << 16 )
 #define  kPatientWeight 0x0010+(0x1030 << 16 )
 #define  kAnatomicalOrientationType 0x0010+(0x2210 << 16 )
+#define  kDeidentificationMethod 0x0012+(0x0063 << 16)//[DICOMANON, issue 383 
+#define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kBodyPartExamined 0x0018+(0x0015 << 16)
 #define  kScanningSequence 0x0018+(0x0020 << 16)
 #define  kSequenceVariant 0x0018+(0x0021 << 16)
@@ -4347,6 +4349,7 @@ uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
+	bool isDICOMANON = false; //issue383
 	//double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
@@ -5054,6 +5057,14 @@ double TE = 0.0; //most recent echo time recorded
                 int slen = (int) strlen(aotTxt);
 				if((slen < 9) || (strstr(aotTxt, "QUADRUPED") == NULL) ) break;
                 printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
+            	break; }
+            case kDeidentificationMethod: { //issue 383
+            	char anonTxt[kDICOMStr];
+            	dcmStr (lLength, &buffer[lPos], anonTxt);
+                int slen = (int) strlen(anonTxt);
+				if((slen < 10) || (strstr(anonTxt, "DICOMANON") == NULL) ) break;
+				isDICOMANON = true;
+                printWarning("Matlab DICOMANON can scramble SeriesInstanceUID (0020,000e) and remove crucial data (see issue 383). \n");
             	break; }
             case kPatientID :
                 dcmStr (lLength, &buffer[lPos], d.patientID);
@@ -6709,6 +6720,13 @@ if (d.isHasPhase)
 		d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
+	}
+	if (isDICOMANON) {
+		//issue 383
+		d.seriesInstanceUID[0] = '\0';
+		strcat(d.seriesInstanceUID, d.studyDate);
+		strcat(d.seriesInstanceUID, d.studyTime);
+		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "_fl2d1") != NULL)) {
     	d.isLocalizer = true;
