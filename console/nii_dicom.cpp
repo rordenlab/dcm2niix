@@ -4350,6 +4350,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
 	bool is2005140FSQ = false;
 	bool isDICOMANON = false; //issue383
+	bool isMATLAB = false; //issue383
 	//double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
@@ -4873,10 +4874,11 @@ double TE = 0.0; //most recent echo time recorded
                 char impTxt[kDICOMStr];
                 dcmStr (lLength, &buffer[lPos], impTxt);
                 int slen = (int) strlen(impTxt);
-				//if ((slen > 5) && (strstr(impTxt, "dcm4che") != NULL) )
-				//	isDcm4Che = true;
+				if ((slen > 5) && (strstr(impTxt, "MATLAB") != NULL) )
+					isMATLAB = true;
 				if((slen < 5) || (strstr(impTxt, "XA10A") == NULL) ) break;
 				d.isXA10A = true;
+				
             	break; }
             case kSourceApplicationEntityTitle: {
             	char saeTxt[kDICOMStr];
@@ -5148,16 +5150,19 @@ double TE = 0.0; //most recent echo time recorded
                 break; }
             case kInversionTimes : {//issue 380
                 if ((lLength < 8) || ((lLength % 8) != 0)) break;
-            	int nTI = lLength / 8;
             	d.TI = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+            	/*
+            	//see issue385 : Philips reports Implausible InversionTimes
+            	int nTI = lLength / 8;
             	if (nTI > 1) {
             		bool isTIvaries = false; 
                 	for (int i = 1; i < nTI; i++) {
         				float ti = dcmFloatDouble(8, &buffer[lPos+(i*8)],d.isLittleEndian);
         				if (!isSameFloatGE(ti, d.TI)) isTIvaries = true;	
         			} 
-        			if (isTIvaries) printWarning("0018,9079 reports multiple inversion times.\n");
+        			if (isTIvaries) printWarning("0018,9079 reports multiple inversion times: %s\n", fname); 
 				}
+				*/
                 break; }
             case kPartialFourier : //(0018,9081) CS [YES],[NO]
 				if (lLength < 2) break;
@@ -5539,15 +5544,16 @@ double TE = 0.0; //most recent echo time recorded
             case kImagingFrequency :
             	d.imagingFrequency = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-           	case kTriggerTime:
+           	case kTriggerTime: {
 				//untested method to detect slice timing for GE PSD “epi” with multiphase option
 				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
-            	if (d.manufacturer != kMANUFACTURER_GE) break;            	
+            	if ((d.manufacturer != kMANUFACTURER_GE) && (d.manufacturer != kMANUFACTURER_PHILIPS)) break; //issue384            	
             	d.triggerDelayTime = dcmStrFloat(lLength, &buffer[lPos]); //???? issue 336
+            	if (d.manufacturer != kMANUFACTURER_GE) break;            	
             	d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.triggerDelayTime;
                 //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
-				break;
+				break; }
             case kEffectiveTE : {
             	TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	if (d.TE <= 0.0)
@@ -6721,7 +6727,7 @@ if (d.isHasPhase)
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
 	}
-	if (isDICOMANON) {
+	if ((isDICOMANON) && (isMATLAB)) {
 		//issue 383
 		d.seriesInstanceUID[0] = '\0';
 		strcat(d.seriesInstanceUID, d.studyDate);

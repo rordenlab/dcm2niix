@@ -1353,7 +1353,7 @@ tse3d: T2*/
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
 		if (strcmp(d.coilElements,d.coilName) != 0)
 			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
-		if ((!d.is3DAcq) && (d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 1)) {
+		if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (!d.is3DAcq) && (d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 1)) {
 				//ETL is > 1, as some GE files list 1, as an example see series mr_0005 in dcm_qa_nih
 				float pf = (float)d.phaseEncodingLines;
 				if (d.accelFactPE > 1)
@@ -2451,7 +2451,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     	sprintf(newstr, "_t%d", (int)roundf(dcm.triggerDelayTime));
         strcat (outname,newstr);
     }
-	//could add (isAddNamePostFixes) to these next two, but consequences could be catastrophic
+    //could add (isAddNamePostFixes) to these next two, but consequences could be catastrophic
     if (dcm.isRawDataStorage) //avoid name clash for Philips XX_ files
     	strcat (outname,"_Raw");
     if (dcm.isGrayscaleSoftcopyPresentationState) //avoid name clash for Philips PS_ files
@@ -4634,7 +4634,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     if (nConvert > 1) {
         //next: detect trigger time see example https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
         double triggerDx = dcmList[dcmSort[nConvert-1].indx].triggerDelayTime - dcmList[indx0].triggerDelayTime;
-        dcmList[indx0].triggerDelayTime = triggerDx;
+        if (triggerDx > 0.0) //issue 384
+        	dcmList[indx0].triggerDelayTime = triggerDx;
         //next: determine gantry tilt
         if (dcmList[indx0].gantryTilt != 0.0f)
             printWarning("Note these images have gantry tilt of %g degrees (manufacturer ID = %d)\n", dcmList[indx0].gantryTilt, dcmList[indx0].manufacturer);
@@ -5365,7 +5366,7 @@ int isSameFloatDouble (double a, double b) {
 }
 
 struct TWarnings { //generate a warning only once per set
-        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
+        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
 };
 
 TWarnings setWarnings() {
@@ -5375,6 +5376,7 @@ TWarnings setWarnings() {
 	r.dateTimeVaries = false;
 	r.phaseVaries = false;
 	r.echoVaries = false;
+	r.triggerVaries = false;
 	r.coilVaries = false;
 	r.seriesUidVaries = false;
 	r.forceStackSeries = false;
@@ -5461,6 +5463,12 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         	printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE,d1.echoNum, d2.echoNum );
         warnings->echoVaries = true;
         *isMultiEcho = true;
+        return false;
+    }
+    if ((d1.triggerDelayTime != d2.triggerDelayTime) && (d1.manufacturer == kMANUFACTURER_PHILIPS)) { //issue 384
+        if (!warnings->triggerVaries)
+        	printMessage("Slices not stacked: trigger time varies\n");
+        warnings->triggerVaries = true;
         return false;
     }
     if (d1.coilCrc != d2.coilCrc) {

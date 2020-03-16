@@ -106,7 +106,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
 	printf("  -u : up-to-date check\n");
 	#endif
-	printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
+	printf("  -v : verbose (n/y or 0/1/2, default 0) [no, yes, logorrheic]\n");
 //#define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
 //#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
 //#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
