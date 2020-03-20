@@ -278,7 +278,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
     // requires PatientPosition 0018,5100 is HFS (head first supine)
-    if ((d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
+    if ((d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_CANON) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
     if (d->manufacturer == kMANUFACTURER_UIH) {
     	for (int i = 0; i < d->CSA.numDti; i++) {
@@ -990,6 +990,9 @@ tse3d: T2*/
 			break;
 		case kMANUFACTURER_TOSHIBA:
 			fprintf(fp, "\t\"Manufacturer\": \"Toshiba\",\n" );
+			break;
+		case kMANUFACTURER_CANON:
+			fprintf(fp, "\t\"Manufacturer\": \"Canon\",\n" );
 			break;
 		case kMANUFACTURER_HITACHI:
 			fprintf(fp, "\t\"Manufacturer\": \"Hitachi\",\n" );
@@ -2298,6 +2301,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
                     strcat (outname,"GE");
                 else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
                     strcat (outname,"To");
+                else if (dcm.manufacturer == kMANUFACTURER_CANON)
+                    strcat (outname,"Ca");
                 else if (dcm.manufacturer == kMANUFACTURER_UIH)
                 	strcat (outname,"UI");
                 else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
@@ -2361,6 +2366,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 					strcat (outname,"Siemens");
 				else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
 					strcat (outname,"Toshiba");
+				else if (dcm.manufacturer == kMANUFACTURER_CANON)
+					strcat (outname,"Canon");
 				else if (dcm.manufacturer == kMANUFACTURER_UIH)
 					strcat (outname,"UIH");
 				else
@@ -2750,6 +2757,9 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         	break;
         case kMANUFACTURER_TOSHIBA:
         	images->addAttribute("manufacturer", "Toshiba");
+        	break;
+        case kMANUFACTURER_Canon:
+        	images->addAttribute("manufacturer", "Canon");
         	break;
     }
     if (strlen(data.manufacturersModelName) > 0)
@@ -4864,7 +4874,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             hdr0.dim[5] = nConvert;
             hdr0.dim[0] = 5;
         }
-        if ((dcmList[indx0].manufacturer == kMANUFACTURER_TOSHIBA) && (dcmList[indx0].CSA.numDti < 1) && (nConvert > 1) && ( hdr0.dim[4] > 1)) {
+        if (((dcmList[indx0].manufacturer == kMANUFACTURER_TOSHIBA) || (dcmList[indx0].manufacturer == kMANUFACTURER_CANON)) && (dcmList[indx0].CSA.numDti < 1) && (nConvert > 1) && ( hdr0.dim[4] > 1)) {
         	//TOSHIBA omits 0018,9087 from B=0 volumes in diffusion series. Since most diffusion series start with B=0 volume, this would cause us to detect a diffusion series
         	for (int i = 1; i < nConvert; i++)
         		if (dcmList[dcmSort[i].indx].CSA.numDti > 0)
@@ -4936,7 +4946,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         free(imgM);
         return EXIT_FAILURE;
     }
-    //return issue377(dcmList[indx0], &hdr0);
+    //issue377(dcmList[indx0], &hdr0);
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output

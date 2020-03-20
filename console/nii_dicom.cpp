@@ -1150,6 +1150,9 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
         ret = kMANUFACTURER_PHILIPS;
     if ((toupper(cString[0])== 'T') && (toupper(cString[1])== 'O'))
         ret = kMANUFACTURER_TOSHIBA;
+    //CANON_MEC
+    if ((toupper(cString[0])== 'C') && (toupper(cString[1])== 'A'))
+        ret = kMANUFACTURER_CANON;
     if ((toupper(cString[0])== 'U') && (toupper(cString[1])== 'I'))
         ret = kMANUFACTURER_UIH;
     if ((toupper(cString[0])== 'B') && (toupper(cString[1])== 'R'))
@@ -5878,7 +5881,7 @@ double TE = 0.0; //most recent echo time recorded
               //     (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 
               //if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-              if((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+              if((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
                 //for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
                 float v[4];
                 //dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
@@ -6726,6 +6729,34 @@ if (d.isHasPhase)
 		d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
+	}
+	if (((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON))&&  (B0Philips > 0.0)) {//issue 397
+		char txt[1024] = {""};
+    	sprintf(txt, "b=%d(", (int) round(B0Philips));
+    	if (strstr(d.imageComments, txt) != NULL) {
+			//printf("%s>>>%s %g\n", txt, d.imageComments,  B0Philips);
+			int len = strlen(txt);
+			strcpy(txt, (char*)&d.imageComments[len]);
+			len = strlen(txt);
+			for (int i = 0; i <= len; i++) {
+        		if ((txt[i] >= '0') && (txt[i] <= '9')) continue;
+        		if ((txt[i] == '.') || (txt[i] == '-')) continue;
+        		txt[i] = ' ';
+        	}
+        	txt[0] = '8';
+            //printf(">>>%s<<<<\n", txt);
+			    
+			//dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) 
+			float v[4];
+			dcmMultiFloat(len,(char*)&txt[0], 3, &v[0]);
+			//printf(">>>%g = %g %g %g\n", v[0], v[1], v[2], v[3]);
+            d.CSA.dtiV[0] = B0Philips;
+            d.CSA.dtiV[1] = v[1];
+            d.CSA.dtiV[2] = v[2];
+            d.CSA.dtiV[3] = v[3];
+            d.CSA.numDti = 1;
+        }
+            	
 	}
 	if ((isDICOMANON) && (isMATLAB)) {
 		//issue 383
