@@ -6730,7 +6730,7 @@ if (d.isHasPhase)
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
 	}
-	if (((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON))&&  (B0Philips > 0.0)) {//issue 397
+	if (((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON))&&  (B0Philips > 0.0)) {//issue 388
 		char txt[1024] = {""};
     	sprintf(txt, "b=%d(", (int) round(B0Philips));
     	if (strstr(d.imageComments, txt) != NULL) {
@@ -6743,13 +6743,9 @@ if (d.isHasPhase)
         		if ((txt[i] == '.') || (txt[i] == '-')) continue;
         		txt[i] = ' ';
         	}
-        	txt[0] = '8';
-            //printf(">>>%s<<<<\n", txt);
-			    
-			//dcmMultiFloat (int lByteLength, char lBuffer[], int lnFloats, float *lFloats) 
-			float v[4];
+        	float v[4];
 			dcmMultiFloat(len,(char*)&txt[0], 3, &v[0]);
-			//printf(">>>%g = %g %g %g\n", v[0], v[1], v[2], v[3]);
+			//printf(">>>%g = %g %g %g : %s %s\n", v[0], v[1], v[2], v[3], txt,fname);
             d.CSA.dtiV[0] = B0Philips;
             d.CSA.dtiV[1] = v[1];
             d.CSA.dtiV[2] = v[2];
