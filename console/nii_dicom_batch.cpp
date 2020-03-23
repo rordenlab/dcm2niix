@@ -1371,6 +1371,7 @@ tse3d: T2*/
 	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
+	json_Float(fp, "\t\"PercentSampling\": %g,\n", d.percentSampling);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
     if ((d.phaseEncodingSteps > 0) && (d.isPartialFourier) && (d.manufacturer == kMANUFACTURER_PHILIPS)) {
@@ -1415,20 +1416,27 @@ tse3d: T2*/
 	    effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
     if (d.effectiveEchoSpacingGE > 0.0)
     	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
-    if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0)) {
+    if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0) && (reconMatrixPE > 1)) {
     	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
     	//https://github.com/rordenlab/dcm2niix/issues/377
         // EchoSpacing 1/BW/EPI_factor https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1308&L=FSL&D=0&P=113520
     	// this formula from https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
     	// https://neurostars.org/t/consolidating-epi-echo-spacing-and-readout-time-for-philips-scanner/4406
-    	// In case acceleration like SENSE or GRAPPA is used, the echo spacing needs to be divided by the acceleration factor, for example if echo spacing is 0.5ms with factor 2, then effective echo spacing is 0.5/2 = 0.25ms.
-    	float etl = (float)d.echoTrainLength;
-    	float wfs = d.waterFatShift;
-    	float fstrength = d.fieldStrength;
-        float wfd_ppm = 3.4;  // water-fat diff in ppm
-        float g_ratio_mhz_t = 42.57;  // gyromagnetic ratio for proton (1H) in MHz/T
-        float wfs_hz = fstrength * wfd_ppm * g_ratio_mhz_t;
-        effectiveEchoSpacing = wfs / (wfs_hz * etl);
+    	/*
+		ActualEchoSpacing = WaterFatShift / (ImagingFrequency * 3.4 * (EPI_Factor + 1))
+		TotalReadoutTIme = ActualEchoSpacing * EPI_Factor
+		EffectiveEchoSpacing = TotalReadoutTime / (ReconMatrixPE - 1)
+		WaterFatShift = 2001,1022
+		ImagingFrequency = 0018,0084
+		EPI_Factor = 0018,0091 or 2001,1013
+		ReconMatrixPE = 0028,0010 or 0028,0011 depending on 0018,1312
+		
+        */
+        float actualEchoSpacing = d.waterFatShift / (d.imagingFrequency * 3.4 * (d.echoTrainLength + 1));
+        float totalReadoutTime = actualEchoSpacing * d.echoTrainLength;
+		float effectiveEchoSpacingPhil = totalReadoutTime / (reconMatrixPE - 1);
+		json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
+        fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
     }
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
@@ -4567,7 +4575,6 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 
 /*int issue377(struct TDICOMdata d, struct nifti_1_header *h) {
 	int reconMatrixPE = d.phaseEncodingLines;
-
     if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
 		if  (h->dim[1] == h->dim[2]) //phase encoding does not matter
 			reconMatrixPE = h->dim[2];
@@ -4576,7 +4583,8 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 		else if (d.phaseEncodingRC =='R')
 			reconMatrixPE = h->dim[1];
     }
-    printf("%ld\t%s\t%d\t%g\t%g\t%d\t%g\n", d.seriesNum, d.protocolName, d.echoTrainLength, d.waterFatShift, d.imagingFrequency, reconMatrixPE, d.pixelBandwidth); 
+    printf("SeriesNumber((0020,0011))\tProtocolName(0018,1030)\tEchoTrainLength(0018,0091 or 2001,1013)\tWaterFatShift(2001,1022)\tImagingFrequency(0018,0084)\tReconMatrixPE\tPixelBandwidth(0018,0095)\tPhaseEncodingLines(0018,1310 or 0018,9231)\tPhaseEncodingSteps(0018,0089)\tPercentSampling(0018,0093)\tPercentPhaseFieldOfView(0018,0094)\n");
+    printf("%ld\t%s\t%d\t%g\t%g\t%d\t%g\t%d\t%d\t%g\t%g\n", d.seriesNum, d.protocolName, d.echoTrainLength, d.waterFatShift, d.imagingFrequency, reconMatrixPE, d.pixelBandwidth, d.phaseEncodingLines, d.phaseEncodingSteps, d.percentSampling, d.phaseFieldofView ); 
 	return 0;
 }*/
 
@@ -4946,7 +4954,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         free(imgM);
         return EXIT_FAILURE;
     }
-    //issue377(dcmList[indx0], &hdr0);
+    //issue377(dcmList[indx0], &hdr0); return EXIT_SUCCESS;
     nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output

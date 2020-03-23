@@ -770,6 +770,7 @@ struct TDICOMdata clear_dicom_data() {
     d.echoNum = 1;
     d.echoTrainLength = 0;
     d.waterFatShift = 0.0;
+    d.percentSampling = 0.0;
     d.phaseFieldofView = 0.0;
     d.dwellTime = 0;
     d.protocolBlockStartGE = 0;
@@ -4184,6 +4185,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
 #define  kPhaseEncodingSteps  0x0018+(0x0089 << 16 ) //'IS'
 #define  kEchoTrainLength  0x0018+(0x0091 << 16 ) //IS
+#define  kPercentSampling  0x0018+(0x0093 << 16 ) //'DS'
 #define  kPhaseFieldofView  0x0018+(0x0094 << 16 ) //'DS'
 #define  kPixelBandwidth  0x0018+(0x0095 << 16 ) //'DS' 'PixelBandwidth'
 #define  kDeviceSerialNumber  0x0018+(0x1000 << 16 ) //LO
@@ -5580,6 +5582,8 @@ double TE = 0.0; //most recent echo time recorded
             case kEchoTrainLength :
             	d.echoTrainLength  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
+            case kPercentSampling :
+            	d.percentSampling = dcmStrFloat(lLength, &buffer[lPos]);
             case kPhaseFieldofView :
             	d.phaseFieldofView = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -6558,7 +6562,7 @@ if (d.isHasPhase)
     	free(objects);
     }  //issue 372 
     if ((d.echoTrainLength == 0) && (echoTrainLengthPhil)) 
-    	d.echoTrainLength = echoTrainLengthPhil+1; //+1 to convert "EPI factor" to echo train length
+    	d.echoTrainLength = echoTrainLengthPhil; //+1 ?? to convert "EPI factor" to echo train length, see issue 377
     if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (minDynamicScanBeginTime < maxDynamicScanBeginTime)) { //issue369
     	float TR = 1000.0 * ((maxDynamicScanBeginTime-minDynamicScanBeginTime) / (d.xyzDim[4]-1)); //-1 : fence post problem
     	if (fabs(TR - d.TR) > 0.001) {
