@@ -72,15 +72,37 @@ Private Tags
 
 For modern Philips DICOMs, the current version of dcm2niix uses Dimension Index Values (0020,9157) to determine gradient number, which can also be found in (2005,1413). However, while 2005,1413 is always indexed from one, this is not necessarily the case for 0020,9157. For example, the ADNI DWI dataset for participant 018_S_4868 has values of 2005,1413 that range from 1..36 for the 36 directions, while 0020,9157 ranges from 2..37. The current version of dcm2niix compensates for this by re-indexing the values of 0020,9157 after all the volumes have been read.
 
+For acquiring DWI data, you can adjust your setup with from the Philips console. Specifically, in Contrast one selects Diffusion mode to DTI and adjusts the directional resolution. Options for directional resolution are `Low` which acquires 6 directions (P,M,S, plus 3 oblique), `Medium` (15 directions), `High` (32 directions) and `Opt x` where x is a number from 6 - 128 directions. DTI Elite users can also select `From File`. This will import the text file named E:\Export\dti_vectors_input.txt. This text file has a simple format. The first line is optional and is the name of the scheme - this line should not begin with a number. If the file contains a b=0 vector, it must be the first line of the file. The following lines specify the direction and bvalues. If you want to acquire more than one b=0 volume, each must specify a unique direction. One can only process these custom files with Philips FiberTrak if the same directions have been obtained for all b-values. Here is an example file that obeys these rules:
+
+```
+MyCustomDirections
+0.000	0.000	1.000	0
+0.049	-0.919	-0.391	1000
+0.726	0.301	-0.618	1000
+-0.683	0.255	-0.684	1000
+0.845	-0.502	-0.186	1000
+-0.73	-0.619	-0.288	1000
+-0.051	0.039	0.998	1000
+-0.018	0.871	-0.491	1000
+-0.444	0.494	0.747	1000
+-0.989	-0.086	-0.116	1000
+1.000	0.000	0.000	0
+
+```
+
 ## Missing Information.
 
 Philips DICOMs do not contain all the information desired by many neuroscientists. Due to this, the [BIDS](http://bids.neuroimaging.io/) files created by dcm2niix are impoverished relative to data from other vendors. This reflects a limitation in the Philips DICOMs, not dcm2niix.
 
-[Slice timing correction](https://www.mccauslandcenter.sc.edu/crnl/tools/stc) can account for some variability in fMRI datasets. Unfortunately, Philips DICOM data [does not encode slice timing information](https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/4). Therefore, dcm2niix is unable to populate the "SliceTiming" BIDS field. However, one can typically infer slice timing by recording the [mode and number of packages](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Philips_scanners) reported for the sequence on the scanner console.
+[Slice timing correction](https://www.mccauslandcenter.sc.edu/crnl/tools/stc) can account for some variability in fMRI datasets. Unfortunately, Philips DICOM data [does not encode slice timing information](https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/4). Therefore, dcm2niix is unable to populate the "SliceTiming" BIDS field. However, one can typically infer slice timing by recording the [mode and number of packages](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Philips_scanners) reported for the sequence on the scanner console or the [sequence PDF](http://adni.loni.usc.edu/wp-content/uploads/2017/09/ADNI-3-Basic-Philips-R5.pdf). For precise timing, it is also worth knowing if equidistant "temporal slice spacing" is set and whether "prospect. motion corr." is on or off (if on, a short delay occurs between volumes).
 
 Likewise, the BIDS tag "PhaseEncodingDirection" allows tools like [eddy](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy) and [TOPUP](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup) to undistort images. While the Philips DICOM header distinguishes the phase encoding axis (e.g. anterior-posterior vs left-right) it does not encode the polarity (A->P vs P->A).
 
-Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not calculate this from Philips DICOMs. If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only inlfuences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
+Another value desirable for TOPUP is the "TotalReadoutTime". Again, one can not confidently calculate this from Philips DICOMs (though on can [appoximate it if you make a few assumptions](https://github.com/nipreps/sdcflows/issues/5)). If you do decide to calculate this using values from the MRI console, be aware that the [FSL definition](https://github.com/rordenlab/dcm2niix/issues/130) is not intuitive for scans with interpolation, partial Fourier, parallel imaging, etc. However, it should be pointed out that the "TotalReadoutTime" only influences TOPUP's calibrated validation images that are typically ignored. The data used in subsequent steps will not be influenced by this value.
+
+## Partial Volumes
+
+NIfTI expects all 3D volumes of a  4D series to have the same number of series (e.g. a time series of 3D fMRI volumes, or a diffusion set with 3D volumes with different gradients applied). If a fMRI sequence is aborted part way through, it is possible that a Philips scanner will only save part of the final volume. An example would be where the total slices (9970) does not equal Dynamics (290) x slices (35) = 10150. Current versions of dcm2niix expect complete volumes. You can repair your data using the console or a Python script, as discussed in [issue 357](https://github.com/rordenlab/dcm2niix/issues/357). To resolve this situation by hand you could also [rename](RENAMING.md) your DICOM files with a call like `./dcm2niix -r y -f %t/%s_%p_%4y_%2r.dcm ~/out 0020,0100`. In this example, the [`%4y`](FILENAMING.md) parameter adds the volume (Temporal Position, 0020,0100) to the filename, allowing you to identify volumes with missing slices.
 
 ## Non-Image DICOMs
 

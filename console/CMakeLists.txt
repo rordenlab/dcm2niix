@@ -24,6 +24,9 @@ if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     # using GCC
+    if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 7.1.0))
+        add_definitions(-Wno-format-overflow)    # available since GCC 7.1.0
+    endif()
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 4.5.0))
         add_definitions(-Wno-unused-result)    # available since GCC 4.5.0
     endif()
@@ -185,6 +188,17 @@ if(BATCH_VERSION)
     endif()
 
     list(APPEND PROGRAMS dcm2niibatch)
+endif()
+
+
+if(APPLE)
+    message("--   Adding Apple plist")
+    set_target_properties(dcm2niix PROPERTIES LINK_FLAGS "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_SOURCE_DIR}/Info.plist")
+    #Apple notarization requires a Info.plist
+    # For .app bundles, the Info.plist is a separate file, for executables it is appended as a section
+    #you can check that the Info.plist section has been inserted with either of these commands
+    # otool -l ./dcm2niix | grep info_plist -B1 -A10
+    # launchctl plist ./dcm2niix
 endif()
 
 install(TARGETS ${PROGRAMS} DESTINATION bin)

@@ -88,13 +88,14 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #else
      #define kQstr ""
     #endif
-    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
+    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
-    char max16Ch = 'n';
-    if (opts.isMaximize16BitRange) max16Ch = 'y';
-    printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n, default %c)\n", max16Ch);
+	char max16Ch = 'n';
+    if (opts.isMaximize16BitRange == kMaximize16BitRange_True) max16Ch = 'y';
+    if (opts.isMaximize16BitRange == kMaximize16BitRange_Raw) max16Ch = 'o';
+    printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n/o [yes=scale, no=no, but uint16->int16, o=original], default %c)\n", max16Ch);
     printf("  -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
     printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
     printf("  -o : output directory (omit to save to input folder)\n");
@@ -102,11 +103,10 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
     printf("  -t : text notes includes private patient details (y/n, default n)\n");
-    printf("  --progress : report progress (y/n, default n)\n");
     #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
 	printf("  -u : up-to-date check\n");
 	#endif
-	printf("  -v : verbose (n/y or 0/1/2 [no, yes, logorrheic], default 0)\n");
+	printf("  -v : verbose (n/y or 0/1/2, default 0) [no, yes, logorrheic]\n");
 //#define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
 //#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
 //#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
@@ -129,8 +129,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		#endif
     #endif
     printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
-   	printf("  --progress : Slicer format progress information\n");
-   	printf("  --version : report version\n");
+   	printf("  --progress : report progress (y/n, default n)\n");
+    printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
+    printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
     printf(" Defaults stored in Windows registry\n");
     printf(" Examples :\n");
@@ -153,8 +154,9 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
 		#endif
     #endif
    	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
-   	printf("  --progress : Slicer format progress information\n");
-   	printf("  --version : report version\n");
+   	printf("  --progress : Slicer format progress information (y/n, default n)\n");
+   	printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
+    printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
     printf(" Defaults file : %s\n", opts.optsname);
     printf(" Examples :\n");
@@ -283,6 +285,8 @@ int main(int argc, const char * argv[])
                     opts.isSaveNativeEndian = false;
                     printf("NIfTI data will be little-endian\n");
                 }
+            } else if ( ! strcmp(argv[i], "--terse")) {
+				opts.isAddNamePostFixes = false;
             } else if ( ! strcmp(argv[i], "--version")) {
 				printf("%s\n", kDCMdate);
             	return kEXIT_REPORT_VERSION;
@@ -373,10 +377,12 @@ int main(int argc, const char * argv[])
             } else if ((argv[i][1] == 'l') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
-                if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
-                    opts.isMaximize16BitRange = false;
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                    opts.isMaximize16BitRange = kMaximize16BitRange_Raw;
+                else if ((argv[i][0] == 'n') || (argv[i][0] == 'N')  || (argv[i][0] == '0'))
+                    opts.isMaximize16BitRange = kMaximize16BitRange_False;
                 else
-                    opts.isMaximize16BitRange = true;
+                    opts.isMaximize16BitRange = kMaximize16BitRange_True;
             } else if ((argv[i][1] == 'm') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;
@@ -513,10 +519,11 @@ int main(int argc, const char * argv[])
 	#endif
 	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { //sensible naming scheme for renaming option
 		//strcpy(opts.filename,argv[i]);
+		//2019 - now include "%o" to append media SOP UID, as instance number is not required to be unique
 		#if defined(_WIN64) || defined(_WIN32)
-		strcpy(opts.filename,"%t\\%s_%p\\%4r.dcm"); //nrrd or nhdr (windows folders)
+		strcpy(opts.filename,"%t\\%s_%p\\%4r_%o.dcm"); //nrrd or nhdr (windows folders)
 		#else
-		strcpy(opts.filename,"%t/%s_%p/%4r.dcm"); //nrrd or nhdr (unix folders)
+		strcpy(opts.filename,"%t/%s_%p/%4r_%o.dcm"); //nrrd or nhdr (unix folders)
 		#endif
 		printf("renaming without output filename, assuming '-f %s'\n", opts.filename);
 	}

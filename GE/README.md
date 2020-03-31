@@ -20,6 +20,15 @@ If neither Trigger Time (DICOM 0018,1060) or RTIA Timer (0021,105E) store slice 
 
 This private element of the DICOM header is used to determine the phase encoding polarity. Specifically, we need to know the "Ky traversal direction" (top-down, or bottom up) and the phase encoding polarity. Unfortunately, this data is stored in a complicated, proprietary structure, that has changed with different releases of GE software. [Click here to see the definition for this structure](https://github.com/ScottHaileRobertson/GE-MRI-Tools/blob/master/GePackage/%2BGE/%2BPfile/%2BHeader/%2BRDB15/rdbm.h).
 
+## Multi-Echo EPI Sequences
+
+Current GE software (DV26.0_R03_1831.b) running research multi-echo sequences create invalid DICOM images. The required public [EchoTime (0018,0081)](https://dicom.innolitics.com/ciods/mr-image/mr-image/00180081) attribute lists the shortest echo time for the series, rather than the actual echo time for the given DICOM image. The public tag [EchoNumber (0018,0086)](https://dicom.innolitics.com/ciods/mr-image/mr-image/00180086) reports `1` for all echoes. These limitations in GE's DICOM images disrupt dcm2niix's image conversion. Hopefully future product sequences will generate valid DICOM data. In the meantime, [issue 359](https://github.com/rordenlab/dcm2niix/issues/359) provides a kludge for image conversion.
+
+
+## Imkage Interpolation
+
+Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 64x64 EPI image as 128x128) or between slices (e.g. saving a 126 slice T1-weighted image as 252 images). The resulting files require much more disk space, add no new information, are slower to process and can [disrupt some tools](https://mrtrix.readthedocs.io/en/latest/reference/commands/mrdegibbs.html). Users are strongly discouraged from interpolating raw data. However, dcm2niix should correctly detect this interpolation, resolving apparent discrepancies between tags (0020,1002; 0021,104F; 0054,0081). [Issue 355](https://github.com/rordenlab/dcm2niix/issues/355) provides details.
+
 ## Total Readout Time
 
 One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Total readout time is influence by parallel acceleration factor, bandwidth, number of EPI lines, and partial Fourier. Not all of these parameters are available from the GE DICOM images, so a user needs to check the scanner console.
@@ -35,5 +44,6 @@ In addition to the public DICOM tags, previous versions of dcm2niix attempted to
 ## Sample Datasets
 
  - [A validation dataset for dcm2niix commits](https://github.com/neurolabusc/dcm_qa_nih).
+ - [Slice timing validation](https://github.com/neurolabusc/dcm_qa_stc) for different varieties of GE EPI sequences.
  - [Examples of phase encoding polarity, slice timing and diffusion gradients](https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/).
- - The dcm2niix (wiki)[https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage] includes examples of diffusion data, slice timing, and other variations.
+ - The dcm2niix [wiki](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage) includes examples of diffusion data, slice timing, and other variations.

@@ -27,7 +27,8 @@ before_install:
   - git submodule update --init --depth=3 dcm_qa_uih
 
 script:
-  - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=true -DZLIB_IMPLEMENTATION=Cloudflare .. && make && cd -
+  # - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=true -DZLIB_IMPLEMENTATION=Cloudflare .. && make && cd -
+  - mkdir build && cd build && cmake -DBATCH_VERSION=OFF -DUSE_OPENJPEG=ON -DUSE_JPEGLS=true -DZLIB_IMPLEMENTATION=Cloudflare .. && make && cd -
   - export PATH=$PWD/build/bin:$PATH
   - cd dcm_qa && ./batch.sh && cd -
   - cd dcm_qa_nih && ./batch.sh && cd -

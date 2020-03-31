@@ -2,10 +2,6 @@ version: build-{build}
 
 image: Visual Studio 2015
 
-branches:
-  only:
-  - master
-
 configuration: Release
 
 platform: x64

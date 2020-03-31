@@ -13,34 +13,46 @@ You request the output file name with the `-f` argument. For example, consider y
  - %e=echo number (from 0018,0086)
  - %f=folder name (name of folder containing first DICOM)
  - %i=ID of patient (from 0010,0020)
- - %j=seriesInstanceUID (from 0020,000E)
- - %k=studyInstanceUID (from 0020,000D)
+ - %j=series instance UID (from 0020,000E)
+ - %k=study instance UID (from 0020,000D)
+ - %l=local procedure step description (from 0040,0254)
  - %m=manufacturer short name (from 0008,0070: GE, Ph, Si, To, UI, NA)
  - %n=name of patient (from 0010,0010)
+ - %o=mediaObjectInstanceUID (0002,0003)*
  - %p=protocol name (from 0018,1030)
- - %r=instance number (from 0020,0013)
+ - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)
  - %u=acquisition number (from 0020,0012)
  - %v=vendor long name (from 0008,0070: GE, Philips, Siemens, Toshiba, UIH, NA)
  - %x=study ID (from 0020,0010)
+ - %y=youth in series: GE RawDataRunNumber ([0019,10A2](https://github.com/rordenlab/dcm2niix/issues/359)) else TemporalPosition ([0020,0100](https://github.com/rordenlab/dcm2niix/issues/357))*
  - %z=sequence name (from 0018,0024)
+ 
+* Attributes listed above with an asterisk (*) are likely to vary within a series, and are typically not useful for DICOM to NIfTI conversion (where all images from a series are stacked together). These attributes can be useful for [renaming](RENAMING.md) DICOM images
 
 ## File Name Post-fixes: Image Disambiguation
 
-In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 4th dimension is time (fMRI) or gradient number (DWI). It will use the following extensions to disambiguate additional dimensions from the same series:
+In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 4th dimension is time (fMRI) or gradient number (DWI). However, DICOM images can include additional dimensions, e.g. a multiple-echo sequence would generate separate images for each echo. By default dcm2niix will use the following extensions to the file names in order to disambiguate additional dimensions from the same series:
 
  - _cNx.._cNz  where C* refers to the coil name (typically only seen for uncombined data, where a separate image is generated for each antenna)
  - _e1..eN echo number for multi-echo sequences
+ - _Eq is commonly seen in [CT scans](https://github.com/neurolabusc/dcm_qa_ct). For example, CT scans of the brain often have many slices closely packed near the brain stem and only a few slices spread far apart near the top of the head. Variable between-slice spacing is rarer in MRI, and if you see this from a MRI sequence you should ensure that [all of the acquired slices have been provided to dcm2niix](https://neurostars.org/t/field-mapping-siemens-scanners-dcm2niix-output-2-bids/2075/7). NIfTI asumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume.
  - _ph phase map
+ - _iN appended image number for non-parallel slices
  - _imaginary imaginary component of complex image
+ - _MoCo is appended to the ProtocolName if Image Type (0008,0008) includes the term 'MOCO'. This helps disambiguate Siemens fMRI runs where both motion corrected and raw data is stored for a single session.
  - _real real component of complex image
  - _phMag rare case where phase and magnitude are saved as the 4th dimension
- - _t  If the trigger delay time (0020,9153 or 0018,1060) is non-zero, it will be recorded in the file name. For example, the files "T1_t178.nii" and "T1_t511" suggests that the T1 scan was acquired with two cardiac trigger delays (178 and 511ms after the last R-peak).
- - _ADC Philips specific case. A DWI image where derived isotropic, ADC or trace volume was appended to the series. Since this image will disrupt subsequent processing, and because subsequent processing (dwidenoise, topup, eddy) will yield better derived images, dcm2niix will also create an additional image without this volume. Therefore, the _ADC file should typically be discarded. If you want dcm2niix to discard these useless derived images, use the ignore feature ('-i y').
- - _Eq is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with variable distance between the slices of a 3D volume. NIfTI asumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume.
+ - _t  If the trigger delay time (0020,9153) or trigger time (0018,1060) is non-zero, it will be recorded in the file name. For example, the files "T1_t178.nii" and "T1_t511" suggests that the T1 scan was acquired with two cardiac trigger delays (178 and 511ms after the last R-peak).
  - _Tilt is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with a gantry tilt that causes a skew that can not be stored in a NIfTI qForm. Therefore, the slices are resampled to remove the effect of tilt.
- - _MoCo is appended to the ProtocolName if Image Type (0008,0008) includes the term 'MOCO'. This helps disambiguate Siemens fMRI runs where both motion corrected and raw data is stored for a single session.
+
+Some post-fixes are specific to Philips DICOMs
+ - _ADC Philips specific case. A DWI image where derived isotropic, ADC or trace volume was appended to the series. Since this image will disrupt subsequent processing, and because subsequent processing (dwidenoise, topup, eddy) will yield better derived images, dcm2niix will also create an additional image without this volume. Therefore, the _ADC file should typically be discarded. If you want dcm2niix to discard these useless derived images, use the ignore feature ('-i y').
+ - _Raw Philips XX_* DICOMs (Raw Data Storage).
+ - _PS Philips PS_* DICOMs (Grayscale Softcopy Presentation State).
+
+If you do not want post-fixes, run dcm2niix in the terse mode (`--terse`). In this mode, most post-fixes will be omitted. Beware that this mode can have name clashes, and images from a series may over write each other.  
 
 ## File Name Conflicts
 
@@ -65,3 +77,5 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 ? (question mark)
 * (asterisk)
 ```
+
+Be warned that dcm2niix will copy all allowed characters verbatim, which can cause problems for some other tools. Consider this [sample dataset](https://github.com/neurolabusc/dcm_qa_nih/tree/master/In/20180918GE/mr_0004) where the DICOM Protocol Name (0018,1030) is 'Axial_EPI-FMRI_(Interleaved_I_to_S)'. The parentheses ("round brackets") may cause other tools issues. Consider converting this series with the command 'dcm2niix -f %s_%p ~/DICOM' to create the file '4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii'.If you now run the command 'fslhd 4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii' you will get the error '-bash: syntax error near unexpected token `(''. Therefore, it is often a good idea to use double quotes to specify the names of files. In this example 'fslhd "4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii"' will work correctly.
