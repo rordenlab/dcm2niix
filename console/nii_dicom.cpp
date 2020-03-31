@@ -6768,6 +6768,8 @@ if (d.isHasPhase)
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "_fl2d1") != NULL)) {
     	d.isLocalizer = true;
 	}
+	//UIH 3D T1 scans report echo train length, which is interpreted as 3D EPI
+	if ((d.manufacturer == kMANUFACTURER_UIH) &&  (strstr(d.sequenceName, "gre_fsp") != NULL)) d.echoTrainLength = 0;          
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
 	// Andrey Fedorov has requested keeping GE bvalues, see issue 264
 	//if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
