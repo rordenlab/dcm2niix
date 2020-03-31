@@ -1435,8 +1435,8 @@ tse3d: T2*/
         float actualEchoSpacing = d.waterFatShift / (d.imagingFrequency * 3.4 * (d.echoTrainLength + 1));
         float totalReadoutTime = actualEchoSpacing * d.echoTrainLength;
 		float effectiveEchoSpacingPhil = totalReadoutTime / (reconMatrixPE - 1);
-		json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
-        fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
+		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
+        fprintf(fp, "\t\"EstimatedTotalReadoutTime\": %g,\n", totalReadoutTime);
     }
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
