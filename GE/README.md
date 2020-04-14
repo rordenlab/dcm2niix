@@ -25,7 +25,7 @@ This private element of the DICOM header is used to determine the phase encoding
 Current GE software (DV26.0_R03_1831.b) running research multi-echo sequences create invalid DICOM images. The required public [EchoTime (0018,0081)](https://dicom.innolitics.com/ciods/mr-image/mr-image/00180081) attribute lists the shortest echo time for the series, rather than the actual echo time for the given DICOM image. The public tag [EchoNumber (0018,0086)](https://dicom.innolitics.com/ciods/mr-image/mr-image/00180086) reports `1` for all echoes. These limitations in GE's DICOM images disrupt dcm2niix's image conversion. Hopefully future product sequences will generate valid DICOM data. In the meantime, [issue 359](https://github.com/rordenlab/dcm2niix/issues/359) provides a kludge for image conversion.
 
 
-## Imkage Interpolation
+## Image Interpolation
 
 Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 64x64 EPI image as 128x128) or between slices (e.g. saving a 126 slice T1-weighted image as 252 images). The resulting files require much more disk space, add no new information, are slower to process and can [disrupt some tools](https://mrtrix.readthedocs.io/en/latest/reference/commands/mrdegibbs.html). Users are strongly discouraged from interpolating raw data. However, dcm2niix should correctly detect this interpolation, resolving apparent discrepancies between tags (0020,1002; 0021,104F; 0054,0081). [Issue 355](https://github.com/rordenlab/dcm2niix/issues/355) provides details.
 

@@ -1684,7 +1684,10 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
         if (vx[i].V[0] < minBval) minBval = vx[i].V[0];
     if (minBval > 50.0) bValueVaries = true;
-    //do not save files without variability
+    //start issue394: experimental, single volume per series, Siemens XA 
+    if (!isAllZeroFloat(vx[0].V[1], vx[0].V[2], vx[0].V[3])) 
+    	bValueVaries = true;
+    //end issue394
     if (!bValueVaries) {
         bool bVecVaries = false;
         for (int i = 1; i < numDti; i++) {//check if all bvalues match first volume
@@ -5047,6 +5050,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	nii_scale16bitUnsigned(imgM, &hdr0, opts.isVerbose); //allow UINT16 to use full dynamic range
     } else if ((opts.isMaximize16BitRange == kMaximize16BitRange_False) && (hdr0.datatype == DT_UINT16) &&  (!dcmList[dcmSort[0].indx].isSigned))
     	nii_check16bitUnsigned(imgM, &hdr0, opts.isVerbose); //save UINT16 as INT16 if we can do this losslessly
+    if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert < 2))
+    	printWarning("Siemens XA DICOM inadequate for robust conversion (issue 236)\n");
+    if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert > 1))
+    	printWarning("Siemens XA exported as classic not enhanced DICOM (issue 236)\n");
     printMessage( "Convert %d DICOM as %s (%dx%dx%dx%d)\n",  nConvert, pathoutname, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
     #ifndef USING_R
     fflush(stdout); //show immediately if run from MRIcroGL GUI
@@ -5414,7 +5421,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
 	bool isForceStackSeries = false;
 	if ((opts->isForceStackDCE) && (d1.isStackableSeries) && (d2.isStackableSeries) && (d1.seriesNum != d2.seriesNum)) {
 		if (!warnings->forceStackSeries)
-        	printMessage("DCE volumes stacked despite varying series number (use '-m o' to turn off merging).\n");
+        	printMessage("Siemens volumes stacked despite varying series number (use '-m o' to turn off merging).\n");
         warnings->forceStackSeries = true;
         isForceStackSeries = true;
 	}

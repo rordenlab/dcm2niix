@@ -4141,6 +4141,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kAcquisitionDate 0x0008+(0x0022 << 16 )
 #define  kAcquisitionDateTime 0x0008+(0x002A << 16 )
 #define  kStudyTime 0x0008+(0x0030 << 16 )
+#define  kSeriesTime 0x0008+(0x0031 << 16 )
 #define  kAcquisitionTime 0x0008+(0x0032 << 16 ) //TM
 //#define  kContentTime 0x0008+(0x0033 << 16 ) //TM
 #define  kModality 0x0008+(0x0060 << 16 ) //CS
@@ -4406,6 +4407,7 @@ double TE = 0.0; //most recent echo time recorded
     }
     char vr[2];
     //float intenScalePhilips = 0.0;
+    char seriesTimeTxt[kDICOMStr] = "";
     char acquisitionDateTimeTxt[kDICOMStr] = "";
     char imageType1st[kDICOMStr] = "";
     bool isEncapsulatedData = false;
@@ -5052,6 +5054,9 @@ double TE = 0.0; //most recent echo time recorded
             //    dcmStr (lLength, &buffer[lPos], contentTimeTxt);
             //    contentTime = atof(contentTimeTxt);
             //    break;
+            case kSeriesTime :
+                dcmStr (lLength, &buffer[lPos], seriesTimeTxt);
+                break;     
             case kStudyTime :
                 dcmStr (lLength, &buffer[lPos], d.studyTime);
                 break;
@@ -6733,6 +6738,13 @@ if (d.isHasPhase)
 		d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
+	}
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (d.isXA10A) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
+    	//printWarning("Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
+    	d.isStackableSeries = true;
+		d.imageNum += (d.seriesNum * 1000);
+		strcpy(d.seriesInstanceUID, seriesTimeTxt); // dest <- src
+		d.seriesUidCrc = mz_crc32X((unsigned char*) &seriesTimeTxt, strlen(seriesTimeTxt));
 	}
 	if (((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON))&&  (B0Philips > 0.0)) {//issue 388
 		char txt[1024] = {""};
