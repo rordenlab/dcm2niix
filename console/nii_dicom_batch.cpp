@@ -4851,7 +4851,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					#endif
 					int imageNumRange = 1 + abs( dcmList[dcmSort[nConvert-1].indx].imageNum -  dcmList[dcmSort[0].indx].imageNum);
 					if ((imageNumRange > 1) && (imageNumRange != nConvert)) {
-						printWarning("Missing images? Expected %d images, but instance number (0020,0013) ranges from %d to %d\n", nConvert, dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[nConvert-1].indx].imageNum);
+						if ((dcmList[dcmSort[0].indx].locationsInAcquisition > 0) && ((nConvert % dcmList[dcmSort[0].indx].locationsInAcquisition) != 0) )
+							printError("Missing images. Found %d images, expected %d slices per volume and instance number (0020,0013) ranges from %d to %d\n", nConvert, dcmList[dcmSort[0].indx].locationsInAcquisition, dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[nConvert-1].indx].imageNum);
+						else
+							printWarning("Missing images? Expected %d images, but instance number (0020,0013) ranges from %d to %d\n", nConvert, dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[nConvert-1].indx].imageNum);
 						if (opts.isVerbose) {
 							printMessage("instance=[");
 							for (int i = 0; i < nConvert; i++) {

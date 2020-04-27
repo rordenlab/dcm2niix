@@ -4354,6 +4354,8 @@ uint32_t kItemTag = 0xFFFE +(0xE000 << 16 );
 uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 double TE = 0.0; //most recent echo time recorded
+float MRImageDynamicScanBeginTime = 0.0;
+
 	bool is2005140FSQ = false;
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
@@ -4580,7 +4582,10 @@ double TE = 0.0; //most recent echo time recorded
 			dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
 			dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 			dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
-			dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
+			if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime))
+				dcmDim[numDimensionIndexValues].triggerDelayTime = 0.0; //issue395
+			else
+				dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
 			dcmDim[numDimensionIndexValues].V[0] = -1.0;
 			#ifdef MY_DEBUG
 			if (numDimensionIndexValues < 19) {
@@ -5657,9 +5662,9 @@ double TE = 0.0; //most recent echo time recorded
                 
             case kMRImageDynamicScanBeginTime: { //FL
                 if (lLength != 4) break;
-                float dyn = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
-                if (dyn < minDynamicScanBeginTime) minDynamicScanBeginTime = dyn;
-                if (dyn > maxDynamicScanBeginTime) maxDynamicScanBeginTime = dyn;
+                MRImageDynamicScanBeginTime = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+                if (MRImageDynamicScanBeginTime < minDynamicScanBeginTime) minDynamicScanBeginTime = MRImageDynamicScanBeginTime;
+                if (MRImageDynamicScanBeginTime > maxDynamicScanBeginTime) maxDynamicScanBeginTime = MRImageDynamicScanBeginTime;
                 break;
             }
             case kIntercept :
@@ -6739,6 +6744,9 @@ if (d.isHasPhase)
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
 	}
+	if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime)) //issue395
+		d.triggerDelayTime = 0.0;
+	//printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (d.isXA10A) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
     	//printWarning("Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
     	d.isStackableSeries = true;
