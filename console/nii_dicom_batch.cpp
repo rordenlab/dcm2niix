@@ -2489,7 +2489,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     for (size_t pos = 0; pos<strlen(outname); pos ++)
         if ((outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
             || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
-            || (outname[pos] == '^')
+            //|| (outname[pos] == '^') issue398
             || (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
             outname[pos] = '_';
 	#if defined(_WIN64) || defined(_WIN32)
