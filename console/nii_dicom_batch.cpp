@@ -544,7 +544,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 
 #define kMaxWipFree 64
 typedef struct {
-	float delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
+	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
     int phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
     	difBipolar, parallelReductionFactorInPlane, refLinesPE;
     float alFree[kMaxWipFree] ;
@@ -556,7 +556,9 @@ typedef struct {
 void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, int csaLength, float* shimSetting, char* coilID, char* consistencyInfo, char* coilElements, char* pulseSequenceDetails, char* fmriExternalInfo, char* protocolName, char* wipMemBlock) {
  //reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
  // returns 0 if no value found
-    csaAscii->delayTimeInTR = -0.001;
+    csaAscii->TE0 = 0.0;
+ 	csaAscii->TE1 = 0.0;
+ 	csaAscii->delayTimeInTR = -0.001;
  	csaAscii->phaseOversampling = 0.0;
  	csaAscii->phaseResolution = 0.0;
  	csaAscii->txRefAmp = 0.0;
@@ -659,6 +661,10 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		readKeyStr(keyStrWipMemBlock,  keyPos, csaLengthTrim, wipMemBlock);
 		char keyStrPn[] = "tProtocolName";
 		readKeyStr(keyStrPn,  keyPos, csaLengthTrim, protocolName);
+		char keyStrTE0[] = "alTE[0]";
+		csaAscii->TE0 = readKeyFloatNan(keyStrTE0, keyPos, csaLengthTrim);
+		char keyStrTE1[] = "alTE[1]";
+		csaAscii->TE1 = readKeyFloatNan(keyStrTE1, keyPos, csaLengthTrim);
 		//read ALL alTI[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
 			csaAscii->alTI[k] = NAN;
@@ -1153,6 +1159,11 @@ tse3d: T2*/
 		//if (d.phaseEncodingLines != csaAscii.phaseEncodingLines) //e.g. phaseOversampling
 		//	printWarning("PhaseEncodingLines reported in DICOM (%d) header does not match value CSA-ASCII (%d) %s\n", d.phaseEncodingLines, csaAscii.phaseEncodingLines, pathoutname);
 		delayTimeInTR = csaAscii.delayTimeInTR;
+		if ((d.isHasPhase) && (csaAscii.TE0 > 0.0) && (csaAscii.TE1 > 0.0)) { //issue400
+			//https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html
+			json_Float(fp, "\t\"EchoTime1\": %g,\n", csaAscii.TE0  / 1000000.0 );
+			json_Float(fp, "\t\"EchoTime2\": %g,\n", csaAscii.TE1  / 1000000.0 );
+		}	
 		phaseOversampling = csaAscii.phaseOversampling;
 		if (csaAscii.existUcImageNumb > 0) {
 			if (d.CSA.protocolSliceNumber1 < 2) {

@@ -43,7 +43,7 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 
-#define kDCMdate "v1.0.20200510"
+#define kDCMdate "v1.0.20200521"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -90,8 +90,8 @@ static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Phili
 #define kEXIT_INPUT_FOLDER_INVALID  5
 #define kEXIT_OUTPUT_FOLDER_INVALID  6
 #define kEXIT_OUTPUT_FOLDER_READ_ONLY  7
-#define kEXIT_RENAME_ERROR  8
 #define kEXIT_SOME_OK_SOME_BAD  8
+#define kEXIT_RENAME_ERROR  9
 
 
 static const int kSliceOrientUnknown = 0;
