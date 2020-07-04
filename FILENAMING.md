@@ -19,7 +19,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %m=manufacturer short name (from 0008,0070: GE, Ph, Si, To, UI, NA)
  - %n=name of patient (from 0010,0010)
  - %o=mediaObjectInstanceUID (0002,0003)*
- - %p=protocol name (from 0018,1030)
+ - %p=protocol name (from 0018,1030). If 0018,1030 is empty, or if the Manufacturer (0008,0070) is GE, then the SequenceName (0018,0024) is used if it is not empty.
  - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)

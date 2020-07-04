@@ -1638,9 +1638,10 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     if (dcmList[indx0].isDerived) allB0 = false; //e.g. FA map
     if ((numDti == numVol) && (numDti > 1)) allB0 = false;
     if (numDti > 1) allB0 = false;
+    if (nConvert > 1) allB0 = false;
     if ((numDti == 1) && (dti4D->S[0].V[0] > 50.0)) allB0 = false;
-    if (allB0) { 
-		if (opts.isVerbose)
+    if (allB0) {
+    	if (opts.isVerbose)
 			printMessage("Diffusion image without gradients: assuming %d volume B=0 series\n", numVol);
 	    char sep = '\t';
 		if (opts.isCreateBIDS)
@@ -1804,14 +1805,16 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 		}
 		else{
 		  if ((numDti - *numADC) < 2) {
-			if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
+			/*if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
 			  printWarning("No bvec/bval files created: only single value after ADC excluded\n");
 			*numADC = 0;
 			free(bvals);
 			free(vx);
-			return NULL;
-		  }
-		  printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n",
+			return NULL;*/
+			printMessage("Warning: Isotropic DWI series, all bvecs are zero (issue 405)\n");
+			*numADC = 0;
+		  } else
+		  	printMessage("Note: %d volumes appear to be ADC or trace images that will be removed to allow processing\n",
 					   *numADC);
 		}
 	}

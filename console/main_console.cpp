@@ -80,7 +80,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
     printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
     printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
-    printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters)\n");
+    printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters e.g. '-c first_visit')\n");
     printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
     printf("  -e : export as NRRD instead of NIfTI (y/n, default n)\n");
     #ifdef mySegmentByAcq
