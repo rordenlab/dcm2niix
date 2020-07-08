@@ -1778,13 +1778,16 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	}
 	if (numGEwarn > 0)
 		printWarning("Some images had bval>0 but bvec=0 (either Trace or b=0, see issue 245)\n");
-	if ((*numADC == numDti) || (numGEwarn  == numDti)) {
+	/*if ((*numADC == numDti) || (numGEwarn  == numDti)) { //issue 405: we now save bvals file for isotropic series
 		//all isotropic/ADC images - no valid bvecs
 		*numADC = 0;
 		free(bvals);
 		free(vx);
 		return NULL;
-	}
+	}*/
+	bool isIsotropic = false;
+	if ((*numADC == numDti) || (numGEwarn  == numDti)) //issue 405: we now save bvals file for isotropic series
+ 		isIsotropic = true;
 	if (*numADC > 0) {
 		// DWIs (i.e. short diffusion scans with too few directions to
 		// calculate tensors...they typically acquire b=0 + 3 b > 0 so
@@ -1915,6 +1918,10 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	}
     fprintf(fp, "%g\n", vx[numDti-1].V[0]);
     fclose(fp);
+    if (isIsotropic) { //issue 405: ISOTROPIC images have bval but not bvec
+        free(vx);
+        return volOrderIndex;
+    }
     strcpy(txtname,pathoutname);
     if (dcmList[indx0].isVectorFromBMatrix)
     	strcat (txtname,".mvec");
