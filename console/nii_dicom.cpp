@@ -1655,6 +1655,7 @@ int isSameFloatGE (float a, float b) {
 struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
 struct TDICOMdata d = clear_dicom_data();
 dti4D->sliceOrder[0] = -1;
+dti4D->volumeOnsetTime[0] = -1;
 dti4D->intenScale[0] = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty

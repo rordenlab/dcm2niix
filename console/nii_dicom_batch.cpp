@@ -901,7 +901,7 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 #endif
 }
 
-void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
+void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename, struct TDTI4D *dti4D) {
 //https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 // Generate Brain Imaging Data Structure (BIDS) info
 // sidecar JSON file (with the same  filename as the .nii.gz file, but with .json extension).
@@ -1120,6 +1120,18 @@ tse3d: T2*/
 	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor );
     json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
     json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
+	if (dti4D->volumeOnsetTime[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+		fprintf(fp, "\t\"FrameTimesStart\": [\n");
+		for (int i = 0; i < h->dim[4]; i++) {
+			if (i != 0)
+				fprintf(fp, ",\n");
+			if (dti4D->volumeOnsetTime[i] < 0) break;	
+			fprintf(fp, "\t\t%g", dti4D->volumeOnsetTime[i] );
+		}
+		fprintf(fp, "\t],\n");
+	}
+	
+	
 	//CT parameters
 	if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
     //MRI parameters
@@ -1542,7 +1554,15 @@ tse3d: T2*/
 	//fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );kDCMdate
 	fprintf(fp, "}\n");
     fclose(fp);
-}// nii_SaveBIDS()
+}// nii_SaveBIDSX()
+
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
+struct TDTI4D *dti4D;
+dti4D->sliceOrder[0] = -1;
+dti4D->volumeOnsetTime[0] = -1;
+dti4D->intenScale[0] = 0.0;
+nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
+}// nii_SaveBIDSX()
 
 bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
 	return ((!isSameFloat(bvec.V[0],0.0f)) && //not a B-0 image
@@ -4765,6 +4785,17 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						printWarning("Seconds between volumes varies (perhaps run through midnight)\n");
 					else
 						printWarning("Seconds between volumes varies\n");
+					//issue 407
+					float volumeTime = -1;
+					int nTR = 0;
+					for (int i = 0; i < nConvert; i++) {
+						float vt = acquisitionTimeDifference(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[i].indx]);
+						if (vt == volumeTime) continue;
+						volumeTime = vt; 
+						dti4D->volumeOnsetTime[nTR] = vt;
+						nTR += 1;
+						if (nTR >= kMaxDTI4D) break;
+					}
 					// saveAs3D = true;
 					//  printWarning("Creating independent volumes as time between volumes varies\n");
 					if (opts.isVerbose) {
@@ -4778,7 +4809,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					}
 				} //if trVaries
             } //if PET
-            
             //next: detect variable inter-slice distance
             float dx = intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[1].indx]);
 			#ifdef myInstanceNumberOrderIsNotSpatial
@@ -4982,7 +5012,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         return EXIT_FAILURE;
     }
     //issue377(dcmList[indx0], &hdr0); return EXIT_SUCCESS;
-    nii_SaveBIDS(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx]);
+    nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output
         free(imgM);
