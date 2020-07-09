@@ -791,6 +791,7 @@ struct TDICOMdata clear_dicom_data() {
     d.radionuclideHalfLife = 0.0;
     d.doseCalibrationFactor = 0.0;
     d.ecat_isotope_halflife = 0.0;
+    d.frameDuration = -1.0;
     d.ecat_dosage = 0.0;
     d.seriesNum = 1;
     d.acquNum = 0;
@@ -1656,6 +1657,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 struct TDICOMdata d = clear_dicom_data();
 dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
+dti4D->frameDuration[0] = -1;
 dti4D->intenScale[0] = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty
@@ -4063,6 +4065,8 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     strcpy(d.sequenceName, ""); //erase dummy with empty
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 	dti4D->sliceOrder[0] = -1;
+	dti4D->volumeOnsetTime[0] = -1;
+	dti4D->frameDuration[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
     struct stat s;
@@ -4200,6 +4204,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kRadionuclidePositronFraction  0x0018+(0x1076<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kXRayExposure  0x0018+(0x1152  << 16 )
+#define  kFrameDuration  0x0018+(0x1242  << 16 ) //IS
 #define  kReceiveCoilName  0x0018+(0x1250  << 16 ) // SH
 #define  kAcquisitionMatrix  0x0018+(0x1310  << 16 ) //US
 #define  kFlipAngle  0x0018+(0x1314  << 16 )
@@ -5646,6 +5651,9 @@ float MRImageDynamicScanBeginTime = 0.0;
                 	d.isXRay = true;
             		d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 }
+            	break;
+            case kFrameDuration :
+            	d.frameDuration  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
             case kReceiveCoilName :
                 dcmStr (lLength, &buffer[lPos], d.coilName);

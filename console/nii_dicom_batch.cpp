@@ -1130,6 +1130,16 @@ tse3d: T2*/
 		}
 		fprintf(fp, "\t],\n");
 	}
+	if (dti4D->frameDuration[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+		fprintf(fp, "\t\"FrameDuration\": [\n");
+		for (int i = 0; i < h->dim[4]; i++) {
+			if (i != 0)
+				fprintf(fp, ",\n");
+			if (dti4D->frameDuration[i] < 0) break;	
+			fprintf(fp, "\t\t%g", dti4D->frameDuration[i] / 1000.0 ); // from 0018,1242 ms -> sec
+		}
+		fprintf(fp, "\t],\n");
+	}	
 	
 	
 	//CT parameters
@@ -1317,7 +1327,7 @@ tse3d: T2*/
 			fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", csaAscii.sNormalDTra);
 		}
 		//general properties
-		if (csaAscii.partialFourier > 0) {
+		if ((csaAscii.partialFourier > 0) && ((d.modality == kMODALITY_MR))) { //check MR, e.g. do not report for Siemens PET
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (csaAscii.partialFourier == 1) pf = 0.5; // 4/8
 			if (csaAscii.partialFourier == 2) pf = 0.625; // 5/8
@@ -1347,15 +1357,15 @@ tse3d: T2*/
 		// https://groups.google.com/forum/#!topic/bids-discussion/nmg1BOVH1SU
 		// https://groups.google.com/forum/#!topic/bids-discussion/seD7AtJfaFE
 		json_Float(fp, "\t\"DelayTime\": %g,\n", delayTimeInTR/ 1000000.0); //DelayTimeInTR usec -> sec
-		json_Float(fp, "\t\"TxRefAmp\": %g,\n", csaAscii.txRefAmp);
-		json_Float(fp, "\t\"PhaseResolution\": %g,\n", csaAscii.phaseResolution);
+		if (d.modality == kMODALITY_MR) json_Float(fp, "\t\"TxRefAmp\": %g,\n", csaAscii.txRefAmp);
+		if (d.modality == kMODALITY_MR) json_Float(fp, "\t\"PhaseResolution\": %g,\n", csaAscii.phaseResolution);
 		json_Float(fp, "\t\"PhaseOversampling\": %g,\n", phaseOversampling);
 		json_Float(fp, "\t\"VendorReportedEchoSpacing\": %g,\n", csaAscii.echoSpacing / 1000000.0); //usec -> sec
 		//ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		//if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		//if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
 		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
-		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
+		if (d.modality == kMODALITY_MR) json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		if (strcmp(coilElements,d.coilName) != 0)
 			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
 		strcpy(d.coilName, "");
@@ -1391,7 +1401,7 @@ tse3d: T2*/
 		//printf("PhaseLines=%d EchoTrainLength=%d  SENSE=%g\n", d.phaseEncodingLines, d.echoTrainLength, d.accelFactPE); //n.b. we can not distinguish pF from SENSE/GRAPPA for UIH
 	}
 	#endif
-	if (d.CSA.multiBandFactor > 1) //AccelFactorSlice
+	if ((d.CSA.multiBandFactor > 1) && (d.modality == kMODALITY_MR)) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
 	json_Float(fp, "\t\"PercentSampling\": %g,\n", d.percentSampling);
@@ -1403,7 +1413,7 @@ tse3d: T2*/
     	fprintf(fp, "\t\"PhaseEncodingStepsNoPartialFourier\": %d,\n", d.phaseEncodingSteps );
     } else if (d.phaseEncodingSteps > 0) 
     	fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps );
-	if (d.phaseEncodingLines > 0) fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines );
+	if ((d.phaseEncodingLines > 0) && (d.modality == kMODALITY_MR)) fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines );
 
 	//Compute ReconMatrixPE
 	// Actual size of the *reconstructed* data in the PE dimension, which does NOT match
@@ -1420,7 +1430,7 @@ tse3d: T2*/
 		else if (d.phaseEncodingRC =='R')
 			reconMatrixPE = h->dim[1];
     }
-	if (reconMatrixPE > 0) fprintf(fp, "\t\"ReconMatrixPE\": %d,\n", reconMatrixPE );
+	if ((d.modality == kMODALITY_MR) && (reconMatrixPE > 0)) fprintf(fp, "\t\"ReconMatrixPE\": %d,\n", reconMatrixPE );
     double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
     if (bandwidthPerPixelPhaseEncode == 0.0)
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
@@ -4288,7 +4298,8 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 	}
 	if ((minT1 < 0.0) && (d->rtia_timerGE >= 0.0)) return; //use rtia timer
 	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
-		printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRms);
+		if (d->modality == kMODALITY_MR)
+			printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRms);
 		return;
 	}
 	if ((minT1 == maxT1) || (maxT1 >= TRms)) { //both first and second image corrupted
@@ -4766,6 +4777,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			}
 			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
     		if (dcmList[indx0].modality == kMODALITY_PT) {
+				//issue 407
+				int nTR = 0;
+				for (int i = 0; i < nConvert; i++)
+						if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
+							dti4D->frameDuration[nTR] = dcmList[dcmSort[i].indx].frameDuration;
+							nTR += 1;
+							if (nTR >= kMaxDTI4D) break;
+						}
+
 				bool trVaries = false;
 				bool dayVaries = false;
 				float tr = -1;
@@ -4786,8 +4806,16 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 					else
 						printWarning("Seconds between volumes varies\n");
 					//issue 407
-					float volumeTime = -1;
 					int nTR = 0;
+					for (int i = 0; i < nConvert; i++)
+							if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
+								float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
+								dti4D->volumeOnsetTime[nTR] = trDiff;
+								nTR += 1;
+								if (nTR >= kMaxDTI4D) break;
+							}					
+					/*
+					float volumeTime = -1;
 					for (int i = 0; i < nConvert; i++) {
 						float vt = acquisitionTimeDifference(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[i].indx]);
 						if (vt == volumeTime) continue;
@@ -4795,7 +4823,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 						dti4D->volumeOnsetTime[nTR] = vt;
 						nTR += 1;
 						if (nTR >= kMaxDTI4D) break;
-					}
+					}*/
+					hdr0.pixdim[4] = 0.0;
 					// saveAs3D = true;
 					//  printWarning("Creating independent volumes as time between volumes varies\n");
 					if (opts.isVerbose) {
