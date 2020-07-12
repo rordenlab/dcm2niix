@@ -738,6 +738,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.bodyPartExamined,"");
     strcpy(d.coilName, "");
     strcpy(d.coilElements, "");
+    strcpy(d.radiopharmaceutical, "");
     d.phaseEncodingLines = 0;
     //~ d.patientPositionSequentialRepeats = 0;
     //~ d.patientPositionRepeats = 0;
@@ -787,12 +788,12 @@ struct TDICOMdata clear_dicom_data() {
     d.intenIntercept = 0;
     d.gantryTilt = 0.0;
     d.radionuclidePositronFraction = 0.0;
-    d.radionuclideTotalDose = 0.0;
     d.radionuclideHalfLife = 0.0;
     d.doseCalibrationFactor = 0.0;
     d.ecat_isotope_halflife = 0.0;
     d.frameDuration = -1.0;
     d.ecat_dosage = 0.0;
+    d.radionuclideTotalDose = 0.0;
     d.seriesNum = 1;
     d.acquNum = 0;
     d.imageNum = 1;
@@ -4179,15 +4180,14 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kScanOptions 0x0018+(0x0022 << 16)
 #define  kMRAcquisitionType 0x0018+(0x0023 << 16)
 #define  kSequenceName 0x0018+(0x0024 << 16)
+#define  kRadiopharmaceutical 0x0018+(0x0031 << 16 ) //LO
 #define  kZThick  0x0018+(0x0050 << 16 )
 #define  kTR  0x0018+(0x0080 << 16 )
 #define  kTE  0x0018+(0x0081 << 16 )
+#define  kTI  0x0018+(0x0082 << 16) // Inversion time
 #define  kNumberOfAverages 0x0018+(0x0083 << 16 ) //DS
 #define  kImagingFrequency 0x0018+(0x0084 << 16 ) //DS
-#define  kTriggerTime  0x0018+(0x1060 << 16 ) //DS
 //#define  kEffectiveTE  0x0018+(0x9082 << 16 )
-const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
-#define  kTI  0x0018+(0x0082 << 16) // Inversion time
 #define  kEchoNum  0x0018+(0x0086 << 16 ) //IS
 #define  kMagneticFieldStrength  0x0018+(0x0087 << 16 ) //DS
 #define  kZSpacing  0x0018+(0x0088 << 16 ) //'DS' 'SpacingBetweenSlices'
@@ -4199,6 +4199,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDeviceSerialNumber  0x0018+(0x1000 << 16 ) //LO
 #define  kSoftwareVersions  0x0018+(0x1020 << 16 ) //LO
 #define  kProtocolName  0x0018+(0x1030<< 16 )
+#define  kTriggerTime  0x0018+(0x1060 << 16 ) //DS
 #define  kRadionuclideTotalDose  0x0018+(0x1074<< 16 )
 #define  kRadionuclideHalfLife  0x0018+(0x1075<< 16 )
 #define  kRadionuclidePositronFraction  0x0018+(0x1076<< 16 )
@@ -4212,6 +4213,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
+const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
@@ -5577,6 +5579,9 @@ float MRImageDynamicScanBeginTime = 0.0;
                 //printf("%g\n", d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
 				break; }
+            case kRadionuclideTotalDose :
+                d.radionuclideTotalDose =  dcmStrFloat(lLength, &buffer[lPos]);
+                break;
             case kEffectiveTE : {
             	TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	if (d.TE <= 0.0)
@@ -5634,9 +5639,6 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kFlipAngle :
             	d.flipAngle = dcmStrFloat(lLength, &buffer[lPos]);
             	break;
-            case kRadionuclideTotalDose :
-                d.radionuclideTotalDose = dcmStrFloat(lLength, &buffer[lPos]);
-                break;
             case kRadionuclideHalfLife :
                 d.radionuclideHalfLife = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -5681,6 +5683,9 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kIntercept :
                 d.intenIntercept = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
+            case kRadiopharmaceutical :
+            	dcmStr (lLength, &buffer[lPos], d.radiopharmaceutical);
+            	break;
             case kZThick :
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
                 d.zThick = d.xyzMM[3];
