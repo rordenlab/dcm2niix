@@ -4329,10 +4329,12 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kPrivateCreator  0x2001+(0x0010 << 16 )// LO
 #define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
+#define  kCardiacSync  0x2001+(0x1010 << 16 ) //CS
 //#define  kDiffusionDirectionPhilips  0x2001+(0x1004 << 16 )//CS Diffusion Direction
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
 #define  kEPIFactorPhilips 0x2001+(0x1013 << 16 ) //SL
+#define  kRespirationSync  0x2001+(0x101F << 16 ) //CS
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
 #define  kPartialMatrixScannedPhilips  0x2001+(0x1019 << 16 )// CS
 #define  kWaterFatShiftPhilips 0x2001+(0x1022 << 16 ) //FL
@@ -4367,6 +4369,7 @@ double TE = 0.0; //most recent echo time recorded
 float MRImageDynamicScanBeginTime = 0.0;
 
 	bool is2005140FSQ = false;
+	bool isTriggerSynced = false;
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
 	//double contentTime = 0.0;
@@ -5871,6 +5874,11 @@ float MRImageDynamicScanBeginTime = 0.0;
 				break;
             }
             */
+            case kCardiacSync : //CS [TRIGGERED],[NO]
+				if (lLength < 2) break;
+                if (toupper(buffer[lPos]) != 'N')
+                	isTriggerSynced = true;
+                break;
             case kDiffusion_bValue:  // 0018,9087
             	if (d.manufacturer == kMANUFACTURER_UNKNOWN ) {
             		d.manufacturer = kMANUFACTURER_PHILIPS;
@@ -6006,6 +6014,11 @@ float MRImageDynamicScanBeginTime = 0.0;
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
                 echoTrainLengthPhil = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
+            case kRespirationSync : //CS [TRIGGERED],[NO]
+				if (lLength < 2) break;
+                if (toupper(buffer[lPos]) != 'N')
+                	isTriggerSynced = true;
                 break;
             case kNumberOfSlicesMrPhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -6764,6 +6777,8 @@ if (d.isHasPhase)
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.protocolName, strlen(d.protocolName));
 	}
+	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (!isTriggerSynced)) //issue408
+		d.triggerDelayTime = 0.0;
 	if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime)) //issue395
 		d.triggerDelayTime = 0.0;
 	//printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
