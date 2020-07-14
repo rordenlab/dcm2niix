@@ -4520,8 +4520,7 @@ float MRImageDynamicScanBeginTime = 0.0;
         } //transfer syntax requests switching VR after group 0001
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
-	//issuegit
-	409 - icons can have their own sub-sections... keep reading until we get to the icon image?
+	//issue409 - icons can have their own sub-sections... keep reading until we get to the icon image?
 	//if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
     //if (groupElement == kItemTag) sqDepth++;
     bool unNest = false;
