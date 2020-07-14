@@ -4238,7 +4238,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 //  https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
-#define  kDiffusionBValueSiemens  0x0019+(0x100C<< 16 ) //IS
+#define  kDiffusion_bValueSiemens  0x0019+(0x100C<< 16 ) //IS
 #define  kSliceTimeSiemens 0x0019+(0x1029<< 16) ///FD
 #define  kDiffusionGradientDirectionSiemens  0x0019+(0x100E<< 16 ) //FD
 #define  kNumberOfDiffusionDirectionGE 0x0019+(0x10E0<< 16) ///DS NumberOfDiffusionDirection:UserData24
@@ -4287,7 +4287,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
 #define  kPlanarRGB 0x0028+(0x0006 << 16 )
 #define  kDim3 0x0028+(0x0008 << 16 ) //number of frames - for Philips this is Dim3*Dim4
-#define  kDim2 0x0028+(0x0010 << 16 )
+#define  kDim2 0x0028+(0x0010 << 16 ) 
 #define  kDim1 0x0028+(0x0011 << 16 )
 #define  kXYSpacing  0x0028+(0x0030 << 16 ) //DS 'PixelSpacing'
 #define  kBitsAllocated 0x0028+(0x0100 << 16 )
@@ -4520,7 +4520,9 @@ float MRImageDynamicScanBeginTime = 0.0;
         } //transfer syntax requests switching VR after group 0001
         //uint32_t group = (groupElement & 0xFFFF);
         lPos += 4;
-	if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
+	//issuegit
+	409 - icons can have their own sub-sections... keep reading until we get to the icon image?
+	//if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
     //if (groupElement == kItemTag) sqDepth++;
     bool unNest = false;
     while ((nNestPos > 0) && (nestPos[nNestPos] <= (lFileOffset+lPos))) {
@@ -5209,10 +5211,12 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
-            case kDiffusionBValueSiemens :
+            case kDiffusion_bValueSiemens :
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
-            	d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
-            	d.CSA.numDti = 1;
+            	//issue409
+            	//d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
+            	//d.CSA.numDti = 1;
+            	set_bVal(&volDiffusion, dcmStrInt(lLength, &buffer[lPos]));
             	break;
             case kSliceTimeSiemens : {//Array of FD (64-bit double)
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
@@ -5506,9 +5510,11 @@ float MRImageDynamicScanBeginTime = 0.0;
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	float v[4];
             	dcmMultiFloatDouble(lLength, &buffer[lPos], 1, v, d.isLittleEndian);
-            	d.CSA.dtiV[0] = v[0];
-            	d.CSA.numDti = 1;
+            	//issue409
+            	//d.CSA.dtiV[0] = v[0];
+            	//d.CSA.numDti = 1;
             	//printf("%d>>>%g\n", lPos, v[0]);
+            	set_bVal(&volDiffusion, v[0]);
             	break; }
             case kParallelInformationUIH: {//SENSE factor (0065,100d) SH [F:2S]
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
@@ -5830,7 +5836,6 @@ float MRImageDynamicScanBeginTime = 0.0;
 				if (d.manufacturer != kMANUFACTURER_UNKNOWN) break;
                 d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
                 volDiffusion.manufacturer = d.manufacturer;
-                //printf(">>>>%d\n", d.manufacturer);
                 break; }
             case kDiffusionBFactor :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
@@ -5873,7 +5878,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             		printWarning("Found 0018,9087 but manufacturer (0008,0070) unknown: assuming Philips.\n");
             	}
 
-              // Note that this is ahead of kPatientPosition (0020,0032), so
+              // Note that this is ahead of kImagePositionPatient (0020,0032), so
               // isAtFirstPatientPosition is not necessarily set yet.
               // Philips uses this tag too, at least as of 5.1, but they also
               // use kDiffusionBFactor (see above), and we do not want to
@@ -5900,7 +5905,7 @@ float MRImageDynamicScanBeginTime = 0.0;
               //}
               break;
             case kDiffusionOrientation:  // 0018, 9089
-              // Note that this is ahead of kPatientPosition (0020,0032), so
+              // Note that this is ahead of kImagePositionPatient (0020,0032), so
               // isAtFirstPatientPosition is not necessarily set yet.
               // Philips uses this tag too, at least as of 5.1, but they also
               // use kDiffusionDirectionRL, etc., and we do not want to double
@@ -6362,7 +6367,7 @@ float MRImageDynamicScanBeginTime = 0.0;
 				printMessage("%s %s\n", str, tagStr);
             } else
             	printMessage("%s\n", str);
-	    	//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
+    		//if (d.isExplicitVR) printMessage(" VR=%c%c\n", vr[0], vr[1]);
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
 #endif
         lPos = lPos + (lLength);
@@ -6471,7 +6476,6 @@ float MRImageDynamicScanBeginTime = 0.0;
         printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
         d.isValid = false;
     }
-    
     if ((isMosaic) && (d.CSA.mosaicSlices < 1) && (numberOfImagesInMosaic < 1) && (!isInterpolated) && (d.phaseEncodingLines > 0)  && (frequencyRows > 0) && ((d.xyzDim[1] % frequencyRows) == 0) && ((d.xyzDim[1] / frequencyRows) > 2) && ((d.xyzDim[2] % d.phaseEncodingLines) == 0) && ((d.xyzDim[2] / d.phaseEncodingLines) > 2)  ) {
         //n.b. in future check if frequency is in row or column direction (and same with phase)
         // >2 avoids detecting interpolated as mosaic, in future perhaps check "isInterpolated"
