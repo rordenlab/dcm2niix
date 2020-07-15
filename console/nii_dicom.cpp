@@ -1658,6 +1658,7 @@ struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D 
 struct TDICOMdata d = clear_dicom_data();
 dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
+dti4D->decayFactor[0] = -1;
 dti4D->frameDuration[0] = -1;
 dti4D->intenScale[0] = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
@@ -4067,6 +4068,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
     //do not read folders - code specific to GCC (LLVM/Clang seems to recognize a small file size)
 	dti4D->sliceOrder[0] = -1;
 	dti4D->volumeOnsetTime[0] = -1;
+	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
@@ -4205,6 +4207,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kRadionuclidePositronFraction  0x0018+(0x1076<< 16 )
 #define  kGantryTilt  0x0018+(0x1120  << 16 )
 #define  kXRayExposure  0x0018+(0x1152  << 16 )
+#define  kConvolutionKernel  0x0018+(0x1210 << 16 ) //SH
 #define  kFrameDuration  0x0018+(0x1242  << 16 ) //IS
 #define  kReceiveCoilName  0x0018+(0x1250  << 16 ) // SH
 #define  kAcquisitionMatrix  0x0018+(0x1310  << 16 ) //US
@@ -4313,6 +4316,11 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kImaPATModeText  0x0051+(0x1011 << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
+#define  kUnitsPT  0x0054+(0x1001<< 16 ) //CS
+#define  kAttenuationCorrectionMethod  0x0054+(0x1101<< 16 ) //LO
+#define  kDecayCorrection  0x0054+(0x1102<< 16 ) //CS
+#define  kReconstructionMethod  0x0054+(0x1103<< 16 ) //LO
+#define  kDecayFactor  0x0054+(0x1321<< 16 ) //LO
 //ftp://dicom.nema.org/MEDICAL/dicom/2014c/output/chtml/part03/sect_C.8.9.4.html
 //If ImageType is REPROJECTION we slice direction is reversed - need example to test
 // #define  kSeriesType  0x0054+(0x1000 << 16 )
@@ -4322,8 +4330,9 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusion_bValueUIH  0x0065+(0x1009<< 16 ) //FD
 #define  kParallelInformationUIH  0x0065+(0x100D<< 16 ) //SH
 #define  kNumberOfImagesInGridUIH  0x0065+(0x1050<< 16 ) //DS
-#define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
 #define  kDiffusionGradientDirectionUIH  0x0065+(0x1037<< 16 ) //FD
+#define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
+#define  kPhaseEncodingPolarityUIH  0x0065+(0x1058<< 16 ) //??issue410
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kElscintIcon 0x07a3+(0x10ce << 16 ) //see kGeiisFlag and https://github.com/rordenlab/dcm2niix/issues/239
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
@@ -5662,6 +5671,9 @@ float MRImageDynamicScanBeginTime = 0.0;
             		d.TE = dcmStrFloat(lLength, &buffer[lPos]);
                 }
             	break;
+            case kConvolutionKernel: //CS
+                dcmStr(lLength, &buffer[lPos], d.convolutionKernel);
+            	break;   
             case kFrameDuration :
             	d.frameDuration  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
@@ -5747,6 +5759,21 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kLocationsInAcquisition :
                 d.locationsInAcquisition = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
+            case kUnitsPT: //CS
+                dcmStr(lLength, &buffer[lPos], d.unitsPT);
+            	break;   
+            case kAttenuationCorrectionMethod: //LO
+                dcmStr(lLength, &buffer[lPos], d.attenuationCorrectionMethod);
+            	break;
+            case kDecayCorrection: //CS
+                dcmStr(lLength, &buffer[lPos], d.decayCorrection);
+            	break;
+            case kReconstructionMethod: //LO
+                dcmStr(lLength, &buffer[lPos], d.reconstructionMethod);
+            	break;
+            case kDecayFactor :
+            	d.decayFactor = dcmStrFloat(lLength, &buffer[lPos]);
+                break;                 
             case kIconImageSequence:
                 isIconImageSequence = true;
                 break;

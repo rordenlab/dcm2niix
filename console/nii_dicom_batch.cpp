@@ -1121,6 +1121,22 @@ tse3d: T2*/
 	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor );
     json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
     json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
+    json_Str(fp, "\t\"ConvolutionKernel\": \"%s\",\n", d.convolutionKernel);
+	json_Str(fp, "\t\"UnitsPET\": \"%s\",\n", d.unitsPT);
+	json_Str(fp, "\t\"DecayCorrection\": \"%s\",\n", d.decayCorrection);
+	json_Str(fp, "\t\"AttenuationCorrectionMethod\": \"%s\",\n", d.attenuationCorrectionMethod);
+	json_Str(fp, "\t\"ReconstructionMethod\": \"%s\",\n", d.reconstructionMethod);
+	//json_Float(fp, "\t\"DecayFactor\": %g,\n", d.decayFactor);
+	if (dti4D->decayFactor[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+		fprintf(fp, "\t\"DecayFactor\": [\n");
+		for (int i = 0; i < h->dim[4]; i++) {
+			if (i != 0)
+				fprintf(fp, ",\n");
+			if (dti4D->decayFactor[i] < 0) break;	
+			fprintf(fp, "\t\t%g", dti4D->decayFactor[i] );
+		}
+		fprintf(fp, "\t],\n");
+	}
 	if (dti4D->volumeOnsetTime[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"FrameTimesStart\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
@@ -1571,6 +1587,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 struct TDTI4D *dti4D;
 dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
+dti4D->decayFactor[0] = -1;
 dti4D->intenScale[0] = 0.0;
 nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 }// nii_SaveBIDSX()
@@ -4812,6 +4829,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 							if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
 								float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
 								dti4D->volumeOnsetTime[nTR] = trDiff;
+								dti4D->decayFactor[nTR] = dcmList[dcmSort[i].indx].decayFactor;
+								printf("%d %g\n", i, dcmList[dcmSort[i].indx].decayFactor);
 								nTR += 1;
 								if (nTR >= kMaxDTI4D) break;
 							}					
