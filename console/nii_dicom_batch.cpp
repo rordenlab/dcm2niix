@@ -4830,7 +4830,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 								float trDiff = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
 								dti4D->volumeOnsetTime[nTR] = trDiff;
 								dti4D->decayFactor[nTR] = dcmList[dcmSort[i].indx].decayFactor;
-								printf("%d %g\n", i, dcmList[dcmSort[i].indx].decayFactor);
+								//printf("%d %g\n", i, dcmList[dcmSort[i].indx].decayFactor);
 								nTR += 1;
 								if (nTR >= kMaxDTI4D) break;
 							}					
