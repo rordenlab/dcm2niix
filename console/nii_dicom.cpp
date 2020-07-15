@@ -4311,7 +4311,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kUserDefineDataGE  0x0043+(0x102A << 16 ) //OB
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
-#define  kDiffusionBFactorGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
+#define  kDiffusion_bValueGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kImaPATModeText  0x0051+(0x1011 << 16 )
@@ -4337,7 +4337,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kElscintIcon 0x07a3+(0x10ce << 16 ) //see kGeiisFlag and https://github.com/rordenlab/dcm2niix/issues/239
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
 #define  kPrivateCreator  0x2001+(0x0010 << 16 )// LO
-#define  kDiffusionBFactor  0x2001+(0x1003 << 16 )// FL
+#define  kDiffusion_bValuePhilips  0x2001+(0x1003 << 16 )// FL
 #define  kCardiacSync  0x2001+(0x1010 << 16 ) //CS
 //#define  kDiffusionDirectionPhilips  0x2001+(0x1004 << 16 )//CS Diffusion Direction
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
@@ -5225,9 +5225,8 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kDiffusion_bValueSiemens :
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
             	//issue409
-            	//d.CSA.dtiV[0] =  dcmStrInt(lLength, &buffer[lPos]);
-            	//d.CSA.numDti = 1;
-            	set_bVal(&volDiffusion, dcmStrInt(lLength, &buffer[lPos]));
+            	B0Philips = dcmStrInt(lLength, &buffer[lPos]);
+            	set_bVal(&volDiffusion, B0Philips);
             	break;
             case kSliceTimeSiemens : {//Array of FD (64-bit double)
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
@@ -5317,7 +5316,6 @@ float MRImageDynamicScanBeginTime = 0.0;
 				//char dx[kDICOMStr];
                 //dcmStr (lLength, &buffer[lPos], dx);
 				//printMessage("*%s*", dx);
-				
 				dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &patientPosition[0]); //slice position
 				if (isnan(d.patientPosition[1])) {
 					//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
@@ -5354,7 +5352,6 @@ float MRImageDynamicScanBeginTime = 0.0;
 					}
 					nSliceMM++;
 				} 
-				
 				break; }
             case kInPlanePhaseEncodingDirection:
                 d.phaseEncodingRC = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
@@ -5522,9 +5519,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	float v[4];
             	dcmMultiFloatDouble(lLength, &buffer[lPos], 1, v, d.isLittleEndian);
             	//issue409
-            	//d.CSA.dtiV[0] = v[0];
-            	//d.CSA.numDti = 1;
-            	//printf("%d>>>%g\n", lPos, v[0]);
+            	B0Philips = dcmStrInt(lLength, &buffer[lPos]);
             	set_bVal(&volDiffusion, v[0]);
             	break; }
             case kParallelInformationUIH: {//SENSE factor (0065,100d) SH [F:2S]
@@ -5866,7 +5861,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
                 volDiffusion.manufacturer = d.manufacturer;
                 break; }
-            case kDiffusionBFactor :
+            case kDiffusion_bValuePhilips :
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
             	B0Philips = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
             	set_bVal(&volDiffusion, B0Philips);
@@ -6248,7 +6243,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kEffectiveEchoSpacingGE:
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
-            case kDiffusionBFactorGE :
+            case kDiffusion_bValueGE :
                 if (d.manufacturer == kMANUFACTURER_GE) {
                   d.CSA.dtiV[0] = (float)set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
                   d.CSA.numDti = 1;
@@ -6587,6 +6582,10 @@ if (d.isHasPhase)
 				d.patientPositionLast[k] = patientPositionEndPhilips[k];
 			}
     }
+	if ((B0Philips >= 0) && (d.CSA.numDti == 0)) {
+		d.CSA.dtiV[0] = B0Philips;
+		d.CSA.numDti = 1; 	 
+	} //issue409 Siemens XA saved as classic 2D not enhanced			
     if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
