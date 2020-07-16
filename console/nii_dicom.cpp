@@ -4277,7 +4277,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kSequenceVariant21 0x0021+(0x105B<< 16 )//CS
 #define  kPATModeText 0x0021+(0x1009<< 16 )//LO, see kImaPATModeText
 #define  kTimeAfterStart 0x0021+(0x1104<< 16 )//DS
-#define  kPhaseEncodingDirectionPositive 0x0021+(0x111C<< 16 )//IS
+#define  kPhaseEncodingDirectionPositiveSiemens 0x0021+(0x111C<< 16 )//IS
 //#define  kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define  kBandwidthPerPixelPhaseEncode21 0x0021+(0x1153<< 16 )//FD
 #define  kCoilElements 0x0021+(0x114F<< 16 )//LO
@@ -4331,8 +4331,8 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kParallelInformationUIH  0x0065+(0x100D<< 16 ) //SH
 #define  kNumberOfImagesInGridUIH  0x0065+(0x1050<< 16 ) //DS
 #define  kDiffusionGradientDirectionUIH  0x0065+(0x1037<< 16 ) //FD
-#define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
-#define  kPhaseEncodingPolarityUIH  0x0065+(0x1058<< 16 ) //??issue410
+//#define  kMRVFrameSequenceUIH  0x0065+(0x1050<< 16 ) //SQ
+#define  kPhaseEncodingDirectionPositiveUIH 0x0065+(0x1058<< 16 )//IS issue410
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kElscintIcon 0x07a3+(0x10ce << 16 ) //see kGeiisFlag and https://github.com/rordenlab/dcm2niix/issues/239
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
@@ -5470,7 +5470,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 //printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 				acquisitionTimesGE_UIH ++;
             	break;
-            case kPhaseEncodingDirectionPositive: {
+            case kPhaseEncodingDirectionPositiveSiemens: {
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
             	int ph = dcmStrInt(lLength, &buffer[lPos]);
             	if (ph == 0) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
@@ -5535,6 +5535,12 @@ float MRImageDynamicScanBeginTime = 0.0;
             	d.numberOfImagesInGridUIH =  dcmStrFloat(lLength, &buffer[lPos]);
             	d.CSA.mosaicSlices = d.numberOfImagesInGridUIH;
             	break;
+            case kPhaseEncodingDirectionPositiveUIH: {
+            	if (d.manufacturer != kMANUFACTURER_UIH) break;
+            	int ph = dcmStrInt(lLength, &buffer[lPos]);
+            	if (ph == 1) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+            	if (ph == 0) d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+            	break; }            	
             case kDiffusionGradientDirectionUIH : { //0065,1037
             //0.03712929804225321\-0.5522387869760447\-0.8328587749392602
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
