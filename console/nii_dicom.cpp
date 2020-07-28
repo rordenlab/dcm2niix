@@ -5107,6 +5107,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 printWarning("Matlab DICOMANON can scramble SeriesInstanceUID (0020,000e) and remove crucial data (see issue 383). \n");
             	break; }
             case kPatientID :
+                if (strlen(d.patientID) > 1) break;
                 dcmStr (lLength, &buffer[lPos], d.patientID);
                 break;
             case kAccessionNumber :
