@@ -5115,9 +5115,13 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kPatientBirthDate :
               	dcmStr (lLength, &buffer[lPos], d.patientBirthDate);
               	break;
-            case kPatientSex :
-            	d.patientSex = toupper(buffer[lPos]); //first character is either 'R'ow or 'C'ol
+            case kPatientSex : {
+            	//must be M,F,O: http://dicom.nema.org/dicom/2013/output/chtml/part03/sect_C.2.html
+            	char patientSex = toupper(buffer[lPos]);
+            	if ((patientSex == 'M') || (patientSex == 'F') || (patientSex == 'O'))
+            		d.patientSex = patientSex;
                 break;
+                }
             case kPatientAge :
                 dcmStr (lLength, &buffer[lPos], d.patientAge);
                 break;
@@ -6157,8 +6161,9 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kRealWorldSlope:
             	if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
             	d.RWVScale = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
-                //printMessage("RWVScale %g\n", d.RWVScale);
-                if (isSameFloat(1.0, d.intenScale))  //give precedence to standard value
+            	if (d.RWVScale > 1.0E38) 
+                	d.RWVScale = 0.0;
+                else if (isSameFloat(1.0, d.intenScale))  //give precedence to standard value
                     d.intenScale = d.RWVScale;
                 break;
             case kUserDefineDataGE: { //0043,102A
