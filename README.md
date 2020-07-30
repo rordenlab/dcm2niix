@@ -36,12 +36,12 @@ Command line usage is described in the [NITRC wiki](https://www.nitrc.org/plugin
 ## Install
 
 There are a couple ways to install dcm2niix
- - [Github Releases](https://github.com/rordenlab/dcm2niix/releases) provides the latest compiled executables. This is an excellent option for MacOS and Windows users. However, the provided Linux executable requires a recent version of Linux, so the provided Unix executable is not suitable for all distributions.
+ - [Github Releases](https://github.com/rordenlab/dcm2niix/releases) provides the latest compiled executables. This is an excellent option for MacOS and Windows users. However, the provided Linux executable requires a recent version of Linux (e.g. Ubuntu 14.04 or later), so the provided Unix executable is not suitable for very old distributions. Specifically, it requires Glibc 2.19 (from 2014) or later. Users of older systems can compile their own copy of dcm2niix or download the compiled version included with MRIcroGL Glibc 2.12 (from 2011, see below).
  - Run the following command to get the latest version for Linux, Macintosh or Windows: 
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_lnx.zip`
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac.zip`
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_win.zip`
- - [MRIcroGL (NITRC)](https://www.nitrc.org/projects/mricrogl) or [MRIcroGL (GitHub)](https://github.com/rordenlab/MRIcroGL12/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a holy build box, so it should run on any Linux distribution.
+ - [MRIcroGL (NITRC)](https://www.nitrc.org/projects/mricrogl) or [MRIcroGL (GitHub)](https://github.com/rordenlab/MRIcroGL12/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a [holy build box](https://github.com/phusion/holy-build-box), so it should run on any Linux distribution.
  - If you have a MacOS computer with Homebrew you can run `brew install dcm2niix`.
  - If you have Conda, [`conda install -c conda-forge dcm2niix`](https://anaconda.org/conda-forge/dcm2niix) on Linux, MacOS or Windows.
  - On Debian Linux computers you can run `sudo apt-get install dcm2niix`.
