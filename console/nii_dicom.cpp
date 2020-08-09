@@ -4447,6 +4447,7 @@ float MRImageDynamicScanBeginTime = 0.0;
     bool isPaletteColor = false;
     bool isInterpolated = false;
     bool isIconImageSequence = false;
+    int sqDepthIcon = -1;
     bool isSwitchToImplicitVR = false;
     bool isSwitchToBigEndian = false;
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
@@ -4537,14 +4538,24 @@ float MRImageDynamicScanBeginTime = 0.0;
     //if (groupElement == kItemTag) sqDepth++;
     bool unNest = false;
     while ((nNestPos > 0) && (nestPos[nNestPos] <= (lFileOffset+lPos))) {
-			nNestPos--;
-			sqDepth--;
-			unNest = true;
+		nNestPos--;
+		sqDepth--;
+		unNest = true;
+		if ((sqDepthIcon >= 0) && (sqDepth <= sqDepthIcon)) { //issue415
+			sqDepthIcon = -1;
+			isIconImageSequence = false;
+		}
+
 	}
 	if (groupElement == kItemDelimitationTag) { //end of item with undefined length
 		sqDepth--;
 		unNest = true;
+		if ((sqDepthIcon >= 0) && (sqDepth <= sqDepthIcon)) { //issue415
+			sqDepthIcon = -1;
+			isIconImageSequence = false;
+		}
 	}
+
 	if (unNest)  {
     	is2005140FSQ = false;
     	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
@@ -5782,6 +5793,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;                 
             case kIconImageSequence:
                 isIconImageSequence = true;
+                if (sqDepthIcon < 0) sqDepthIcon = sqDepth;
                 break;
             /*case kStackSliceNumber: { //https://github.com/Kevin-Mattheus-Moerman/GIBBON/blob/master/dicomDict/PMS-R32-dict.txt
             	int stackSliceNumber = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
@@ -5858,6 +5870,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kElscintIcon :
             	printWarning("Assuming icon SQ 07a3,10ce.\n");
                 isIconImageSequence = true;
+                if (sqDepthIcon < 0) sqDepthIcon = sqDepth;
             	break;
 			case kPMSCT_RLE1 :
 			    //https://groups.google.com/forum/#!topic/comp.protocols.dicom/8HuP_aNy9Pc
@@ -6266,6 +6279,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                     //read a few digits, as bug is specific to GEIIS, while GEMS are fine
                     printWarning("GEIIS violates the DICOM standard. Inspect results and admonish your vendor.\n");
                     isIconImageSequence = true;
+                	if (sqDepthIcon < 0) sqDepthIcon = sqDepth;
                     //geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not re-use pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
                 }
                 break;

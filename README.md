@@ -145,6 +145,7 @@ The following tools exploit dcm2niix
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [kipettools](https://github.com/mathesong/kipettools) uses dcm2niix to load PET data.
   - [LEAD-DBS](http://www.lead-dbs.org/) uses dcm2niix for [DICOM import](https://github.com/leaddbs/leaddbs/blob/master/ea_dicom_import.m).
+  - Recent releases of [lin4neuro](http://www.lin4neuro.net/lin4neuro/18.04bionic/vm/) such as the English l4n-18.04.4-amd64-20200801-en.ova and Japanese 	l4n-18.04.4-amd64-20200801-ja.ova include MRIcroGL and dcm2niix pre-installed. This allows user with VirtualBox or VMWarePlayer to use these tools (and many other neuroimaging tools) in a graphical virtual machine.	
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
   - [neurodocker](https://github.com/kaczmarj/neurodocker) includes dcm2niix as a lean, minimal install Dockerfile.
   - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a single, static Dockerfile.

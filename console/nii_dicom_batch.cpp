@@ -1122,7 +1122,7 @@ tse3d: T2*/
     json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
     json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
     json_Str(fp, "\t\"ConvolutionKernel\": \"%s\",\n", d.convolutionKernel);
-	json_Str(fp, "\t\"UnitsPET\": \"%s\",\n", d.unitsPT);
+	json_Str(fp, "\t\"Unit\": \"%s\",\n", d.unitsPT);
 	json_Str(fp, "\t\"DecayCorrection\": \"%s\",\n", d.decayCorrection);
 	json_Str(fp, "\t\"AttenuationCorrectionMethod\": \"%s\",\n", d.attenuationCorrectionMethod);
 	json_Str(fp, "\t\"ReconstructionMethod\": \"%s\",\n", d.reconstructionMethod);
