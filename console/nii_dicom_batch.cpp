@@ -884,6 +884,11 @@ void print_FloatNotNan(const char *sLabel, int iVal, float sVal) {
 } //json_Float
 
 void json_Float(FILE *fp, const char *sLabel, float sVal) {
+	if (!isfinite(sVal)) { //isfinite() defined in C99
+		// https://github.com/bids-standard/bids-2-devel/issues/12
+		printWarning(sLabel, sVal);
+		return;
+	}
 	if (sVal <= 0.0) return;
 	fprintf(fp, sLabel, sVal );
 } //json_Float
