@@ -805,6 +805,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
     d.isPartialFourier = false;
+    d.isEPI = false;
     d.isDiffusion = false;
     d.isVectorFromBMatrix = false;
     d.isStackableSeries = false; //combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
@@ -4215,7 +4216,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
-//#define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
+#define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
 const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
@@ -5179,6 +5180,11 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kPatientOrient :
                 dcmStr (lLength, &buffer[lPos], d.patientOrient);
                 break;
+            case kEchoPlanarPulseSequence : // CS [YES],[NO]
+				if (lLength < 2) break;
+                if (toupper(buffer[lPos]) == 'Y')
+                	d.isEPI = true;
+                break;
             case kParallelReductionFactorInPlane:
             	if (d.manufacturer == kMANUFACTURER_SIEMENS) break;
             	d.accelFactPE = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5819,7 +5825,18 @@ float MRImageDynamicScanBeginTime = 0.0;
             }
             case kScanningSequence : {
                 dcmStr (lLength, &buffer[lPos], d.scanningSequence);
-                break;
+				//According to the DICOM standard 0018,9018 is REQUIRED for EPI raw data
+				//  http://dicom.nema.org/MEDICAL/Dicom/2015c/output/chtml/part03/sect_C.8.13.4.html
+				//In practice, this is not the case for all vendors
+				//Fortunately, the combination of 0018,0020 and 0018,9018 appears to reliably detect EPI data
+				//Siemens (pre-XA) omits 0018,9018, but reports [EP] for 0018,0020 (regardless of SE/GR)
+				//Siemens (XA) reports 0018,9018 but omits 0018,0020
+				//Canon/Toshiba omits 0018,9018, but reports [SE\EP];[GR\EP] for 0018,0020
+				//GE omits 0018,9018, but reports [EP\GR];[EP\SE] for 0018,0020
+				//Philips reports 0018,9018, but reports [SE];[GR] for 0018,0020
+                if ((lLength > 1) && (strstr(d.scanningSequence, "EP") != NULL))
+                	d.isEPI = true;
+                break; //warp
             }
             case kSequenceVariant21 :
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break; //see GE dataset in dcm_qa_nih
