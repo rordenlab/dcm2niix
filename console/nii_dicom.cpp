@@ -4215,6 +4215,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
+//#define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
 const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
@@ -6373,6 +6374,7 @@ float MRImageDynamicScanBeginTime = 0.0;
         	// this is a very incomplete DICOM header report, and not a substitute for tools like dcmdump
         	// the purpose is to see how dcm2niix has parsed the image for diagnostics
         	// this section will report very little for implicit data
+        	if (d.isHasReal) printf("r");else printf("m");
         	char str[kDICOMStr];
         	sprintf(str, "%*c%04x,%04x %u@%ld ", sqDepth+1, ' ',  groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos);
 			bool isStr = false;
@@ -6555,7 +6557,7 @@ float MRImageDynamicScanBeginTime = 0.0;
     	printWarning("0008,0008=MOSAIC but number of slices not specified: %s\n", fname);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
     	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
-    if ((d.manufacturer == kMANUFACTURER_GE) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
 		strcpy(d.protocolName, d.seriesDescription);
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);

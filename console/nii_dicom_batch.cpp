@@ -2406,7 +2406,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 					isAddNamePostFixes = false; //should be unique, so no need to post-fix
 			}
             if (f == 'P') {
-            	strcat (outname,dcm.protocolName);
+                strcat (outname,dcm.protocolName);
                 if (strlen(dcm.protocolName) < 1)
                 	printWarning("Unable to append protocol name (0018,1030) to filename (it is empty).\n");
             }
@@ -4788,7 +4788,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 if ((nAcq > 1) && (nConvert != nAcq)) {
                 	printMessage("Slice positions repeated, but number of slices (%d) not divisible by number of repeats (%d): missing images?\n", nConvert, nAcq);
                 	if (dcmList[indx0].locationsInAcquisition > 0)
-                		 printMessage("Hint: expected %d locations", dcmList[indx0].locationsInAcquisition);
+                		 printMessage("Hint: expected %d locations\n", dcmList[indx0].locationsInAcquisition);
                 }
             }
             //next options removed: features now thoroughly detected in nii_loadDir()
@@ -5177,7 +5177,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     else
         fflush(stdout); //GUI buffers printf, display all results
 #endif
-    if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (dcmList[dcmSort[0].indx].echoTrainLength <= 1) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
+	//3D-EPI vs 3D SPACE/MPRAGE/ETC
+	if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (dcmList[dcmSort[0].indx].echoTrainLength <= 1) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
         imgM = nii_setOrtho(imgM, &hdr0); //printMessage("ortho %d\n", echoInt (33));
     else if (opts.isFlipY)//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
         imgM = nii_flipY(imgM, &hdr0);
@@ -5264,6 +5265,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             returnCode = nii_saveNII3Deq(pathoutname, hdr0, imgM,opts, dcmList[dcmSort[0].indx], sliceMMarray);
         free(sliceMMarray);
     }
+    //3D-EPI vs 3D SPACE/MPRAGE/ETC
     if ((opts.isRotate3DAcq) && (opts.isCrop) && (dcmList[indx0].is3DAcq)   && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))//for T1 scan: && (dcmList[indx0].TE < 25)
         returnCode = nii_saveCrop(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]); //n.b. must be run AFTER nii_setOrtho()!
 #ifdef USING_R
@@ -5391,7 +5393,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		//if (!dcmList[indx].isScaleVariesEnh) printf("no Varies\n");
 		//printf("%g %g %g\n", dcmList[indx].intenScale, dcmList[indx].intenIntercept, dcmList[indx].intenScalePhilips);
 		//continue;
-		
 		if (s > 1) dcmList[indx].CSA.numDti = 0; //only save bvec for first type (magnitude)
 		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, &dti4Ds, s);
         if (ret2 != EXIT_SUCCESS) ret = ret2; //return EXIT_SUCCESS only if ALL are successful
@@ -5586,7 +5587,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || ((d1.isHasReal != d2.isHasReal))) {
     	if (!warnings->phaseVaries)
-        	printMessage("Slices not stacked: some are phase/real/imaginary maps, others are not. Use 'f 2D slices' option to force stacking\n");
+        	printMessage("Slices not stacked: some are phase/real/imaginary maps, others are not. Instances %d %d\n", d1.imageNum, d2.imageNum);
     	warnings->phaseVaries = true;
     	return false;
     }
@@ -6162,6 +6163,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             continue;
     	}
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+        //if (!dcmList[i].isValid) printf(">>>>Not a valid DICOM %s\n", nameList.str[i]);
         if ((dcmList[i].isValid) && ((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
 			struct TDCMsort dcmSort[1];
 			fillTDCMsort(dcmSort[0], i, dcmList[i]);

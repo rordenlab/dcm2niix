@@ -107,6 +107,7 @@ If you have any problems with the cmake build script described above or want to 
  - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) has great support for various vendors.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package. In my limited experience this tool works well for GE and Siemens data, but fails with Philips 4D datasets.
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
+ - [PET CT viewer](http://petctviewer.org/index.php/feature/results-exports/nifti-export) for [Fiji](https://fiji.sc) can load DICOM images and export as NIfTI.
  - [Plastimatch](https://www.plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [SPM12](http://www.fil.ion.ucl.ac.uk/spm/software/spm12/) is one of the most popular tools in the field. It includes DICOM to NIfTI conversion. Being based on Matlab it is easy to script.
  - [Simple Dicom Reader 2 (Sdr2)](http://ogles.sourceforge.net/sdr2-doc/index.html) uses [dcmtk](https://dicom.offis.de/dcmtk.php.en) to read DICOM images and convert them to the NIfTI format.
@@ -119,7 +120,9 @@ The following tools exploit dcm2niix
   - [abcd-dicom2bids](https://github.com/DCAN-Labs/abcd-dicom2bids) selectively downloads high quality ABCD datasets. 
   - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
   - [BiDirect_BIDS_Converter](https://github.com/wulms/BiDirect_BIDS_Converter) for conversion from DICOM to the BIDS standard.
+  - [BIDScoin](https://github.com/Donders-Institute/bidscoin) is a DICOM to BIDS converter with thorough [documentation](https://bircibrain.github.io/computingguide/docs/bids/bidscoin).
   - [BIDS Toolbox](https://github.com/cardiff-brain-research-imaging-centre/bids-toolbox) is a web service for the creation and manipulation of BIDS datasets, using dcm2niix for importing DICOM data.
+  - [birc-bids](https://github.com/bircibrain/birc-bids) provides a Docker/Singularity container with various BIDS conversion utilities.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.
@@ -130,7 +133,7 @@ The following tools exploit dcm2niix
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [boutiques-dcm2niix](https://github.com/lalet/boutiques-dcm2niix) is a dockerfile for installing and validating dcm2niix.
   - [DAC2BIDS](https://github.com/dangom/dac2bids) uses dcm2niibatch to create [BIDS](http://bids.neuroimaging.io/) datasets.
-  - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
+  - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Here is a [tutorial](https://andysbrainbook.readthedocs.io/en/latest/OpenScience/OS/BIDS_Overview.html) describing usage.
   - [dcm2niir](https://github.com/muschellij2/dcm2niir) R wrapper for dcm2niix/dcm2nii.
   - [dcm2niix_afni](https://afni.nimh.nih.gov/pub/dist/doc/program_help/dcm2niix_afni.html) is a version of dcm2niix included with the [AFNI](https://afni.nimh.nih.gov/) distribution.
   - [dcm2niiXL](https://github.com/neurolabusc/dcm2niiXL) is a shell script and tuned compilation of dcm2niix designed for accelerated conversion of extra large datasets.
@@ -139,6 +142,7 @@ The following tools exploit dcm2niix
   - [dcmwrangle](https://github.com/jbteves/dcmwrangle) a Python interactive and static tool for organizing dicoms.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
+  - [ezBIDS](https://github.com/brainlife/ezbids) is a web service for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
   - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
   - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
   - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
