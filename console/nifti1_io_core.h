@@ -7,8 +7,9 @@
 #ifdef USING_R
 #define STRICT_R_HEADERS
 #include "RNifti.h"
-#endif
+#else
 #include "nifti1.h"
+#endif
 #include <stdint.h>
 
 #ifdef  __cplusplus
@@ -70,7 +71,10 @@ vec3 nifti_vect33mat33_mul(vec3 v, mat33 m );
 ivec3 setiVec3(int x, int y, int z);
 vec3 setVec3(float x, float y, float z);
 vec4 setVec4(float x, float y, float z);
+#ifndef USING_R
+// This declaration differs from the equivalent function in the current nifti1_io.h, so avoid the clash
 void  swap_nifti_header ( struct nifti_1_header *h) ;
+#endif
 vec4 nifti_vect44mat44_mul(vec4 v, mat44 m );
 void nifti_swap_2bytes( size_t n , void *ar );    // 2 bytes at a time
 void nifti_swap_4bytes( size_t n , void *ar );    // 4 bytes at a time

@@ -2815,38 +2815,21 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 {
     ImageList *images = (ImageList *) opts.imageList;
     switch (data.modality) {
-        case kMODALITY_CR:
-            images->addAttribute("modality", "CR");
-            break;
-        case kMODALITY_CT:
-            images->addAttribute("modality", "CT");
-            break;
-        case kMODALITY_MR:
-            images->addAttribute("modality", "MR");
-            break;
-        case kMODALITY_PT:
-            images->addAttribute("modality", "PT");
-            break;
-        case kMODALITY_US:
-            images->addAttribute("modality", "US");
-            break;
+        case kMODALITY_CR: images->addAttribute("modality", "CR"); break;
+        case kMODALITY_CT: images->addAttribute("modality", "CT"); break;
+        case kMODALITY_MR: images->addAttribute("modality", "MR"); break;
+        case kMODALITY_PT: images->addAttribute("modality", "PT"); break;
+        case kMODALITY_US: images->addAttribute("modality", "US"); break;
     }
     switch (data.manufacturer) {
-        case kMANUFACTURER_SIEMENS:
-        	images->addAttribute("manufacturer", "Siemens");
-        	break;
-        case kMANUFACTURER_GE:
-        	images->addAttribute("manufacturer", "GE");
-        	break;
-        case kMANUFACTURER_PHILIPS:
-        	images->addAttribute("manufacturer", "Philips");
-        	break;
-        case kMANUFACTURER_TOSHIBA:
-        	images->addAttribute("manufacturer", "Toshiba");
-        	break;
-        case kMANUFACTURER_Canon:
-        	images->addAttribute("manufacturer", "Canon");
-        	break;
+        case kMANUFACTURER_SIEMENS: images->addAttribute("manufacturer", "Siemens"); break;
+        case kMANUFACTURER_GE:      images->addAttribute("manufacturer", "GE");      break;
+        case kMANUFACTURER_PHILIPS: images->addAttribute("manufacturer", "Philips"); break;
+        case kMANUFACTURER_TOSHIBA: images->addAttribute("manufacturer", "Toshiba"); break;
+        case kMANUFACTURER_UIH:     images->addAttribute("manufacturer", "UIH");     break;
+        case kMANUFACTURER_BRUKER:  images->addAttribute("manufacturer", "Bruker");  break;
+        case kMANUFACTURER_HITACHI: images->addAttribute("manufacturer", "Hitachi"); break;
+        case kMANUFACTURER_CANON:   images->addAttribute("manufacturer", "Canon");   break;
     }
     if (strlen(data.manufacturersModelName) > 0)
         images->addAttribute("scannerModelName", data.manufacturersModelName);

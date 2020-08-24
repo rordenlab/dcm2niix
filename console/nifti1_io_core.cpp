@@ -17,7 +17,6 @@
 
 #include <stdbool.h> //requires VS 2015 or later
 #include "nifti1_io_core.h"
-#include "nifti1.h"
 #include <math.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -80,7 +79,6 @@ void nifti_swap_2bytes( size_t n , void *ar )    // 2 bytes at a time
     }
     return ;
 }
-#endif
 
 /*-------------------------------------------------------------------------*/
 /*! Byte swap NIFTI-1 file header in various places and ways.
@@ -137,6 +135,7 @@ void swap_nifti_header( struct nifti_1_header *h  )
 
    return ;
 }
+#endif
 
 bool littleEndianPlatform ()
 {
