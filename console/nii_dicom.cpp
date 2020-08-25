@@ -6951,9 +6951,8 @@ if (d.isHasPhase)
 	}
 	if ((isDICOMANON) && (isMATLAB)) {
 		//issue 383
-		d.seriesInstanceUID[0] = '\0';
-		strcat(d.seriesInstanceUID, d.studyDate);
-		strcat(d.seriesInstanceUID, d.studyTime);
+		strcpy(d.seriesInstanceUID, d.studyDate);
+		strncat(d.seriesInstanceUID, d.studyTime, kDICOMStr-strlen(d.studyDate));
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "_fl2d1") != NULL)) {
