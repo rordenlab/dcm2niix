@@ -6877,9 +6877,13 @@ if (d.isHasPhase)
 			dcmMultiFloat(len,(char*)&txt[0], 3, &v[0]);
 			//printf(">>>%g = %g %g %g : %s %s\n", v[0], v[1], v[2], v[3], txt,fname);
             d.CSA.dtiV[0] = B0Philips;
-            d.CSA.dtiV[1] = v[1];
-            d.CSA.dtiV[2] = v[2];
-            d.CSA.dtiV[3] = v[3];
+            //see issue422 and dcm_qa_canon
+            d.CSA.dtiV[1] = v[2];
+            d.CSA.dtiV[2] = v[1];
+            d.CSA.dtiV[3] = -v[3];
+            //d.CSA.dtiV[1] = v[1];
+            //d.CSA.dtiV[2] = v[2];
+            //d.CSA.dtiV[3] = v[3];
             d.CSA.numDti = 1;
         }
             	
