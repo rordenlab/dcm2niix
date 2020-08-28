@@ -1685,8 +1685,8 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     uint64_t indx0 = dcmSort[0].indx; //first volume
     int numDti = dcmList[indx0].CSA.numDti;
 #ifdef USING_R
-	//R might want to pad zeros
-#else    
+    ImageList *images = (ImageList *) opts.imageList;
+#endif
     //https://github.com/rordenlab/dcm2niix/issues/352
     bool allB0 = dcmList[indx0].isDiffusion;
     if (dcmList[indx0].isDerived) allB0 = false; //e.g. FA map
@@ -1697,6 +1697,11 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
     if (allB0) {
     	if (opts.isVerbose)
 			printMessage("Diffusion image without gradients: assuming %d volume B=0 series\n", numVol);
+#ifdef USING_R
+		// The image hasn't been created yet, so the attributes must be deferred
+		images->addDeferredAttribute("bValues", std::vector<double>(numVol,0.0));
+		images->addDeferredAttribute("bVectors", std::vector<double>(numVol*3,0.0), numVol, 3);
+#else
 	    char sep = '\t';
 		if (opts.isCreateBIDS)
             sep = ' ';
@@ -1719,8 +1724,8 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 			fprintf(fp, "\n");
 		}
 		fclose(fp);
+#endif
     } 
-#endif    
     if (numDti < 1) return NULL;
     if ((numDti < 3) && (nConvert < 3)) return NULL;
     TDTI * vx = NULL;
@@ -1940,7 +1945,6 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
             bVectors[i+j*numDti] = vx[i].V[j+1];
     }
     // The image hasn't been created yet, so the attributes must be deferred
-    ImageList *images = (ImageList *) opts.imageList;
     images->addDeferredAttribute("bValues", bValues);
     images->addDeferredAttribute("bVectors", bVectors, numDti, 3);
 #else
