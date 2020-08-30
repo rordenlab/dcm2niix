@@ -6,11 +6,12 @@
 
 #ifdef USING_R
 #define STRICT_R_HEADERS
+#include <stdint.h>
 #include "RNifti.h"
 #else
 #include "nifti1.h"
-#endif
 #include <stdint.h>
+#endif
 
 #ifdef  __cplusplus
 extern "C" {
