@@ -837,6 +837,7 @@ struct TDICOMdata clear_dicom_data() {
     d.rtia_timerGE = -1.0;
     d.rawDataRunNumber = -1;
     d.maxEchoNumGE = -1;
+    d.overlayBitsAllocated = 0;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -4370,6 +4371,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define  kWaveformSq 0x5400+(0x0100 << 16)
 #define  kSpectroscopyData 0x5600+(0x0020 << 16) //OF
+#define  kOverlayBitsAllocated 0x6000+(0x0100 << 16) //US
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
@@ -6170,6 +6172,9 @@ float MRImageDynamicScanBeginTime = 0.0;
             	printMessage("Skipping Spectroscopy DICOM '%s'\n", fname);
                 d.imageStart = (int)lPos + (int)lFileOffset;
                 break;
+            case kOverlayBitsAllocated :
+            	d.overlayBitsAllocated =  dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	break;
             case kCSAImageHeaderInfo:
             	if ((lPos + lLength) > fileLen) break;
             	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq); //, dti4D);
@@ -6875,12 +6880,17 @@ if (d.isHasPhase)
         	}
         	float v[4];
 			dcmMultiFloat(len,(char*)&txt[0], 3, &v[0]);
-			//printf(">>>%g = %g %g %g : %s %s\n", v[0], v[1], v[2], v[3], txt,fname);
-            d.CSA.dtiV[0] = B0Philips;
-            //see issue422 and dcm_qa_canon
+			d.CSA.dtiV[0] = B0Philips;
+            #ifdef swizzleCanon //see issue422 and dcm_qa_canon
             d.CSA.dtiV[1] = v[2];
             d.CSA.dtiV[2] = v[1];
             d.CSA.dtiV[3] = -v[3];
+            #else
+            d.CSA.dtiV[1] = v[2];
+            d.CSA.dtiV[2] = v[1];
+            d.CSA.dtiV[3] = v[3];  
+            d.manufacturer = kMANUFACTURER_CANON;
+            #endif
             //d.CSA.dtiV[1] = v[1];
             //d.CSA.dtiV[2] = v[2];
             //d.CSA.dtiV[3] = v[3];
