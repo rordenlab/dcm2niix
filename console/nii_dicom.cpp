@@ -837,7 +837,9 @@ struct TDICOMdata clear_dicom_data() {
     d.rtia_timerGE = -1.0;
     d.rawDataRunNumber = -1;
     d.maxEchoNumGE = -1;
-    d.overlayBitsAllocated = 0;
+    for (int i = 0; i < kMaxOverlay; i++)
+    	d.overlayStart[i] = 0;
+    d.isHasOverlay = false;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -4371,7 +4373,6 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define  kWaveformSq 0x5400+(0x0100 << 16)
 #define  kSpectroscopyData 0x5600+(0x0020 << 16) //OF
-#define  kOverlayBitsAllocated 0x6000+(0x0100 << 16) //US
 #define  kImageStart 0x7FE0+(0x0010 << 16 )
 #define  kImageStartFloat 0x7FE0+(0x0008 << 16 )
 #define  kImageStartDouble 0x7FE0+(0x0009 << 16 )
@@ -4382,6 +4383,9 @@ double TE = 0.0; //most recent echo time recorded
 float MRImageDynamicScanBeginTime = 0.0;
 
 	bool is2005140FSQ = false;
+	bool overlayOK = true;
+	int overlayRows = 0;
+	int overlayCols = 0;
 	bool isTriggerSynced = false;
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
@@ -6172,9 +6176,6 @@ float MRImageDynamicScanBeginTime = 0.0;
             	printMessage("Skipping Spectroscopy DICOM '%s'\n", fname);
                 d.imageStart = (int)lPos + (int)lFileOffset;
                 break;
-            case kOverlayBitsAllocated :
-            	d.overlayBitsAllocated =  dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
-            	break;
             case kCSAImageHeaderInfo:
             	if ((lPos + lLength) > fileLen) break;
             	readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq); //, dti4D);
@@ -6389,7 +6390,51 @@ float MRImageDynamicScanBeginTime = 0.0;
                 isIconImageSequence = false;
                 break;
         } //switch/case for groupElement
-
+        if ((((groupElement >>8) & 0xFF) == 0x60) && (groupElement % 2 == 0) && ((groupElement & 0xFF) < 0x1E)) { //Group 60xx: OverlayGroup http://dicom.nema.org/dicom/2013/output/chtml/part03/sect_C.9.html
+        	//even group numbers 0x6000..0x601E
+        	int overlayN = 	((groupElement & 0xFF) >> 1);
+        	//printf("%08x %d %d\n", groupElement, (groupElement & 0xFF), overlayN);
+        	int element = groupElement>>16;
+        	switch(element) {
+        		case 0x0010: //US OverlayRows
+      				overlayRows = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+      				break;
+        		case 0x0011: //US OverlayColumns
+      				overlayCols = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+      				break;
+        		case 0x0050: {//SSx2! OverlayOrigin
+        			if (lLength != 4) break;
+        			int row = dcmInt(2,&buffer[lPos],d.isLittleEndian);
+        			int col = dcmInt(2,&buffer[lPos+2],d.isLittleEndian);
+        			if ((row == 1) && (col == 1)) break;
+        			printMessage("Unsupported overlay origin %d/%d\n", row, col);
+      				overlayOK = false;
+      				break;
+      			}
+        		case 0x0100: {//US OverlayBitsAllocated
+      				int bits = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+      				if (bits == 1) break;
+      				//old style Burned-In
+      				printMessage("Illegal/Obsolete DICOM: Overlay Bits Allocated must be 1, not %d\n", bits);
+      				overlayOK = false;
+      				break;
+      			}
+        		case 0x0102: {//US OverlayBitPosition
+      				int pos = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+      				if (pos == 0) break;
+      				//old style Burned-In
+      				printMessage("Illegal/Obsolete DICOM: Overlay Bit Position shall be 0, not %d\n", pos);
+      				overlayOK = false;
+      				break;
+      			}
+      			case 0x3000: {
+      				d.overlayStart[overlayN] = (int)lPos + (int)lFileOffset;
+      				d.isHasOverlay = true;
+      				break;
+      			}
+      		}
+        }//Group 60xx even values 0x6000..0x601E https://www.medicalconnections.co.uk/kb/Number-Of-Overlays-In-Image/
+        
 #ifndef USING_R
         if (isVerbose > 1) {
         	//dcm2niix i fast because it does not use a dictionary.
@@ -6479,6 +6524,12 @@ float MRImageDynamicScanBeginTime = 0.0;
     if ((d.modality == kMODALITY_PT) && (PETImageIndex > 0)) {
     	d.imageNum = PETImageIndex; //https://github.com/rordenlab/dcm2niix/issues/184
     	//printWarning("PET scan using 0054,1330 for image number %d\n", PETImageIndex);
+    }
+    if (d.isHasOverlay) {
+    	if ((overlayCols > 0) && (d.xyzDim[1] != overlayCols)) overlayOK = false;
+      	if ((overlayRows > 0) && (d.xyzDim[2] != overlayRows)) overlayOK = false;
+      	if (!overlayOK) 
+      		d.isHasOverlay = false;
     }
     //Recent Philips images include DateTime (0008,002A) but not separate date and time (0008,0022 and 0008,0032)
     #define kYYYYMMDDlen 8 //how many characters to encode year,month,day in "YYYYDDMM" format

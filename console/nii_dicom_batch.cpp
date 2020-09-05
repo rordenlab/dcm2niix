@@ -4668,6 +4668,47 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	return 0;
 }*/
 
+void loadOverlay(char* imgname, unsigned char * img, int offset, int x, int y, int z) {
+    int nvox = x * y * z;
+    size_t imgszRead = (nvox+7) >> 3; //overlay stored as 1 bit per voxel
+    FILE *file = fopen(imgname , "rb");
+	if (!file) {
+         printError("Unable to open '%s'\n", imgname);
+         return;
+    }
+	fseek(file, 0, SEEK_END);
+	long fileLen=ftell(file);
+    if (fileLen < (imgszRead+offset)) {
+        printWarning("File not large enough to store overlay: %s\n", imgname);
+        return;
+    }
+	fseek(file, (long) offset, SEEK_SET);
+    unsigned char *bImg = (unsigned char *)malloc(imgszRead);
+    size_t  sz = fread(bImg, 1, imgszRead, file);
+    //static unsigned char mask[] = {128, 64, 32, 16, 8, 4, 2, 1};
+    static unsigned char mask[] = {1, 2, 4, 8, 16, 32, 64, 128};
+	for (int i = 0; i < nvox; i++) {
+		int byt = (i  >> 3);
+		int bit = (i % 8);
+		img[i] = ((bImg[byt] & mask[bit]) != 0);
+	}
+	/* 
+    if (isFlipY) {
+		unsigned char *tImg = (unsigned char *)malloc(nvox);
+    	memcpy(&tImg[0], &img[0], nvox);
+    	int i = 0;
+		for (int yi = y-1; yi >= 0; yi--)
+			for (int xi = 0; xi < x; xi++) {
+				img[(yi*x)+xi] = tImg[i];
+				i++;
+			}
+			free(tImg);
+	}*/
+    free(bImg);
+	fclose(file);
+	return;
+} //loadOverlay()
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
     float *sliceMMarray = NULL; //only used if slices are not equidistant
@@ -4729,6 +4770,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     memcpy(&imgM[0], &img[0], imgsz);
     free(img);
     //printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
+    bool isHasOverlay = dcmList[indx0].isHasOverlay;
     if (nConvert > 1) {
         //next: detect trigger time see example https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
         double triggerDx = dcmList[dcmSort[nConvert-1].indx].triggerDelayTime - dcmList[indx0].triggerDelayTime;
@@ -4793,6 +4835,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
             }
             //next options removed: features now thoroughly detected in nii_loadDir()
 			for (int i = 0; i < nConvert; i++) { //make sure 1st volume describes shared features
+				if (dcmList[dcmSort[i].indx].isHasOverlay) isHasOverlay = true;
 				if (dcmList[dcmSort[i].indx].isCoilVaries) dcmList[indx0].isCoilVaries = true;
 				if (dcmList[dcmSort[i].indx].isMultiEcho) dcmList[indx0].isMultiEcho = true;
 			  	if (dcmList[dcmSort[i].indx].isNonParallelSlices) dcmList[indx0].isNonParallelSlices = true;
@@ -5124,7 +5167,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	printMessage(" %s\n",nameList->str[dcmSort[0].indx]);
     	return EXIT_SUCCESS;
     }
-	if (sliceDir < 0) {
+    struct nifti_1_header hdrrx = hdr0;
+    bool isFlipZ = false;
+    if (sliceDir < 0) {
+    	isFlipZ = true;
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
     }
@@ -5178,11 +5224,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         fflush(stdout); //GUI buffers printf, display all results
 #endif
 	//3D-EPI vs 3D SPACE/MPRAGE/ETC
-	if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (!dcmList[dcmSort[0].indx].isEPI) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4))
-        imgM = nii_setOrtho(imgM, &hdr0); //printMessage("ortho %d\n", echoInt (33));
-    else if (opts.isFlipY)//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
+	bool isFlipY = false;
+	bool isSetOrtho = false;
+	if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (!dcmList[dcmSort[0].indx].isEPI) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4)) {
+        imgM = nii_setOrtho(imgM, &hdr0); 
+        isSetOrtho = true;
+    } else if (opts.isFlipY){//(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
         imgM = nii_flipY(imgM, &hdr0);
-    else
+        isFlipY = true;
+    } else
     	printMessage("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
 	//begin: gantry tilt we need to save the shear in the transform
 	mat44 sForm;
@@ -5233,6 +5283,54 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				nii_saveNII3D(pathoutnameADC, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 			else
 				nii_saveNII(pathoutnameADC, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
+		}
+		if (isHasOverlay) { //each series can have up to 16 overlays, overlays may not be on all slices
+			for (int j = 0; j < kMaxOverlay; j++) {
+				bool isOverlay =  false;
+				for (int i = 0; i < nConvert; i++)
+					if (dcmList[dcmSort[i].indx].overlayStart[j] > 0) isOverlay = true;
+				if (!isOverlay) continue;
+				char pathoutnameROI[2048] = {""};
+				strcat(pathoutnameROI,pathoutname);
+				char append[128] = {""};
+				sprintf(append,"_ROI%d",j+1);
+				strcat(pathoutnameROI,append);
+				struct nifti_1_header hdrr = hdrrx;
+				hdrr.dim[0] = 3;
+				if (hdrr.dim[1] < 1) hdrr.dim[1] = 1;
+				if (hdrr.dim[2] < 1) hdrr.dim[2] = 1;
+				if (hdrr.dim[3] < 1) hdrr.dim[3] = 1;
+				hdrr.dim[4] = 1;
+				hdrr.bitpix = 8;
+				hdrr.datatype = 2;
+				hdrr.scl_inter = 0.0;
+				hdrr.scl_slope = 1.0;
+				int nvox = hdrr.dim[1] * hdrr.dim[2] * hdrr.dim[3];
+				unsigned char *imgR = (unsigned char *)malloc(nvox);
+				for (int v = 0; v < nvox; v++)
+					imgR[v] = 0;
+				if (nConvert == 1) {
+					int indx = dcmSort[0].indx;
+					loadOverlay(nameList->str[indx], imgR, dcmList[indx].overlayStart[j], hdrr.dim[1], hdrr.dim[2], hdrr.dim[3]);
+				} else if (nConvert == hdrr.dim[3]) {
+					for (int i = 0; i < nConvert; i++) {
+						int indx = dcmSort[i].indx;
+						if (dcmList[indx].overlayStart[j] > 0) {
+							unsigned char *imgRS = imgR + (i * hdrr.dim[1] * hdrr.dim[2]);
+							loadOverlay(nameList->str[indx], imgRS, dcmList[indx].overlayStart[j], hdrr.dim[1], hdrr.dim[2], 1);
+						} //if overlay on slice
+					} //for each volume
+				} //
+				if  (isFlipZ)
+        			imgR = nii_flipZ(imgR, &hdrr);
+        		if (isSetOrtho)
+        			imgR = nii_setOrtho(imgR, &hdrr);
+				if (isFlipY)
+					imgR = nii_flipY(imgR, &hdrr);
+				nii_saveNII(pathoutnameROI, hdrr, imgR, opts, dcmList[dcmSort[0].indx]);
+			
+			}
+			
 		}
 #endif
 		imgM = removeADC(&hdr0, imgM, numADC);

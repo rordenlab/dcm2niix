@@ -54,6 +54,10 @@ Some post-fixes are specific to Philips DICOMs
 
 If you do not want post-fixes, run dcm2niix in the terse mode (`--terse`). In this mode, most post-fixes will be omitted. Beware that this mode can have name clashes, and images from a series may over write each other.  
 
+## Overlays
+
+DICOM images can have up to [16](https://www.medicalconnections.co.uk/kb/Number-Of-Overlays-In-Image/) binary (black or white) overlays as described by the [Overlay Plane Module](http://dicom.nema.org/dicom/2013/output/chtml/part03/sect_C.9.html). dcm2niix will save these regions of interest with the post-fix "_ROIn" where N is the overlay number (1..16). 
+
 ## File Name Conflicts
 
 dcm2niix will attempt to write your image using the naming scheme you specify with the '-f' parameter. However, if an image already exists with the specified output name, dcm2niix will append a letter (e.g. 'a') to the end of a file name to avoid overwriting existing images. Consider a situation where dcm2niix is run with '-f %t'. This will name images based on the study time. If a single study has multiple series (for example, a T1 sequence and a fMRI scan, the reulting file names will conflict with each other. In order to avoid overwriting images, dcm2niix will resort to adding the post fix 'a', 'b', etc. There are a few solutions to avoiding these situations. You may want to consider using both of these:
