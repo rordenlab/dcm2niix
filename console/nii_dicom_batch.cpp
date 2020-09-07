@@ -3248,6 +3248,69 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+
+#ifndef max
+ #define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })   
+#endif
+
+#ifndef min
+ #define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })   
+#endif
+
+void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
+	//NRRD does not have scl_slope scl_inter. Adjust data if possible
+	// https://discourse.slicer.org/t/preserve-image-rescale-and-slope-when-saving-in-nrrd-file/13357
+	if  (isSameFloat(hdr->scl_inter,0.0) && isSameFloat(hdr->scl_slope,1.0)) return;
+	if ((!isSameFloat(fmod(hdr->scl_inter, 1.0),0.0)) || (!isSameFloat(fmod(hdr->scl_slope, 1.0),0.0))) return;	
+	int nVox = 1;
+	for (int i = 1; i < 8; i++)
+		if (hdr->dim[i] > 1) nVox = nVox * hdr->dim[i];
+	if (hdr->datatype == DT_INT16) {
+		int16_t * img16 = (int16_t*) img;
+		int16_t mn, mx;
+		mn = img16[0];
+		mx = mn;
+		for (int i=0; i < nVox; i++) {
+			mn = min(mn, img16[i]);
+			mx = max(mx, img16[i]);
+		}
+		float v = (mn * hdr->scl_slope) + hdr->scl_inter;
+		if ((v < -32768) || (v > 32767)) return;
+		v = (mx * hdr->scl_slope) + hdr->scl_inter;
+		if ((v < -32768) || (v > 32767)) return;
+		for (int i=0; i < nVox; i++)
+			img16[i] = round((img16[i] * hdr->scl_slope) + hdr->scl_inter);
+		hdr->scl_slope =  1.0;
+		hdr->scl_inter = 0.0;
+		return;	
+	}
+	if (hdr->datatype == DT_UINT16) {
+	uint16_t * img16 = (uint16_t*) img;
+	uint16_t mn, mx;
+	mn = img16[0];
+	mx = mn;
+	for (int i=0; i < nVox; i++) {
+		mn = min(mn, img16[i]);
+		mx = max(mx, img16[i]);
+	}
+	float v = (mn * hdr->scl_slope) + hdr->scl_inter;
+	if ((v < 0) || (v > 65535)) return;
+	v = (mx * hdr->scl_slope) + hdr->scl_inter;
+	if ((v < 0) || (v > 65535)) return;
+	for (int i=0; i < nVox; i++)
+		img16[i] = round((img16[i] * hdr->scl_slope) + hdr->scl_inter);
+	hdr->scl_slope =  1.0;
+	hdr->scl_inter = 0.0;
+	return;	
+	}
+    //printWarning("NRRD unable to record scl_slope/scl_inter %g/%g\n", hdr->scl_slope, hdr->scl_inter);	
+}
 void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
 	//swap endian from big->little or little->big
 	// must be told which is native to detect datatype and number of voxels
@@ -5264,6 +5327,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     int returnCode = EXIT_FAILURE;
 #ifndef myNoSave
     // Indicates success or failure of the (last) save
+    if (opts.isSaveNRRD)
+        removeSclSlopeInter(&hdr0, imgM);
     //printMessage(" x--> %d ----\n", nConvert);
     if (! opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
         imgM = nii_planar2rgb(imgM, &hdr0, true); //NIfTI is packed while Analyze was planar
