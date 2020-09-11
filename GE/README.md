@@ -31,7 +31,7 @@ Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 6
 
 ## Total Readout Time
 
-One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Total readout time is influence by parallel acceleration factor, bandwidth, number of EPI lines, and partial Fourier. Not all of these parameters are available from the GE DICOM images, so a user needs to check the scanner console.
+One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Total readout time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, and partial Fourier. Not all of these parameters are available from the GE DICOM images, so a user needs to check the scanner console.
 
 ## GE Protocol Data Block
 

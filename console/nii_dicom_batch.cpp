@@ -856,21 +856,28 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) {
 	if (strlen(sVal) < 1) return;
 	//fprintf(fp, sLabel, sVal );
 	//convert  \ ' " characters to _ see https://github.com/rordenlab/dcm2niix/issues/131
-	for (size_t pos = 0; pos < strlen(sVal); pos ++) {
-        if ((sVal[pos] == '\'') || (sVal[pos] == '"') || (sVal[pos] == '\\'))
-            sVal[pos] = '_';
+	unsigned char sValEsc[2048] = {""};
+	unsigned char *iVal = (unsigned char *) sVal;
+	int o = 0;
+	for (int i = 0; i < strlen(sVal); i ++) {
+        if ((sVal[i] == '"') || (sVal[i] == '\\')) { //escape double quotes and back slash
+            sValEsc[o] = '\\';
+            o++;
+        }
+        //https://stackoverflow.com/questions/4059775/convert-iso-8859-1-strings-to-utf-8-in-c-c
+	    if (iVal[i] >= 128) {
+        	sValEsc[o]=0xc2+(iVal[i]>0xbf);
+        	o++;
+        	sValEsc[o]=(iVal[i]&0x3f)+0x80;
+        } else {
+        	sValEsc[o] = sVal[i];
+        }
+        o++;
     }
-	fprintf(fp, sLabel, sVal );
-	/*char outname[PATH_MAX] = {""};
-	char appendChar[2] = {"\\"};
-	char passChar[2] = {"\\"};
-	for (int pos = 0; pos<strlen(sVal); pos ++) {
-        if ((sVal[pos] == '\'') || (sVal[pos] == '"') || (sVal[pos] == '\\'))
-            strcpy(outname, appendChar);
-        passChar[0] = sVal[pos];
-        strcpy(outname, passChar);
-    }
-	fprintf(fp, sLabel, outname );*/
+    sValEsc[o] = '\0';
+    fprintf(fp, sLabel, sValEsc );
+
+	
 } //json_Str
 
 void json_FloatNotNan(FILE *fp, const char *sLabel, float sVal) {
@@ -1918,6 +1925,22 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	}
 	if (!isSequential)
 	  printMessage("DTI volumes re-ordered by ascending b-value\n");
+    #ifdef RAW_BVEC //save raw bvecs as reported by DICOM, not rotated to image space
+		char txtname[2048] = {""};
+		strcpy(txtname,pathoutname);
+		strcat (txtname,".rvec");
+		FILE *fp = fopen(txtname, "w");
+		for (int i = 0; i < numDti; i++)
+    		fprintf(fp, "%g\t",vx[i].V[1]);
+    	fprintf(fp, "\n");
+		for (int i = 0; i < numDti; i++)
+    		fprintf(fp, "%g\t",vx[i].V[2]);
+    	fprintf(fp, "\n");
+		for (int i = 0; i < numDti; i++)
+    		fprintf(fp, "%g\t",vx[i].V[3]);
+    	fprintf(fp, "\n");
+		fclose(fp);
+    #endif
 	dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
     geCorrectBvecs(&dcmList[indx0],sliceDir, vx, opts.isVerbose);
     siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx, opts.isVerbose);
@@ -2307,7 +2330,37 @@ bool isExt (char *file_name, const char* ext) {
     return false;
 }// isExt()
 
-
+void cleanISO8859(char * cString) {
+	int len = strlen(cString);
+	if (len < 1) return;
+    for (int i = 0; i < len; i++)
+        //assume specificCharacterSet (0008,0005) is ISO_IR 100 http://en.wikipedia.org/wiki/ISO/IEC_8859-1
+        if (cString[i]< 1) {
+            unsigned char c = (unsigned char)cString[i];
+            if ((c >= 192) && (c <= 198)) cString[i] = 'A';
+            if (c == 199) cString[i] = 'C';
+            if ((c >= 200) && (c <= 203)) cString[i] = 'E';
+            if ((c >= 204) && (c <= 207)) cString[i] = 'I';
+            if (c == 208) cString[i] = 'D';
+            if (c == 209) cString[i] = 'N';
+            if ((c >= 210) && (c <= 214)) cString[i] = 'O';
+            if (c == 215) cString[i] = 'x';
+            if (c == 216) cString[i] = 'O';
+            if ((c >= 217) && (c <= 220)) cString[i] = 'O';
+            if (c == 221) cString[i] = 'Y';
+            if ((c >= 224) && (c <= 230)) cString[i] = 'a';
+            if (c == 231) cString[i] = 'c';
+            if ((c >= 232) && (c <= 235)) cString[i] = 'e';
+            if ((c >= 236) && (c <= 239)) cString[i] = 'i';
+            if (c == 240) cString[i] = 'o';
+            if (c == 241) cString[i] = 'n';
+            if ((c >= 242) && (c <= 246)) cString[i] = 'o';
+            if (c == 248) cString[i] = 'o';
+            if ((c >= 249) && (c <= 252)) cString[i] = 'u';
+            if (c == 253) cString[i] = 'y';
+            if (c == 255) cString[i] = 'y';
+        }
+}
 int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts) {
     char pth[PATH_MAX] = {""};
     if (strlen(opts.outdir) > 0) {
@@ -2342,6 +2395,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if (strlen(inname) < 1) {
         strcpy(inname, "T%t_N%n_S%s");
     }
+    const char kTempPathSeparator ='\a';
+    for (size_t pos = 0; pos<strlen(inname); pos ++)
+        if ((inname[pos] == '\\') || (inname[pos] == '/')) inname[pos] = kTempPathSeparator;
+        
     size_t start = 0;
     size_t pos = 0;
 	bool isAddNamePostFixes = opts.isAddNamePostFixes;
@@ -2566,24 +2623,24 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     #endif
     #if defined(_WIN64) || defined(_WIN32) || defined(kMASK_WINDOWS_SPECIAL_CHARACTERS)//https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
     for (size_t pos = 0; pos<strlen(outname); pos ++)
-        if ((outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
+        if ((outname[pos] == '\\') || (outname[pos] == '/') || (outname[pos] == ' ') || (outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
             || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
             //|| (outname[pos] == '^') issue398
             || (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
             outname[pos] = '_';
-	#if defined(_WIN64) || defined(_WIN32)
-		const char kForeignPathSeparator ='/';
-	#else
-		const char kForeignPathSeparator ='\\';
-	#endif
-    for (int pos = 0; pos<strlen(outname); pos ++)
-        if (outname[pos] == kForeignPathSeparator)
-        	outname[pos] = kPathSeparator; //e.g. for Windows, convert "/" to "\"
     #else
     for (size_t pos = 0; pos<strlen(outname); pos ++)
         if (outname[pos] == ':') //not allowed by MacOS
         	outname[pos] = '_';
     #endif
+    cleanISO8859(outname);
+	//re-insert explicit path separators: -f %t/%s_%p will have folder for time, but will not segment a protocol named "fMRI\bold" 
+	for (int pos = 0; pos<strlen(outname); pos ++) {
+        if (outname[pos] == kTempPathSeparator)
+        	outname[pos] = kPathSeparator; //e.g. for Windows, convert "/" to "\"
+    	if (outname[pos] < 32) //https://en.wikipedia.org/wiki/ASCII#Control_characters
+            outname[pos] = '_';	
+	}
     char baseoutname[2048] = {""};
     strcat (baseoutname,pth);
     char appendChar[2] = {"a"};

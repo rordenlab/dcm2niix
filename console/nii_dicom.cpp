@@ -918,19 +918,14 @@ uint32_t mz_crc32X(unsigned char *ptr, size_t buf_len)
   return ~crcu32;
 }
 
-
-
-void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false, bool isSpaceToUnderscore = true) {
+void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = false) {
     if (lLength < 1) return;
-//#ifdef _MSC_VER
 	char * cString = (char *)malloc(sizeof(char) * (lLength + 1));
-//#else
-//	char cString[lLength + 1];
-//#endif
     cString[lLength] =0;
     memcpy(cString, (char*)&lBuffer[0], lLength);
     //memcpy(cString, test, lLength);
     //printMessage("X%dX\n", (unsigned char)d.patientName[1]);
+    #ifdef ISO8859
     for (int i = 0; i < lLength; i++)
         //assume specificCharacterSet (0008,0005) is ISO_IR 100 http://en.wikipedia.org/wiki/ISO/IEC_8859-1
         if (cString[i]< 1) {
@@ -958,23 +953,10 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = 
             if (c == 253) cString[i] = 'y';
             if (c == 255) cString[i] = 'y';
         }
-    for (int i = 0; i < lLength; i++)
-        if ((cString[i]<1) || (cString[i]==',') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13)) cString[i] = '_'; //issue398
-        //if ((cString[i]<1) || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\')  || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13)) cString[i] = '_';
-    if (!isSpaceToUnderscore) {
-   		if (cString[lLength-1]==' ') cString[lLength-1] = '_'; //only remove trailing space, e.g. Philips Image Type with odd length
-    } else {
-    	for (int i = 0; i < lLength; i++)
-        	if (cString[i]==' ') cString[i] = '_';
-    }
-    int len = 1;
-    for (int i = 1; i < lLength; i++) { //remove repeated "_"
-        if ((cString[i-1]!='_') || (cString[i]!='_')) {
-            cString[len] =cString[i];
-            len++;
-        }
-    } //for each item
-    if (cString[len-1] == '_') len--;
+    #endif
+    //we no longer sanitize strings, see issue 425
+    int len = lLength;
+    if (cString[len-1] == ' ') len--;
     //while ((len > 0) && (cString[len]=='_')) len--; //remove trailing '_'
     cString[len] = 0; //null-terminate, strlcpy does this anyway
     int maxLen = kDICOMStr;
@@ -985,9 +967,7 @@ void dcmStr(int lLength, unsigned char lBuffer[], char* lOut, bool isStrLarge = 
 	}
     memcpy(lOut,cString,len-1);
     lOut[len-1] = 0;
-//#ifdef _MSC_VER
 	free(cString);
-//#endif
 } //dcmStr()
 
 #ifdef MY_OLD //this code works on Intel but not some older systems https://github.com/rordenlab/dcm2niix/issues/327
@@ -4840,7 +4820,7 @@ float MRImageDynamicScanBeginTime = 0.0;
         switch ( groupElement ) {
          	case kMediaStorageSOPClassUID: {
          		char mediaUID[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], mediaUID);
+                dcmStr(lLength, &buffer[lPos], mediaUID);
                 //Philips "XX_" files
                 //see https://github.com/rordenlab/dcm2niix/issues/328
                 if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL) d.isRawDataStorage = true;
@@ -4856,7 +4836,7 @@ float MRImageDynamicScanBeginTime = 0.0;
          	}
             case kMediaStorageSOPInstanceUID : {// 0002, 0003
             	//char SOPInstanceUID[kDICOMStr];
-            	dcmStr (lLength, &buffer[lPos], d.instanceUID);
+            	dcmStr(lLength, &buffer[lPos], d.instanceUID);
             	//printMessage(">>%s\n", d.seriesInstanceUID);
             	d.instanceUidCrc = mz_crc32X((unsigned char*) &d.instanceUID, strlen(d.instanceUID));
                 break;
@@ -4864,7 +4844,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kTransferSyntax: {
                 char transferSyntax[kDICOMStr];
                 strcpy(transferSyntax, "");
-                dcmStr (lLength, &buffer[lPos], transferSyntax);
+                dcmStr(lLength, &buffer[lPos], transferSyntax);
                 if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
                     ; //default isExplicitVR=true; //d.isLittleEndian=true
                 else if  (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
@@ -4919,14 +4899,14 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;} //{} provide scope for variable 'transferSyntax
             /*case kImplementationVersionName: {
             	char impTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], impTxt);
+                dcmStr(lLength, &buffer[lPos], impTxt);
                 int slen = (int) strlen(impTxt);
 				if((slen < 6) || (strstr(impTxt, "OSIRIX") == NULL) ) break;
                 printError("OSIRIX Detected\n");
             	break; }*/
             case kImplementationVersionName: {
                 char impTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], impTxt);
+                dcmStr(lLength, &buffer[lPos], impTxt);
                 int slen = (int) strlen(impTxt);
 				if ((slen > 5) && (strstr(impTxt, "MATLAB") != NULL) )
 					isMATLAB = true;
@@ -4936,7 +4916,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	break; }
             case kSourceApplicationEntityTitle: {
             	char saeTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], saeTxt);
+                dcmStr(lLength, &buffer[lPos], saeTxt);
                 int slen = (int) strlen(saeTxt);
 				if((slen < 5) || (strstr(saeTxt, "oasis") == NULL) ) break;
                 d.isSegamiOasis = true;
@@ -4947,11 +4927,15 @@ float MRImageDynamicScanBeginTime = 0.0;
             }
             case kImageTypeTag: {
             	bool is1st = strlen(d.imageType) == 0;
-            	dcmStr (lLength, &buffer[lPos], d.imageType, false, false); //<-distinguish spaces from pathdelim: [ORIGINAL\PHASE MAP\FFE] should return "PHASE MAP" not "PHASE_MAP"
-            	if (is1st)
-            		strcpy(imageType1st, d.imageType);
+            	dcmStr(lLength, &buffer[lPos], d.imageType, false); //<-distinguish spaces from pathdelim: [ORIGINAL\PHASE MAP\FFE] should return "PHASE MAP" not "PHASE_MAP"
             	int slen;
                 slen = (int) strlen(d.imageType);
+				if (slen > 1) {
+					for (int i = 0; i<slen; i ++)
+						if (d.imageType[i] == '\\') d.imageType[i] = '_';
+				}
+				if (is1st)
+            		strcpy(imageType1st, d.imageType);
 				if((slen > 5) && strstr(d.imageType, "_MOCO_") ) {
                 	//d.isDerived = true; //this would have 'i- y' skip MoCo images
                 	isMoCo = true;
@@ -5021,16 +5005,16 @@ float MRImageDynamicScanBeginTime = 0.0;
             	break; }
             case kAcquisitionDate:
             	char acquisitionDateTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], acquisitionDateTxt);
+                dcmStr(lLength, &buffer[lPos], acquisitionDateTxt);
                 d.acquisitionDate = atof(acquisitionDateTxt);
             	break;
             case kAcquisitionDateTime:
             	//char acquisitionDateTimeTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], acquisitionDateTimeTxt);
+                dcmStr(lLength, &buffer[lPos], acquisitionDateTimeTxt);
                 //printMessage("%s\n",acquisitionDateTimeTxt);
             	break;
             case kStudyDate:
-                dcmStr (lLength, &buffer[lPos], d.studyDate);
+                dcmStr(lLength, &buffer[lPos], d.studyDate);
                 break;
             case kModality:
                 if (lLength < 2) break;
@@ -5053,7 +5037,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	dcmStr(lLength, &buffer[lPos], d.institutionName);
             	break;
             case kInstitutionAddress: //VR is "ST": 1024 chars maximum
-            	dcmStr(lLength, &buffer[lPos], d.institutionAddress, true);
+            	dcmStr(lLength, &buffer[lPos], d.institutionAddress);
             	break;
             case kReferringPhysicianName:
             	dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
@@ -5089,7 +5073,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;
             case kAcquisitionTime :
                 char acquisitionTimeTxt[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], acquisitionTimeTxt);
+                dcmStr(lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
                 if (d.manufacturer != kMANUFACTURER_UIH) break;
                 //UIH slice timing- do not use for Siemens as Siemens de-identification can corrupt this field https://github.com/rordenlab/dcm2niix/issues/236
@@ -5098,28 +5082,28 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;
             //case kContentTime :
             //    char contentTimeTxt[kDICOMStr];
-            //    dcmStr (lLength, &buffer[lPos], contentTimeTxt);
+            //    dcmStr(lLength, &buffer[lPos], contentTimeTxt);
             //    contentTime = atof(contentTimeTxt);
             //    break;
             case kSeriesTime :
-                dcmStr (lLength, &buffer[lPos], seriesTimeTxt);
+                dcmStr(lLength, &buffer[lPos], seriesTimeTxt);
                 break;     
             case kStudyTime :
-                dcmStr (lLength, &buffer[lPos], d.studyTime);
+                dcmStr(lLength, &buffer[lPos], d.studyTime);
                 break;
             case kPatientName :
-                dcmStr (lLength, &buffer[lPos], d.patientName);
+                dcmStr(lLength, &buffer[lPos], d.patientName);
                 break;
             case kAnatomicalOrientationType: {
             	char aotTxt[kDICOMStr]; //ftp://dicom.nema.org/MEDICAL/dicom/2015b/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
-                dcmStr (lLength, &buffer[lPos], aotTxt);
+                dcmStr(lLength, &buffer[lPos], aotTxt);
                 int slen = (int) strlen(aotTxt);
 				if((slen < 9) || (strstr(aotTxt, "QUADRUPED") == NULL) ) break;
                 printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
             	break; }
             case kDeidentificationMethod: { //issue 383
             	char anonTxt[kDICOMStr];
-            	dcmStr (lLength, &buffer[lPos], anonTxt);
+            	dcmStr(lLength, &buffer[lPos], anonTxt);
                 int slen = (int) strlen(anonTxt);
 				if((slen < 10) || (strstr(anonTxt, "DICOMANON") == NULL) ) break;
 				isDICOMANON = true;
@@ -5127,13 +5111,13 @@ float MRImageDynamicScanBeginTime = 0.0;
             	break; }
             case kPatientID :
                 if (strlen(d.patientID) > 1) break;
-                dcmStr (lLength, &buffer[lPos], d.patientID);
+                dcmStr(lLength, &buffer[lPos], d.patientID);
                 break;
             case kAccessionNumber :
-                dcmStr (lLength, &buffer[lPos], d.accessionNumber);
+                dcmStr(lLength, &buffer[lPos], d.accessionNumber);
                 break;
             case kPatientBirthDate :
-              	dcmStr (lLength, &buffer[lPos], d.patientBirthDate);
+              	dcmStr(lLength, &buffer[lPos], d.patientBirthDate);
               	break;
             case kPatientSex : {
             	//must be M,F,O: http://dicom.nema.org/dicom/2013/output/chtml/part03/sect_C.2.html
@@ -5143,36 +5127,36 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;
                 }
             case kPatientAge :
-                dcmStr (lLength, &buffer[lPos], d.patientAge);
+                dcmStr(lLength, &buffer[lPos], d.patientAge);
                 break;
         	case kPatientWeight :
                 d.patientWeight = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kStationName :
-                dcmStr (lLength, &buffer[lPos], d.stationName);
+                dcmStr(lLength, &buffer[lPos], d.stationName);
                 break;
-            case kSeriesDescription: {
-                dcmStr (lLength, &buffer[lPos], d.seriesDescription);
-                break; }
+            case kSeriesDescription:
+                dcmStr(lLength, &buffer[lPos], d.seriesDescription);
+                break;
             case kInstitutionalDepartmentName:
-            	dcmStr (lLength, &buffer[lPos], d.institutionalDepartmentName);
+            	dcmStr(lLength, &buffer[lPos], d.institutionalDepartmentName);
             	break;
             case kManufacturersModelName :
-            	dcmStr (lLength, &buffer[lPos], d.manufacturersModelName);
+            	dcmStr(lLength, &buffer[lPos], d.manufacturersModelName);
             	break;
             case kDerivationDescription : {
                 //strcmp(transferSyntax, "1.2.840.10008.1.2")
                 char derivationDescription[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], derivationDescription);//strcasecmp, strcmp
+                dcmStr(lLength, &buffer[lPos], derivationDescription);//strcasecmp, strcmp
                 if (strcasecmp(derivationDescription, "MEDCOM_RESAMPLED") == 0) d.isResampled = true;
                 break;
             }
             case kDeviceSerialNumber : {
-            	dcmStr (lLength, &buffer[lPos], d.deviceSerialNumber);
+            	dcmStr(lLength, &buffer[lPos], d.deviceSerialNumber);
             	break;
             }
             case kSoftwareVersions : {
-            	dcmStr (lLength, &buffer[lPos], d.softwareVersions);
+            	dcmStr(lLength, &buffer[lPos], d.softwareVersions);
             	int slen = (int) strlen(d.softwareVersions);
 				if((slen > 4) && (strstr(d.softwareVersions, "XA11") != NULL) )  d.isXA10A = true;
 				if((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL) ) break;
@@ -5181,10 +5165,10 @@ float MRImageDynamicScanBeginTime = 0.0;
             }
             case kProtocolName : {
                 //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
-                dcmStr (lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
+                dcmStr(lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
             case kPatientOrient :
-                dcmStr (lLength, &buffer[lPos], d.patientOrient);
+                dcmStr(lLength, &buffer[lPos], d.patientOrient);
                 break;
             case kEchoPlanarPulseSequence : // CS [YES],[NO]
 				if (lLength < 2) break;
@@ -5204,14 +5188,14 @@ float MRImageDynamicScanBeginTime = 0.0;
             // //(0018,9074) DT [20190621095516.140000] YYYYMMDDHHMMSS
             // //see https://github.com/rordenlab/dcm2niix/issues/303
             //	char dateTime[kDICOMStr];
-            //	dcmStr (lLength, &buffer[lPos], dateTime);
+            //	dcmStr(lLength, &buffer[lPos], dateTime);
             //	printf("%s\tkFrameAcquisitionDateTime\n", dateTime);
             //}
             case kDiffusionDirectionality : {// 0018, 9075
                 set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
                 if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 10)) break;
                 char dir[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], dir);
+                dcmStr(lLength, &buffer[lPos], dir);
                 if (strcmp(dir, "ISOTROPIC") == 0)
                 	isPhilipsDerived = true;
                 break; }
@@ -5328,10 +5312,10 @@ float MRImageDynamicScanBeginTime = 0.0;
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
             case kStudyInstanceUID : // 0020, 000D
-                dcmStr (lLength, &buffer[lPos], d.studyInstanceUID);
+                dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
             case kSeriesInstanceUID : // 0020, 000E
-            	dcmStr (lLength, &buffer[lPos], d.seriesInstanceUID);
+            	dcmStr(lLength, &buffer[lPos], d.seriesInstanceUID);
             	//printMessage(">>%s\n", d.seriesInstanceUID);
             	d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
                 break;
@@ -5343,7 +5327,7 @@ float MRImageDynamicScanBeginTime = 0.0;
 				patientPositionNum++;
 				isAtFirstPatientPosition = true;
 				//char dx[kDICOMStr];
-                //dcmStr (lLength, &buffer[lPos], dx);
+                //dcmStr(lLength, &buffer[lPos], dx);
 				//printMessage("*%s*", dx);
 				dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &patientPosition[0]); //slice position
 				if (isnan(d.patientPosition[1])) {
@@ -5389,7 +5373,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	d.SAR = dcmStrFloat(lLength, &buffer[lPos]);
             	break;
             case kStudyID:
-            	dcmStr (lLength, &buffer[lPos], d.studyID);
+            	dcmStr(lLength, &buffer[lPos], d.studyID);
             	break;
             case kSeriesNum:
                 d.seriesNum =  dcmStrInt(lLength, &buffer[lPos]);
@@ -5436,7 +5420,7 @@ float MRImageDynamicScanBeginTime = 0.0;
               	break; }
             case kPhotometricInterpretation: {
  				char interp[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], interp);
+                dcmStr(lLength, &buffer[lPos], interp);
                 if (strcmp(interp, "PALETTE_COLOR") == 0)
                 	isPaletteColor = true;
                 	//printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
@@ -5468,20 +5452,20 @@ float MRImageDynamicScanBeginTime = 0.0;
             //    dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, d.xyzMM);
             //    break;
             case kImageComments:
-                dcmStr (lLength, &buffer[lPos], d.imageComments, true);
+                dcmStr(lLength, &buffer[lPos], d.imageComments, true);
                 break;
             //group 21: siemens
             //g21
 			case kPATModeText : { //e.g. Siemens iPAT x2 listed as "p2"
             	char accelStr[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStr(lLength, &buffer[lPos], accelStr);
                 char *ptr;
                 dcmStrDigitsOnlyKey('p', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
                 d.accelFactPE = (float)strtof(accelStr, &ptr);
                 if (*ptr != '\0')
                 	d.accelFactPE = 0.0;
                 //between slice accel
-                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStr(lLength, &buffer[lPos], accelStr);
                 dcmStrDigitsOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
                 multiBandFactor = (int)strtol(accelStr, &ptr, 10);
                 if (*ptr != '\0')
@@ -5515,7 +5499,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;
 			case kCoilElements:
 				if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
-            	dcmStr (lLength, &buffer[lPos], d.coilElements);
+            	dcmStr(lLength, &buffer[lPos], d.coilElements);
 				break;
             //group 21: GE
             case kLocationsInAcquisitionGE:
@@ -5541,7 +5525,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	break;
             case kPEDirectionDisplayedUIH :
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
-            	dcmStr (lLength, &buffer[lPos], d.phaseEncodingDirectionDisplayedUIH);
+            	dcmStr(lLength, &buffer[lPos], d.phaseEncodingDirectionDisplayedUIH);
             	break;
             case kDiffusion_bValueUIH : {
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
@@ -5554,7 +5538,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kParallelInformationUIH: {//SENSE factor (0065,100d) SH [F:2S]
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	char accelStr[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStr(lLength, &buffer[lPos], accelStr);
                 //char *ptr;
                 dcmStrDigitsDotOnlyKey(':', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
 				d.accelFactPE = atof(accelStr);
@@ -5708,7 +5692,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	d.frameDuration  =  dcmStrInt(lLength, &buffer[lPos]);
             	break;
             case kReceiveCoilName :
-                dcmStr (lLength, &buffer[lPos], d.coilName);
+                dcmStr(lLength, &buffer[lPos], d.coilName);
                 if (strlen(d.coilName) < 1) break;
                 d.coilCrc = mz_crc32X((unsigned char*) &d.coilName, strlen(d.coilName));
 				break;
@@ -5734,7 +5718,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                 d.intenIntercept = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
             case kRadiopharmaceutical :
-            	dcmStr (lLength, &buffer[lPos], d.radiopharmaceutical);
+            	dcmStr(lLength, &buffer[lPos], d.radiopharmaceutical);
             	break;
             case kZThick :
                 d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
@@ -5745,7 +5729,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kAcquisitionMatrixText : {
                if (d.manufacturer == kMANUFACTURER_SIEMENS) {
 					char matStr[kDICOMStr];
-					dcmStr (lLength, &buffer[lPos], matStr);
+					dcmStr(lLength, &buffer[lPos], matStr);
 					char* pPosition = strchr(matStr, 'I');
 					if (pPosition != NULL)
 						isInterpolated = true;
@@ -5756,7 +5740,7 @@ float MRImageDynamicScanBeginTime = 0.0;
                     //see if image from single coil "H12" or an array "HEA;HEP"
                     //char coilStr[kDICOMStr];
                     //int coilNum;
-                    dcmStr (lLength, &buffer[lPos], d.coilName);
+                    dcmStr(lLength, &buffer[lPos], d.coilName);
                     if (strlen(d.coilName) < 1) break;
                     //printf("-->%s\n", coilStr);
                     //d.coilName = coilStr;
@@ -5773,14 +5757,14 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break; }
             case kImaPATModeText : { //e.g. Siemens iPAT x2 listed as "p2"
             	char accelStr[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStr(lLength, &buffer[lPos], accelStr);
                 char *ptr;
                 dcmStrDigitsOnlyKey('p', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
                 d.accelFactPE = (float)strtof(accelStr, &ptr);
                 if (*ptr != '\0')
                 	d.accelFactPE = 0.0;
                 //between slice accel
-                dcmStr (lLength, &buffer[lPos], accelStr);
+                dcmStr(lLength, &buffer[lPos], accelStr);
                 dcmStrDigitsOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
                 multiBandFactor = (int)strtol(accelStr, &ptr, 10);
                 if (*ptr != '\0')
@@ -5823,14 +5807,14 @@ float MRImageDynamicScanBeginTime = 0.0;
             case	kMRAcquisitionType: //detect 3D acquisition: we can reorient these without worrying about slice time correct or BVEC/BVAL orientation
             	if (lLength > 1) d.is2DAcq = (buffer[lPos]=='2') && (toupper(buffer[lPos+1]) == 'D');
                 if (lLength > 1) d.is3DAcq = (buffer[lPos]=='3') && (toupper(buffer[lPos+1]) == 'D');
-                //dcmStr (lLength, &buffer[lPos], d.mrAcquisitionType);
+                //dcmStr(lLength, &buffer[lPos], d.mrAcquisitionType);
                 break;
             case kBodyPartExamined : {
-                dcmStr (lLength, &buffer[lPos], d.bodyPartExamined);
+                dcmStr(lLength, &buffer[lPos], d.bodyPartExamined);
                 break;
             }
             case kScanningSequence : {
-                dcmStr (lLength, &buffer[lPos], d.scanningSequence);
+                dcmStr(lLength, &buffer[lPos], d.scanningSequence);
 				//According to the DICOM standard 0018,9018 is REQUIRED for EPI raw data
 				//  http://dicom.nema.org/MEDICAL/Dicom/2015c/output/chtml/part03/sect_C.8.13.4.html
 				//In practice, this is not the case for all vendors
@@ -5848,15 +5832,15 @@ float MRImageDynamicScanBeginTime = 0.0;
             	if (d.manufacturer != kMANUFACTURER_SIEMENS) break; //see GE dataset in dcm_qa_nih
             	//fall through...
             case kSequenceVariant : {
-                dcmStr (lLength, &buffer[lPos], d.sequenceVariant);
+                dcmStr(lLength, &buffer[lPos], d.sequenceVariant);
                 break;
             }
             case kScanOptions:
-            	dcmStr (lLength, &buffer[lPos], d.scanOptions);
+            	dcmStr(lLength, &buffer[lPos], d.scanOptions);
             	break;
             case kSequenceName : {
                 //if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
-                dcmStr (lLength, &buffer[lPos], d.sequenceName);
+                dcmStr(lLength, &buffer[lPos], d.sequenceName);
                 break;
             }
             case	kMRAcquisitionTypePhilips: //kMRAcquisitionType
@@ -5883,7 +5867,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             case	kSliceOrient: {
                 char orientStr[kDICOMStr];
                 orientStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
-                dcmStr (lLength, &buffer[lPos], orientStr);
+                dcmStr(lLength, &buffer[lPos], orientStr);
                 if (toupper(orientStr[0])== 'S')
                     d.sliceOrient = kSliceOrientSag; //sagittal
                 else if (toupper(orientStr[0])== 'C')
@@ -5939,7 +5923,7 @@ float MRImageDynamicScanBeginTime = 0.0;
 				//CS: Possible values: P (PreparationDirection), M (MeasurementDirection),S (Selection Direction),O(Oblique Direction),I (Isotropic),Only applicable for diffusion scans.
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
             	char diffDir[kDICOMStr];
-                dcmStr (lLength, &buffer[lPos], diffDir);
+                dcmStr(lLength, &buffer[lPos], diffDir);
                 printf(">>%s  %s\n", diffDir, fname);
 				break;
             }
@@ -6309,12 +6293,12 @@ float MRImageDynamicScanBeginTime = 0.0;
                 break;
             case kStudyComments: {
             	//char commentStr[kDICOMStr];
-                //dcmStr (lLength, &buffer[lPos], commentStr);
+                //dcmStr(lLength, &buffer[lPos], commentStr);
                 //printf(">> %s\n", commentStr);
                 break;
 			}
             case kProcedureStepDescription:
-                dcmStr (lLength, &buffer[lPos], d.procedureStepDescription);
+                dcmStr(lLength, &buffer[lPos], d.procedureStepDescription);
                 break;
             case kOrientationACR : //use in emergency if kOrientation is not present!
                 if (!isOrient) dcmMultiFloat(lLength, (char*)&buffer[lPos], 6, d.orient);
@@ -6483,7 +6467,7 @@ float MRImageDynamicScanBeginTime = 0.0;
             	//tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
                 strcpy(tagStr,"");
                 if (lLength > 0)
-                	dcmStr (lLength, &buffer[lPos], tagStr);
+                	dcmStr(lLength, &buffer[lPos], tagStr);
                 if (strlen(tagStr) > 1) {
                 	for (size_t pos = 0; pos<strlen(tagStr); pos ++)
 						if ((tagStr[pos] == '<') || (tagStr[pos] == '>') || (tagStr[pos] == ':')
