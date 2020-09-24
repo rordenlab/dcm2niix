@@ -1201,7 +1201,6 @@ tse3d: T2*/
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		float pf = 1.0f; //partial fourier
 		float shimSetting[8];
-
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 		TCsaAscii csaAscii;
 		siemensCsaAscii(filename, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
@@ -1533,7 +1532,7 @@ tse3d: T2*/
 	//next two conditionals updated: make GE match Siemens
 	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED) phPos = 1;
     if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED) phPos = 0;
-    if  ((phPos >= 0) && (d.phaseEncodingRC == 'R') && (d.manufacturer == kMANUFACTURER_UIH)) phPos = 1 - phPos; //issue410
+    //if  ((phPos >= 0) && (d.phaseEncodingRC == 'R') && (d.manufacturer == kMANUFACTURER_UIH)) phPos = 1 - phPos; //issue410
     bool isSkipPhaseEncodingAxis = d.is3DAcq;
     if (d.echoTrainLength > 1) isSkipPhaseEncodingAxis = false; //issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
 	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) &&  (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
