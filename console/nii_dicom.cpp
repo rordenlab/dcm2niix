@@ -781,6 +781,7 @@ struct TDICOMdata clear_dicom_data() {
     d.seriesUidCrc = 0;
     d.instanceUidCrc = 0;
     d.accelFactPE = 0.0;
+    d.accelFactOOP = 0.0;
     //d.patientPositionNumPhilips = 0;
     d.imageBytes = 0;
     d.intenScale = 1;
@@ -4200,19 +4201,22 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
 #define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
+#define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
+#define  kRectilinearPhaseEncodeReordering 0x0018+uint32_t(0x9034 << 16) //'CS' 'REVERSE_LINEAR'/'LINEAR'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
-const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
 #define  kInversionTimes  0x0018+uint32_t(0x9079<< 16 ) //FD
 #define  kPartialFourier  0x0018+uint32_t(0x9081<< 16 ) //CS
+const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kDiffusionBFactorSiemens  0x0019+(0x100C<< 16 ) //   0019;000C;SIEMENS MR HEADER  ;B_value
 #define  kDiffusion_bValue  0x0018+uint32_t(0x9087<< 16 ) // FD
 #define  kDiffusionOrientation  0x0018+uint32_t(0x9089<< 16 ) // FD, seen in enhanced
                                                               // DICOM from Philips 5.*
                                                               // and Siemens XA10.
 #define  kImagingFrequency2 0x0018+uint32_t(0x9098 << 16 ) //FD
+#define  kParallelReductionFactorOutOfPlane  0x0018+uint32_t(0x9155<< 16 ) //FD
 //#define  kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define  kDiffusionBValueXX 0x0018+uint32_t(0x9602 << 16 ) //FD
 #define  kDiffusionBValueXY 0x0018+uint32_t(0x9603 << 16 ) //FD
@@ -4297,6 +4301,8 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kUserDefineDataGE  0x0043+(0x102A << 16 ) //OB
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
 #define  kDiffusion_bValueGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
+#define  kAssetRFactorsGE  0x0043+(0x1083 << 16 ) //DS
+#define  kMultiBandGE  0x0043+(0x10B6 << 16 ) //LO
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kImaPATModeText  0x0051+(0x1011 << 16 )
@@ -5175,6 +5181,14 @@ float MRImageDynamicScanBeginTime = 0.0;
                 if (toupper(buffer[lPos]) == 'Y')
                 	d.isEPI = true;
                 break;
+            case kRectilinearPhaseEncodeReordering : { //'CS' [REVERSE_LINEAR],[LINEAR],[CENTRIC],[REVERSE_CENTRIC]
+            	if (d.manufacturer != kMANUFACTURER_GE) break; //only found in GE software beginning with RX27
+            	if (lLength < 2) break;
+                if (toupper(buffer[lPos]) == 'L')
+                	d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+                if (toupper(buffer[lPos]) == 'R')
+                	d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+                break; }
             case kParallelReductionFactorInPlane:
             	if (d.manufacturer == kMANUFACTURER_SIEMENS) break;
             	d.accelFactPE = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5311,10 +5325,10 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
-            case kStudyInstanceUID : // 0020, 000D
+            case kStudyInstanceUID : // 0020,000D
                 dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
                 break;
-            case kSeriesInstanceUID : // 0020, 000E
+            case kSeriesInstanceUID : // 0020,000E
             	dcmStr(lLength, &buffer[lPos], d.seriesInstanceUID);
             	//printMessage(">>%s\n", d.seriesInstanceUID);
             	d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
@@ -6009,6 +6023,10 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kImagingFrequency2 :
             	d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
             	break;
+            case kParallelReductionFactorOutOfPlane:
+            	if (d.manufacturer == kMANUFACTURER_SIEMENS) break;
+            	d.accelFactOOP = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
+            	break;
             //case kFrameAcquisitionDuration :
             //	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
             //	break;
@@ -6282,6 +6300,23 @@ float MRImageDynamicScanBeginTime = 0.0;
                   d.CSA.numDti = 1;
                 }
                 break;
+            case kAssetRFactorsGE: { //DS issue427GE
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	float PhaseSlice[3];
+            	dcmMultiFloat(lLength, (char*)&buffer[lPos], 2, PhaseSlice);
+            	if (PhaseSlice[1] > 0.0)
+            		d.accelFactPE = 1.0f / PhaseSlice[1]; 
+            	if (PhaseSlice[2] > 0.0)
+            		d.accelFactOOP = 1.0f / PhaseSlice[2]; 
+                break;            
+            }
+            case kMultiBandGE: { //LO issue427GE
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	//LO array: Value 1 = Multiband factor, Value 2 = Slice FOV Shift Factor, Value 3 = Calibration method
+            	int mb = dcmStrInt(lLength, &buffer[lPos]);
+            	if (mb > 1) d.CSA.multiBandFactor = mb;
+            	break;            
+            }
             case kGeiisFlag:
                 if ((lLength > 4) && (buffer[lPos]=='G') && (buffer[lPos+1]=='E') && (buffer[lPos+2]=='I')  && (buffer[lPos+3]=='I')) {
                     //read a few digits, as bug is specific to GEIIS, while GEMS are fine

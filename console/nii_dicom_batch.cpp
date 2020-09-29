@@ -1422,6 +1422,7 @@ tse3d: T2*/
 				float pf = (float)d.phaseEncodingLines;
 				if (d.accelFactPE > 1)
 					pf = (float)pf / (float)d.accelFactPE; //estimate: not sure if we round up or down
+
 				pf = (float)d.echoTrainLength / (float)pf;
 				if (pf < 1.0) //e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
 					fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
@@ -1465,6 +1466,7 @@ tse3d: T2*/
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
     //if ((!d.is3DAcq) && (d.accelFactPE > 1.0)) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
 	if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE); //https://github.com/rordenlab/dcm2niix/issues/314
+	if (d.accelFactOOP > 1.0) fprintf(fp, "\t\"ParallelReductionOutOfPlane\": %g,\n", d.accelFactOOP); 
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
 	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the

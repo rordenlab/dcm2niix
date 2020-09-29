@@ -24,7 +24,6 @@ This private element of the DICOM header is used to determine the phase encoding
 
 Current GE software (DV26.0_R03_1831.b) running research multi-echo sequences create invalid DICOM images. The required public [EchoTime (0018,0081)](https://dicom.innolitics.com/ciods/mr-image/mr-image/00180081) attribute lists the shortest echo time for the series, rather than the actual echo time for the given DICOM image. The public tag [EchoNumber (0018,0086)](https://dicom.innolitics.com/ciods/mr-image/mr-image/00180086) reports `1` for all echoes. These limitations in GE's DICOM images disrupt dcm2niix's image conversion. Hopefully future product sequences will generate valid DICOM data. In the meantime, [issue 359](https://github.com/rordenlab/dcm2niix/issues/359) provides a kludge for image conversion.
 
-
 ## Image Interpolation
 
 Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 64x64 EPI image as 128x128) or between slices (e.g. saving a 126 slice T1-weighted image as 252 images). The resulting files require much more disk space, add no new information, are slower to process and can [disrupt some tools](https://mrtrix.readthedocs.io/en/latest/reference/commands/mrdegibbs.html). Users are strongly discouraged from interpolating raw data. However, dcm2niix should correctly detect this interpolation, resolving apparent discrepancies between tags (0020,1002; 0021,104F; 0054,0081). [Issue 355](https://github.com/rordenlab/dcm2niix/issues/355) provides details.
@@ -33,11 +32,21 @@ Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 6
 
 One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Total readout time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, and partial Fourier. Not all of these parameters are available from the GE DICOM images, so a user needs to check the scanner console.
 
+## Image Acceleration
+
+The BIDS [ParallelReductionFactorInPlane](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#in-plane-spatial-encoding) can be determined from the reciprocal of the first element of the private tag `Asset R Factors` (0043,1083). The first value is for acceleration in the phase direction equivalent to the public tag 0018,9069), the second for the slice direction (equivalent to the public tag 0018,9155). For 2D EPI scans, the second value will always be 1, whereas for 3D acquisitions [acceleration can take place in both the phase-encoding and the slice-encoding directions](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4459721/). For example, a scan using a acceleration factor of 1.5 would be reported as `(0043,1083) DS [0.666667\1]`.
+
+The BIDS [MultibandAccelerationFactor](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#rf-contrast) can be determined from the private tag `Multiband Parameters` (0043,10B6). This is an array with at least three values, the first is the Multiband (aka HyperBand) factor, the second is the Slice FOV Shift Factor, and the final is the Calibration method. For example, a scan using a multiband factor of 2 could be reported as `(0043,10b6) LO [2\4\19\\\\]`. 
+
+## Phase-Encoding Polarity
+
+All EPI scans have spatial distortion, particularly those with longer readout times. Tools like [FSL topup](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide) can leverage data where two spin-echo images are acquired that are identical except for using opposite phase-encoding polarity (e.g. one uses A>P, the other P>A). Each image is distorted with the same magnitude, but in the opposite direction.  GE's Rx27 software version and later populate the [Rectilinear Phase Encode Reordering (0018,9034)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9034)) tag which for EPI is set to either LINEAR or REVERSE_LINEAR.
+
 ## GE Protocol Data Block
 
 In addition to the public DICOM tags, previous versions of dcm2niix attempted to decode the proprietary GE Protocol Data Block (0025,101B). This is essentially a [GZip format](http://www.onicos.com/staff/iz/formats/gzip.html) file embedded inside the DICOM header. Unfortunately, this data seems to be [unreliable](https://github.com/rordenlab/dcm2niix/issues/163) and therefore this strategy is not used anymore. The notes below regarding the usage of this data block are provided for historical purposes.
 
- - The VIEWORDER tag is used to set the polarity of the BIDS tag PhaseEncodingDirection, with VIEWORDER of 1 suggesting bottom up phase encoding. Unfortunately, users can separately reverse the phase encoding direction making this tag unreliable.
+ - The VIEWORDER tag is used to set the polarity of the BIDS tag PhaseEncodingDirection, with VIEWORDER of 1 suggesting bottom up phase encoding. Unfortunately, users can separately reverse the phase encoding direction making this tag unreliable. Thankfully, recent scanners provide 0018,9034.
  - The SLICEORDER tag could be used to set the SliceTiming for the BIDS tag PhaseEncodingDirection, with a SLICEORDER of 1 suggesting interleaved acquisition.
  - There are reports that newer versions of GE equipement (e.g. DISCOVERY MR750 / 24\MX\MR Software release:DV24.0_R01_1344.a) are now storing an [XML](https://groups.google.com/forum/#!msg/comp.protocols.dicom/mxnCkv8A-i4/W_uc6SxLwHQJ) file within the Protocol Data Block (compressed). In theory this might also provide useful information.
 
