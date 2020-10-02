@@ -4300,6 +4300,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kRealWorldSlope  0x0040+uint32_t(0x9225 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kUserDefineDataGE  0x0043+(0x102A << 16 ) //OB
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
+#define  kImageTypeGE  0x0043+(0x102F  << 16 ) //SS  0/1/2/3 for magnitude/phase/real/imaginary
 #define  kDiffusion_bValueGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kAssetRFactorsGE  0x0043+(0x1083 << 16 ) //DS
 #define  kMultiBandGE  0x0043+(0x10B6 << 16 ) //LO
@@ -6294,6 +6295,14 @@ float MRImageDynamicScanBeginTime = 0.0;
             case kEffectiveEchoSpacingGE:
                 if (d.manufacturer == kMANUFACTURER_GE) d.effectiveEchoSpacingGE = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
                 break;
+            case kImageTypeGE: { //0/1/2/3 for magnitude/phase/real/imaginary
+                if (d.manufacturer != kMANUFACTURER_GE) break;
+                int dt = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+				if (dt == 0) d.isHasMagnitude = true;
+				if (dt == 1) d.isHasPhase = true;
+				if (dt == 2) d.isHasReal = true;
+				if (dt == 3) d.isHasImaginary = true;
+                break; }     
             case kDiffusion_bValueGE :
                 if (d.manufacturer == kMANUFACTURER_GE) {
                   d.CSA.dtiV[0] = (float)set_bValGE(&volDiffusion, lLength, &buffer[lPos]);

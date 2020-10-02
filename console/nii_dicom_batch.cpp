@@ -1071,11 +1071,11 @@ tse3d: T2*/
 			} else
 				isSep = true;
 		}
-		if ((d.isHasPhase) &&  (strstr(d.imageType, "_PHASE_") == NULL) ) 
+		if ((d.isHasPhase) &&  ((d.manufacturer == kMANUFACTURER_GE) || (strstr(d.imageType, "_PHASE_") == NULL)) ) 
 			fprintf(fp,"\", \"PHASE"); //"_IMAGINARY_"
-		if ((d.isHasReal) &&  (strstr(d.imageType, "_REAL_") == NULL) )
+		if ((d.isHasReal) &&  ((d.manufacturer == kMANUFACTURER_GE) || (strstr(d.imageType, "_REAL_") == NULL)) )
 			fprintf(fp,"\", \"REAL");
-		if ((d.isHasImaginary) &&  (strstr(d.imageType, "_IMAGINARY_") == NULL) ) 
+		if ((d.isHasImaginary) && ((d.manufacturer == kMANUFACTURER_GE) ||  (strstr(d.imageType, "_IMAGINARY_") == NULL)) ) 
 			fprintf(fp,"\", \"IMAGINARY");
 		fprintf(fp, "\"],\n");	
 	}
