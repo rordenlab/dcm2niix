@@ -5166,6 +5166,8 @@ float MRImageDynamicScanBeginTime = 0.0;
             	dcmStr(lLength, &buffer[lPos], d.softwareVersions);
             	int slen = (int) strlen(d.softwareVersions);
 				if((slen > 4) && (strstr(d.softwareVersions, "XA11") != NULL) )  d.isXA10A = true;
+				if((slen > 4) && (strstr(d.softwareVersions, "XA20") != NULL) )  d.isXA10A = true;
+				if((slen > 4) && (strstr(d.softwareVersions, "XA30") != NULL) )  d.isXA10A = true;
 				if((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL) ) break;
                 d.isXA10A = true;
             	break;

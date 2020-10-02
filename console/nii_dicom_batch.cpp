@@ -4421,6 +4421,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 	if ((minT == maxT) && (d->is3DAcq)) return; //fine: 3D EPI
 	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices)) return; //fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))  return; //fine: single-band calibration data, the slice timing WILL exceed the TR
+	if (verbose > 1) printMessage("Slice timing range of first volume: range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
 	//check if 2nd image has valid slice timing
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
@@ -4428,6 +4429,13 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 		//if (d1->CSA.sliceTiming[i] < 0.0) break;
 		if (d1->CSA.sliceTiming[i] < minT1) minT1 = d1->CSA.sliceTiming[i];
 		if (d1->CSA.sliceTiming[i] > maxT1) maxT1 = d1->CSA.sliceTiming[i];
+	}
+	if (verbose > 1)  printMessage("Slice timing range of 2nd volume: range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
+	if ((minT1 < maxT1) && (minT1 > 0.0) && ((maxT1-minT1) <= TRms) ) { //issue 429: 2nd volume may not start from zero
+		for (int i = 0; i < nSlices; i++)
+			d1->CSA.sliceTiming[i] -= minT1;
+		maxT1 -= minT1;
+		minT1 -= minT1;	
 	}
 	if ((minT1 < 0.0) && (d->rtia_timerGE >= 0.0)) return; //use rtia timer
 	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
@@ -4453,7 +4461,7 @@ void sliceTimingXA(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
     // Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
     // an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
     uint64_t indx0 = dcmSort[0].indx; //first volume
-    if (!dcmList[indx0].isXA10A) return;
+    if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1)) return;
     if ( (nConvert == (hdr->dim[3]*hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D-1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
 		//XA11 2D classic
 		for (int v = 0; v < hdr->dim[3]; v++)
@@ -4474,9 +4482,17 @@ void sliceTimingXA(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 		}
 		if ((dcmList[indx0].CSA.multiBandFactor < 2) && (mb > 1))
 			dcmList[indx0].CSA.multiBandFactor = mb;
-		//for (int v = 0; v < hdr->dim[3]; v++)
-		//	printf("XA10sliceTiming\t%d\t%g\n", v, dcmList[indx0].CSA.sliceTiming[v]);
+		return; //we have subtracted min
 	}
+	//issue429: subtract min
+	float mn = dcmList[indx0].CSA.sliceTiming[0]; 
+	for (int v = 0; v < hdr->dim[3]; v++)
+		mn = min(mn, dcmList[indx0].CSA.sliceTiming[v]);
+	if (isSameFloatGE(mn, 0.0)) return;
+	for (int v = 0; v < hdr->dim[3]; v++)
+		dcmList[indx0].CSA.sliceTiming[v] -= mn;
+	
+
 } //sliceTimingXA()
 
 void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {

@@ -49,10 +49,14 @@ In addition to the public DICOM tags, previous versions of dcm2niix attempted to
  - The VIEWORDER tag is used to set the polarity of the BIDS tag PhaseEncodingDirection, with VIEWORDER of 1 suggesting bottom up phase encoding. Unfortunately, users can separately reverse the phase encoding direction making this tag unreliable. Thankfully, recent scanners provide 0018,9034.
  - The SLICEORDER tag could be used to set the SliceTiming for the BIDS tag PhaseEncodingDirection, with a SLICEORDER of 1 suggesting interleaved acquisition.
  - There are reports that newer versions of GE equipement (e.g. DISCOVERY MR750 / 24\MX\MR Software release:DV24.0_R01_1344.a) are now storing an [XML](https://groups.google.com/forum/#!msg/comp.protocols.dicom/mxnCkv8A-i4/W_uc6SxLwHQJ) file within the Protocol Data Block (compressed). In theory this might also provide useful information.
+ 
+## Complex Image Component
+
+Most vendors store the complex image component (magnitude, phase, real or imaginary) in the [Complex Image Component (0008,9208)](http://dicom.nema.org/medical/dicom/2016e/output/chtml/part03/sect_C.8.13.3.html) tag or in the [Image Type (0008,0008)](http://incenter.medical.philips.com/doclib/enc/fetch/2000/4504/577242/577256/588723/5144873/5144488/5144982/DICOM_Conformance_Statement_Intera_R7%2c_R8_and_R9.pdf%3fnodeid%3d5147977%26vernum%3d-2) tag. GE stores this information as a signed short of the Private Image Type(0043,102F) tag. The values 0, 1, 2, 3 correspond to magnitude, phase, real, and imaginary (respectively).
 
 ## Sample Datasets
 
  - [A validation dataset for dcm2niix commits](https://github.com/neurolabusc/dcm_qa_nih).
  - [Slice timing validation](https://github.com/neurolabusc/dcm_qa_stc) for different varieties of GE EPI sequences.
- - [Examples of phase encoding polarity, slice timing and diffusion gradients](https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/).
+ - [Examples of phase encoding polarity, slice timing and diffusion gradients](https://github.com/neurolabusc/dcm_qa_ge).
  - The dcm2niix [wiki](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage) includes examples of diffusion data, slice timing, and other variations.
