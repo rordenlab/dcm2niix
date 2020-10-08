@@ -852,17 +852,36 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 }
 #endif //myReadGeProtocolBlock()
 
-void json_Str(FILE *fp, const char *sLabel, char *sVal) {
+void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
 	if (strlen(sVal) < 1) return;
-	//fprintf(fp, sLabel, sVal );
-	//convert  \ ' " characters to _ see https://github.com/rordenlab/dcm2niix/issues/131
 	unsigned char sValEsc[2048] = {""};
 	unsigned char *iVal = (unsigned char *) sVal;
 	int o = 0;
 	for (int i = 0; i < strlen(sVal); i ++) {
-        if ((sVal[i] == '"') || (sVal[i] == '\\')) { //escape double quotes and back slash
+		//escape double quote (") and Backslash
+		if ((sVal[i] == '"') || (sVal[i] == '\\')) { //escape double quotes and back slash
             sValEsc[o] = '\\';
             o++;
+		}
+		if ((sVal[i] >= 0x01) && (sVal[i] <= 0x07)) continue; //control characters like "bell"
+		//http://dicom.nema.org/medical/dicom/current/output/html/part05.html
+		//0x08 Backspace is replaced with \b
+		//0x09 Tab is replaced with \t
+		//0x0A Newline is replaced with \n
+		//0x0B Escape ??
+		//0x0C Form feed is replaced with \f
+		//0x0D Carriage return is replaced with \r
+		if ((sVal[i] >= 0x08) && (sVal[i] <= 0x0D)) {
+            sValEsc[o] = '\\';
+            o++;   
+            if (sVal[i] == 0x08) sValEsc[o] = 'b';
+            if (sVal[i] == 0x09) sValEsc[o] = '9';
+            if (sVal[i] == 0x0A) sValEsc[o] = 'n';
+            if (sVal[i] == 0x0B) sValEsc[o] = '\\';
+            if (sVal[i] == 0x0C) sValEsc[o] = 'f';
+            if (sVal[i] == 0x0D) sValEsc[o] = 'r';
+            o++;
+            continue;    
         }
         //https://stackoverflow.com/questions/4059775/convert-iso-8859-1-strings-to-utf-8-in-c-c
 	    if (iVal[i] >= 128) {

@@ -4,7 +4,7 @@ dcm2niix attempts to convert Siemens DICOM format images to NIfTI. This page des
 
 ## Siemens X-Series
 
-Siemens MR is named by Series, Generation, Major Version and Minor Version. Prior to the Siemens Vida, all contemporary Siemens MRI systems (Trio, Prisma, Skyra, etc) were part of the V series. So a Trio might be on VB17, and a Prisma on VE11 (series 'V', generation 'E', major version '1', minor version '1'). The Vida and Sola introduce the X-series (XA10, XA11). Since the V-series was dominant for so long, most users simply omit the series, e.g. referring to a system as `B19`. However, Siemens has recently introduced a new X-series.
+Siemens MR is named by Series, Generation, Major Version and Minor Version. Prior to the Siemens Vida, all contemporary Siemens MRI systems (Trio, Prisma, Skyra, etc) were part of the V series. So a Trio might be on VB17, and a Prisma on VE11 (series 'V', generation 'E', major version '1', minor version '1'). The 3T Vida and 1.5T Sola introduce the X-series (XA10, XA11, XA20). Since the V-series was dominant for so long, most users simply omit the series, e.g. referring to a system as `B19`. However, Siemens has recently introduced a new X-series.
 
 The DICOM images exported by the X-series is radically different than the V-series. The images lack the proprietary CSA header with its rich meta data.  
 
@@ -32,10 +32,9 @@ In theory, the public DICOM tag 'Frame Acquisition Date Time' (0018,9074) and th
 
 ## CSA Header
 
-Many crucial Siemens parameters are stored in the [proprietary CSA header](http://nipy.org/nibabel/dicom/siemens_csa.html). This has a binary section that allows quick reading for many useful parameters. It also includes an ASCII text portion that includes a lot of information but is slow to parse and poorly curated. Be aware that Siemens Vida scanners do not generate a CSA header.
+Many crucial Siemens parameters are stored in the [proprietary CSA header](http://nipy.org/nibabel/dicom/siemens_csa.html), in particular the CSA Image Header Info (0029, 1010) and CSA Series Header Info (0029, 1020). These have binary sections that allows quick reading for many useful parameters. They also include an ASCII text portion that includes a lot of information but is slow to parse and poorly curated. Be aware that Siemens Vida scanners do not generate a CSA header.
 
 ## Slice Timing
-
 
 See the [dcm_qa_stc](https://github.com/neurolabusc/dcm_qa_stc) repository with sample data that exhibits different methods used by Siemens to record slice timing.
 
@@ -57,7 +56,7 @@ For Siemens V-series systems from the B-generation onward (around 2005), the mos
 
 ## Arterial Spin Labeling
 
-Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BASIL) can help process arterial spin labeling data. These tools require sequence details. These details differ between different sequences. If you create a BIDS JSON file with dcm2niix, the following tags will be created, using the same names used in the Siemens sequence PDFs. Note different sequences provide different values.
+Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BASIL) can help process arterial spin labeling data. These tools require sequence details. These details differ between different sequences. If you create a BIDS JSON file with dcm2niix, the following tags will be created, using the same names used in the Siemens sequence PDFs. Note different sequences provide different values. The  [dcm_qa_asl](https://github.com/neurolabusc/dcm_qa_asl) repository provides example DICOM ASL datasets.
 
 ep2d_pcasl, ep2d_pcasl_UI_PHC //pCASL 2D [Danny J.J. Wang](http://www.loft-lab.org)
  - LabelOffset
