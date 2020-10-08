@@ -4539,13 +4539,12 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		printWarning("Unable to decode GE protocol block\n");
 		return;
 	}
-	if (mbAccel > 1) {
+	/*if (mbAccel > 1) {
 		d->CSA.multiBandFactor = mbAccel;
-		printWarning("Unabled to compute slice times for GE multi-band. SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
+		printWarning("Unable to compute slice times for GE multi-band. SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
 		d->CSA.sliceTiming[0] = -1.0;
-		return;
-		
-	}
+		return;	
+	}*/
 	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated - moved here to detect multiband, see issue 336
 	
 	if ((sliceOrderGE < 0) || (sliceOrderGE > 1)) return;
@@ -4560,10 +4559,10 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		for (int i = 0; i < nSL; i++) {
 			if (i % 2 == 0) { //ODD slices since we index from 0!
 				d->CSA.sliceTiming[i] = (i/2) * secPerSlice;
-				//printf("%g\n", d->CSA.sliceTiming[i]);
+				printf("%g\n", d->CSA.sliceTiming[i]);
 			} else {
 				d->CSA.sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
-				//printf("%g\n", d->CSA.sliceTiming[i]);
+				printf("%g\n", d->CSA.sliceTiming[i]);
 			}
 		} //for each slice
 	} //if interleaved
