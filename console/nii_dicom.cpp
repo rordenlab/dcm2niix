@@ -841,6 +841,7 @@ struct TDICOMdata clear_dicom_data() {
     for (int i = 0; i < kMaxOverlay; i++)
     	d.overlayStart[i] = 0;
     d.isHasOverlay = false;
+    d.isPrivateCreatorRemap = false;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -4366,9 +4367,17 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 uint32_t kItemTag = 0xFFFE +(0xE000 << 16 );
 uint32_t kItemDelimitationTag = 0xFFFE +(0xE00D << 16 );
 uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
-double TE = 0.0; //most recent echo time recorded
-float MRImageDynamicScanBeginTime = 0.0;
-
+#define salvageAgfa
+#ifdef salvageAgfa //issue435
+	// handle PrivateCreator renaming e.g. 0021,10xx -> 0021,11xx
+	// https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl
+	// https://github.com/neurolabusc/dcm_qa_agfa
+	// http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_7.8.html
+	uint32_t privateCreatorMask = 0; //0 -> none 
+	uint32_t privateCreatorRemap = 0; //0 -> none 	  
+#endif
+	double TE = 0.0; //most recent echo time recorded
+	float MRImageDynamicScanBeginTime = 0.0;
 	bool is2005140FSQ = false;
 	bool overlayOK = true;
 	int overlayRows = 0;
@@ -4824,6 +4833,58 @@ float MRImageDynamicScanBeginTime = 0.0;
             }
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
+		#ifdef salvageAgfa //issue435
+		if ((privateCreatorMask > 0) && ((groupElement & 0xFF00FFFF) == (privateCreatorMask & 0xFF00FFFF))) { 	
+			uint32_t geIn = groupElement;
+			groupElement = privateCreatorRemap + (groupElement & 0x00FF0000);
+			if (isVerbose > 1)
+				printf("remapping  %04x,%04x -> %04x,%04x\n", geIn & 65535, geIn >> 16, groupElement & 65535, groupElement >> 16);	
+		} else
+			privateCreatorMask = 0;	
+		//see 7.8.1 Private Data Element Tags are numbered (gggg,0010-00FF) (gggg is odd) 
+		if ((lLength > 8) &&  ( ((groupElement & 65535)  % 2) != 0) && ((groupElement>>16) <= 0xFF)) {
+			privateCreatorMask = 0;
+			privateCreatorRemap = 0;
+			char privateCreator[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], privateCreator);
+			//next lines determine remapping, append as needed
+            //Siemens https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl 
+			if (strstr(privateCreator, "SIEMENS MR HEADER") != NULL) privateCreatorRemap = 0x0019 +(0x1000 << 16 );
+			if (strstr(privateCreator, "SIEMENS MR SDS 01") != NULL) privateCreatorRemap = 0x0021 +(0x1000 << 16 );
+            if (strstr(privateCreator, "SIEMENS MR SDI 02") != NULL) privateCreatorRemap = 0x0021 +(0x1100 << 16 );
+            if (strstr(privateCreator, "SIEMENS CSA HEADER") != NULL) privateCreatorRemap = 0x0029 +(0x1000 << 16 );
+            if (strstr(privateCreator, "SIEMENS MR HEADER") != NULL) privateCreatorRemap = 0x0051 +(0x1000 << 16 );
+            //GE https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/gems.tpl
+            if (strstr(privateCreator, "GEMS_ACQU_01") != NULL) privateCreatorRemap = 0x0019 +(0x1000 << 16 );
+            if (strstr(privateCreator, "GEMS_RELA_01") != NULL) privateCreatorRemap = 0x0021 +(0x1000 << 16 );
+            if (strstr(privateCreator, "GEMS_SERS_01") != NULL) privateCreatorRemap = 0x0025 +(0x1000 << 16 );
+            if (strstr(privateCreator, "GEMS_PARM_01") != NULL) privateCreatorRemap = 0x0043 +(0x1000 << 16 );
+            //ELSCINT https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/elscint.tpl
+            int grp = (groupElement & 65535);
+            if ((grp == 0x07a1) && (strstr(privateCreator, "ELSCINT1") != NULL)) privateCreatorRemap = 0x07a1 +(0x1000 << 16 );
+            if ((grp == 0x07a3) && (strstr(privateCreator, "ELSCINT1") != NULL)) privateCreatorRemap = 0x07a3 +(0x1000 << 16 );
+            //Philips https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/philips.tpl
+            if (strstr(privateCreator, "PHILIPS IMAGING DD 001") != NULL) privateCreatorRemap = 0x2001 +(0x1000 << 16 );
+            if (strstr(privateCreator, "Philips Imaging DD 001") != NULL) privateCreatorRemap = 0x2001 +(0x1000 << 16 );
+            if (strstr(privateCreator, "PHILIPS MR IMAGING DD 001") != NULL) privateCreatorRemap = 0x2005 +(0x1000 << 16 );
+            if (strstr(privateCreator, "Philips MR Imaging DD 001") != NULL) privateCreatorRemap = 0x2005 +(0x1000 << 16 );
+            if (strstr(privateCreator, "PHILIPS MR IMAGING DD 005") != NULL) privateCreatorRemap = 0x2005 +(0x1400 << 16 );
+            if (strstr(privateCreator, "Philips MR Imaging DD 005") != NULL) privateCreatorRemap = 0x2005 +(0x1400 << 16 );
+            //UIH https://github.com/neurolabusc/dcm_qa_uih
+            if (strstr(privateCreator, "Image Private Header") != NULL) privateCreatorRemap = 0x0065 +(0x1000 << 16 );
+            //sanity check: group should match
+            if (grp != (privateCreatorRemap & 65535)) privateCreatorRemap = 0;
+            if (privateCreatorRemap > 0)
+            	privateCreatorMask = (groupElement & 65535) + ((groupElement & 0xFFFF0000) << 8);
+            if (privateCreatorRemap == privateCreatorMask) { //no remapping, e.g. 0021,1000 -> 0021,1000
+            	privateCreatorRemap  = 0;
+            	privateCreatorMask = 0;
+            } else
+            	d.isPrivateCreatorRemap = true;
+            if ((privateCreatorRemap > 0) && (isVerbose > 1)) 
+            	printf("PrivateCreator '%s' remapping  %04x,%04x -> %04x,%04x\n", privateCreator, privateCreatorMask & 65535, privateCreatorMask >> 16, privateCreatorRemap & 65535, privateCreatorRemap >> 16);	
+	 	}
+		#endif //salvageAgfa
         switch ( groupElement ) {
          	case kMediaStorageSOPClassUID: {
          		char mediaUID[kDICOMStr];
@@ -6471,7 +6532,7 @@ float MRImageDynamicScanBeginTime = 0.0;
         	// this is a very incomplete DICOM header report, and not a substitute for tools like dcmdump
         	// the purpose is to see how dcm2niix has parsed the image for diagnostics
         	// this section will report very little for implicit data
-        	if (d.isHasReal) printf("r");else printf("m");
+        	//if (d.isHasReal) printf("r");else printf("m");
         	char str[kDICOMStr];
         	sprintf(str, "%*c%04x,%04x %u@%ld ", sqDepth+1, ' ',  groupElement & 65535,groupElement>>16, lLength, lFileOffset+lPos);
 			bool isStr = false;
@@ -6518,10 +6579,10 @@ float MRImageDynamicScanBeginTime = 0.0;
                 	for (size_t pos = 0; pos<strlen(tagStr); pos ++)
 						if ((tagStr[pos] == '<') || (tagStr[pos] == '>') || (tagStr[pos] == ':')
             				|| (tagStr[pos] == '"') || (tagStr[pos] == '\\') || (tagStr[pos] == '/')
-           					|| (tagStr[pos] < 33) //issue398
+           					|| (tagStr[pos] < 32) //issue398
            					//|| (tagStr[pos] == '^') || (tagStr[pos] < 33)
            					|| (tagStr[pos] == '*') || (tagStr[pos] == '|') || (tagStr[pos] == '?'))
-            					tagStr[pos] = 'x';
+            					tagStr[pos] = '_';
 				}
 				printMessage("%s %s\n", str, tagStr);
             } else

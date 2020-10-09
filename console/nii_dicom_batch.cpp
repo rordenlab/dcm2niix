@@ -4865,6 +4865,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	if (isnan(dcmList[indx0].gantryTilt)) return EXIT_FAILURE;
     }
     #endif //newTilt see issue 254
+    if (dcmList[indx0].isPrivateCreatorRemap)
+    	printWarning("PrivateCreator remapping detected. DICOMs are not archival quality (issue 435).\n");
     if (dcmList[indx0].isScaleVariesEnh) //issue363
     	iVaries = true;
     if ((dcmList[indx].isXA10A) && (dcmList[indx].CSA.mosaicSlices < 0)) {
