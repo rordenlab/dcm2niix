@@ -4537,7 +4537,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		}
 	}
 	if (verbose > 1) printMessage("GE major version %d: '%s'\n", majorVersion, d->softwareVersions); 
-	if ((majorVersion > 27) and (d->CSA.sliceTiming[0] >= 0.0)) return; //trust slice timings for versions > 27, see issue 336
+	if ((majorVersion > 27) && (d->CSA.sliceTiming[0] >= 0.0)) return; //trust slice timings for versions > 27, see issue 336
 	//end: version check
 	if (d->maxEchoNumGE > 0) 
 		printWarning("GE sequence with %d echoes. See https://github.com/rordenlab/dcm2niix/issues/359\n", d->maxEchoNumGE);	
