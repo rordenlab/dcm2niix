@@ -5230,7 +5230,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				if((slen > 4) && (strstr(d.softwareVersions, "XA20") != NULL) )  d.isXA10A = true;
 				if((slen > 4) && (strstr(d.softwareVersions, "XA30") != NULL) )  d.isXA10A = true;
 				if((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL) ) break;
-                d.isXA10A = true;
+				d.isXA10A = true;
             	break;
             }
             case kProtocolName : {

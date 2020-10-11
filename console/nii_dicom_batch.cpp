@@ -4521,9 +4521,26 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	if (d->is3DAcq) return; //no need for slice times
 	if (nSL < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
+	//start version check: "27\LX\MR Software release:RX27.0_R02_1831.a" -> 27
+	int majorVersion = 0;
+	char* sepStart = strchr(d->softwareVersions, ':');
+	if (sepStart != NULL) {
+		char* sepEnd = strchr(sepStart, '.');
+		sepStart += 3; //':RX'
+		if ((sepEnd != NULL) && ((sepEnd - sepStart) >= 2) ) {
+			int len = sepEnd - sepStart;
+			char * cString = (char *)malloc(sizeof(char) * (len + 1));
+			cString[len] =0;
+			memcpy(cString, sepStart, len);
+    		majorVersion = atoi(cString);
+    		free(cString);
+		}
+	}
+	if (verbose > 1) printMessage("GE major version %d: '%s'\n", majorVersion, d->softwareVersions); 
+	if ((majorVersion > 27) and (d->CSA.sliceTiming[0] >= 0.0)) return; //trust slice timings for versions > 27, see issue 336
+	//end: version check
 	if (d->maxEchoNumGE > 0) 
 		printWarning("GE sequence with %d echoes. See https://github.com/rordenlab/dcm2niix/issues/359\n", d->maxEchoNumGE);	
-	
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
 	#ifdef myReadGeProtocolBlock
 	//GE final desperate attempt to determine slice order
@@ -4539,14 +4556,14 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		printWarning("Unable to decode GE protocol block\n");
 		return;
 	}
-	/*if (mbAccel > 1) {
+	if (mbAccel > 1) {
 		d->CSA.multiBandFactor = mbAccel;
-		printWarning("Unable to compute slice times for GE multi-band. SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
+		printWarning("Unable to compute slice times for GE x%d multi-band. SliceOrder=%d (seq=0, int=1)\n", mbAccel, sliceOrderGE);
 		d->CSA.sliceTiming[0] = -1.0;
 		return;	
-	}*/
+	}
 	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated - moved here to detect multiband, see issue 336
-	
+	if (verbose > 1) printMessage("GE view-order %d, slice-order %d, multi-band %d\n", viewOrderGE, sliceOrderGE, mbAccel);
 	if ((sliceOrderGE < 0) || (sliceOrderGE > 1)) return;
 	// 0=sequential/1=interleaved
 	printWarning("Guessing slice times using ProtocolBlock SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
