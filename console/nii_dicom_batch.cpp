@@ -236,16 +236,30 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
             continue; //do not normalize or reorient 0 vectors
         }
         if ((vLen > 0.03) && (vLen < 0.97)) {
-        	//bVal scaled by norm(g)^2 https://github.com/rordenlab/dcm2niix/issues/163
-        	float bVal = vx[i].V[0] * (vLen * vLen);
+        	//bVal scaled by norm(g)^2 issue163,245
+            float bValtemp = 0, bVal = 0, bVecScale=0;
+            // rounding by 5 with mimimum of 5 if b-value > 0
+            bValtemp = vx[i].V[0] * (vLen * vLen);
+            if (bValtemp > 0 && bValtemp < 5) {
+                bVal = 5;
+            }
+            else {
+                bVal = (int)((bValtemp + 2.5f)/5)*5;
+            }
+            if(bVal == 0)
+                bVecScale = 0;
+            else
+            {
+                bVecScale = sqrt((float)vx[i].V[0]/bVal);
+            }
         	if (!scaledBValWarning) {
         		printMessage("GE BVal scaling (e.g. %g -> %g s/mm^2)\n", vx[i].V[0], bVal);
         		scaledBValWarning = true;
         	}
         	vx[i].V[0] = bVal;
-        	vx[i].V[1] = vx[i].V[1]/vLen;
-        	vx[i].V[2] = vx[i].V[2]/vLen;
-        	vx[i].V[3] = vx[i].V[3]/vLen;
+        	vx[i].V[1] = vx[i].V[1]*bVecScale;
+        	vx[i].V[2] = vx[i].V[2]*bVecScale;
+        	vx[i].V[3] = vx[i].V[3]*bVecScale;
        	}
        	if (!col) { //rows need to be swizzled
         	//see Stanford dataset Ax_DWI_Tetrahedral_7 unable to resolve between possible solutions
@@ -426,9 +440,9 @@ const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
 #endif //for systems without memmem
 
 int readKeyN1(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
-	int ret = 0;
+	int ret = -1;
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
-	if (!keyPos) return -1;
+	if (!keyPos) return ret;
 	int i = (int)strlen(key);
 	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
 		if( keyPos[i] >= '0' && keyPos[i] <= '9' )
@@ -441,7 +455,7 @@ int readKeyN1(const char * key,  char * buffer, int remLength) { //look for text
 int readKey(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
 	int ret = 0;
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
-	if (!keyPos) return 0;
+	if (!keyPos) return ret;
 	int i = (int)strlen(key);
 	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
 		if( keyPos[i] >= '0' && keyPos[i] <= '9' )
@@ -449,7 +463,7 @@ int readKey(const char * key,  char * buffer, int remLength) { //look for text k
 		i++;
 	}
 	return ret;
-} //readKey()
+} //readKey() //return 0 if key not found
 
 float readKeyFloatNan(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
@@ -1038,6 +1052,8 @@ tse3d: T2*/
 			fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n" );
 			break;
 	};
+	if (d.epiVersionGE == 0) fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
+	if (d.epiVersionGE == 1) fprintf(fp, "\t\"PulseSequenceName\": \"epiRT\",\n");
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
 	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
@@ -1382,10 +1398,12 @@ tse3d: T2*/
 			if (csaAscii.partialFourier == 8) pf = 0.875;
 			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
 		}
-		if (csaAscii.interp > 0) {
+		if (csaAscii.interp > 0) { //in-plane interpolation
 			interp = true;
 			fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
 		}
+		if (d.interp3D > 1) //through-plane interpolation e.g. GE ZIP2 through-plane http://mriquestions.com/zip.html
+			fprintf(fp, "\t\"Interpolation3D\": %d,\n", d.interp3D);
 		if (csaAscii.baseResolution > 0) fprintf(fp, "\t\"BaseResolution\": %d,\n", csaAscii.baseResolution );
 		if (shimSetting[0] != 0.0) {
 			fprintf(fp, "\t\"ShimSetting\": [\n");
@@ -4539,6 +4557,10 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	if (verbose > 1) printMessage("GE major version %d: '%s'\n", majorVersion, d->softwareVersions); 
 	if ((majorVersion > 27) && (d->CSA.sliceTiming[0] >= 0.0)) return; //trust slice timings for versions > 27, see issue 336
 	//end: version check
+	if (d->CSA.multiBandFactor > 1) {
+		printWarning("Unable to compute slice times for GE version %d using x%d multi-band (issue 336).\n", majorVersion, d->CSA.multiBandFactor);
+		return;	
+	}
 	if (d->maxEchoNumGE > 0) 
 		printWarning("GE sequence with %d echoes. See https://github.com/rordenlab/dcm2niix/issues/359\n", d->maxEchoNumGE);	
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
@@ -4576,10 +4598,10 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		for (int i = 0; i < nSL; i++) {
 			if (i % 2 == 0) { //ODD slices since we index from 0!
 				d->CSA.sliceTiming[i] = (i/2) * secPerSlice;
-				printf("%g\n", d->CSA.sliceTiming[i]);
+				//printf("%g\n", d->CSA.sliceTiming[i]);
 			} else {
 				d->CSA.sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
-				printf("%g\n", d->CSA.sliceTiming[i]);
+				//printf("%g\n", d->CSA.sliceTiming[i]);
 			}
 		} //for each slice
 	} //if interleaved

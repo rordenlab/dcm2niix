@@ -838,6 +838,8 @@ struct TDICOMdata clear_dicom_data() {
     d.rtia_timerGE = -1.0;
     d.rawDataRunNumber = -1;
     d.maxEchoNumGE = -1;
+    d.epiVersionGE = -1;
+    d.interp3D = -1;
     for (int i = 0; i < kMaxOverlay; i++)
     	d.overlayStart[i] = 0;
     d.isHasOverlay = false;
@@ -4241,6 +4243,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusionDirectionGEX  0x0019+(0x10BB<< 16 ) //DS phase diffusion direction
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS frequency diffusion direction
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS slice diffusion direction
+#define  kPulseSequenceNameGE 0x0019+(0x109C<< 16 ) //LO 'epiRT' or 'epi'
 #define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
@@ -5386,6 +5389,16 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (d.manufacturer == kMANUFACTURER_GE)
                   set_diffusion_directionGE(&volDiffusion, lLength, (&buffer[lPos]), 2);
                 break;
+            case kPulseSequenceNameGE : { //LO 'epi'/'epiRT'
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	char epiStr[kDICOMStr];
+                dcmStr(lLength, &buffer[lPos], epiStr);
+            	if (strstr(epiStr, "epi") == NULL) break;
+            	d.epiVersionGE = 0; //-1 = not epi, 0 = epi, 1 = epiRT
+            	if (strstr(epiStr, "epiRT") == NULL) break;
+            	d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
+            	break;            
+            }            
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
@@ -6649,7 +6662,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     	/* SAH.start: Fix for ZIP2 */
     	int zipFactor = (int) roundf(d.xyzMM[3] / d.zSpacing);
     	if (zipFactor > 1) {
-    		printMessage("Issue 373: Check for ZIP2 Factor: %d  SliceThickness+SliceGap: %f, SpacingBetweenSlices: %f \n", zipFactor, d.xyzMM[3], d.zSpacing);
+    		d.interp3D = zipFactor;
+    		//printMessage("Issue 373: Check for ZIP2 Factor: %d  SliceThickness+SliceGap: %f, SpacingBetweenSlices: %f \n", zipFactor, d.xyzMM[3], d.zSpacing);
     		locationsInAcquisitionGE *= zipFactor; // Multiply number of slices by ZIP factor. Do this prior to checking for conflict below (?).
     	}
     	/* SAH.end */
@@ -7097,6 +7111,8 @@ if (d.isHasPhase)
 	*/
 	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
 	//d.isValid = false;
+	//printMessage(" patient position (0020,0032)\t%g\t%g\t%g\n", d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
+    //printf("%d\t%g\t%g\t%g\t%g\n", d.imageNum, d.rtia_timerGE, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	return d;
