@@ -4230,6 +4230,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kMREchoSequence  0x0018+uint32_t(0x9114<< 16 ) //SQ
 #define  kMRAcquisitionPhaseEncodingStepsInPlane  0x0018+uint32_t(0x9231<< 16 ) //US
 #define  kNumberOfImagesInMosaic  0x0019+(0x100A<< 16 ) //US NumberOfImagesInMosaic
+#define  kSeriesPlaneGE 0x0019+(0x1017<< 16 ) //SS 
 #define  kDwellTime  0x0019+(0x1018<< 16 ) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 //  https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
@@ -5312,6 +5313,10 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             case kNumberOfImagesInMosaic :
             	if (d.manufacturer == kMANUFACTURER_SIEMENS)
             		numberOfImagesInMosaic =  dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+            	break;
+            case kSeriesPlaneGE :  //SS 2=Axi, 4=Sag, 8=Cor, 16=Obl, 256=3plane
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+            	if (dcmInt(lLength,&buffer[lPos],d.isLittleEndian) == 256) d.isLocalizer = true;
             	break;
             case kDwellTime :
             	d.dwellTime  =  dcmStrInt(lLength, &buffer[lPos]);
@@ -7063,7 +7068,7 @@ if (d.isHasPhase)
         }
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
-    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "_fl2d1") != NULL)) {
+    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
     	d.isLocalizer = true;
 	}
 	//UIH 3D T1 scans report echo train length, which is interpreted as 3D EPI

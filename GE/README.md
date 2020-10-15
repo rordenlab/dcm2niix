@@ -54,6 +54,10 @@ In addition to the public DICOM tags, previous versions of dcm2niix attempted to
 
 Most vendors store the complex image component (magnitude, phase, real or imaginary) in the [Complex Image Component (0008,9208)](http://dicom.nema.org/medical/dicom/2016e/output/chtml/part03/sect_C.8.13.3.html) tag or in the [Image Type (0008,0008)](http://incenter.medical.philips.com/doclib/enc/fetch/2000/4504/577242/577256/588723/5144873/5144488/5144982/DICOM_Conformance_Statement_Intera_R7%2c_R8_and_R9.pdf%3fnodeid%3d5147977%26vernum%3d-2) tag. GE stores this information as a signed short of the Private Image Type(0043,102F) tag. The values 0, 1, 2, 3 correspond to magnitude, phase, real, and imaginary (respectively).
 
+## Detecting Anatomical Localizers
+
+Anatomical localizers (e.g. scout images) are quick-and-dirty scans used to position subsequent slower but higher quality images. These scans are typically discarded in subsequent analyses. The dcm2niix argument `-i y` will ignore these scans. For GE, these sequences are detected based on the SeriesPlane (0019,1017) tag, which is of type [SS](http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html) and can report the values 2 (Axial), 4 (Sagittal), 8 (Coronal), 16 (Oblique) or 256 (3plane). The 3plane value is consistent with an anatomical localizer. 
+
 ## Sample Datasets
 
  - [A validation dataset for dcm2niix commits](https://github.com/neurolabusc/dcm_qa_nih).
