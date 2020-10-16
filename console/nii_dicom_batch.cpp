@@ -1220,6 +1220,7 @@ tse3d: T2*/
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
+	json_Float(fp, "\t\"TimeBetweenVolumes\": %g,\n", dti4D->timeBetweenVolumes);
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
@@ -1487,7 +1488,6 @@ tse3d: T2*/
 	// We'll need this for generating a value for effectiveEchoSpacing that is consistent
 	// with the *reconstructed* data.
 	int reconMatrixPE = d.phaseEncodingLines;
-
     if ((h->dim[2] > 0) && (h->dim[1] > 0)) {
 		if  (h->dim[1] == h->dim[2]) //phase encoding does not matter
 			reconMatrixPE = h->dim[2];
@@ -1640,6 +1640,7 @@ dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
 dti4D->decayFactor[0] = -1;
 dti4D->intenScale[0] = 0.0;
+dti4D->timeBetweenVolumes = 0.0;
 nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 }// nii_SaveBIDSX()
 
@@ -4374,7 +4375,7 @@ int nii_saveCrop(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return returnCode;
 }// nii_saveCrop()
 
-float dicomTimeToSec (float dicomTime) {
+double dicomTimeToSec (double dicomTime) {
 //convert HHMMSS to seconds, 135300.024 -> 135259.731 are 0.293 sec apart
 	char acqTimeBuf[64];
 	snprintf(acqTimeBuf, sizeof acqTimeBuf, "%+013.5f", (double)dicomTime);
@@ -4386,14 +4387,15 @@ float dicomTimeToSec (float dicomTime) {
 	return  (ahour * 3600)+(amin * 60) + asec;
 }
 
-float acquisitionTimeDifference(struct TDICOMdata * d1, struct TDICOMdata * d2) {
+double acquisitionTimeDifference(struct TDICOMdata * d1, struct TDICOMdata * d2) {
 	if (d1->acquisitionDate != d2->acquisitionDate) return -1; //to do: scans running across midnight
-	float sec1 = dicomTimeToSec(d1->acquisitionTime);
-	float sec2 = dicomTimeToSec(d2->acquisitionTime);
+	double sec1 = dicomTimeToSec(d1->acquisitionTime);
+	double sec2 = dicomTimeToSec(d2->acquisitionTime);
 	//printMessage("%g\n",d2->acquisitionTime);
 	if ((sec1 < 0) || (sec2 < 0)) return -1;
 	return (sec2 - sec1);
 }
+
 void checkDateTimeOrder(struct TDICOMdata * d, struct TDICOMdata * d1) {
 	if (d->acquisitionDate < d1->acquisitionDate) return; //d1 occurred on later date
 	if (d->acquisitionTime <= d1->acquisitionTime) return; //d1 occurred on later (or same) time
@@ -4561,8 +4563,8 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		printWarning("Unable to compute slice times for GE version %d using x%d multi-band (issue 336).\n", majorVersion, d->CSA.multiBandFactor);
 		return;	
 	}
-	if (d->maxEchoNumGE > 0) 
-		printWarning("GE sequence with %d echoes. See https://github.com/rordenlab/dcm2niix/issues/359\n", d->maxEchoNumGE);	
+	if ((d->maxEchoNumGE > 0) && (!d->isLocalizer))
+		printWarning("GE sequence with %d echoes. See issue 359\n", d->maxEchoNumGE);	
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
 	#ifdef myReadGeProtocolBlock
 	//GE final desperate attempt to determine slice order
@@ -5027,7 +5029,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				if (dcmList[dcmSort[i].indx].isHasImaginary) dcmList[indx0].isHasImaginary = true;
 			}
 			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
-    		if (dcmList[indx0].modality == kMODALITY_PT) {
+    		if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
 				//issue 407
 				int nTR = 0;
 				for (int i = 0; i < nConvert; i++)
@@ -5039,18 +5041,32 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 
 				bool trVaries = false;
 				bool dayVaries = false;
-				float tr = -1;
+				float tr = -1.0;
+				float mintr = 1000000;
+				float maxtr = -1.0;
+				float volumeTimeStartFirstStartLast = -1.0;
+				int nVol = 0;
 				uint64_t prevVolIndx = indx0;
 				for (int i = 0; i < nConvert; i++)
 						if (isSamePosition(dcmList[indx0],dcmList[dcmSort[i].indx])) {
 							float trDiff = acquisitionTimeDifference(&dcmList[prevVolIndx], &dcmList[dcmSort[i].indx]);
 							prevVolIndx = dcmSort[i].indx;
+							nVol ++;
 							if (trDiff <= 0) continue;
+							mintr = min(mintr, trDiff);
+							maxtr = max(maxtr, trDiff);
 							if (tr < 0) tr = trDiff;
 							if (trDiff < 0) dayVaries = true;
-							if (!isSameFloatGE(tr,trDiff))
-								trVaries = true;
+							float trDiff0 = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
+							volumeTimeStartFirstStartLast = max(volumeTimeStartFirstStartLast, trDiff0);
 						}
+				float toleraneSec = 50.0/1000.0; //e.g. 50/1000 = 50ms
+				if ((nVol > 1) && (volumeTimeStartFirstStartLast > 0.0)) {
+					tr = volumeTimeStartFirstStartLast / (nVol - 1.0);
+					if (fabs(tr - hdr0.pixdim[4]) > toleraneSec)
+						dti4D->timeBetweenVolumes = tr;
+				}
+				if ((maxtr - mintr) > toleraneSec) trVaries = true;
 				if (trVaries) {
 					if (dayVaries)
 						printWarning("Seconds between volumes varies (perhaps run through midnight)\n");
@@ -5067,17 +5083,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 								nTR += 1;
 								if (nTR >= kMaxDTI4D) break;
 							}					
-					/*
-					float volumeTime = -1;
-					for (int i = 0; i < nConvert; i++) {
-						float vt = acquisitionTimeDifference(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[i].indx]);
-						if (vt == volumeTime) continue;
-						volumeTime = vt; 
-						dti4D->volumeOnsetTime[nTR] = vt;
-						nTR += 1;
-						if (nTR >= kMaxDTI4D) break;
-					}*/
-					hdr0.pixdim[4] = 0.0;
+					if (dcmList[indx0].modality != kMODALITY_PT) 
+						dti4D->decayFactor[0] = -1.0; //only for PET
+					else
+						hdr0.pixdim[4] = 0.0;
 					// saveAs3D = true;
 					//  printWarning("Creating independent volumes as time between volumes varies\n");
 					if (opts.isVerbose) {
@@ -5892,7 +5901,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if (d1.coilCrc != d2.coilCrc) {
         if (!warnings->coilVaries)
-        	printMessage("Slices not stacked: coil varies %d\n", d1.seriesNum);
+        	printMessage("Slices not stacked: coil varies\n");
         warnings->coilVaries = true;
         *isCoilVaries = true;
         return false;
@@ -6963,6 +6972,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isForceStackSameSeries = 2; //automatic: stack CTs, do not stack MRI
     opts->isForceStackDCE = true;
     opts->isIgnoreDerivedAnd2D = false;
+    opts->isForceOnsetTimes = true;
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isRotate3DAcq = true;

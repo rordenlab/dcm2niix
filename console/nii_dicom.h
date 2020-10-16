@@ -139,6 +139,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         bool isReal[kMaxDTI4D];
         bool isImaginary[kMaxDTI4D];
         bool isPhase[kMaxDTI4D];
+        float timeBetweenVolumes;
     };
 
 #ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...

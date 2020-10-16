@@ -1649,6 +1649,7 @@ dti4D->volumeOnsetTime[0] = -1;
 dti4D->decayFactor[0] = -1;
 dti4D->frameDuration[0] = -1;
 dti4D->intenScale[0] = 0.0;
+dti4D->timeBetweenVolumes = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty
 strcpy(d.sequenceName, ""); //erase dummy with empty
@@ -5143,7 +5144,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (((int) strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
                     d.isDiffusion = true;
                 break;
-            case kAcquisitionTime :
+            case kAcquisitionTime : {
                 char acquisitionTimeTxt[kDICOMStr];
                 dcmStr(lLength, &buffer[lPos], acquisitionTimeTxt);
                 d.acquisitionTime = atof(acquisitionTimeTxt);
@@ -5151,7 +5152,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 //UIH slice timing- do not use for Siemens as Siemens de-identification can corrupt this field https://github.com/rordenlab/dcm2niix/issues/236
                 d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.acquisitionTime;
                 acquisitionTimesGE_UIH ++;
-                break;
+                break; }
             //case kContentTime :
             //    char contentTimeTxt[kDICOMStr];
             //    dcmStr(lLength, &buffer[lPos], contentTimeTxt);
