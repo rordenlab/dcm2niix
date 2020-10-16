@@ -5060,13 +5060,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 							float trDiff0 = acquisitionTimeDifference(&dcmList[indx0], &dcmList[dcmSort[i].indx]);
 							volumeTimeStartFirstStartLast = max(volumeTimeStartFirstStartLast, trDiff0);
 						}
-				float toleraneSec = 50.0/1000.0; //e.g. 50/1000 = 50ms
+				float toleranceSec = 50.0/1000.0; //e.g. 50/1000 = 50ms
 				if ((nVol > 1) && (volumeTimeStartFirstStartLast > 0.0)) {
 					tr = volumeTimeStartFirstStartLast / (nVol - 1.0);
-					if (fabs(tr - hdr0.pixdim[4]) > toleraneSec)
+					if (fabs(tr - hdr0.pixdim[4]) > toleranceSec)
 						dti4D->timeBetweenVolumes = tr;
 				}
-				if ((maxtr - mintr) > toleraneSec) trVaries = true;
+				if ((maxtr - mintr) > toleranceSec) trVaries = true;
 				if (trVaries) {
 					if (dayVaries)
 						printWarning("Seconds between volumes varies (perhaps run through midnight)\n");
