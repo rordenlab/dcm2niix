@@ -1514,7 +1514,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
     h->pixdim[1] = d.xyzMM[1];
     h->pixdim[2] = d.xyzMM[2];
     h->pixdim[3] = d.xyzMM[3];
-    h->pixdim[4] = d.TR/1000; //TR reported in msec, time is in sec
+    h->pixdim[4] = d.TR / 1000.0; //TR reported in msec, time is in sec
     h->dim[1] = d.xyzDim[1];
     h->dim[2] = d.xyzDim[2];
     h->dim[3] = d.xyzDim[3];
@@ -1649,7 +1649,7 @@ dti4D->volumeOnsetTime[0] = -1;
 dti4D->decayFactor[0] = -1;
 dti4D->frameDuration[0] = -1;
 dti4D->intenScale[0] = 0.0;
-dti4D->timeBetweenVolumes = 0.0;
+dti4D->repetitionTimeExcitation = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty
 strcpy(d.sequenceName, ""); //erase dummy with empty
@@ -4260,6 +4260,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 //#define  kTemporalPositionIdentifier 0x0020+(0x0100 << 16 ) //IS
 #define  kOrientation 0x0020+(0x0037 << 16 )
 #define  kTemporalPosition 0x0020+(0x0100 << 16 ) //IS 
+#define  kTemporalResolution 0x0020+(0x0110 << 16 ) //DS
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 //#define  kSliceLocation 0x0020+(0x1041 << 16 ) //DS would be useful if not optional type 3
 #define  kImageComments 0x0020+(0x4000<< 16 )// '0020' '4000' 'LT' 'ImageComments'
@@ -4378,10 +4379,16 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 	// https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl
 	// https://github.com/neurolabusc/dcm_qa_agfa
 	// http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_7.8.html
-	uint32_t privateCreatorMask = 0; //0 -> none 
-	uint32_t privateCreatorRemap = 0; //0 -> none 	  
+	#define kMaxRemaps 16 //no vendor uses more than 5 private creator groups
+	//we need to keep track of multiple remappings, e.g. issue 437 2005,0014->2005,0012; 2005,0015->2005,0011
+	int nRemaps = 0;
+	uint32_t privateCreatorMasks[kMaxRemaps]; //0 -> none 
+	uint32_t privateCreatorRemaps[kMaxRemaps]; //0 -> none 
+	//uint32_t privateCreatorMask = 0; //0 -> none 
+	//uint32_t privateCreatorRemap = 0; //0 -> none 	  
 #endif
 	double TE = 0.0; //most recent echo time recorded
+	float temporalResolutionMS = 0.0;
 	float MRImageDynamicScanBeginTime = 0.0;
 	bool is2005140FSQ = false;
 	bool overlayOK = true;
@@ -4839,58 +4846,88 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
         }
         if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028 )) groupElement = kUnused; //ignore icon dimensions
 		#ifdef salvageAgfa //issue435
-		if ((privateCreatorMask > 0) && ((groupElement & 0xFF00FFFF) == (privateCreatorMask & 0xFF00FFFF))) { 	
-			uint32_t geIn = groupElement;
-			groupElement = privateCreatorRemap + (groupElement & 0x00FF0000);
-			if (isVerbose > 1)
-				printf("remapping  %04x,%04x -> %04x,%04x\n", geIn & 65535, geIn >> 16, groupElement & 65535, groupElement >> 16);	
-		} else
-			privateCreatorMask = 0;	
-		//see 7.8.1 Private Data Element Tags are numbered (gggg,0010-00FF) (gggg is odd) 
-		if ((lLength > 8) &&  ( ((groupElement & 65535)  % 2) != 0) && ((groupElement>>16) <= 0xFF)) {
-			privateCreatorMask = 0;
+		//Handle remapping using integers, and slower but simpler approach is with strings:
+		// https://github.com/pydicom/pydicom/blob/master/pydicom/_private_dict.py
+		if (((groupElement & 65535) % 2) == 0) goto skipRemap; //remap odd (private) groups
+		//printf("tag %04x,%04x\n", groupElement & 65535, groupElement >> 16);
+		
+		if (((groupElement>>16) >= 0x10) && ((groupElement>>16) <= 0xFF)) { //tags (gggg,0010-00FF) may define new remapping
+			//if remapping tag
+			//first: see if this remapping overwrites existing tag 
+			uint32_t privateCreatorMask = 0; //0 -> none 
+			uint32_t privateCreatorRemap = 0; //0 -> none 	
+			privateCreatorMask = (groupElement & 65535) + ((groupElement & 0xFFFF0000) << 8);
+			if (nRemaps > 0) {
+				int j = 0;
+				for (int i = 0; i < nRemaps; i++) //remove duplicate remapping
+					//copy all remaps except exact match
+					if (privateCreatorMasks[i] != privateCreatorMask) { 
+						privateCreatorMasks[j] = privateCreatorMasks[i];
+						privateCreatorRemaps[j] = privateCreatorRemaps[i];
+						j++;
+					}
+				nRemaps = j;
+			} 
+			//see if this is known private vendor tag
 			privateCreatorRemap = 0;
 			char privateCreator[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], privateCreator);
 			//next lines determine remapping, append as needed
-            //Siemens https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl 
+			//Siemens https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl 
 			if (strstr(privateCreator, "SIEMENS MR HEADER") != NULL) privateCreatorRemap = 0x0019 +(0x1000 << 16 );
 			if (strstr(privateCreator, "SIEMENS MR SDS 01") != NULL) privateCreatorRemap = 0x0021 +(0x1000 << 16 );
-            if (strstr(privateCreator, "SIEMENS MR SDI 02") != NULL) privateCreatorRemap = 0x0021 +(0x1100 << 16 );
-            if (strstr(privateCreator, "SIEMENS CSA HEADER") != NULL) privateCreatorRemap = 0x0029 +(0x1000 << 16 );
-            if (strstr(privateCreator, "SIEMENS MR HEADER") != NULL) privateCreatorRemap = 0x0051 +(0x1000 << 16 );
-            //GE https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/gems.tpl
-            if (strstr(privateCreator, "GEMS_ACQU_01") != NULL) privateCreatorRemap = 0x0019 +(0x1000 << 16 );
-            if (strstr(privateCreator, "GEMS_RELA_01") != NULL) privateCreatorRemap = 0x0021 +(0x1000 << 16 );
-            if (strstr(privateCreator, "GEMS_SERS_01") != NULL) privateCreatorRemap = 0x0025 +(0x1000 << 16 );
-            if (strstr(privateCreator, "GEMS_PARM_01") != NULL) privateCreatorRemap = 0x0043 +(0x1000 << 16 );
-            //ELSCINT https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/elscint.tpl
-            int grp = (groupElement & 65535);
-            if ((grp == 0x07a1) && (strstr(privateCreator, "ELSCINT1") != NULL)) privateCreatorRemap = 0x07a1 +(0x1000 << 16 );
-            if ((grp == 0x07a3) && (strstr(privateCreator, "ELSCINT1") != NULL)) privateCreatorRemap = 0x07a3 +(0x1000 << 16 );
-            //Philips https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/philips.tpl
-            if (strstr(privateCreator, "PHILIPS IMAGING DD 001") != NULL) privateCreatorRemap = 0x2001 +(0x1000 << 16 );
-            if (strstr(privateCreator, "Philips Imaging DD 001") != NULL) privateCreatorRemap = 0x2001 +(0x1000 << 16 );
-            if (strstr(privateCreator, "PHILIPS MR IMAGING DD 001") != NULL) privateCreatorRemap = 0x2005 +(0x1000 << 16 );
-            if (strstr(privateCreator, "Philips MR Imaging DD 001") != NULL) privateCreatorRemap = 0x2005 +(0x1000 << 16 );
-            if (strstr(privateCreator, "PHILIPS MR IMAGING DD 005") != NULL) privateCreatorRemap = 0x2005 +(0x1400 << 16 );
-            if (strstr(privateCreator, "Philips MR Imaging DD 005") != NULL) privateCreatorRemap = 0x2005 +(0x1400 << 16 );
-            //UIH https://github.com/neurolabusc/dcm_qa_uih
-            if (strstr(privateCreator, "Image Private Header") != NULL) privateCreatorRemap = 0x0065 +(0x1000 << 16 );
-            //sanity check: group should match
-            if (grp != (privateCreatorRemap & 65535)) privateCreatorRemap = 0;
-            if (privateCreatorRemap > 0)
-            	privateCreatorMask = (groupElement & 65535) + ((groupElement & 0xFFFF0000) << 8);
-            if (privateCreatorRemap == privateCreatorMask) { //no remapping, e.g. 0021,1000 -> 0021,1000
-            	privateCreatorRemap  = 0;
-            	privateCreatorMask = 0;
-            } else
-            	d.isPrivateCreatorRemap = true;
-            if ((privateCreatorRemap > 0) && (isVerbose > 1)) 
-            	printf("PrivateCreator '%s' remapping  %04x,%04x -> %04x,%04x\n", privateCreator, privateCreatorMask & 65535, privateCreatorMask >> 16, privateCreatorRemap & 65535, privateCreatorRemap >> 16);	
-	 	}
-		#endif //salvageAgfa
-        switch ( groupElement ) {
+			if (strstr(privateCreator, "SIEMENS MR SDI 02") != NULL) privateCreatorRemap = 0x0021 +(0x1100 << 16 );
+			if (strstr(privateCreator, "SIEMENS CSA HEADER") != NULL) privateCreatorRemap = 0x0029 +(0x1000 << 16 );
+			if (strstr(privateCreator, "SIEMENS MR HEADER") != NULL) privateCreatorRemap = 0x0051 +(0x1000 << 16 );
+			//GE https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/gems.tpl
+			if (strstr(privateCreator, "GEMS_ACQU_01") != NULL) privateCreatorRemap = 0x0019 +(0x1000 << 16 );
+			if (strstr(privateCreator, "GEMS_RELA_01") != NULL) privateCreatorRemap = 0x0021 +(0x1000 << 16 );
+			if (strstr(privateCreator, "GEMS_SERS_01") != NULL) privateCreatorRemap = 0x0025 +(0x1000 << 16 );
+			if (strstr(privateCreator, "GEMS_PARM_01") != NULL) privateCreatorRemap = 0x0043 +(0x1000 << 16 );
+			//ELSCINT https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/elscint.tpl
+			int grp = (groupElement & 65535);
+			if ((grp == 0x07a1) && (strstr(privateCreator, "ELSCINT1") != NULL)) privateCreatorRemap = 0x07a1 +(0x1000 << 16 );
+			if ((grp == 0x07a3) && (strstr(privateCreator, "ELSCINT1") != NULL)) privateCreatorRemap = 0x07a3 +(0x1000 << 16 );
+			//Philips https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/philips.tpl
+			if (strstr(privateCreator, "PHILIPS IMAGING DD 001") != NULL) privateCreatorRemap = 0x2001 +(0x1000 << 16 );
+			if (strstr(privateCreator, "Philips Imaging DD 001") != NULL) privateCreatorRemap = 0x2001 +(0x1000 << 16 );
+			if (strstr(privateCreator, "PHILIPS MR IMAGING DD 001") != NULL) privateCreatorRemap = 0x2005 +(0x1000 << 16 );
+			if (strstr(privateCreator, "Philips MR Imaging DD 001") != NULL) privateCreatorRemap = 0x2005 +(0x1000 << 16 );
+			if (strstr(privateCreator, "PHILIPS MR IMAGING DD 005") != NULL) privateCreatorRemap = 0x2005 +(0x1400 << 16 );
+			if (strstr(privateCreator, "Philips MR Imaging DD 005") != NULL) privateCreatorRemap = 0x2005 +(0x1400 << 16 );
+			//UIH https://github.com/neurolabusc/dcm_qa_uih
+			if (strstr(privateCreator, "Image Private Header") != NULL) privateCreatorRemap = 0x0065 +(0x1000 << 16 );
+			//sanity check: group should match
+			if (grp != (privateCreatorRemap & 65535)) privateCreatorRemap = 0;
+			if (privateCreatorRemap == 0) goto skipRemap; //this is not a known private group
+			if (privateCreatorRemap == privateCreatorMask) goto skipRemap; //the remapping and mask are identical 2005,1000 -> 2005,1000
+			if ((nRemaps + 1) >=kMaxRemaps) goto skipRemap; //all slots full (should never happen)
+			//add new remapping
+			privateCreatorMasks[nRemaps] = privateCreatorMask;
+			privateCreatorRemaps[nRemaps] = privateCreatorRemap; 
+			//printf("new remapping %04x,%04x -> %04x,%04x\n", privateCreatorMask & 65535, privateCreatorMask >> 16, privateCreatorRemap & 65535, privateCreatorRemap >> 16);	
+			if (isVerbose > 1)
+				printf("new remapping (%d) %04x,%02xxy -> %04x,%02xxy\n", nRemaps, privateCreatorMask & 65535, privateCreatorMask >> 24, privateCreatorRemap & 65535, privateCreatorRemap >> 24);	
+			nRemaps += 1;
+			//for (int i = 0; i < nRemaps; i++)
+			//	printf(" %d = %04x,%02xxy -> %04x,%02xxy\n", i, privateCreatorMasks[i] & 65535, privateCreatorMasks[i] >> 24, privateCreatorRemaps[i] & 65535, privateCreatorRemaps[i] >> 24);	
+			goto skipRemap;		
+		}
+		
+		if (nRemaps < 1) goto skipRemap;
+		{
+		uint32_t remappedGroupElement = 0;
+		for (int i = 0; i < nRemaps; i++)
+			if ((groupElement & 0xFF00FFFF) == (privateCreatorMasks[i] & 0xFF00FFFF))
+				remappedGroupElement = privateCreatorRemaps[i] + (groupElement & 0x00FF0000);
+		if (remappedGroupElement == 0) goto skipRemap;
+		if (isVerbose > 1)
+			printf("remapping %04x,%04x -> %04x,%04x\n", groupElement & 65535, groupElement >> 16, remappedGroupElement & 65535, remappedGroupElement >> 16);	
+		groupElement = remappedGroupElement;
+		}
+		skipRemap:
+		#endif
+		switch ( groupElement ) {
          	case kMediaStorageSOPClassUID: {
          		char mediaUID[kDICOMStr];
                 dcmStr(lLength, &buffer[lPos], mediaUID);
@@ -6452,12 +6489,10 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 //printf("sliceV %g %g %g\n", sliceV.v[0], sliceV.v[1], sliceV.v[2]);
                 isOrient = true;
                 break; }
-            case kTemporalPosition :
-                if (d.manufacturer == kMANUFACTURER_GE)
-            		break; //for GE use kRawDataRunNumber
-                d.rawDataRunNumber =  dcmStrInt(lLength, &buffer[lPos]);
+            case kTemporalResolution :
+                temporalResolutionMS =  dcmStrFloat(lLength, &buffer[lPos]);
                 break;
-            case kImagesInAcquisition :
+			case kImagesInAcquisition :
                 imagesInAcquisition =  dcmStrInt(lLength, &buffer[lPos]);
                 break;
             //case kSliceLocation : //optional so useless, infer from image position patient (0020,0032) and image orientation (0020,0037) 
@@ -7102,6 +7137,11 @@ if (d.isHasPhase)
     #ifndef myLoadWholeFileToReadHeader
 	fclose(file);
 	#endif
+	if ((temporalResolutionMS > 0.0) && (isSameFloatGE(d.TR,temporalResolutionMS)) ) {
+		//do something profound
+		//in practice 0020,0110 not used
+		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
+	}
 	if (hasDwiDirectionality) d.isVectorFromBMatrix = false; //issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
     /*
     fixed 2/2019 by modifying to kDiffusionBFactor, kDiffusionDirectionRL, kDiffusionDirectionAP, kDiffusionDirectionFH

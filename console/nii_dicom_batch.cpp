@@ -1220,7 +1220,7 @@ tse3d: T2*/
 	if ((d.TE > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0 );
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
-	json_Float(fp, "\t\"TimeBetweenVolumes\": %g,\n", dti4D->timeBetweenVolumes);
+	json_Float(fp, "\t\"RepetitionTimeExcitation\": %g,\n", dti4D->repetitionTimeExcitation);
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
@@ -1640,7 +1640,7 @@ dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
 dti4D->decayFactor[0] = -1;
 dti4D->intenScale[0] = 0.0;
-dti4D->timeBetweenVolumes = 0.0;
+dti4D->repetitionTimeExcitation = 0.0;
 nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 }// nii_SaveBIDSX()
 
@@ -5063,8 +5063,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				float toleranceSec = 50.0/1000.0; //e.g. 50/1000 = 50ms
 				if ((nVol > 1) && (volumeTimeStartFirstStartLast > 0.0)) {
 					tr = volumeTimeStartFirstStartLast / (nVol - 1.0);
-					if (fabs(tr - hdr0.pixdim[4]) > toleranceSec)
-						dti4D->timeBetweenVolumes = tr;
+					if (fabs(tr - hdr0.pixdim[4]) > toleranceSec) {
+						dti4D->repetitionTimeExcitation = hdr0.pixdim[4];
+						hdr0.pixdim[4] = tr;
+						dcmList[indx0].TR = tr * 1000.0; //as msec
+					}
 				}
 				if ((maxtr - mintr) > toleranceSec) trVaries = true;
 				if (trVaries) {
