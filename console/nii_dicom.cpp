@@ -4060,6 +4060,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
 	dti4D->intenScale[0] = 0.0;
+	dti4D->repetitionTimeExcitation = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
     struct stat s;
     if( stat(fname,&s) == 0 ) {

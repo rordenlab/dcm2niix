@@ -440,9 +440,9 @@ const void * memmem(const char *l, size_t l_len, const char *s, size_t s_len) {
 #endif //for systems without memmem
 
 int readKeyN1(const char * key,  char * buffer, int remLength) { //look for text key in binary data stream, return subsequent integer value
-	int ret = -1;
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
-	if (!keyPos) return ret;
+	if (!keyPos) return -1;
+	int ret = 0;
 	int i = (int)strlen(key);
 	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
 		if( keyPos[i] >= '0' && keyPos[i] <= '9' )
@@ -3303,7 +3303,6 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 			} else
 				fprintf(fp,"DWMRI_gradient_%04d:=%.17g %.17g %.17g\n", i, factor*dti4D->S[i].V[1], factor*dti4D->S[i].V[2], factor*dti4D->S[i].V[3]);
 			//printf("%g =  %g %g %g>>>>\n",dti4D->S[i].V[0],  dti4D->S[i].V[1],dti4D->S[i].V[2],dti4D->S[i].V[3]);
-
 		}
 	}
 	fprintf(fp,"\n"); //blank line: end of NRRD header
@@ -3394,6 +3393,7 @@ void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
 	}
     //printWarning("NRRD unable to record scl_slope/scl_inter %g/%g\n", hdr->scl_slope, hdr->scl_inter);	
 }
+
 void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
 	//swap endian from big->little or little->big
 	// must be told which is native to detect datatype and number of voxels
@@ -3734,13 +3734,11 @@ void adjustOriginForNegativeTilt(struct nifti_1_header * hdr, float shiftPxY) {
         hdr->srow_y[3] -= shiftPxY * hdr->srow_y[1];
         hdr->srow_z[3] -= shiftPxY * hdr->srow_y[2];
     }
-
-    if (hdr->qform_code > 0) {
+   if (hdr->qform_code > 0) {
         // Adjust the quaternion offsets using quatern_* and pixdim
         mat44 mat = nifti_quatern_to_mat44(hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
                                            hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
                                            hdr->pixdim[1], hdr->pixdim[2], hdr->pixdim[3], hdr->pixdim[0]);
-
         hdr->qoffset_x -= shiftPxY * mat.m[1][0];
         hdr->qoffset_y -= shiftPxY * mat.m[1][1];
         hdr->qoffset_z -= shiftPxY * mat.m[1][2];
@@ -4530,8 +4528,6 @@ void sliceTimingXA(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 	if (isSameFloatGE(mn, 0.0)) return;
 	for (int v = 0; v < hdr->dim[3]; v++)
 		dcmList[indx0].CSA.sliceTiming[v] -= mn;
-	
-
 } //sliceTimingXA()
 
 void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
@@ -4561,6 +4557,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	//end: version check
 	if (d->CSA.multiBandFactor > 1) {
 		printWarning("Unable to compute slice times for GE version %d using x%d multi-band (issue 336).\n", majorVersion, d->CSA.multiBandFactor);
+		d->CSA.sliceTiming[0] = -1.0;
 		return;	
 	}
 	if ((d->maxEchoNumGE > 0) && (!d->isLocalizer))
@@ -4608,7 +4605,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		} //for each slice
 	} //if interleaved
 	#endif
-}
+} //rescueSliceTimingGE()
 
 void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
 	if ((d->CSA.protocolSliceNumber1 == 0) || ((d->CSA.protocolSliceNumber1 == 1))) return; //slices not flipped
@@ -5524,10 +5521,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         			imgR = nii_setOrtho(imgR, &hdrr);
 				if (isFlipY)
 					imgR = nii_flipY(imgR, &hdrr);
-				nii_saveNII(pathoutnameROI, hdrr, imgR, opts, dcmList[dcmSort[0].indx]);
-			
-			}
-			
+				nii_saveNII(pathoutnameROI, hdrr, imgR, opts, dcmList[dcmSort[0].indx]);			
+			}			
 		}
 #endif
 		imgM = removeADC(&hdr0, imgM, numADC);
@@ -6704,8 +6699,7 @@ int nii_loadDir(struct TDCMopts* opts) {
     if (!is_dir(opts->indir,true)) {
 		printError("Input folder invalid: %s\n",opts->indir);
 		return kEXIT_INPUT_FOLDER_INVALID;    		
-    }
-    
+    }    
 #ifdef USING_R
     // Full file paths are only used by R/divest when reorganising DICOM files
     if (opts->isRenameNotConvert) {
