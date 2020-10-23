@@ -806,6 +806,7 @@ struct TDICOMdata clear_dicom_data() {
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
     d.isPartialFourier = false;
+    d.isIR = false;
     d.isEPI = false;
     d.isDiffusion = false;
     d.isVectorFromBMatrix = false;
@@ -1650,6 +1651,7 @@ dti4D->decayFactor[0] = -1;
 dti4D->frameDuration[0] = -1;
 dti4D->intenScale[0] = 0.0;
 dti4D->repetitionTimeExcitation = 0.0;
+dti4D->repetitionTimeInversion = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty
 strcpy(d.sequenceName, ""); //erase dummy with empty
@@ -4061,6 +4063,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	dti4D->frameDuration[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	dti4D->repetitionTimeExcitation = 0.0;
+	dti4D->repetitionTimeInversion = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
     struct stat s;
     if( stat(fname,&s) == 0 ) {
@@ -4205,7 +4208,7 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 #define  kInPlanePhaseEncodingDirection  0x0018+(0x1312<< 16 ) //CS
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
-#define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
+#define  kInversionRecovery  0x0018+uint32_t(0x9009 << 16 ) //'CS' 'YES'/'NO'
 #define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
 #define  kRectilinearPhaseEncodeReordering 0x0018+uint32_t(0x9034 << 16) //'CS' 'REVERSE_LINEAR'/'LINEAR'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
@@ -4336,13 +4339,15 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kIconImageSequence 0x0088+(0x0200 << 16 )
 #define  kElscintIcon 0x07a3+(0x10ce << 16 ) //see kGeiisFlag and https://github.com/rordenlab/dcm2niix/issues/239
 #define  kPMSCT_RLE1 0x07a1+(0x100a << 16 ) //Elscint/Philips compression
-#define  kPrivateCreator  0x2001+(0x0010 << 16 )// LO
+#define  kPrivateCreator  0x2001+(0x0010 << 16 )// LO (Private creator is any tag where group is odd and element is x0010-x00FF 
 #define  kDiffusion_bValuePhilips  0x2001+(0x1003 << 16 )// FL
 #define  kCardiacSync  0x2001+(0x1010 << 16 ) //CS
 //#define  kDiffusionDirectionPhilips  0x2001+(0x1004 << 16 )//CS Diffusion Direction
 #define  kSliceNumberMrPhilips 0x2001+(0x100A << 16 ) //IS Slice_Number_MR
 #define  kSliceOrient  0x2001+(0x100B << 16 )//2001,100B Philips slice orientation (TRANSVERSAL, AXIAL, SAGITTAL)
 #define  kEPIFactorPhilips 0x2001+(0x1013 << 16 ) //SL
+#define  kPrepulseDelay  0x2001+(0x101B << 16 ) //FL
+#define  kPrepulseType  0x2001+(0x101C << 16 ) //CS
 #define  kRespirationSync  0x2001+(0x101F << 16 ) //CS
 #define  kNumberOfSlicesMrPhilips 0x2001+(0x1018 << 16 )//SL 0x2001, 0x1018 ), "Number_of_Slices_MR"
 #define  kPartialMatrixScannedPhilips  0x2001+(0x1019 << 16 )// CS
@@ -4927,7 +4932,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 		groupElement = remappedGroupElement;
 		}
 		skipRemap:
-		#endif
+		#endif // salvageAgfa
 		switch ( groupElement ) {
          	case kMediaStorageSOPClassUID: {
          		char mediaUID[kDICOMStr];
@@ -5283,6 +5288,11 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             case kPatientOrient :
                 dcmStr(lLength, &buffer[lPos], d.patientOrient);
                 break;
+            case kInversionRecovery : // CS [YES],[NO]
+				if (lLength < 2) break;
+                if (toupper(buffer[lPos]) == 'Y')
+                	d.isIR = true;
+                break;                
             case kEchoPlanarPulseSequence : // CS [YES],[NO]
 				if (lLength < 2) break;
                 if (toupper(buffer[lPos]) == 'Y')
@@ -5959,6 +5969,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				//Canon/Toshiba omits 0018,9018, but reports [SE\EP];[GR\EP] for 0018,0020
 				//GE omits 0018,9018, but reports [EP\GR];[EP\SE] for 0018,0020
 				//Philips reports 0018,9018, but reports [SE];[GR] for 0018,0020
+                if ((lLength > 1) && (strstr(d.scanningSequence, "IR") != NULL))
+                	d.isIR = true;
                 if ((lLength > 1) && (strstr(d.scanningSequence, "EP") != NULL))
                 	d.isEPI = true;
                 break; //warp
@@ -6207,6 +6219,18 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
                 echoTrainLengthPhil = dcmInt(lLength,&buffer[lPos],d.isLittleEndian);
+                break;
+            case kPrepulseDelay : //FL 
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+            	d.TI =  dcmStrFloat(lLength, &buffer[lPos]);
+            	break;
+            case kPrepulseType : //CS [INV]
+            	if (d.manufacturer != kMANUFACTURER_PHILIPS)
+            		break;
+				if (lLength < 3) break;
+                if ((toupper(buffer[lPos]) != 'I') && (toupper(buffer[lPos+1]) != 'N') && (toupper(buffer[lPos+2]) != 'V'))
+                	d.isIR = true;
                 break;
             case kRespirationSync : //CS [TRIGGERED],[NO]
 				if (lLength < 2) break;

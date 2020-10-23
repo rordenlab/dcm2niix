@@ -374,6 +374,13 @@ int main(int argc, const char * argv[])
                     opts.isIgnoreDerivedAnd2D = false;
                 else
                     opts.isIgnoreDerivedAnd2D = true;
+            } else if ((argv[i][1] == 'j') && ((i+1) < argc)) {
+                i++;
+                if (invalidParam(i, argv)) return 0;
+                if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')  || (argv[i][0] == '1')) {
+                    opts.isIgnorex0021x105E = true;
+                    printf("undocumented '-j y' ignores slice timing from 0021,105E\n");
+                }
             } else if ((argv[i][1] == 'l') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

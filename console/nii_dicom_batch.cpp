@@ -474,7 +474,7 @@ float readKeyFloatNan(const char * key,  char * buffer, int remLength) { //look 
   	tmpstr[1] = 0;
 	int i = (int)strlen(key);
 	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
-		if( (keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] <= '.') || (keyPos[i] <= '-') ) {
+		if( (keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-') ) {
 			tmpstr[0] = keyPos[i];
 			strcat (str, tmpstr);
 		}
@@ -493,7 +493,7 @@ float readKeyFloat(const char * key,  char * buffer, int remLength) { //look for
   	tmpstr[1] = 0;
 	int i = (int)strlen(key);
 	while( ( i< remLength) && (keyPos[i] != 0x0A) ) {
-		if( (keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] <= '.') || (keyPos[i] <= '-') ) {
+		if( (keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-') ) {
 			tmpstr[0] = keyPos[i];
 			strcat (str, tmpstr);
 		}
@@ -782,9 +782,10 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel) {
+int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
+	*groupDelay = 0.0;
 	int ret = EXIT_FAILURE;
  	if ((geOffset < 0) || (geLength < 20)) return ret;
 	FILE * pFile = fopen ( filename, "rb" );
@@ -856,6 +857,8 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	char keyStrMB[] = "MBACCEL";
 	*mbAccel  = readKey(keyStrMB, (char *) pUnCmp, unCmpSz);
+	char keyStrGD[] = "DELACQNOAV";
+	*groupDelay = readKeyFloat(keyStrGD, (char *) pUnCmp, unCmpSz);
 	if (isVerbose > 1) {
 		printMessage("GE Protocol Block %s bytes %d compressed, %d uncompressed @ %d\n", filename, geLength, unCmpSz, geOffset);
 		printMessage(" ViewOrder %d SliceOrder %d\n", *viewOrder, *sliceOrder);
@@ -1221,6 +1224,7 @@ tse3d: T2*/
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTimeExcitation\": %g,\n", dti4D->repetitionTimeExcitation);
+	json_Float(fp, "\t\"RepetitionTimeInversion\": %g,\n", dti4D->repetitionTimeInversion);
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
@@ -4530,37 +4534,79 @@ void sliceTimingXA(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 		dcmList[indx0].CSA.sliceTiming[v] -= mn;
 } //sliceTimingXA()
 
-void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename) {
+void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInterleaved, bool isDescending, bool is27v3, float groupDelaysec) {
+//mb : multiband factor
+//dim3 : number of slices in volume
+//TRsec : repetition time in seconds
+//isInterleaved : interleaved or sequential slice order
+//isDescending : descending or ascending slice order
+//is27v3 : software release 27.3 or later
+	float sliceTiming[kMaxEPI3D];
+	//multiband can be fractional! 'extra' slices discarded
+	int nExcitations = ceil(float(dim3) / float(mb));
+	int nDiscardedSlices = (nExcitations * mb) - dim3;
+	float secPerSlice = (TR - groupDelaysec) / (nExcitations);
+	if (!isInterleaved) {
+		for (int i = 0; i < nExcitations; i++)
+			sliceTiming[i] = i * secPerSlice;
+	} else {
+		int nOdd = (nExcitations - 1) / 2;
+		for (int i = 0; i < nExcitations; i++) {
+			if (i % 2 == 0) //ODD slices since we index from 0!
+				sliceTiming[i] = (i/2) * secPerSlice;
+			else
+				sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
+		} //for each slice
+		if ((mb > 1) && (is27v3) && (isInterleaved) && (nExcitations > 2) && ((nExcitations % 2) == 0)) {
+			float tmp = sliceTiming[nExcitations - 1];
+			sliceTiming[nExcitations - 1] = sliceTiming[nExcitations - 3];
+			sliceTiming[nExcitations - 3] = tmp;
+			//printf("SWAP!\n");
+		}
+	} //if interleaved
+	for (int i = 0; i < dim3; i++)
+		sliceTiming[i] = sliceTiming[i % nExcitations];
+	//reverse temporal order for descending
+	if (isDescending)
+		for (int i = 0; i < dim3; i++)
+			sliceTiming[i] = ((nExcitations - 1)  * secPerSlice) - sliceTiming[i];
+	for (int i = 0; i < dim3; i++)
+		d->CSA.sliceTiming[i] = sliceTiming[i];
+} // sliceTimeGE()
+
+
+void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename, struct TDCMopts opts) {
 	//we can often read GE slice timing from TriggerTime (0018,1060) or RTIA Timer (0021,105E)
 	// if both of these methods fail, we can often guess based on slice order stored in the Private Protocol Data Block (0025,101B)
 	// this is referred to as "rescue" as we only know the TR, not the TA. So assumes continuous scans with no gap
-	if (d->is3DAcq) return; //no need for slice times
+	if ((d->is3DAcq) || (d->isLocalizer)) return; //no need for slice times
 	if (nSL < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
 	//start version check: "27\LX\MR Software release:RX27.0_R02_1831.a" -> 27
-	int majorVersion = 0;
+	float majorVersion = 0;
 	char* sepStart = strchr(d->softwareVersions, ':');
 	if (sepStart != NULL) {
 		char* sepEnd = strchr(sepStart, '.');
 		sepStart += 3; //':RX'
 		if ((sepEnd != NULL) && ((sepEnd - sepStart) >= 2) ) {
+			sepEnd += 2; //'.0'
 			int len = sepEnd - sepStart;
 			char * cString = (char *)malloc(sizeof(char) * (len + 1));
 			cString[len] =0;
 			memcpy(cString, sepStart, len);
-    		majorVersion = atoi(cString);
+    		majorVersion = atof(cString);
     		free(cString);
 		}
 	}
-	if (verbose > 1) printMessage("GE major version %d: '%s'\n", majorVersion, d->softwareVersions); 
-	if ((majorVersion > 27) && (d->CSA.sliceTiming[0] >= 0.0)) return; //trust slice timings for versions > 27, see issue 336
-	//end: version check
-	if (d->CSA.multiBandFactor > 1) {
-		printWarning("Unable to compute slice times for GE version %d using x%d multi-band (issue 336).\n", majorVersion, d->CSA.multiBandFactor);
-		d->CSA.sliceTiming[0] = -1.0;
-		return;	
+	if (!opts.isIgnorex0021x105E) {
+		if ((majorVersion > 27.0) && (d->CSA.sliceTiming[0] >= 0.0)) {
+			//if (verbose > 1) 
+			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E) \n", majorVersion);
+			return; //trust slice timings for versions > 27, see issue 336
+		}
 	}
-	if ((d->maxEchoNumGE > 0) && (!d->isLocalizer))
+	//end: version check
+	if (d->maxEchoNumGE > 0)
 		printWarning("GE sequence with %d echoes. See issue 359\n", d->maxEchoNumGE);	
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) return;
 	#ifdef myReadGeProtocolBlock
@@ -4571,39 +4617,26 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
 	int mbAccel = -1;
+	float groupDelay = 0.0;
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay);
 	if (ok != EXIT_SUCCESS) {
-		printWarning("Unable to decode GE protocol block\n");
+		printWarning("Unable to estimate slice times: issue decoding GE protocol block\n");
 		return;
 	}
-	if (mbAccel > 1) {
-		d->CSA.multiBandFactor = mbAccel;
-		printWarning("Unable to compute slice times for GE x%d multi-band. SliceOrder=%d (seq=0, int=1)\n", mbAccel, sliceOrderGE);
-		d->CSA.sliceTiming[0] = -1.0;
-		return;	
-	}
-	if (d->CSA.sliceTiming[0] >= 0.0) return; //slice times calculated - moved here to detect multiband, see issue 336
-	if (verbose > 1) printMessage("GE view-order %d, slice-order %d, multi-band %d\n", viewOrderGE, sliceOrderGE, mbAccel);
-	if ((sliceOrderGE < 0) || (sliceOrderGE > 1)) return;
-	// 0=sequential/1=interleaved
-	printWarning("Guessing slice times using ProtocolBlock SliceOrder=%d (seq=0, int=1)\n", sliceOrderGE);
-	int nOdd = nSL / 2;
-	float secPerSlice = d->TR/nSL; //should be TA not TR! We do not know TR
-	if (sliceOrderGE == 0) {
-		for (int i = 0; i < nSL; i++)
-			d->CSA.sliceTiming[i] = i * secPerSlice;
-	} else {
-		for (int i = 0; i < nSL; i++) {
-			if (i % 2 == 0) { //ODD slices since we index from 0!
-				d->CSA.sliceTiming[i] = (i/2) * secPerSlice;
-				//printf("%g\n", d->CSA.sliceTiming[i]);
-			} else {
-				d->CSA.sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
-				//printf("%g\n", d->CSA.sliceTiming[i]);
-			}
-		} //for each slice
-	} //if interleaved
+	mbAccel = max(mbAccel, 1);
+	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
+	bool isInterleaved = (sliceOrderGE != 0);
+	bool isDescending = (d->CSA.protocolSliceNumber1 < 0);
+	d->CSA.protocolSliceNumber1 = 0; //handle slice order
+	bool is27v3 = (majorVersion > 27.3);
+	groupDelay *= 1000.0;
+	//if (verbose > 1) 
+	printMessage("GEversion %.1f, TRms %g, interleaved %d, descending %d, multiband %d, groupdelayms %g\n", majorVersion, d->TR, isInterleaved, isDescending, d->CSA.multiBandFactor, groupDelay);	
+	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, isDescending, is27v3, groupDelay);
+	//printf("%.1f %s\n", majorVersion, d->protocolName);
+	//for (int i = 0; i < nSL; i++)
+	//		printf("%d %g\n", i, d->CSA.sliceTiming[i]);
 	#endif
 } //rescueSliceTimingGE()
 
@@ -4794,7 +4827,7 @@ void sliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 	} //GE slice timing from 0021,105E
 } //sliceTimingGE()
 
-int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
+int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert, struct TDCMopts opts) {
 	int sliceDir = 0;
 	if (hdr->dim[3] < 2) return sliceDir;
 	//uint64_t indx0 = dcmSort[0].indx;
@@ -4809,7 +4842,6 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS);
 	rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
-	rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename); //desperate attempts if conventional methods fail
 	if (hdr->dim[3] > 1)sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1] , hdr, true);
 	//UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
@@ -4822,6 +4854,7 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
     	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
 	}
+	rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename, opts); //desperate attempts if conventional methods fail
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	return sliceDir;
 } //sliceTiming()
@@ -5061,7 +5094,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				if ((nVol > 1) && (volumeTimeStartFirstStartLast > 0.0)) {
 					tr = volumeTimeStartFirstStartLast / (nVol - 1.0);
 					if (fabs(tr - hdr0.pixdim[4]) > toleranceSec) {
-						dti4D->repetitionTimeExcitation = hdr0.pixdim[4];
+						if ((dcmList[indx0].isIR) && (dcmList[indx0].manufacturer != kMANUFACTURER_PHILIPS))
+							dti4D->repetitionTimeInversion = hdr0.pixdim[4];
+						else
+							dti4D->repetitionTimeExcitation = hdr0.pixdim[4];
 						hdr0.pixdim[4] = tr;
 						dcmList[indx0].TR = tr * 1000.0; //as msec
 					}
@@ -5281,7 +5317,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
         	checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert-1].indx]);
     }
-	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert);
+	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert, opts);
     #ifdef myReportSliceFilenames 
     if (sliceDir < 0) {
      	for (int i = nConvert; i > 0; --i)
@@ -6970,6 +7006,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isForceStackDCE = true;
     opts->isIgnoreDerivedAnd2D = false;
     opts->isForceOnsetTimes = true;
+    opts->isIgnorex0021x105E = false;
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isRotate3DAcq = true;
