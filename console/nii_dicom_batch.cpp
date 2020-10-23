@@ -4571,7 +4571,7 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 	float maxErr = 0.0;
 	for (int i = 0; i < dim3; i++) {
 			printf("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
-			//maxErr = max(maxErr, fabs(sliceTiming[i], d->CSA.sliceTiming[i]));
+			maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
 		}
 	printf("max error: %g\n", maxErr);
 	#endif
@@ -4606,7 +4606,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	if (!opts.isIgnorex0021x105E) {
 		if ((majorVersion > 27.0) && (d->CSA.sliceTiming[0] >= 0.0)) {
 			//if (verbose > 1) 
-			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E) \n", majorVersion);
+			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", majorVersion);
 			return; //trust slice timings for versions > 27, see issue 336
 		}
 	}
@@ -4626,7 +4626,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
 	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay);
 	if (ok != EXIT_SUCCESS) {
-		printWarning("Unable to estimate slice times: issue decoding GE protocol block\n");
+		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
 	}
 	mbAccel = max(mbAccel, 1);
@@ -4634,8 +4634,15 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	bool isInterleaved = (sliceOrderGE != 0);
 	bool is27v3 = (majorVersion > 27.3);
 	groupDelay *= 1000.0; //sec -> ms
-	if (!isSameFloatGE(groupDelay, d->groupDelay))
-		printWarning("Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ\n", d->groupDelay, groupDelay);
+	if (!isSameFloatGE(groupDelay, d->groupDelay)) {
+		printWarning("Multi-phase sequence? Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
+		if (isSameFloatGE(d->groupDelay, 0.0)) { //for multi-phase we must add group delay to TR here
+			d->TR += groupDelay;
+			d->groupDelay = groupDelay;
+			
+		
+		}
+	}
 	printMessage("GEversion %.1f, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", majorVersion, d->TR, isInterleaved, d->CSA.multiBandFactor, groupDelay);	
 	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27v3, d->groupDelay);
 	#endif
