@@ -782,7 +782,7 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay) {
+int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay, float* groupDelay2) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
 	*groupDelay = 0.0;
@@ -857,7 +857,9 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	char keyStrMB[] = "MBACCEL";
 	*mbAccel  = readKey(keyStrMB, (char *) pUnCmp, unCmpSz);
-	char keyStrGD[] = "DELACQNOAV";
+	char keyStrGD2[] = "DELACQ"; 
+	*groupDelay2 = readKeyFloat(keyStrGD2, (char *) pUnCmp, unCmpSz);
+	char keyStrGD[] = "DELACQNOAV"; 
 	*groupDelay = readKeyFloat(keyStrGD, (char *) pUnCmp, unCmpSz);
 	if (isVerbose > 1) {
 		printMessage("GE Protocol Block %s bytes %d compressed, %d uncompressed @ %d\n", filename, geLength, unCmpSz, geOffset);
@@ -4565,9 +4567,9 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 	} //if interleaved
 	for (int i = 0; i < dim3; i++)
 		sliceTiming[i] = sliceTiming[i % nExcitations];
-	//#define testSliceTimesGE
+	#define testSliceTimesGE
 	#ifdef testSliceTimesGE
-	printf("reported vs estimated slice times:\n");
+	printf("testSliceTimesGE reported vs estimated slice times:\n");
 	float maxErr = 0.0;
 	for (int i = 0; i < dim3; i++) {
 			printf("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
@@ -4623,8 +4625,9 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	int sliceOrderGE = -1;
 	int mbAccel = -1;
 	float groupDelay = 0.0;
+	float groupDelay2 = 0.0;
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay, &groupDelay2);
 	if (ok != EXIT_SUCCESS) {
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
