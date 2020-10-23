@@ -4534,12 +4534,11 @@ void sliceTimingXA(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 		dcmList[indx0].CSA.sliceTiming[v] -= mn;
 } //sliceTimingXA()
 
-void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInterleaved, bool isDescending, bool is27v3, float groupDelaysec) {
+void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInterleaved, bool is27v3, float groupDelaysec) {
 //mb : multiband factor
 //dim3 : number of slices in volume
 //TRsec : repetition time in seconds
 //isInterleaved : interleaved or sequential slice order
-//isDescending : descending or ascending slice order
 //is27v3 : software release 27.3 or later
 	float sliceTiming[kMaxEPI3D];
 	//multiband can be fractional! 'extra' slices discarded
@@ -4566,10 +4565,16 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 	} //if interleaved
 	for (int i = 0; i < dim3; i++)
 		sliceTiming[i] = sliceTiming[i % nExcitations];
-	//reverse temporal order for descending
-	if (isDescending)
-		for (int i = 0; i < dim3; i++)
-			sliceTiming[i] = ((nExcitations - 1)  * secPerSlice) - sliceTiming[i];
+	//#define testSliceTimesGE
+	#ifdef testSliceTimesGE
+	printf("reported vs estimated slice times:\n");
+	float maxErr = 0.0;
+	for (int i = 0; i < dim3; i++) {
+			printf("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
+			//maxErr = max(maxErr, fabs(sliceTiming[i], d->CSA.sliceTiming[i]));
+		}
+	printf("max error: %g\n", maxErr);
+	#endif
 	for (int i = 0; i < dim3; i++)
 		d->CSA.sliceTiming[i] = sliceTiming[i];
 } // sliceTimeGE()
@@ -4627,16 +4632,12 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	mbAccel = max(mbAccel, 1);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
-	bool isDescending = (d->CSA.protocolSliceNumber1 < 0);
-	d->CSA.protocolSliceNumber1 = 0; //handle slice order
 	bool is27v3 = (majorVersion > 27.3);
-	groupDelay *= 1000.0;
-	//if (verbose > 1) 
-	printMessage("GEversion %.1f, TRms %g, interleaved %d, descending %d, multiband %d, groupdelayms %g\n", majorVersion, d->TR, isInterleaved, isDescending, d->CSA.multiBandFactor, groupDelay);	
-	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, isDescending, is27v3, groupDelay);
-	//printf("%.1f %s\n", majorVersion, d->protocolName);
-	//for (int i = 0; i < nSL; i++)
-	//		printf("%d %g\n", i, d->CSA.sliceTiming[i]);
+	groupDelay *= 1000.0; //sec -> ms
+	if (!isSameFloatGE(groupDelay, d->groupDelay))
+		printWarning("Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ\n", d->groupDelay, groupDelay);
+	printMessage("GEversion %.1f, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", majorVersion, d->TR, isInterleaved, d->CSA.multiBandFactor, groupDelay);	
+	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27v3, d->groupDelay);
 	#endif
 } //rescueSliceTimingGE()
 

@@ -771,6 +771,8 @@ struct TDICOMdata clear_dicom_data() {
     d.echoNum = 1;
     d.echoTrainLength = 0;
     d.waterFatShift = 0.0;
+    d.groupDelay = 0.0;
+    d.decayFactor = 0.0;
     d.percentSampling = 0.0;
     d.phaseFieldofView = 0.0;
     d.dwellTime = 0;
@@ -2262,7 +2264,6 @@ int	kbval = 33; //V3: 27
             num2DExpected = d.xyzDim[3] * num3DExpected;
     	}
     	float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(numDyn-1); //-1 for fence post
-    	//float TRms =  1000.0f * (maxDynTime - minDynTime) / (float)(d.CSA.numDti-1);
     	if (fabs(TRms - d.TR) > 0.005f)
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
@@ -4313,6 +4314,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
 #define  kImageTypeGE  0x0043+(0x102F  << 16 ) //SS  0/1/2/3 for magnitude/phase/real/imaginary
 #define  kDiffusion_bValueGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
+#define  kGroupDelayGE  0x0043+(0x107C << 16 ) //FL
 #define  kAssetRFactorsGE  0x0043+(0x1083 << 16 ) //DS
 #define  kMultiBandGE  0x0043+(0x10B6 << 16 ) //LO
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
@@ -6223,7 +6225,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             case kPrepulseDelay : //FL 
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
             		break;
-            	d.TI =  dcmStrFloat(lLength, &buffer[lPos]);
+            	d.TI =  dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
             	break;
             case kPrepulseType : //CS [INV]
             	if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -6453,6 +6455,12 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                   d.CSA.numDti = 1;
                 }
                 break;
+           case kGroupDelayGE : //FL 
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+            	d.groupDelay = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+				d.groupDelay *= 1000.0; //sec -> ms
+				break;
             case kAssetRFactorsGE: { //DS issue427GE
             	if (d.manufacturer != kMANUFACTURER_GE) break;
             	float PhaseSlice[3];
@@ -6691,6 +6699,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     	printWarning("DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010: %s\n", fname);
     	d.imageStart = encapsulatedDataImageStart;
     }
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.groupDelay > 0.0))
+    	d.TR += d.groupDelay;  //Strangely, for GE the sample rate is (0018,0080) + ((0043,107c) * 1000.0)
     if ((d.modality == kMODALITY_PT) && (PETImageIndex > 0)) {
     	d.imageNum = PETImageIndex; //https://github.com/rordenlab/dcm2niix/issues/184
     	//printWarning("PET scan using 0054,1330 for image number %d\n", PETImageIndex);
