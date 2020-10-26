@@ -782,7 +782,7 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay, float* groupDelay2) {
+int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay, char ioptGE[]) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
 	*groupDelay = 0.0;
@@ -857,10 +857,28 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	char keyStrMB[] = "MBACCEL";
 	*mbAccel  = readKey(keyStrMB, (char *) pUnCmp, unCmpSz);
-	char keyStrGD2[] = "DELACQ"; 
-	*groupDelay2 = readKeyFloat(keyStrGD2, (char *) pUnCmp, unCmpSz);
+	char keyStrDELACQ[] = "DELACQ"; 
+    char DELACQ[100];
+    readKeyStr(keyStrDELACQ, (char *) pUnCmp, unCmpSz, DELACQ);
 	char keyStrGD[] = "DELACQNOAV"; 
 	*groupDelay = readKeyFloat(keyStrGD, (char *) pUnCmp, unCmpSz);
+    char keyStrIOPT[] = "IOPT"; 
+    readKeyStr(keyStrIOPT, (char *) pUnCmp, unCmpSz, ioptGE);
+    char PHASEDELAYS1[10000];
+    char keyStrPHASEDELAYS1[] = "PHASEDELAYS1";
+    readKeyStr(keyStrPHASEDELAYS1, (char *) pUnCmp, unCmpSz, PHASEDELAYS1);
+    if (strstr(ioptGE,"MPh") != NULL) {
+        if (strcmp(DELACQ, "Minimum") == 0) {
+            *groupDelay = 0;
+        }
+        if (strstr(ioptGE,"MPhVar") != NULL) {
+            *groupDelay = -1;
+            // Multiphase EPI with Variable Delays
+            // TO-DO
+            // NEED TO rescue ALL_PHASES case (=Group delay)
+            //      IF values in PHASEDELAYS1 are all same except 1st value (0), this case should be same as Group Delay
+        }
+    }
 	if (isVerbose > 1) {
 		printMessage("GE Protocol Block %s bytes %d compressed, %d uncompressed @ %d\n", filename, geLength, unCmpSz, geOffset);
 		printMessage(" ViewOrder %d SliceOrder %d\n", *viewOrder, *sliceOrder);
@@ -1059,6 +1077,8 @@ tse3d: T2*/
 	};
 	if (d.epiVersionGE == 0) fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
 	if (d.epiVersionGE == 1) fprintf(fp, "\t\"PulseSequenceName\": \"epiRT\",\n");
+    if (d.internalepiVersionGE == 0) fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI\",\n");
+    if (d.internalepiVersionGE == 1) fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI2\",\n");
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
 	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
@@ -4625,9 +4645,9 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	int sliceOrderGE = -1;
 	int mbAccel = -1;
 	float groupDelay = 0.0;
-	float groupDelay2 = 0.0;
+	char ioptGE[3000] = "";
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay, &groupDelay2);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay, ioptGE);
 	if (ok != EXIT_SUCCESS) {
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
@@ -4637,15 +4657,25 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	bool isInterleaved = (sliceOrderGE != 0);
 	bool is27v3 = (majorVersion > 27.3);
 	groupDelay *= 1000.0; //sec -> ms
-	if (!isSameFloatGE(groupDelay, d->groupDelay)) {
-		printWarning("Multi-phase sequence? Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
-		if (isSameFloatGE(d->groupDelay, 0.0)) { //for multi-phase we must add group delay to TR here
-			d->TR += groupDelay;
-			d->groupDelay = groupDelay;
-			
-		
-		}
-	}
+	// epiRT 
+    if ((d->epiVersionGE == 1) || (strstr(ioptGE,"FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+        if (!isSameFloatGE(groupDelay, d->groupDelay)) {
+            printWarning("With epiRT(i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
+        } 
+    }
+    // Multiphase EPI
+    if ((d->epiVersionGE == 0) || (strstr(ioptGE,"MPh") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+        if (groupDelay > 0) { 
+            d->TR += groupDelay;
+            d->groupDelay = groupDelay;
+        }
+        // Multiphase EPI with Variable Delays
+        if (groupDelay == -1) {     
+            printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
+            d->CSA.sliceTiming[0] = -1;
+        }
+    }
+    printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
 	printMessage("GEversion %.1f, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", majorVersion, d->TR, isInterleaved, d->CSA.multiBandFactor, groupDelay);	
 	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27v3, d->groupDelay);
 	#endif

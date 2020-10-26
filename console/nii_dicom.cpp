@@ -842,6 +842,7 @@ struct TDICOMdata clear_dicom_data() {
     d.rawDataRunNumber = -1;
     d.maxEchoNumGE = -1;
     d.epiVersionGE = -1;
+    d.internalepiVersionGE = -1;
     d.interp3D = -1;
     for (int i = 0; i < kMaxOverlay; i++)
     	d.overlayStart[i] = 0;
@@ -4251,6 +4252,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusionDirectionGEY  0x0019+(0x10BC<< 16 ) //DS frequency diffusion direction
 #define  kDiffusionDirectionGEZ  0x0019+(0x10BD<< 16 ) //DS slice diffusion direction
 #define  kPulseSequenceNameGE 0x0019+(0x109C<< 16 ) //LO 'epiRT' or 'epi'
+#define  kInternalPulseSequenceNameGE 0x0019+(0x109E<< 16 ) //LO  'EPI' or 'EPI2'
 #define  kSharedFunctionalGroupsSequence  0x5200+uint32_t(0x9229<< 16 ) // SQ
 #define  kPerFrameFunctionalGroupsSequence  0x5200+uint32_t(0x9230<< 16 ) // SQ
 #define  kBandwidthPerPixelPhaseEncode  0x0019+(0x1028<< 16 ) //FD
@@ -4314,7 +4316,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kEffectiveEchoSpacingGE  0x0043+(0x102C << 16 ) //SS
 #define  kImageTypeGE  0x0043+(0x102F  << 16 ) //SS  0/1/2/3 for magnitude/phase/real/imaginary
 #define  kDiffusion_bValueGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
-#define  kGroupDelayGE  0x0043+(0x107C << 16 ) //FL
+#define  kEpiRTGroupDelayGE  0x0043+(0x107C << 16 ) //FL
 #define  kAssetRFactorsGE  0x0043+(0x1083 << 16 ) //DS
 #define  kMultiBandGE  0x0043+(0x10B6 << 16 ) //LO
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
@@ -5454,7 +5456,19 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if (strstr(epiStr, "epiRT") == NULL) break;
             	d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
             	break;            
-            }            
+            }     
+            case kInternalPulseSequenceNameGE : { //LO  'EPI'(gradient echo)/'EPI2'(spin echo): 
+                if (d.manufacturer != kMANUFACTURER_GE) break;
+                char epiStr[kDICOMStr];
+                dcmStr(lLength, &buffer[lPos], epiStr);
+                if (strstr(epiStr, "EPI") == NULL) break;
+                d.internalepiVersionGE = 0; //-1 = not EPI, 0 = EPI, 1 = EPI2
+                if (d.epiVersionGE != 1) // 1 = epiRT by kEpiRTGroupDelayGE or kPulseSequenceNameGE
+                    d.epiVersionGE = 0; // 0 = epi (multi-phase epi) 
+                if (strstr(epiStr, "EPI2") == NULL) break;
+                d.internalepiVersionGE = 1; //-1 = not epi, 0 = EPI, 1 = EPI2
+                break;
+            }       
             case kBandwidthPerPixelPhaseEncode:
                 d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
                 break;
@@ -6455,11 +6469,13 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                   d.CSA.numDti = 1;
                 }
                 break;
-           case kGroupDelayGE : //FL 
+           case kEpiRTGroupDelayGE : //FL 
             	if (d.manufacturer != kMANUFACTURER_GE)
             		break;
             	d.groupDelay = dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
 				d.groupDelay *= 1000.0; //sec -> ms
+                // If kEpiRTGroupDelayGE (0043,107C) exists, epiRT
+                d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
 				break;
             case kAssetRFactorsGE: { //DS issue427GE
             	if (d.manufacturer != kMANUFACTURER_GE) break;
