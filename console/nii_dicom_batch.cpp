@@ -782,9 +782,11 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay, char ioptGE[]) {
+int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, int* nSlices, float* groupDelay, char ioptGE[]) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
+	*mbAccel = 0;
+	*nSlices = 0;
 	*groupDelay = 0.0;
 	int ret = EXIT_FAILURE;
  	if ((geOffset < 0) || (geLength < 20)) return ret;
@@ -857,6 +859,8 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	char keyStrMB[] = "MBACCEL";
 	*mbAccel  = readKey(keyStrMB, (char *) pUnCmp, unCmpSz);
+	char keyStrNS[] = "NOSLC";
+	*nSlices  = readKey(keyStrNS, (char *) pUnCmp, unCmpSz);
 	char keyStrDELACQ[] = "DELACQ"; 
     char DELACQ[100];
     readKeyStr(keyStrDELACQ, (char *) pUnCmp, unCmpSz, DELACQ);
@@ -4644,15 +4648,18 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
 	int mbAccel = -1;
+	int nSlices = -1;
 	float groupDelay = 0.0;
 	char ioptGE[3000] = "";
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay, ioptGE);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
 	if (ok != EXIT_SUCCESS) {
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
 	}
 	mbAccel = max(mbAccel, 1);
+	if (nSlices != nSL)
+		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", nSL, nSlices);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
 	bool is27v3 = (majorVersion > 27.3);
@@ -5100,7 +5107,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				if (dcmList[dcmSort[i].indx].isHasImaginary) dcmList[indx0].isHasImaginary = true;
 			}
 			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
-    		if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
+    		//if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
+			if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| ((opts.isForceOnsetTimes) && (dcmList[indx0].manufacturer != kMANUFACTURER_GE)))) {
+				//note: GE 0008,0032  unreliable, see mb=6 data from sw27.0 20201026
 				//issue 407
 				int nTR = 0;
 				for (int i = 0; i < nConvert; i++)
