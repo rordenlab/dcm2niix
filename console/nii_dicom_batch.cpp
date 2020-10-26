@@ -782,9 +782,11 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, float* groupDelay, char ioptGE[]) {
+int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isVerbose, int* sliceOrder, int* viewOrder, int* mbAccel, int* nSlices, float* groupDelay, char ioptGE[]) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
+	*mbAccel = 0;
+	*nSlices = 0;
 	*groupDelay = 0.0;
 	int ret = EXIT_FAILURE;
  	if ((geOffset < 0) || (geLength < 20)) return ret;
@@ -857,6 +859,8 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	*viewOrder  = readKey(keyStrVO, (char *) pUnCmp, unCmpSz);
 	char keyStrMB[] = "MBACCEL";
 	*mbAccel  = readKey(keyStrMB, (char *) pUnCmp, unCmpSz);
+	char keyStrNS[] = "NOSLC";
+	*nSlices  = readKey(keyStrNS, (char *) pUnCmp, unCmpSz);
 	char keyStrDELACQ[] = "DELACQ"; 
     char DELACQ[100];
     readKeyStr(keyStrDELACQ, (char *) pUnCmp, unCmpSz, DELACQ);
@@ -932,8 +936,6 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
     }
     sValEsc[o] = '\0';
     fprintf(fp, sLabel, sValEsc );
-
-	
 } //json_Str
 
 void json_FloatNotNan(FILE *fp, const char *sLabel, float sVal) {
@@ -4589,13 +4591,17 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 		sliceTiming[i] = sliceTiming[i % nExcitations];
 	#define testSliceTimesGE
 	#ifdef testSliceTimesGE
-	printf("testSliceTimesGE reported vs estimated slice times:\n");
 	float maxErr = 0.0;
-	for (int i = 0; i < dim3; i++) {
-			printf("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
-			maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
-		}
-	printf("max error: %g\n", maxErr);
+	for (int i = 0; i < dim3; i++)
+		maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
+	if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
+		printMessage("GE estimated slice times differ from reported (max error: %g)\n", maxErr);
+		printMessage("Slice\tEstimated\tReported\n");
+		for (int i = 0; i < dim3; i++) {
+				printMessage("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
+				maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
+			}
+	}
 	#endif
 	for (int i = 0; i < dim3; i++)
 		d->CSA.sliceTiming[i] = sliceTiming[i];
@@ -4644,15 +4650,18 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
 	int mbAccel = -1;
+	int nSlices = -1;
 	float groupDelay = 0.0;
 	char ioptGE[3000] = "";
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &groupDelay, ioptGE);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
 	if (ok != EXIT_SUCCESS) {
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
 	}
 	mbAccel = max(mbAccel, 1);
+	if (nSlices != nSL) //redundant with locationsInAcquisition check?
+		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", nSL, nSlices);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
 	bool is27v3 = (majorVersion > 27.3);
@@ -5073,6 +5082,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
+                if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]))
+                	printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d.\n", dcmList[indx0].locationsInAcquisition, hdr0.dim[3]);
             } else if ((dcmList[indx0].isXA10A) && (nConvert > nAcq) && (nAcq > 1) ) {
             	nAcq -= 1;
                 hdr0.dim[3] = nConvert/nAcq;
@@ -5100,7 +5111,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 				if (dcmList[dcmSort[i].indx].isHasImaginary) dcmList[indx0].isHasImaginary = true;
 			}
 			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
-    		if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
+    		//if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
+			if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| ((opts.isForceOnsetTimes) && (dcmList[indx0].manufacturer != kMANUFACTURER_GE)))) {
+				//note: GE 0008,0032  unreliable, see mb=6 data from sw27.0 20201026
 				//issue 407
 				int nTR = 0;
 				for (int i = 0; i < nConvert; i++)
@@ -5313,7 +5326,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         		if (dcmList[dcmSort[i].indx].CSA.numDti > 0)
 					dcmList[indx0].CSA.numDti =1;		      
         }
-        
         /*if (nConvert > 1) { //next determine if TR is true time between volumes
         	double startTime = dcmList[indx0].acquisitionTime;
         	double endTime = startTime;
