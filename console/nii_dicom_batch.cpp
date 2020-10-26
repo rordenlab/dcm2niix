@@ -936,8 +936,6 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
     }
     sValEsc[o] = '\0';
     fprintf(fp, sLabel, sValEsc );
-
-	
 } //json_Str
 
 void json_FloatNotNan(FILE *fp, const char *sLabel, float sVal) {
@@ -4593,13 +4591,17 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 		sliceTiming[i] = sliceTiming[i % nExcitations];
 	#define testSliceTimesGE
 	#ifdef testSliceTimesGE
-	printf("testSliceTimesGE reported vs estimated slice times:\n");
 	float maxErr = 0.0;
-	for (int i = 0; i < dim3; i++) {
-			printf("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
-			maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
-		}
-	printf("max error: %g\n", maxErr);
+	for (int i = 0; i < dim3; i++)
+		maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
+	if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
+		printMessage("GE estimated slice times differ from reported (max error: %g)\n", maxErr);
+		printMessage("Slice\tEstimated\tReported\n");
+		for (int i = 0; i < dim3; i++) {
+				printMessage("%d %g %g\n", i, sliceTiming[i], d->CSA.sliceTiming[i]);
+				maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
+			}
+	}
 	#endif
 	for (int i = 0; i < dim3; i++)
 		d->CSA.sliceTiming[i] = sliceTiming[i];
@@ -4658,7 +4660,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		return;
 	}
 	mbAccel = max(mbAccel, 1);
-	if (nSlices != nSL)
+	if (nSlices != nSL) //redundant with locationsInAcquisition check?
 		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", nSL, nSlices);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
@@ -5080,6 +5082,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 hdr0.dim[3] = nConvert/nAcq;
                 hdr0.dim[4] = nAcq;
                 hdr0.dim[0] = 4;
+                if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]))
+                	printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d.\n", dcmList[indx0].locationsInAcquisition, hdr0.dim[3]);
             } else if ((dcmList[indx0].isXA10A) && (nConvert > nAcq) && (nAcq > 1) ) {
             	nAcq -= 1;
                 hdr0.dim[3] = nConvert/nAcq;
@@ -5322,7 +5326,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         		if (dcmList[dcmSort[i].indx].CSA.numDti > 0)
 					dcmList[indx0].CSA.numDti =1;		      
         }
-        
         /*if (nConvert > 1) { //next determine if TR is true time between volumes
         	double startTime = dcmList[indx0].acquisitionTime;
         	double endTime = startTime;

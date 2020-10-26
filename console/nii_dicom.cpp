@@ -4266,7 +4266,8 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kOrientationACR 0x0020+(0x0035 << 16 )
 //#define  kTemporalPositionIdentifier 0x0020+(0x0100 << 16 ) //IS
 #define  kOrientation 0x0020+(0x0037 << 16 )
-#define  kTemporalPosition 0x0020+(0x0100 << 16 ) //IS 
+//#define  kTemporalPosition 0x0020+(0x0100 << 16 ) //IS 
+//#define  kNumberOfTemporalPositions 0x0020+(0x0105 << 16 ) //IS public tag for NumberOfDynamicScans
 #define  kTemporalResolution 0x0020+(0x0110 << 16 ) //DS
 #define  kImagesInAcquisition 0x0020+(0x1002 << 16 ) //IS
 //#define  kSliceLocation 0x0020+(0x1041 << 16 ) //DS would be useful if not optional type 3
