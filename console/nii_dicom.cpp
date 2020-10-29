@@ -5452,22 +5452,27 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if (d.manufacturer != kMANUFACTURER_GE) break;
             	char epiStr[kDICOMStr];
                 dcmStr(lLength, &buffer[lPos], epiStr);
-            	if (strstr(epiStr, "epi") == NULL) break;
-            	d.epiVersionGE = 0; //-1 = not epi, 0 = epi, 1 = epiRT
-            	if (strstr(epiStr, "epiRT") == NULL) break;
-            	d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
+            	if ((strstr(epiStr, "epi") != NULL) && (strstr(epiStr, "epi2") == NULL)){
+            	   d.epiVersionGE = 0; //-1 = not epi, 0 = epi, 1 = epiRT
+                }
+            	if (strstr(epiStr, "epiRT") != NULL){
+            	   d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
+                }
             	break;            
             }     
             case kInternalPulseSequenceNameGE : { //LO  'EPI'(gradient echo)/'EPI2'(spin echo): 
                 if (d.manufacturer != kMANUFACTURER_GE) break;
                 char epiStr[kDICOMStr];
                 dcmStr(lLength, &buffer[lPos], epiStr);
-                if (strstr(epiStr, "EPI") == NULL) break;
-                d.internalepiVersionGE = 0; //-1 = not EPI, 0 = EPI, 1 = EPI2
-                if (d.epiVersionGE != 1) // 1 = epiRT by kEpiRTGroupDelayGE or kPulseSequenceNameGE
-                    d.epiVersionGE = 0; // 0 = epi (multi-phase epi) 
-                if (strstr(epiStr, "EPI2") == NULL) break;
-                d.internalepiVersionGE = 1; //-1 = not epi, 0 = EPI, 1 = EPI2
+                if (strcmp(epiStr, "EPI") == 0){
+                    d.internalepiVersionGE = 1; //-1 = not EPI, 1 = EPI, 2 = EPI2
+                    if (d.epiVersionGE != 1){ // 1 = epiRT by kEpiRTGroupDelayGE or kPulseSequenceNameGE
+                        d.epiVersionGE = 0; // 0 = epi (multi-phase epi)
+                    }
+                }
+                if (strcmp(epiStr, "EPI2") == 0){
+                    d.internalepiVersionGE = 2; //-1 = not epi, 1 = EPI, 2 = EPI2
+                }
                 break;
             }       
             case kBandwidthPerPixelPhaseEncode:

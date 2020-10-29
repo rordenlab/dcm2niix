@@ -1079,8 +1079,8 @@ tse3d: T2*/
 	};
 	if (d.epiVersionGE == 0) fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
 	if (d.epiVersionGE == 1) fprintf(fp, "\t\"PulseSequenceName\": \"epiRT\",\n");
-    if (d.internalepiVersionGE == 0) fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI\",\n");
-    if (d.internalepiVersionGE == 1) fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI2\",\n");
+    if (d.internalepiVersionGE == 1) fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI\",\n");
+    if (d.internalepiVersionGE == 2) fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI2\",\n");
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
 	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
@@ -4558,12 +4558,12 @@ void sliceTimingXA(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 		dcmList[indx0].CSA.sliceTiming[v] -= mn;
 } //sliceTimingXA()
 
-void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInterleaved, bool is27v3, float groupDelaysec) {
+void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInterleaved, bool is27r3, float groupDelaysec) {
 //mb : multiband factor
 //dim3 : number of slices in volume
 //TRsec : repetition time in seconds
 //isInterleaved : interleaved or sequential slice order
-//is27v3 : software release 27.3 or later
+//is27r3 : software release 27.0 R03 or later
 	float sliceTiming[kMaxEPI3D];
 	//multiband can be fractional! 'extra' slices discarded
 	int nExcitations = ceil(float(dim3) / float(mb));
@@ -4580,7 +4580,7 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 			else
 				sliceTiming[i] = (nOdd+((i+1)/2)) * secPerSlice;
 		} //for each slice
-		if ((mb > 1) && (is27v3) && (isInterleaved) && (nExcitations > 2) && ((nExcitations % 2) == 0)) {
+		if ((mb > 1) && (is27r3) && (isInterleaved) && (nExcitations > 2) && ((nExcitations % 2) == 0)) {
 			float tmp = sliceTiming[nExcitations - 1];
 			sliceTiming[nExcitations - 1] = sliceTiming[nExcitations - 3];
 			sliceTiming[nExcitations - 3] = tmp;
@@ -4594,7 +4594,8 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 	float maxErr = 0.0;
 	for (int i = 0; i < dim3; i++)
 		maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
-	if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
+	//if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
+    if ((d->CSA.sliceTiming[0] >= 0.0))  {
 		printMessage("GE estimated slice times differ from reported (max error: %g)\n", maxErr);
 		printMessage("Slice\tEstimated\tReported\n");
 		for (int i = 0; i < dim3; i++) {
@@ -4607,6 +4608,64 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 		d->CSA.sliceTiming[i] = sliceTiming[i];
 } // sliceTimeGE()
 
+void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose,char geVersionPrefix[], float* geMajorVersion, int* geMajorVersionInt, int* geMinorVersionInt, int* geReleaseVersionInt, bool* is27r3) {
+    // softwareVersionsGE
+    //      "27\LX\MR Software release:RX27.0_R02_1831.a" -> 27
+    //      "28\LX\MR29.1_EA_2039.g" -> 29 
+    // geVersionPrefix
+    //      RX27.0_R02_1831.a -> RX
+    //      MR29.1_EA_2039.g -> MR
+    // geMajorVersion
+    //      RX27.0_R02_1831.a -> 27.0
+    //      MR29.1_EA_2039.g -> 29.1
+    // geMajorVersionInt
+    //      RX27.0_R02_1831.a -> 27
+    //      MR29.1_EA_2039.g -> 29
+    // geMinorVersionInt
+    //      RX27.0_R02_1831.a -> 0
+    //      MR29.1_EA_2039.g -> 1
+    // geReleaseVersionInt
+    //      EA->0, R01->1, R02->2, R03->4
+    //      RX27.0_R02_1831.a -> 2
+    //      MR29.1_EA_2039.g -> 0
+
+    int len = 0;
+    // If softwareVersionsGE is 27\LX\MR Software release:RX27.0_R02_1831.a
+    char *sepStart = strchr(softwareVersionsGE, ':');
+    if (sepStart == NULL) {
+        // If softwareVersionsGE is 28\LX\MR29.1_EA_2039.g
+        sepStart = strrchr(softwareVersionsGE, '\\');
+        if (sepStart == NULL) return;
+    }
+    sepStart += 1;
+    len = 11;
+    char * versionString = (char *)malloc(sizeof(char) * len);
+    versionString[len] =0;
+    memcpy(versionString, sepStart, len);
+
+    int ver1, ver2, ver3;
+    char c1, c2, c3, c4;
+    // RX27.0_R02_ or MR29.1_EA_2
+    sscanf( versionString, "%c%c%d.%d_%c%c%d", &c1, &c2, geMajorVersionInt, geMinorVersionInt, &c3, &c4, geReleaseVersionInt);
+    memcpy(geVersionPrefix, &c1, 1);
+    memcpy(geVersionPrefix+1, &c2, 1);
+    if ( (c3 == 'E') && (c4 == 'A') ){
+        *geReleaseVersionInt = 0;
+    }
+    free(versionString);
+    *geMajorVersion = (float) *geMajorVersionInt + (float) 0.1 * (float) *geMinorVersionInt;
+    *is27r3 = ((*geMajorVersion >= 27.1) || ((*geMajorVersionInt ==  27) && (*geReleaseVersionInt >= 3)));
+
+    if (verbose) {
+        printMessage("GE Software VersionPrefix: %s\n", geVersionPrefix);
+        printMessage("GE Software MajorVersion: %d\n", *geMajorVersionInt);
+        printMessage("GE Software MinorVersion: %d\n", *geMinorVersionInt);
+        printMessage("GE Software ReleaseVersion: %d\n", *geReleaseVersionInt);
+        printMessage("GE Software is27r3: %d\n", *is27r3);
+    }
+
+} // readSoftwareVersionsGE()
+
 
 void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename, struct TDCMopts opts) {
 	//we can often read GE slice timing from TriggerTime (0018,1060) or RTIA Timer (0021,105E)
@@ -4615,26 +4674,17 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	if ((d->is3DAcq) || (d->isLocalizer)) return; //no need for slice times
 	if (nSL < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
-	//start version check: "27\LX\MR Software release:RX27.0_R02_1831.a" -> 27
-	float majorVersion = 0;
-	char* sepStart = strchr(d->softwareVersions, ':');
-	if (sepStart != NULL) {
-		char* sepEnd = strchr(sepStart, '.');
-		sepStart += 3; //':RX'
-		if ((sepEnd != NULL) && ((sepEnd - sepStart) >= 2) ) {
-			sepEnd += 2; //'.0'
-			int len = sepEnd - sepStart;
-			char * cString = (char *)malloc(sizeof(char) * (len + 1));
-			cString[len] =0;
-			memcpy(cString, sepStart, len);
-    		majorVersion = atof(cString);
-    		free(cString);
-		}
-	}
+	//start version check: 
+	float geMajorVersion = 0;
+    int geMajorVersionInt = 0, geMinorVersionInt = 0, geReleaseVersionInt = 0;
+    char geVersionPrefix[2] = " ";
+    bool is27r3 = false;
+    readSoftwareVersionsGE(d->softwareVersions, verbose, geVersionPrefix, &geMajorVersion, &geMajorVersionInt, &geMinorVersionInt, &geReleaseVersionInt, &is27r3);
+    //readSoftwareVersionsGE(&geMajorVersion);
 	if (!opts.isIgnorex0021x105E) {
-		if ((majorVersion > 27.0) && (d->CSA.sliceTiming[0] >= 0.0)) {
+		if ((geMajorVersion > 27.0) && (d->CSA.sliceTiming[0] >= 0.0)) {
 			//if (verbose > 1) 
-			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", majorVersion);
+			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", geMajorVersion);
 			return; //trust slice timings for versions > 27, see issue 336
 		}
 	}
@@ -4664,29 +4714,32 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", nSL, nSlices);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
-	bool is27v3 = (majorVersion > 27.3);
 	groupDelay *= 1000.0; //sec -> ms
 	// epiRT 
     if ((d->epiVersionGE == 1) || (strstr(ioptGE,"FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+        d->epiVersionGE = 1;
+        d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
         if (!isSameFloatGE(groupDelay, d->groupDelay)) {
             printWarning("With epiRT(i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
         } 
     }
     // Multiphase EPI
     if ((d->epiVersionGE == 0) || (strstr(ioptGE,"MPh") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+        d->epiVersionGE = 0;
+        d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
         if (groupDelay > 0) { 
             d->TR += groupDelay;
             d->groupDelay = groupDelay;
         }
         // Multiphase EPI with Variable Delays
-        if (groupDelay == -1) {     
+        if (groupDelay < -0.5) {     
             printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
             d->CSA.sliceTiming[0] = -1;
         }
     }
     printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
-	printMessage("GEversion %.1f, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", majorVersion, d->TR, isInterleaved, d->CSA.multiBandFactor, groupDelay);	
-	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27v3, d->groupDelay);
+	printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);	
+	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27r3, d->groupDelay);
 	#endif
 } //rescueSliceTimingGE()
 
