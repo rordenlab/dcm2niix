@@ -4594,8 +4594,7 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 	float maxErr = 0.0;
 	for (int i = 0; i < dim3; i++)
 		maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
-	//if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
-    if ((d->CSA.sliceTiming[0] >= 0.0))  {
+	if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
 		printMessage("GE estimated slice times differ from reported (max error: %g)\n", maxErr);
 		printMessage("Slice\tEstimated\tReported\n");
 		for (int i = 0; i < dim3; i++) {
@@ -4737,8 +4736,10 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
             d->CSA.sliceTiming[0] = -1;
         }
     }
-    printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
-	printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);	
+    if (verbose) {
+        printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
+        printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);
+       }
 	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27r3, d->groupDelay);
 	#endif
 } //rescueSliceTimingGE()
