@@ -4681,7 +4681,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
     readSoftwareVersionsGE(d->softwareVersions, verbose, geVersionPrefix, &geMajorVersion, &geMajorVersionInt, &geMinorVersionInt, &geReleaseVersionInt, &is27r3);
     //readSoftwareVersionsGE(&geMajorVersion);
 	if (!opts.isIgnorex0021x105E) {
-		if ((geMajorVersion > 27.0) && (d->CSA.sliceTiming[0] >= 0.0)) {
+		if ((geMajorVersionInt >= 28) && (d->CSA.sliceTiming[0] >= 0.0)) {
 			//if (verbose > 1) 
 			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", geMajorVersion);
 			return; //trust slice timings for versions > 27, see issue 336
@@ -4714,7 +4714,10 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
 	groupDelay *= 1000.0; //sec -> ms
-	// epiRT 
+    //
+    // Estimate GE Slice Time only for EPI Multi-Phase (epi) or EPI fMRI/BrainWave (epiRT) 
+    //
+	// BrainWave (epiRT) 
     if ((d->epiVersionGE == 1) || (strstr(ioptGE,"FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
         d->epiVersionGE = 1;
         d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
@@ -4722,19 +4725,31 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
             printWarning("With epiRT(i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
         } 
     }
-    // Multiphase EPI
-    if ((d->epiVersionGE == 0) || (strstr(ioptGE,"MPh") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+    // EPI Multi-Phase (epi)
+    else if ((d->epiVersionGE == 0) || (strstr(ioptGE,"MPh") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
         d->epiVersionGE = 0;
         d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
         if (groupDelay > 0) { 
             d->TR += groupDelay;
             d->groupDelay = groupDelay;
         }
-        // Multiphase EPI with Variable Delays
+        // EPI Multi-Phase (epi) with Variable Delays (Unsupported)
         if (groupDelay < -0.5) {     
             printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
             d->CSA.sliceTiming[0] = -1;
         }
+    }
+    // Diffusion (Unsupported)
+    else if ( (d->epiVersionGE == 2) || (d->internalepiVersionGE == 2) || (strstr(ioptGE,"DIFF") != NULL) ) {
+        printWarning("Unable to compute slice times for GE Diffusion\n");
+        d->CSA.sliceTiming[0] = -1.0;
+        return;
+    }
+    // Others (Unsupported)
+    else {
+        printWarning("Unable to compute slice times for this GE dataset\n");
+        d->CSA.sliceTiming[0] = -1.0;
+
     }
     if (verbose) {
         printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);

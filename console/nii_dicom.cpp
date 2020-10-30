@@ -5455,6 +5455,9 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if ((strstr(epiStr, "epi") != NULL) && (strstr(epiStr, "epi2") == NULL)){
             	   d.epiVersionGE = 0; //-1 = not epi, 0 = epi, 1 = epiRT
                 }
+                if (strstr(epiStr, "epi2") != NULL){
+                   d.epiVersionGE = 2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
+                }
             	if (strstr(epiStr, "epiRT") != NULL){
             	   d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
                 }
