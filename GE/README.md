@@ -18,6 +18,8 @@ The “epiRT” sequences also allow the user to specify the `Group Delay`, whic
 
 If neither Trigger Time (DICOM 0018,1060) or RTIA Timer (0021,105E) store slice timing information, a final option is to decode the GE Protocol Data Block as described below. At best, this block only reports whether the acquisition was interleaved or sequential. As long as one assumes the acquisition was continuous (with no temporal gap between volumes, e.g. sparse images) on can use this value, the number of slices in the volume and the repetition time to infer slice times.
 
+Due to these various methods, recent releases of dcm2niix read the Protocol Data Block to determine the multi-bandFactor, number of samples, sampling rate (TR), interleaved or sequential slices, group delay and software version. This information is used to estimate the slice timing directly, without requiring the previously described tags. The [dcm_qa_ge](https://github.com/neurolabusc/dcm_qa_ge) provides validation images and more details. Note that this slice timing approach does not support GE's diffusion weighted imaging sequences.
+
 ## User Define Data GE (0043,102A)
 
 This private element of the DICOM header is used to determine the phase encoding polarity. Specifically, we need to know the "Ky traversal direction" (top-down, or bottom up) and the phase encoding polarity. Unfortunately, this data is stored in a complicated, proprietary structure, that has changed with different releases of GE software. [Click here to see the definition for this structure](https://github.com/ScottHaileRobertson/GE-MRI-Tools/blob/master/GePackage/%2BGE/%2BPfile/%2BHeader/%2BRDB15/rdbm.h).
