@@ -5707,8 +5707,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	float v[4];
             	dcmMultiFloatDouble(lLength, &buffer[lPos], 1, v, d.isLittleEndian);
-            	//issue409
-            	B0Philips = dcmStrInt(lLength, &buffer[lPos]);
+            	B0Philips = v[0];
             	set_bVal(&volDiffusion, v[0]);
             	break; }
             case kParallelInformationUIH: {//SENSE factor (0065,100d) SH [F:2S]
