@@ -4938,6 +4938,12 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 		}
 		skipRemap:
 		#endif // salvageAgfa
+		if ((lLength % 2) != 0) { //https://www.nitrc.org/forum/forum.php?thread_id=11827&forum_id=4703
+			printf("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535,groupElement>>16, lLength, fname);
+			//proper to return here, but we can carry on as a hail mary
+			// d.isValid = false;
+			//return d;
+		}
 		switch ( groupElement ) {
          	case kMediaStorageSOPClassUID: {
          		char mediaUID[kDICOMStr];
@@ -5701,8 +5707,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if (d.manufacturer != kMANUFACTURER_UIH) break;
             	float v[4];
             	dcmMultiFloatDouble(lLength, &buffer[lPos], 1, v, d.isLittleEndian);
-            	//issue409
-            	B0Philips = dcmStrInt(lLength, &buffer[lPos]);
+            	B0Philips = v[0];
             	set_bVal(&volDiffusion, v[0]);
             	break; }
             case kParallelInformationUIH: {//SENSE factor (0065,100d) SH [F:2S]

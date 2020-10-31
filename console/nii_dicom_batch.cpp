@@ -300,8 +300,8 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     		for (int v= 0; v < 4; v++)
             	if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
 		}
-    	//for (int i = 0; i < 3; i++)
-    	//	printf("%g %g %g\n", vx[i].V[1], vx[i].V[2], vx[i].V[3]);
+    	for (int i = 0; i < 3; i++)
+    		printf("%g = %g %g %g\n", vx[i].V[0], vx[i].V[1], vx[i].V[2], vx[i].V[3]);
     	return;
     } //https://github.com/rordenlab/dcm2niix/issues/225
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
@@ -4435,6 +4435,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 //detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
 //modified 20190704: this function now ensures all slice times are in msec
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0)) return; //no slice timing
+	if (d->manufacturer == kMANUFACTURER_GE) return; //compute directly from Protocol Block
 	if (d->modality == kMODALITY_PT) return; //issue407
 	int nSlices = 0;
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
@@ -4589,12 +4590,12 @@ void sliceTimeGE (struct TDICOMdata * d, int mb, int dim3, float TR, bool isInte
 	} //if interleaved
 	for (int i = 0; i < dim3; i++)
 		sliceTiming[i] = sliceTiming[i % nExcitations];
-	#define testSliceTimesGE
+	//#define testSliceTimesGE //note that early GE HyperBand sequences reported single-band values in x0021x105E 
 	#ifdef testSliceTimesGE
 	float maxErr = 0.0;
 	for (int i = 0; i < dim3; i++)
 		maxErr = max(maxErr, fabs(sliceTiming[i] - d->CSA.sliceTiming[i]));
-	if ((d->CSA.sliceTiming[0] >= 0.0) && (!isSameFloatGE(maxErr, 0.0))  )  {
+	if ((d->CSA.sliceTiming[0] >= 0.0) && (maxErr > 1.0)  )  { //allow a 1.0 msec tolerance for rounding
 		printMessage("GE estimated slice times differ from reported (max error: %g)\n", maxErr);
 		printMessage("Slice\tEstimated\tReported\n");
 		for (int i = 0; i < dim3; i++) {
@@ -4641,7 +4642,6 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose,char geVersio
     char * versionString = (char *)malloc(sizeof(char) * len);
     versionString[len] =0;
     memcpy(versionString, sepStart, len);
-
     int ver1, ver2, ver3;
     char c1, c2, c3, c4;
     // RX27.0_R02_ or MR29.1_EA_2
@@ -4654,19 +4654,17 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose,char geVersio
     free(versionString);
     *geMajorVersion = (float) *geMajorVersionInt + (float) 0.1 * (float) *geMinorVersionInt;
     *is27r3 = ((*geMajorVersion >= 27.1) || ((*geMajorVersionInt ==  27) && (*geReleaseVersionInt >= 3)));
-
-    if (verbose) {
+    if (verbose > 1) {
         printMessage("GE Software VersionPrefix: %s\n", geVersionPrefix);
         printMessage("GE Software MajorVersion: %d\n", *geMajorVersionInt);
         printMessage("GE Software MinorVersion: %d\n", *geMinorVersionInt);
         printMessage("GE Software ReleaseVersion: %d\n", *geReleaseVersionInt);
         printMessage("GE Software is27r3: %d\n", *is27r3);
     }
-
 } // readSoftwareVersionsGE()
 
 
-void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename, struct TDCMopts opts) {
+void sliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename, struct TDCMopts opts) {
 	//we can often read GE slice timing from TriggerTime (0018,1060) or RTIA Timer (0021,105E)
 	// if both of these methods fail, we can often guess based on slice order stored in the Private Protocol Data Block (0025,101B)
 	// this is referred to as "rescue" as we only know the TR, not the TA. So assumes continuous scans with no gap
@@ -4680,13 +4678,15 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
     bool is27r3 = false;
     readSoftwareVersionsGE(d->softwareVersions, verbose, geVersionPrefix, &geMajorVersion, &geMajorVersionInt, &geMinorVersionInt, &geReleaseVersionInt, &is27r3);
     //readSoftwareVersionsGE(&geMajorVersion);
+	/*
+	//used for oldSliceTimingGE
 	if (!opts.isIgnorex0021x105E) {
 		if ((geMajorVersionInt >= 28) && (d->CSA.sliceTiming[0] >= 0.0)) {
 			//if (verbose > 1) 
 			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", geMajorVersion);
 			return; //trust slice timings for versions > 27, see issue 336
 		}
-	}
+	}*/
 	//end: version check
 	if (d->maxEchoNumGE > 0)
 		printWarning("GE sequence with %d echoes. See issue 359\n", d->maxEchoNumGE);	
@@ -4722,7 +4722,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
         d->epiVersionGE = 1;
         d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
         if (!isSameFloatGE(groupDelay, d->groupDelay)) {
-            printWarning("With epiRT(i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
+            printWarning("With epiRT (i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
         } 
     }
     // EPI Multi-Phase (epi)
@@ -4737,6 +4737,7 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
         if (groupDelay < -0.5) {     
             printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
             d->CSA.sliceTiming[0] = -1;
+        	return;
         }
     }
     // Diffusion (Unsupported)
@@ -4749,15 +4750,15 @@ void rescueSliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char
     else {
         printWarning("Unable to compute slice times for this GE dataset\n");
         d->CSA.sliceTiming[0] = -1.0;
-
+		return;
     }
-    if (verbose) {
+    if (verbose > 1) {
         printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
         printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);
        }
 	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27r3, d->groupDelay);
 	#endif
-} //rescueSliceTimingGE()
+} //sliceTimingGE()
 
 void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
 	if ((d->CSA.protocolSliceNumber1 == 0) || ((d->CSA.protocolSliceNumber1 == 1))) return; //slices not flipped
@@ -4854,7 +4855,8 @@ void sliceTimingUIH(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 		dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime; //nb format is HHMMSS we need to handle midnight-crossing and convert to ms,  see checkSliceTiming()
 }
 
-void sliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
+/*
+void oldSliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert) {
 	//GE check slice timing >>>
 	uint64_t indx0 = dcmSort[0].indx; //first volume
 	if (!(dcmList[indx0].manufacturer == kMANUFACTURER_GE)) return;
@@ -4944,7 +4946,8 @@ void sliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct n
 			} //verbose > 1
 		} //if maxTime != minTIme
 	} //GE slice timing from 0021,105E
-} //sliceTimingGE()
+} //oldSliceTimingGE()
+*/
 
 int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct nifti_1_header * hdr, int verbose, const char * filename, int nConvert, struct TDCMopts opts) {
 	int sliceDir = 0;
@@ -4955,7 +4958,7 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	uint64_t indx1 = dcmSort[1].indx;
 	if (nConvert < 2) indx1 = dcmSort[0].indx;
 	struct TDICOMdata * d1 = &dcmList[indx1];
-	sliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+	//oldSliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
@@ -4973,7 +4976,7 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
     	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
 	}
-	rescueSliceTimingGE(d0, verbose, hdr->dim[3], filename, opts); //desperate attempts if conventional methods fail
+	sliceTimingGE(d0, verbose, hdr->dim[3], filename, opts); //desperate attempts if conventional methods fail
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	return sliceDir;
 } //sliceTiming()
@@ -7128,7 +7131,6 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isForceStackDCE = true;
     opts->isIgnoreDerivedAnd2D = false;
     opts->isForceOnsetTimes = true;
-    opts->isIgnorex0021x105E = false;
     opts->isPhilipsFloatNotDisplayScaling = true;
     opts->isCrop = false;
     opts->isRotate3DAcq = true;
