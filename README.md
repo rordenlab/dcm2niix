@@ -25,7 +25,7 @@ DICOM provides many ways to store/compress image data, known as [transfer syntax
 
 ## Versions
 
-[See the VERSIONS.md file for details on releases](./VERSIONS.md).
+[See releases](https://github.com/rordenlab/dcm2niix/releases) for recent release notes. [See the VERSIONS.md file for details on earlier releases](./VERSIONS.md).
 
 ## Running
 

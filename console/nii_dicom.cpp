@@ -7014,7 +7014,7 @@ if (d.isHasPhase)
 				dti4D->S[i].V[2] = dcmDim[j+(i * d.xyzDim[3])].V[2];
 				dti4D->S[i].V[3] = dcmDim[j+(i * d.xyzDim[3])].V[3];
 				//printf("te=\t%g\tscl=\t%g\tintercept=\t%g\n",dti4D->TE[i], dti4D->intenScale[i],dti4D->intenIntercept[i]);
-				if (dti4D->TE[i] != d.TE) isTEvaries = true;
+				if ((!isSameFloatGE(dti4D->TE[i],0.0)) && (dti4D->TE[i] != d.TE)) isTEvaries = true;
 				if (dti4D->isPhase[i] != isPhase) d.isScaleOrTEVaries = true;
 				if (dti4D->triggerDelayTime[i] != d.triggerDelayTime) d.isScaleOrTEVaries = true;
 				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
