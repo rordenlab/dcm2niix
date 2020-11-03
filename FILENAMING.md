@@ -19,7 +19,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %m=manufacturer short name (from 0008,0070: GE, Ph, Si, To, UI, NA)
  - %n=name of patient (from 0010,0010)
  - %o=mediaObjectInstanceUID (0002,0003)*
- - %p=protocol name (from 0018,1030)
+ - %p=protocol name (from 0018,1030). If 0018,1030 is empty, or if the Manufacturer (0008,0070) is GE with Modality (0008,0060) of MR, then the SequenceName (0018,0024) is used if it is not empty.
  - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)
@@ -54,6 +54,10 @@ Some post-fixes are specific to Philips DICOMs
 
 If you do not want post-fixes, run dcm2niix in the terse mode (`--terse`). In this mode, most post-fixes will be omitted. Beware that this mode can have name clashes, and images from a series may over write each other.  
 
+## Overlays
+
+DICOM images can have up to [16](https://www.medicalconnections.co.uk/kb/Number-Of-Overlays-In-Image/) binary (black or white) overlays as described by the [Overlay Plane Module](http://dicom.nema.org/dicom/2013/output/chtml/part03/sect_C.9.html). dcm2niix will save these regions of interest with the post-fix "_ROIn" where N is the overlay number (1..16). 
+
 ## File Name Conflicts
 
 dcm2niix will attempt to write your image using the naming scheme you specify with the '-f' parameter. However, if an image already exists with the specified output name, dcm2niix will append a letter (e.g. 'a') to the end of a file name to avoid overwriting existing images. Consider a situation where dcm2niix is run with '-f %t'. This will name images based on the study time. If a single study has multiple series (for example, a T1 sequence and a fMRI scan, the reulting file names will conflict with each other. In order to avoid overwriting images, dcm2niix will resort to adding the post fix 'a', 'b', etc. There are a few solutions to avoiding these situations. You may want to consider using both of these:
@@ -77,5 +81,7 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 ? (question mark)
 * (asterisk)
 ```
+
+[Control characters](https://en.wikipedia.org/wiki/ASCII#Control_characters) like backspace and tab are also forbidden.
 
 Be warned that dcm2niix will copy all allowed characters verbatim, which can cause problems for some other tools. Consider this [sample dataset](https://github.com/neurolabusc/dcm_qa_nih/tree/master/In/20180918GE/mr_0004) where the DICOM Protocol Name (0018,1030) is 'Axial_EPI-FMRI_(Interleaved_I_to_S)'. The parentheses ("round brackets") may cause other tools issues. Consider converting this series with the command 'dcm2niix -f %s_%p ~/DICOM' to create the file '4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii'.If you now run the command 'fslhd 4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii' you will get the error '-bash: syntax error near unexpected token `(''. Therefore, it is often a good idea to use double quotes to specify the names of files. In this example 'fslhd "4_Axial_EPI-FMRI_(Interleaved_I_to_S).nii"' will work correctly.

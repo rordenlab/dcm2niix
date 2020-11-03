@@ -90,7 +90,7 @@ MyCustomDirections
 
 ```
 
-## Missing Information.
+## Missing Information
 
 Philips DICOMs do not contain all the information desired by many neuroscientists. Due to this, the [BIDS](http://bids.neuroimaging.io/) files created by dcm2niix are impoverished relative to data from other vendors. This reflects a limitation in the Philips DICOMs, not dcm2niix.
 

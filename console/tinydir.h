@@ -347,7 +347,9 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 		dir->_e->d_name
 #endif
 	);
-	strcat(file->path, file->name);
+    /* Limit the number of bytes copied to the maximum length of the name,
+    to avoid spurious compiler warnings about possible overlap */
+	strncat(file->path, file->name, _TINYDIR_FILENAME_MAX);
 #ifndef _MSC_VER
 	if (stat(file->path, &file->_s) == -1)
 	{
