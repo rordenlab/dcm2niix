@@ -2741,7 +2741,17 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     		strcat (newdir,ch);
     	}
     }
-    //printMessage("path='%s' name='%s'\n", pathoutname, outname);
+    //remove redundant underscores
+    int len = strlen(outname);
+    int outpos = 0;
+    for (int inpos = 0; inpos < len; inpos ++) {
+        if ((outpos > 0) && (outname[inpos] == '_') && (outname[outpos-1] == '_'))
+        	continue;
+        outname[outpos] = outname[inpos];
+        outpos++;	
+	}
+	outname[outpos] = 0;
+	//printMessage("path='%s' name='%s'\n", pathoutname, outname);
     //make sure outname is unique
     strcat (baseoutname,outname);
     char pathoutname[2048] = {""};
@@ -4663,26 +4673,50 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose,char geVersio
     }
 } // readSoftwareVersionsGE()
 
+void sliceTimingGE_Testx0021x105E(struct TDICOMdata * d, struct TDCMopts opts, struct nifti_1_header * hdr, struct TDCMsort *dcmSort,struct TDICOMdata *dcmList) {
+	if ((!opts.isTestx0021x105E) || (hdr->dim[3] < 2) || (hdr->dim[4] < 1)) return;
+	if (d->rtia_timerGE <= 0.0) {
+		printMessage("DICOM images do not report RTIA timer(0021,105E)\n");
+		return;
+	}
+	int j = hdr->dim[3];
+	float sliceTiming[kMaxEPI3D];
+	float mn = INFINITY;
+	for (int v = 0; v < hdr->dim[3]; v++) {
+		sliceTiming[v] = dcmList[dcmSort[v+j].indx].rtia_timerGE;
+		mn = min(mn, sliceTiming[v]);	
+	}
+	if (mn < 0.0) return;
+	float mxErr = 0.0; 
+	for (int v = 0; v < hdr->dim[3]; v++) {
+		sliceTiming[v] = (sliceTiming[v] - mn) * 1000.0; //subtract offset, convert sec -> ms
+		mxErr = max(mxErr, fabs(sliceTiming[v] - d->CSA.sliceTiming[v]));
+	}
+	printMessage("Slice Timing Error between calculated and RTIA timer(0021,105E): %gms\n", mxErr);
+	if ((mxErr < 1.0) && (opts.isVerbose < 1)) return;
+	for (int v = 0; v < hdr->dim[3]; v++) 
+		printMessage("\t%g\t%g\n", d->CSA.sliceTiming[v], sliceTiming[v]);	
+}
 
-void sliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * filename, struct TDCMopts opts) {
+void sliceTimingGE(struct TDICOMdata * d, const char * filename, struct TDCMopts opts, struct nifti_1_header * hdr, struct TDCMsort *dcmSort,struct TDICOMdata *dcmList) {
 	//we can often read GE slice timing from TriggerTime (0018,1060) or RTIA Timer (0021,105E)
 	// if both of these methods fail, we can often guess based on slice order stored in the Private Protocol Data Block (0025,101B)
 	// this is referred to as "rescue" as we only know the TR, not the TA. So assumes continuous scans with no gap
-	if ((d->is3DAcq) || (d->isLocalizer)) return; //no need for slice times
-	if (nSL < 2) return;
+	if ((d->is3DAcq) || (d->isLocalizer) || (hdr->dim[4] < 2)) return; //no need for slice times
+	if (hdr->dim[3] < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
 	//start version check: 
 	float geMajorVersion = 0;
-    int geMajorVersionInt = 0, geMinorVersionInt = 0, geReleaseVersionInt = 0;
-    char geVersionPrefix[2] = " ";
-    bool is27r3 = false;
-    readSoftwareVersionsGE(d->softwareVersions, verbose, geVersionPrefix, &geMajorVersion, &geMajorVersionInt, &geMinorVersionInt, &geReleaseVersionInt, &is27r3);
-    //readSoftwareVersionsGE(&geMajorVersion);
+	int geMajorVersionInt = 0, geMinorVersionInt = 0, geReleaseVersionInt = 0;
+	char geVersionPrefix[2] = " ";
+	bool is27r3 = false;
+	readSoftwareVersionsGE(d->softwareVersions, opts.isVerbose, geVersionPrefix, &geMajorVersion, &geMajorVersionInt, &geMinorVersionInt, &geReleaseVersionInt, &is27r3);
+	//readSoftwareVersionsGE(&geMajorVersion);
 	/*
 	//used for oldSliceTimingGE
 	if (!opts.isIgnorex0021x105E) {
 		if ((geMajorVersionInt >= 28) && (d->CSA.sliceTiming[0] >= 0.0)) {
-			//if (verbose > 1) 
+			//if (opts.isVerbose > 1) 
 			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", geMajorVersion);
 			return; //trust slice timings for versions > 27, see issue 336
 		}
@@ -4703,74 +4737,74 @@ void sliceTimingGE(struct TDICOMdata * d, int verbose, int nSL, const char * fil
 	float groupDelay = 0.0;
 	char ioptGE[3000] = "";
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, verbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
 	if (ok != EXIT_SUCCESS) {
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
 	}
 	mbAccel = max(mbAccel, 1);
-	if (nSlices != nSL) //redundant with locationsInAcquisition check?
-		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", nSL, nSlices);
+	if (nSlices != hdr->dim[3]) //redundant with locationsInAcquisition check?
+		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", hdr->dim[3], nSlices);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
 	bool isInterleaved = (sliceOrderGE != 0);
 	groupDelay *= 1000.0; //sec -> ms
-    //
-    // Estimate GE Slice Time only for EPI Multi-Phase (epi) or EPI fMRI/BrainWave (epiRT) 
-    //
+	//
+	// Estimate GE Slice Time only for EPI Multi-Phase (epi) or EPI fMRI/BrainWave (epiRT) 
+	//
 	// BrainWave (epiRT) 
-    if ((d->epiVersionGE == 1) || (strstr(ioptGE,"FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
-        d->epiVersionGE = 1;
-        d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
-        if (!isSameFloatGE(groupDelay, d->groupDelay)) {
-            printWarning("With epiRT (i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
-        } 
-    }
-    // EPI Multi-Phase (epi)
-    else if ((d->epiVersionGE == 0) || (strstr(ioptGE,"MPh") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
-        d->epiVersionGE = 0;
-        d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
-        if (groupDelay > 0) { 
-            d->TR += groupDelay;
-            d->groupDelay = groupDelay;
-        }
-        // EPI Multi-Phase (epi) with Variable Delays (Unsupported)
-        if (groupDelay < -0.5) {     
-            printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
-            d->CSA.sliceTiming[0] = -1;
-        	return;
-        }
-    }
-    // Diffusion (Unsupported)
-    else if ( (d->epiVersionGE == 2) || (d->internalepiVersionGE == 2) || (strstr(ioptGE,"DIFF") != NULL) ) {
-        printWarning("Unable to compute slice times for GE Diffusion\n");
-        d->CSA.sliceTiming[0] = -1.0;
-        return;
-    }
-    // Others (Unsupported)
-    else {
-        printWarning("Unable to compute slice times for this GE dataset\n");
-        d->CSA.sliceTiming[0] = -1.0;
+	if ((d->epiVersionGE == 1) || (strstr(ioptGE,"FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+		d->epiVersionGE = 1;
+		d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
+		if (!isSameFloatGE(groupDelay, d->groupDelay))
+			printWarning("With epiRT (i.e. FMRI option), Group delay reported in private tag (0043,107C = %g) and Protocol Block (0025,101B = %g) differ.\n", d->groupDelay, groupDelay);
+	}
+	// EPI Multi-Phase (epi)
+	else if ((d->epiVersionGE == 0) || (strstr(ioptGE,"MPh") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+		d->epiVersionGE = 0;
+		d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
+		if (groupDelay > 0) { 
+			d->TR += groupDelay;
+			d->groupDelay = groupDelay;
+		}
+		// EPI Multi-Phase (epi) with Variable Delays (Unsupported)
+		if (groupDelay < -0.5) { 
+			printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
+			d->CSA.sliceTiming[0] = -1;
+			return;
+		}
+	}
+	// Diffusion (Unsupported)
+	else if ( (d->epiVersionGE == 2) || (d->internalepiVersionGE == 2) || (strstr(ioptGE,"DIFF") != NULL) ) {
+		printWarning("Unable to compute slice times for GE Diffusion\n");
+		d->CSA.sliceTiming[0] = -1.0;
 		return;
-    }
-    if (verbose > 1) {
-        printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
-        printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);
-       }
-	sliceTimeGE(d, d->CSA.multiBandFactor, nSL, d->TR, isInterleaved, is27r3, d->groupDelay);
+	}
+	// Others (Unsupported)
+	else {
+		printWarning("Unable to compute slice times for this GE dataset\n");
+		d->CSA.sliceTiming[0] = -1.0;
+		return;
+	}
+	if (opts.isVerbose > 1) {
+		printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
+		printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);
+	}
+	sliceTimeGE(d, d->CSA.multiBandFactor, hdr->dim[3], d->TR, isInterleaved, is27r3, d->groupDelay);
+	sliceTimingGE_Testx0021x105E(d, opts, hdr, dcmSort, dcmList);
 	#endif
 } //sliceTimingGE()
 
-void reverseSliceTiming(struct TDICOMdata * d,  int verbose, int nSL) {
+void reverseSliceTiming(struct TDICOMdata * d, int verbose, int nSL) {
 	if ((d->CSA.protocolSliceNumber1 == 0) || ((d->CSA.protocolSliceNumber1 == 1))) return; //slices not flipped
 	if (d->is3DAcq) return; //no need for slice times
 	if (d->CSA.sliceTiming[0] < 0.0) return; //no slice times
 	if (nSL > kMaxEPI3D) return;
 	if (nSL < 2) return;
 	if (verbose)
-   		printMessage("Slices were spatially flipped, so slice times are flipped\n");
-   	d->CSA.protocolSliceNumber1 = 0;
-   	float sliceTiming[kMaxEPI3D];
-   	for (int i = 0; i < nSL; i++)
+		printMessage("Slices were spatially flipped, so slice times are flipped\n");
+	d->CSA.protocolSliceNumber1 = 0;
+	float sliceTiming[kMaxEPI3D];
+	for (int i = 0; i < nSL; i++)
 		sliceTiming[i] = d->CSA.sliceTiming[i];
 	for (int i = 0; i < nSL; i++)
 		d->CSA.sliceTiming[i] = sliceTiming[(nSL-1)-i];
@@ -4976,7 +5010,7 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
     	if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
 	}
-	sliceTimingGE(d0, verbose, hdr->dim[3], filename, opts); //desperate attempts if conventional methods fail
+	sliceTimingGE(d0, filename, opts, hdr, dcmSort, dcmList);
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	return sliceDir;
 } //sliceTiming()
@@ -5173,7 +5207,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 }
             }
             //next options removed: features now thoroughly detected in nii_loadDir()
-			for (int i = 0; i < nConvert; i++) { //make sure 1st volume describes shared features
+            for (int i = 0; i < nConvert; i++) { //make sure 1st volume describes shared features
 				if (dcmList[dcmSort[i].indx].isHasOverlay) isHasOverlay = true;
 				if (dcmList[dcmSort[i].indx].isCoilVaries) dcmList[indx0].isCoilVaries = true;
 				if (dcmList[dcmSort[i].indx].isMultiEcho) dcmList[indx0].isMultiEcho = true;
@@ -6031,9 +6065,9 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     #endif
     if ((opts->isForceStackSameSeries == 1) || ((opts->isForceStackSameSeries == 2) && (d1.isXRay) )) {
     	// "isForceStackSameSeries == 2" will automatically stack CT scans but not MR
-    	//if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum))
-    	if ((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum))
-    		*isMultiEcho = true;
+    	//if (((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) && (!d1.isXRay)) {
+    	//	*isMultiEcho = true;
+    	//}
     	return true; //we will stack these images, even if they differ in the following attributes
     }
     if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || ((d1.isHasReal != d2.isHasReal))) {
@@ -7137,6 +7171,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isGz = false;
     opts->isSaveNativeEndian = true;
 	opts->isAddNamePostFixes = true; //e.g. "_e2" added for second echo 
+    opts->isTestx0021x105E = false; //GE test slice times stored in 0021,105E
     opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;
