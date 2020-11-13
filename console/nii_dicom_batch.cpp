@@ -3399,6 +3399,7 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+#endif
 
 #ifndef max
  #define max(a,b) \
@@ -3462,6 +3463,8 @@ void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
 	}
     //printWarning("NRRD unable to record scl_slope/scl_inter %g/%g\n", hdr->scl_slope, hdr->scl_inter);	
 }
+
+#ifndef USING_R
 
 void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
 	//swap endian from big->little or little->big
