@@ -3000,37 +3000,23 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         case kMANUFACTURER_HITACHI: images->addAttribute("manufacturer", "Hitachi"); break;
         case kMANUFACTURER_CANON:   images->addAttribute("manufacturer", "Canon");   break;
     }
-    if (strlen(data.manufacturersModelName) > 0)
-        images->addAttribute("scannerModelName", data.manufacturersModelName);
-    if (strlen(data.imageType) > 0)
-        images->addAttribute("imageType", data.imageType);
+    images->addAttribute("scannerModelName", data.manufacturersModelName);
+    images->addAttribute("imageType", data.imageType);
     if (data.seriesNum > 0)
         images->addAttribute("seriesNumber", int(data.seriesNum));
-    if (strlen(data.seriesDescription) > 0)
-        images->addAttribute("seriesDescription", data.seriesDescription);
-    if (strlen(data.sequenceName) > 0)
-        images->addAttribute("sequenceName", data.sequenceName);
-    if (strlen(data.protocolName) > 0)
-        images->addAttribute("protocolName", data.protocolName);
-    if (strlen(data.studyDate) >= 8 && strcmp(data.studyDate,"00000000") != 0)
-        images->addDateAttribute("studyDate", data.studyDate);
-    if (strlen(data.studyTime) > 0 && strncmp(data.studyTime,"000000",6) != 0)
-        images->addAttribute("studyTime", data.studyTime);
-    if (data.fieldStrength > 0.0)
-        images->addAttribute("fieldStrength", data.fieldStrength);
-    if (data.flipAngle > 0.0)
-        images->addAttribute("flipAngle", data.flipAngle);
-    if (data.TE > 0.0)
-        images->addAttribute("echoTime", data.TE);
-    if (data.TR > 0.0)
-        images->addAttribute("repetitionTime", data.TR);
-    if (data.TI > 0.0)
-        images->addAttribute("inversionTime", data.TI);
+    images->addAttribute("seriesDescription", data.seriesDescription);
+    images->addAttribute("sequenceName", data.sequenceName);
+    images->addAttribute("protocolName", data.protocolName);
+    images->addDateAttribute("studyDate", data.studyDate);
+    images->addAttribute("studyTime", data.studyTime);
+    images->addAttribute("fieldStrength", data.fieldStrength);
+    images->addAttribute("flipAngle", data.flipAngle);
+    images->addAttribute("echoTime", data.TE);
+    images->addAttribute("repetitionTime", data.TR);
+    images->addAttribute("inversionTime", data.TI);
     if (!data.isXRay) {
-        if (data.zThick > 0.0)
-            images->addAttribute("sliceThickness", data.zThick);
-        if (data.zSpacing > 0.0)
-            images->addAttribute("sliceSpacing", data.zSpacing);
+        images->addAttribute("sliceThickness", data.zThick);
+        images->addAttribute("sliceSpacing", data.zSpacing);
     }
     if (data.CSA.multiBandFactor > 1)
         images->addAttribute("multibandFactor", data.CSA.multiBandFactor);
@@ -3099,10 +3085,8 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("sliceTiming", sliceTimes);
     }
 
-    if (strlen(data.patientID) > 0)
-        images->addAttribute("patientIdentifier", data.patientID);
-    if (strlen(data.patientName) > 0)
-        images->addAttribute("patientName", data.patientName);
+    images->addAttribute("patientIdentifier", data.patientID);
+    images->addAttribute("patientName", data.patientName);
     if (strlen(data.patientBirthDate) >= 8 && strcmp(data.patientBirthDate,"00000000") != 0)
         images->addDateAttribute("patientBirthDate", data.patientBirthDate);
     if (strlen(data.patientAge) > 0 && strcmp(data.patientAge,"000Y") != 0)
@@ -3111,10 +3095,8 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("patientSex", "F");
     else if (data.patientSex == 'M')
         images->addAttribute("patientSex", "M");
-    if (data.patientWeight > 0.0)
-        images->addAttribute("patientWeight", data.patientWeight);
-    if (strlen(data.imageComments) > 0)
-        images->addAttribute("comments", data.imageComments);
+    images->addAttribute("patientWeight", data.patientWeight);
+    images->addAttribute("comments", data.imageComments);
 }
 
 #else
