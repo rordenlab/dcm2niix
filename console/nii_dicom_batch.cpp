@@ -190,6 +190,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
     //COL then if swap the x and y value and reverse the sign on the z value.
     //If the phase encoding is not COL, then just reverse the sign on the x value.
     if ((d->manufacturer != kMANUFACTURER_GE) && (d->manufacturer != kMANUFACTURER_CANON)) return;
+    if ((!d->isEPI) && (d->CSA.numDti == 1)) d->CSA.numDti = 0; //issue449
     if (d->CSA.numDti < 1) return;
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
         ; //participant was head first supine
@@ -1635,7 +1636,7 @@ tse3d: T2*/
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if ((d.modality != kMODALITY_PT) && (!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
    		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < h->dim[3]; i++) {
 			if (i != 0)
@@ -2011,6 +2012,10 @@ int * nii_saveDTI(char pathoutname[],int nConvert, struct TDCMsort dcmSort[],str
 	dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
     geCorrectBvecs(&dcmList[indx0],sliceDir, vx, opts.isVerbose);
     siemensPhilipsCorrectBvecs(&dcmList[indx0],sliceDir, vx, opts.isVerbose);
+    if (dcmList[indx0].CSA.numDti < 1) { //issue449
+        	free(vx);
+        	return NULL;    
+    }
     if (!opts.isFlipY ) { //!FLIP_Y&& (dcmList[indx0].CSA.mosaicSlices < 2) mosaics are always flipped in the Y direction
         for (int i = 0; i < (numDti); i++) {
             if (fabs(vx[i].V[2]) > FLT_EPSILON)
@@ -5011,7 +5016,12 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
 	}
 	sliceTimingGE(d0, filename, opts, hdr, dcmSort, dcmList);
+	//ensure slice times have variability
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
+	bool allSame = true;
+	for (int i = 0; i < hdr->dim[3]; i++) 
+		if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0])) allSame = false;
+	if (allSame) d0->CSA.sliceTiming[0] = - 1.0;
 	return sliceDir;
 } //sliceTiming()
 

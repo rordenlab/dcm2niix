@@ -6708,9 +6708,6 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
 #endif
         lPos = lPos + (lLength);
-        //printMessage("%d\n",d.imageStart);
-    	//printMessage(" DWI bxyz %g %g %g %g %d\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], d.CSA.numDti);
-
     } //while d.imageStart == 0
     free (buffer);
     if (d.bitsStored < 0) d.isValid = false;
