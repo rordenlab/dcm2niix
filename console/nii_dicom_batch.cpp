@@ -307,8 +307,10 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     		for (int v= 0; v < 4; v++)
             	if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
 		}
+#ifndef USING_R
     	for (int i = 0; i < 3; i++)
     		printf("%g = %g %g %g\n", vx[i].V[0], vx[i].V[1], vx[i].V[2], vx[i].V[3]);
+#endif
     	return;
     } //https://github.com/rordenlab/dcm2niix/issues/225
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
