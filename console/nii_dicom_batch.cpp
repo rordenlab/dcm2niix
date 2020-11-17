@@ -2714,6 +2714,18 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     appendChar[0] = kPathSeparator;
     if ((strlen(pth) > 0) && (pth[strlen(pth)-1] != kPathSeparator) && (outname[0] != kPathSeparator))
         strcat (baseoutname,appendChar);
+    
+    //remove redundant underscores
+    int len = strlen(outname);
+    int outpos = 0;
+    for (int inpos = 0; inpos < len; inpos ++) {
+        if ((outpos > 0) && (outname[inpos] == '_') && (outname[outpos-1] == '_'))
+            continue;
+        outname[outpos] = outname[inpos];
+        outpos++;
+    }
+    outname[outpos] = 0;
+    
 	//Allow user to specify new folders, e.g. "-f dir/%p" or "-f %s/%p/%m"
 	// These folders are created if they do not exist
     char *sep = strchr(outname, kPathSeparator);
@@ -2741,16 +2753,6 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     		strcat (newdir,ch);
     	}
     }
-    //remove redundant underscores
-    int len = strlen(outname);
-    int outpos = 0;
-    for (int inpos = 0; inpos < len; inpos ++) {
-        if ((outpos > 0) && (outname[inpos] == '_') && (outname[outpos-1] == '_'))
-        	continue;
-        outname[outpos] = outname[inpos];
-        outpos++;	
-	}
-	outname[outpos] = 0;
 	//printMessage("path='%s' name='%s'\n", pathoutname, outname);
     //make sure outname is unique
     strcat (baseoutname,outname);
