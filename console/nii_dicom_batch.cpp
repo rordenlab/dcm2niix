@@ -3048,16 +3048,14 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
     if (data.effectiveEchoSpacingGE > 0.0)
         effectiveEchoSpacing = data.effectiveEchoSpacingGE / 1000000.0;
-
-    if (effectiveEchoSpacing > 0.0)
-        images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
+    
+    images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
     if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
         images->addAttribute("effectiveReadoutTime", effectiveEchoSpacing * (reconMatrixPE - 1.0));
-    if (data.pixelBandwidth > 0.0)
-        images->addAttribute("pixelBandwidth", data.pixelBandwidth);
+    images->addAttribute("pixelBandwidth", data.pixelBandwidth);
     if ((data.manufacturer == kMANUFACTURER_SIEMENS) && (data.dwellTime > 0))
         images->addAttribute("dwellTime", data.dwellTime * 1e-9);
-
+    
     // Phase encoding polarity
     // We only save these attributes if both direction and polarity are known
     bool isSkipPhaseEncodingAxis = data.is3DAcq;
