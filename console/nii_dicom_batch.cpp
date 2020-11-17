@@ -3008,7 +3008,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
     images->addAttribute("sequenceName", data.sequenceName);
     images->addAttribute("protocolName", data.protocolName);
     images->addDateAttribute("studyDate", data.studyDate);
-    images->addAttribute("studyTime", data.studyTime);
+    images->addTimeAttribute("studyTime", data.studyTime);
     images->addAttribute("fieldStrength", data.fieldStrength);
     images->addAttribute("flipAngle", data.flipAngle);
     images->addAttribute("echoTime", data.TE);
@@ -3087,8 +3087,7 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
 
     images->addAttribute("patientIdentifier", data.patientID);
     images->addAttribute("patientName", data.patientName);
-    if (strlen(data.patientBirthDate) >= 8 && strcmp(data.patientBirthDate,"00000000") != 0)
-        images->addDateAttribute("patientBirthDate", data.patientBirthDate);
+    images->addDateAttribute("patientBirthDate", data.patientBirthDate);
     if (strlen(data.patientAge) > 0 && strcmp(data.patientAge,"000Y") != 0)
         images->addAttribute("patientAge", data.patientAge);
     if (data.patientSex == 'F')
