@@ -53,7 +53,7 @@ endif()
 # Compiler dependent flags
 include (CheckCXXCompilerFlag)
 if(UNIX)
-    check_c_compiler_flag(-march=armv8-a+crc ARM_CRC)
+    check_cxx_compiler_flag(-march=armv8-a+crc ARM_CRC)
     if(ARM_CRC)
         # wrong answer for Apple Silicon: check_cxx_compiler_flag(-msse2 HAS_SSE2)
     else()
