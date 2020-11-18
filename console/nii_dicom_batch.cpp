@@ -2764,7 +2764,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 #if defined(USING_R) && (defined(_WIN64) || defined(_WIN32))
     // R also uses forward slash on Windows, so allow it here
     if (!sep)
-        sep = strchr(outname, kForeignPathSeparator);
+        sep = strchr(outname, '/');
 #endif
     if (sep) {
     	char newdir[2048] = {""};
