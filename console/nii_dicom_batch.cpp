@@ -1685,6 +1685,8 @@ tse3d: T2*/
     fclose(fp);
 }// nii_SaveBIDSX()
 
+#ifndef USING_R
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
 struct TDTI4D *dti4D;
 dti4D->sliceOrder[0] = -1;
@@ -1695,6 +1697,8 @@ dti4D->repetitionTimeExcitation = 0.0;
 dti4D->repetitionTimeInversion = 0.0;
 nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 }// nii_SaveBIDSX()
+
+#endif
 
 bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
 	return ((!isSameFloat(bvec.V[0],0.0f)) && //not a B-0 image
