@@ -69,6 +69,9 @@
 
 #undef isnan
 #define isnan ISNAN
+
+#undef isfinite
+#define isfinite R_FINITE
 #endif
 
 #define newTilt
