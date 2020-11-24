@@ -5216,7 +5216,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 dcmStr(lLength, &buffer[lPos], seriesTimeTxt);
                 break;     
             case kStudyTime :
-                dcmStr(lLength, &buffer[lPos], d.studyTime);
+                if (strlen(d.studyTime) < 2)
+                	dcmStr(lLength, &buffer[lPos], d.studyTime);
                 break;
             case kPatientName :
                 dcmStr(lLength, &buffer[lPos], d.patientName);
