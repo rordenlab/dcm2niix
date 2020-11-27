@@ -5509,8 +5509,25 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         free(imgM);
         return EXIT_FAILURE;
     }
-    //issue377(dcmList[indx0], &hdr0); return EXIT_SUCCESS;
-    nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
+    
+    // skip converting if user has specified one or more series, but has not specified this one
+    if (opts.numSeries > 0) { //issue453: moved to before saveBIDS
+      int i = 0;
+      double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
+      int segVolEcho = segVol;
+      if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+      		segVolEcho = dcmList[dcmSort[0].indx].echoNum+1;
+      if (segVolEcho > 0)
+      	seriesNum = seriesNum + ((double) segVolEcho - 1.0) / 10.0;
+      for (; i < opts.numSeries; i++) {
+        if (isSameDouble(opts.seriesNumber[i], seriesNum))
+          break;
+      }
+      if (i == opts.numSeries)
+        return EXIT_SUCCESS;
+    }	
+	if (opts.numSeries >= 0) //issue453
+    	nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
     if (opts.isOnlyBIDS) {
     	//note we waste time loading every image, however this ensures hdr0 matches actual output
         free(imgM);
@@ -5572,26 +5589,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	isFlipZ = true;
         imgM = nii_flipZ(imgM, &hdr0);
         sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
-    }
-    // skip converting if user has specified one or more series, but has not specified this one
-    if (opts.numSeries > 0) {
-      int i = 0;
-      //double seriesNum = (double) dcmList[dcmSort[0].indx].seriesNum;
-      double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
-      int segVolEcho = segVol;
-      if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
-      		segVolEcho = dcmList[dcmSort[0].indx].echoNum+1;
-      if (segVolEcho > 0)
-      	seriesNum = seriesNum + ((double) segVolEcho - 1.0) / 10.0;
-      for (; i < opts.numSeries; i++) {
-        if (isSameDouble(opts.seriesNumber[i], seriesNum)) { 
-        //if (opts.seriesNumber[i] == dcmList[dcmSort[0].indx].seriesNum) {
-          break;
-        }
-      }
-      if (i == opts.numSeries) {
-        return EXIT_SUCCESS;
-      }
     }
 	nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
