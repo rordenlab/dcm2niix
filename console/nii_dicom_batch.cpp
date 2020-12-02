@@ -6174,6 +6174,7 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
     freeNameList(nameList);
     free(dcmSort);
+    free(dcmList);
     return ret;
 }// singleDICOM()
 
