@@ -4996,8 +4996,9 @@ int sliceTimingCore(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struct 
 	//uint64_t indx0 = dcmSort[0].indx;
 	//uint64_t indx1 = dcmSort[1].indx;
 	struct TDICOMdata * d0 = &dcmList[dcmSort[0].indx];
-	uint64_t indx1 = dcmSort[1].indx;
-	if (nConvert < 2) indx1 = dcmSort[0].indx;
+	uint64_t indx1 = dcmSort[0].indx;
+	if (nConvert > 1) //use 2nd volume as CMRR bug can create bogus slice timing in first volume
+		indx1 = dcmSort[1].indx;
 	struct TDICOMdata * d1 = &dcmList[indx1];
 	//oldSliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
@@ -6166,12 +6167,13 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     nameList.str[nameList.numItems]  = (char *)malloc(strlen(fname)+1);
     strcpy(nameList.str[nameList.numItems],fname);
     nameList.numItems++;
-    struct TDCMsort dcmSort[1];
+    TDCMsort * dcmSort = (TDCMsort *)malloc(sizeof(TDCMsort));
     dcmList[0].converted2NII = 1;
     dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
     fillTDCMsort(dcmSort[0], 0, dcmList[0]);
     int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
     freeNameList(nameList);
+    free(dcmSort);
     return ret;
 }// singleDICOM()
 
