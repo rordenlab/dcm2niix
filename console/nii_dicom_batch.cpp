@@ -1670,6 +1670,7 @@ dti4D->volumeOnsetTime[0] = -1;
 dti4D->decayFactor[0] = -1;
 dti4D->intenScale[0] = 0.0;
 dti4D->repetitionTimeExcitation = 0.0;
+dti4D->repetitionTimeInversion = 0.0;
 nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 }// nii_SaveBIDSX()
 
@@ -5099,6 +5100,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     uint64_t indx1 = indx0;
     if (nConvert > 1) indx1 = dcmSort[1].indx;
     uint64_t indxEnd = dcmSort[nConvert-1].indx;
+	dti4D->repetitionTimeInversion = 0.0; //only set for Siemens and GE 3D T1 "TR"
+	dti4D->repetitionTimeExcitation = 0.0; //only set for Philips 3D T1 "TR"
     #ifdef newTilt //see issue 254
     if (( (nConvert > 1) || (dcmList[indx0].xyzDim[3] > 1)) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) { //issue372: enhanced DICOMs can also have gantry tilt
     	dcmList[indx0].gantryTilt = computeGantryTiltPrecise(dcmList[indx0], dcmList[indxEnd], opts.isVerbose);
