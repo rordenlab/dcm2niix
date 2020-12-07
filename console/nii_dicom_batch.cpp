@@ -2308,15 +2308,16 @@ bool intensityScaleVaries(int nConvert, struct TDCMsort dcmSort[],struct TDICOMd
     //some Siemens PET scanners generate 16-bit images where slice has its own scaling factor.
     // since NIfTI provides a single scaling factor for each file, these images require special consideration
     if (nConvert < 2) return false;
-    bool iVaries = false;
+    int dt = dcmList[dcmSort[0].indx].bitsAllocated;
     float iScale = dcmList[dcmSort[0].indx].intenScale;
     float iInter = dcmList[dcmSort[0].indx].intenIntercept;
     for (int i = 1; i < nConvert; i++) { //stack additional images
         uint64_t indx = dcmSort[i].indx;
-        if (fabs (dcmList[indx].intenScale - iScale) > FLT_EPSILON) iVaries = true;
-        if (fabs (dcmList[indx].intenIntercept- iInter) > FLT_EPSILON) iVaries = true;
+		if (dcmList[indx].bitsAllocated != dt) return true;
+        if (fabs (dcmList[indx].intenScale - iScale) > FLT_EPSILON) return true;
+        if (fabs (dcmList[indx].intenIntercept- iInter) > FLT_EPSILON) return true;
     }
-    return iVaries;
+    return false;
 } //intensityScaleVaries()
 
 /*unsigned char * nii_bgr2rgb(unsigned char* bImg, struct nifti_1_header *hdr) {
@@ -5094,7 +5095,7 @@ void loadOverlay(char* imgname, unsigned char * img, int offset, int x, int y, i
 
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
     bool iVaries = intensityScaleVaries(nConvert,dcmSort,dcmList);
-    float *sliceMMarray = NULL; //only used if slices are not equidistant
+	float *sliceMMarray = NULL; //only used if slices are not equidistant
     uint64_t indx = dcmSort[0].indx;
     uint64_t indx0 = dcmSort[0].indx;
     uint64_t indx1 = indx0;
@@ -5513,7 +5514,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         free(imgM);
         return EXIT_FAILURE;
     }
-    
     // skip converting if user has specified one or more series, but has not specified this one
     if (opts.numSeries > 0) { //issue453: moved to before saveBIDS
       int i = 0;
@@ -5735,6 +5735,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 #endif
 		imgM = removeADC(&hdr0, imgM, numADC);
 #ifndef USING_R
+		if (iVaries)
+			printMessage("Saving as 32-bit float (slope, intercept or bits allocated varies).\n");
 		if (opts.isSaveNRRD)
 			returnCode = nii_saveNRRD(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx], dti4D, dcmList[indx0].CSA.numDti);
 		else if (opts.isSave3D)
@@ -6000,13 +6002,13 @@ int isSameFloatDouble (double a, double b) {
 }
 
 struct TWarnings { //generate a warning only once per set
-        bool acqNumVaries, bitDepthVaries, dateTimeVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
+        bool acqNumVaries, dimensionVaries, dateTimeVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
 };
 
 TWarnings setWarnings() {
 	TWarnings r;
 	r.acqNumVaries = false;
-	r.bitDepthVaries = false;
+	r.dimensionVaries = false;
 	r.dateTimeVaries = false;
 	r.phaseVaries = false;
 	r.echoVaries = false;
@@ -6062,10 +6064,10 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     if ((isSameStudyInstanceUID) && (d1.isXA10A) && (d2.isXA10A))
 		isSameTime = true; //kludge XA10A 0008,0030 incorrect https://github.com/rordenlab/dcm2niix/issues/236
     if ((!isSameStudyInstanceUID) && (!isSameTime)) return false;
-    if ((d1.bitsAllocated != d2.bitsAllocated) || (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
-        if (!warnings->bitDepthVaries)
-        	printMessage("Slices not stacked: dimensions or bit-depth varies\n");
-        warnings->bitDepthVaries = true;
+    if ( (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
+        if (!warnings->dimensionVaries)
+        	printMessage("Slices not stacked: dimensions vary across slices\n");
+        warnings->dimensionVaries = true;
         return false;
     }
     #ifndef myIgnoreStudyTime
