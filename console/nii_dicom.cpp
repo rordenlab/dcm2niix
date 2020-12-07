@@ -6895,7 +6895,6 @@ if (d.isHasPhase)
     if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
-	//printMessage("%d %g\n", d.imageNum, sliceLocation); //shame this tag is optional
 	if (isVerbose) {
         printMessage("DICOM file: %s\n", fname);
         printMessage(" patient position (0020,0032)\t%g\t%g\t%g\n", d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);

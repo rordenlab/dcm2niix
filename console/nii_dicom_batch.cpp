@@ -5190,8 +5190,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
                 	dcmList[indx0].locationsInAcquisition = dcmList[indx0].locationsInAcquisitionConflict;
                 }    
             }
-            if ((nAcq == 1 ) && (dcmList[indx0].locationsInAcquisition > 0)) nAcq = nConvert/dcmList[indx0].locationsInAcquisition;
-            if (nAcq < 2 ) {
+			if ((nConvert > 1) && (nAcq == 1 ) && (dcmList[indx0].locationsInAcquisition > 0) ){
+				if ((nConvert % dcmList[indx0].locationsInAcquisition) == 0)
+					nAcq = nConvert / dcmList[indx0].locationsInAcquisition;
+				else
+					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d slices.\n", dcmList[indx0].locationsInAcquisition, nConvert);
+			}
+			if (nAcq < 2 ) {
                 nAcq = 0;
                 for (int i = 0; i < nConvert; i++)
                     if (isSamePosition(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx])) nAcq++;
