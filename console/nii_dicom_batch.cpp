@@ -1140,6 +1140,8 @@ tse3d: T2*/
 			fprintf(fp,"\", \"REAL");
 		if ((d.isHasImaginary) && ((d.manufacturer == kMANUFACTURER_GE) ||  (strstr(d.imageType, "_IMAGINARY_") == NULL)) ) 
 			fprintf(fp,"\", \"IMAGINARY");
+		if ((d.isRealIsPhaseMapHz))// && ((d.manufacturer == kMANUFACTURER_GE) ||  (strstr(d.imageType, "_IMAGINARY_") == NULL)) ) 
+			fprintf(fp,"\", \"FIELDMAPHZ");
 		fprintf(fp, "\"],\n");	
 	}
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
@@ -2667,7 +2669,10 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     if ((isAddNamePostFixes) && (dcm.isHasImaginary)) {
     	strcat (outname,"_imaginary"); //has phase map
     }
-    if ((isAddNamePostFixes) && (dcm.isHasReal)) {
+    if ((isAddNamePostFixes) && (dcm.isHasReal) && (dcm.isRealIsPhaseMapHz)) {
+    	strcat (outname,"_fieldmaphz"); //has field map
+    }
+    if ((isAddNamePostFixes) && (dcm.isHasReal) && (!dcm.isRealIsPhaseMapHz)) {
     	strcat (outname,"_real"); //has phase map
     }
     if ((isAddNamePostFixes) && (dcm.isHasPhase)) {
@@ -6090,9 +6095,9 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     	//}
     	return true; //we will stack these images, even if they differ in the following attributes
     }
-    if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || ((d1.isHasReal != d2.isHasReal))) {
+    if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || (d1.isHasReal != d2.isHasReal)) {
     	if (!warnings->phaseVaries)
-        	printMessage("Slices not stacked: some are phase/real/imaginary maps, others are not. Instances %d %d\n", d1.imageNum, d2.imageNum);
+        	printMessage("Slices not stacked: some are phase/real/imaginary/phase maps, others are not. Instances %d %d\n", d1.imageNum, d2.imageNum);
     	warnings->phaseVaries = true;
     	return false;
     }

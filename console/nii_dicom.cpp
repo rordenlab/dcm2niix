@@ -848,6 +848,7 @@ struct TDICOMdata clear_dicom_data() {
     	d.overlayStart[i] = 0;
     d.isHasOverlay = false;
     d.isPrivateCreatorRemap = false;
+	d.isRealIsPhaseMapHz = false;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -2017,9 +2018,10 @@ int	kbval = 33; //V3: 27
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
-        if ((isSameFloat(cols[kImageType],18)) && (!isTypeWarning)) {
-        	printWarning("Field map in Hz will be saved as the 'real' image.\n");
-        	isTypeWarning = true;
+        if (isSameFloat(cols[kImageType],18))  {
+        	//printWarning("Field map in Hz will be saved as the 'real' image.\n");
+        	//isTypeWarning = true;
+			d.isRealIsPhaseMapHz = true;
         } else if (((cols[kImageType] < 0.0) || (cols[kImageType] > 4.0)) && (!isTypeWarning)) {
         	printError("Unknown type %g: not magnitude[0], real[1], imaginary[2] or phase[3].\n", cols[kImageType]);
         	isTypeWarning = true;
@@ -2107,6 +2109,10 @@ int	kbval = 33; //V3: 27
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
 			bool isPhase = (cols[kImageType] == 3);
+			if (cols[kImageType] == 18) {
+				isReal = true;
+				d.isRealIsPhaseMapHz = true;
+			} 
 			if (cols[kImageType] == 4) {
 				if (!isType4Warning) {
         			printWarning("Unknown image type (4). Be aware the 'phase' image is of an unknown type.\n");
@@ -2114,8 +2120,13 @@ int	kbval = 33; //V3: 27
         		}
 				isPhase = true; //2019
 			}
-			if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+			if ((cols[kImageType] != 18) && ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))) {
+				if (!isType4Warning) {
+        			printWarning("Unknown image type (%g). Be aware the 'phase' image is of an unknown type.\n", round(cols[kImageType]));
+        			isType4Warning = true;
+        		}
 				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
+			}
 			if (isReal) vol += num3DExpected;
 			if (isImaginary) vol += (2*num3DExpected);
 			if (isPhase) vol += (3*num3DExpected);
@@ -5171,7 +5182,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 //issue 256: Philips files report real ComplexImageComponent but Magnitude ImageType https://github.com/rordenlab/dcm2niix/issues/256
                 isPhase = false;
                 isReal = false;
-                isImaginary = false;
+				isImaginary = false;
                 isMagnitude = false;
                 //see Table C.8-85 http://dicom.nema.org/medical/Dicom/2017c/output/chtml/part03/sect_C.8.13.3.html
                 if ((buffer[lPos]=='R') && (toupper(buffer[lPos+1]) == 'E'))
@@ -5185,7 +5196,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 //not mutually exclusive: possible for Philips enhanced DICOM to store BOTH magnitude and phase in the same image
                 if (isPhase) d.isHasPhase = true;
                 if (isReal) d.isHasReal = true;
-                if (isImaginary) d.isHasImaginary = true;
+				if (isImaginary) d.isHasImaginary = true;
                 if (isMagnitude) d.isHasMagnitude = true;
                 break;
             case kAcquisitionContrast:
