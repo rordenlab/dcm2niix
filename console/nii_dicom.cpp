@@ -5074,6 +5074,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 	//d.isDerived = true; //this would have 'i- y' skip MoCo images
                 	isMoCo = true;
                 }
+				if ((slen > 5) && strstr(d.imageType, "B0") && strstr(d.imageType, "MAP"))
+					d.isRealIsPhaseMapHz = true;
 				if((slen > 5) && strstr(d.imageType, "_ADC_") )
                 	d.isDerived = true;
 				if((slen > 5) && strstr(d.imageType, "_TRACEW_") )
