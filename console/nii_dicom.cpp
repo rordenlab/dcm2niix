@@ -1969,7 +1969,7 @@ int	kbval = 33; //V3: 27
 		}
 		//diskSlice ++;
         bool isADC = false;
-        if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
+        if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv3]) ) {
         	isADC = true;
         	ADCwarning = true;
         }
@@ -2447,6 +2447,7 @@ int	kbval = 33; //V3: 27
     d.imageStart = 0;
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [increase kMaxDTI4D] found %d directions\n", d.CSA.numDti);
+		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d*%d\n", d.xyzDim[3],  maxNumberOfGradientOrients,maxNumberOfDiffusionValues, maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
         d.CSA.numDti = 0;
     };
     //check if dimensions vary

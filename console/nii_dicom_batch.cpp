@@ -6119,7 +6119,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     }
     if (d1.coilCrc != d2.coilCrc) {
         if (!warnings->coilVaries)
-        	printMessage("Slices not stacked: coil varies\n");
+        	printMessage("Slices not stacked: coil varies '%s' vs '%s'\n", d1.coilName, d2.coilName);
         warnings->coilVaries = true;
         *isCoilVaries = true;
         return false;
