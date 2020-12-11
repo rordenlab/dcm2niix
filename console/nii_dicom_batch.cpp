@@ -5851,7 +5851,18 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 	}
 	//save each series
 	bool isScaleVariesEnh = dcmList[indx].isScaleVariesEnh; //issue363: any variation in any image
+	float intenScale = dcmList[indx].intenScale;
+	float intenIntercept = dcmList[indx].intenIntercept;
+	float intenScalePhilips = dcmList[indx].intenScalePhilips;
+	float RWVIntercept = dcmList[indx].RWVIntercept;
+	float RWVScale = dcmList[indx].RWVScale;
 	for (int s = 1; s <= series; s++) {
+		//issue461: assert these values as saveDcm2NiiCore modifies them when it applies Philips scaling
+		dcmList[indx].intenScale = intenScale;
+		dcmList[indx].intenIntercept = intenIntercept;
+		dcmList[indx].intenScalePhilips = intenScalePhilips;
+		dcmList[indx].RWVIntercept = RWVIntercept;
+		dcmList[indx].RWVScale = RWVScale;
 		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) { //for each volume
 			 if (dti4D->gradDynVol[i] == s) {
 			 	//dti4D->gradDynVol[i] = s;
@@ -5892,18 +5903,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 				if (dti4Ds.intenScale[i] != dti4Ds.intenScale[0]) dcmList[indx].isScaleVariesEnh = true;
 				if (dti4Ds.intenScalePhilips[i] != dti4Ds.intenScalePhilips[0]) dcmList[indx].isScaleVariesEnh = true;
 			}
-			//in case scale doe not vary
 			dcmList[indx].intenScale = dti4Ds.intenScale[0];
 			dcmList[indx].intenIntercept = dti4Ds.intenIntercept[0];
 			dcmList[indx].intenScalePhilips = dti4Ds.intenScalePhilips[0];
 			dcmList[indx].RWVIntercept = dti4Ds.RWVIntercept[0];
 			dcmList[indx].RWVScale = dti4Ds.RWVScale[0];
-		} //if isScaleVariesEnh
-		
-		//if (dcmList[indx].isScaleVariesEnh) printf("Varies\n");
-		//if (!dcmList[indx].isScaleVariesEnh) printf("no Varies\n");
-		//printf("%g %g %g\n", dcmList[indx].intenScale, dcmList[indx].intenIntercept, dcmList[indx].intenScalePhilips);
-		//continue;
+		}
 		if (s > 1) dcmList[indx].CSA.numDti = 0; //only save bvec for first type (magnitude)
 		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, &dti4Ds, s);
         if (ret2 != EXIT_SUCCESS) ret = ret2; //return EXIT_SUCCESS only if ALL are successful
