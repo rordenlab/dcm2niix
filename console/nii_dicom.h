@@ -55,11 +55,7 @@ extern "C" {
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
 static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Philips) images
-#if defined(_WIN64) || defined(_WIN32) //do not exceed windows stack
-static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
-#else
-static const int kMaxDTI4D = 18000; //issue460: maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
-#endif
+static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI directions for 4D (Philips) images, also maximum number of 2D slices for Enhanced DICOM and PAR/REC
 
 #define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
 #define kDICOMStrLarge 256

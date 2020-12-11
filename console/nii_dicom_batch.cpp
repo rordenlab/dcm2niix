@@ -3467,8 +3467,10 @@ void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
 int nii_saveNII(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts, struct TDICOMdata d) {
     if (opts.isOnlyBIDS) return EXIT_SUCCESS;
     if (opts.isSaveNRRD) {
-		struct TDTI4D dti4D;
-    	return nii_saveNRRD(niiFilename, hdr, im, opts, d, &dti4D, 0);
+		struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
+		int ret = nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, 0);
+		free(dti4D);
+		return ret;
     }
     hdr.vox_offset = 352;
     size_t imgsz = nii_ImgBytes(hdr);
@@ -5832,8 +5834,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dcmLis
 		}
 	}
 	//bvec/bval saved for each series (real, phase, magnitude, imaginary) https://github.com/rordenlab/dcm2niix/issues/219
-	TDTI4D dti4Ds;
-	dti4Ds = *dti4D;
+	TDTI4D dti4Ds = *dti4D;
 	bool isHasDti = (dcmList[indx].CSA.numDti > 0);
 	if ((isHasDti) && (dcmList[indx].CSA.numDti == dcmList[indx].xyzDim[4])) {
 		int nDti = 0;
@@ -6174,7 +6175,7 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
         return 0;
     }
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc( sizeof(struct  TDICOMdata));
-    struct TDTI4D dti4D;
+    struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
     struct TSearchList nameList;
     nameList.maxItems = 1; // larger requires more memory, smaller more passes
     nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
@@ -6184,11 +6185,12 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     nameList.numItems++;
     TDCMsort * dcmSort = (TDCMsort *)malloc(sizeof(TDCMsort));
     dcmList[0].converted2NII = 1;
-    dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+    dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
     fillTDCMsort(dcmSort[0], 0, dcmList[0]);
-    int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+    int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
     freeNameList(nameList);
-    free(dcmSort);
+    free(dti4D);
+	free(dcmSort);
     free(dcmList);
     return ret;
 }// singleDICOM()
@@ -6229,7 +6231,7 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
     #endif
     TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 	struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nConvert * sizeof(struct  TDICOMdata));
-    struct TDTI4D dti4D;
+    struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
     struct TSearchList nameList;
     nameList.maxItems = nConvert; // larger requires more memory, smaller more passes
     nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
@@ -6243,15 +6245,16 @@ int textDICOM(struct TDCMopts* opts, char *fname) {
 		nameList.str[nameList.numItems]  = (char *)malloc(strlen(dcmname)+1);
     	strcpy(nameList.str[nameList.numItems],dcmname);
     	nameList.numItems++;
-		dcmList[nConvert] = readDICOMv(nameList.str[nConvert], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+		dcmList[nConvert] = readDICOMv(nameList.str[nConvert], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
 		fillTDCMsort(dcmSort[nConvert], nConvert, dcmList[nConvert]);
 		nConvert ++;
     }
     fclose(fp);
     qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
-	int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+	int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, dti4D);
     free(dcmSort);
     free(dcmList);
+	free(dti4D);
     freeNameList(nameList);
     return ret;
 }//textDICOM()
@@ -6364,12 +6367,13 @@ int convert_parRec(char * fnm, struct TDCMopts opts) {
     strcpy(nameList.str[0], fnm);
     //nameList.str[0]  = (char *)malloc(strlen(opts.indir)+1);
     //strcpy(nameList.str[0],opts.indir);
-    TDTI4D dti4D;
-    dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, &dti4D, false);
+	struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
+    dcmList[0] = nii_readParRec(nameList.str[0], opts.isVerbose, dti4D, false);
     struct TDCMsort dcmSort[1];
     dcmSort[0].indx = 0;
     if (dcmList[0].isValid)
-    	ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, &dti4D);
+    	ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, dti4D);
+	free(dti4D);
     free(dcmList);//if (nConvertTotal == 0)
     if (nameList.numItems < 1)
     	printMessage("No valid PAR/REC files were found\n");
@@ -6655,7 +6659,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     	progressPct = reportProgress(progressPct, kStage1Frac); //proportion correct, 0..100
 	// struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
-    struct TDTI4D dti4D;
+    struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
     int nConvertTotal = 0;
     bool compressionWarning = false;
     bool convertError = false;
@@ -6674,13 +6678,13 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             	convertError = true;
             continue;
     	}
-        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, &dti4D); //ignore compile warning - memory only freed on first of 2 passes
+        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
         //if (!dcmList[i].isValid) printf(">>>>Not a valid DICOM %s\n", nameList.str[i]);
-        if ((dcmList[i].isValid) && ((dti4D.sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+        if ((dcmList[i].isValid) && ((dti4D->sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
 			struct TDCMsort dcmSort[1];
 			fillTDCMsort(dcmSort[0], i, dcmList[i]);
             dcmList[i].converted2NII = 1;
-            int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, &dti4D);
+            int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
             if (ret == EXIT_SUCCESS)
             	nConvertTotal++;
             else
@@ -6698,7 +6702,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 	start = clock();
 	#endif
 	if (opts->isRenameNotConvert) {
-    	return EXIT_SUCCESS;
+		free(dcmList);
+		free(dti4D);
+		return EXIT_SUCCESS;
     }
 #ifdef USING_R
     if (opts->isScanOnly) {
@@ -6783,7 +6789,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 			else
 				//nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 				nConvert = removeDuplicates(nConvert, dcmSort);
-			int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+			int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, dti4D);
 			if (ret == EXIT_SUCCESS)
             	nConvertTotal += nConvert;
             else
@@ -6843,7 +6849,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 			nConvert = removeDuplicatesVerbose(nConvert, dcmSort, &nameList);
 		else
 			nConvert = removeDuplicates(nConvert, dcmSort);
-		int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, &dti4D);
+		int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, dti4D);
 		if (ret == EXIT_SUCCESS)
         	nConvertTotal += nConvert;
         else
@@ -6864,6 +6870,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 	#endif
     if (opts->isProgress) progressPct = reportProgress(progressPct, 1); //proportion correct, 0..100
     free(dcmList);
+	free(dti4D);
     freeNameList(nameList);
     if (convertError) {
     	if (nConvertTotal == 0)

@@ -1647,7 +1647,7 @@ int isSameFloatGE (float a, float b) {
     return (fabs (a - b) <= 0.0001);
 }
 
-struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
+struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {	
 struct TDICOMdata d = clear_dicom_data();
 dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
@@ -1768,7 +1768,7 @@ int	kbval = 33; //V3: 27
 	 				* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes;
             	num2DExpected = d.xyzDim[3] * num3DExpected;
 	 			if ((num2DExpected ) >= kMaxSlice2D) {
-					printError("Use dicm2nii or increase kMaxDTI4D to be more than %d\n", num2DExpected);
+					printError("Use dicm2nii or increase kMaxSlice2D to be more than %d\n", num2DExpected);
 					printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d*%d\n",
             		d.xyzDim[3],  maxNumberOfGradientOrients,maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
@@ -2191,7 +2191,7 @@ int	kbval = 33; //V3: 27
     	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
         return d;
     }
-	if (numSlice2D > kMaxDTI4D) {
+	if (numSlice2D > kMaxDTI4D) { //since issue460, kMaxSlice2D == kMaxSlice4D, so we should never get here
     	printError("Increase kMaxDTI4D from %d to at least %d (or use dicm2nii).\n", kMaxDTI4D, numSlice2D);
         return d;		
 	}
