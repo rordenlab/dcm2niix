@@ -1973,7 +1973,6 @@ int	kbval = 33; //V3: 27
         	isADC = true;
         	ADCwarning = true;
         }
-        //printMessage(">>%d  %d\n", (int)cols[kSlice],  diskSlice);
         if (numSlice2D < 1) {
             d.xyzMM[1] = cols[kXmm];
             d.xyzMM[2] = cols[kYmm];
@@ -2138,7 +2137,7 @@ int	kbval = 33; //V3: 27
 					free (cols);
 					return d;
 	 		}
-	 		// dti4D->S[vol].V[0] = cols[kbval];
+			// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
 			if (isSameFloatGE(cols[kTEcho], 0))
@@ -2161,7 +2160,7 @@ int	kbval = 33; //V3: 27
     			if ((vol+1) > d.CSA.numDti)
     				d.CSA.numDti = vol+1;
 			}
-			if (numSlice2D < kMaxSlice2D) {//issue 363: intensity can vary with each 2D slice of 4D volume
+			if (numSlice2D < kMaxDTI4D) {//issue 363: intensity can vary with each 2D slice of 4D volume
 				//printf("%d %g %g\n", numSlice2D, cols[kRI], cols[kRS]);
             	dti4D->intenIntercept[numSlice2D] = cols[kRI];
 				dti4D->intenScale[numSlice2D] = cols[kRS];
@@ -2188,6 +2187,14 @@ int	kbval = 33; //V3: 27
 		printError("Invalid PAR format header (unable to detect version or slices) %s\n", parname);
     	return d;
     }
+    if (numSlice2D > kMaxSlice2D) { //check again after reading, as top portion of header does not report image types or isotropics
+    	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
+        return d;
+    }
+	if (numSlice2D > kMaxDTI4D) {
+    	printError("Increase kMaxDTI4D from %d to at least %d (or use dicm2nii).\n", kMaxDTI4D, numSlice2D);
+        return d;		
+	}
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.isValid = true;
     d.isSigned = true;
@@ -2212,10 +2219,6 @@ int	kbval = 33; //V3: 27
     }
     if (d.CSA.numDti > 0) d.CSA.numDti = maxVol; //e.g. gradient 2 can skip B=0 but include isotropic
     //remove unused slices - this will happen if unless we have all 4 image types: real, imag, mag, phase
-    if (numSlice2D > kMaxSlice2D) { //check again after reading, as top portion of header does not report image types or isotropics
-    	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
-        d.isValid = false;
-    }
     int slice = 0;
     for (int i = 0; i < kMaxSlice2D; i++) {
         if (dti4D->sliceOrder[i] > -1) { //this slice was populated
@@ -2251,7 +2254,7 @@ int	kbval = 33; //V3: 27
         	dti4D->intenScalePhilips[i] = tmp.intenScalePhilips[j];
         }
     }
-    d.isScaleOrTEVaries = true;
+	d.isScaleOrTEVaries = true;
 	if (numSlice2D > kMaxSlice2D) {
 		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
 		dti4D->sliceOrder[0] = -1;
@@ -2278,14 +2281,14 @@ int	kbval = 33; //V3: 27
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
     }
-    if ((isTypeWarning) && ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
+	if ((isTypeWarning) && ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
     	num2DExpected = numSlice2D;
     }
     if ( ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
     	num2DExpected = d.xyzDim[3] * (int)(numSlice2D / d.xyzDim[3]);
     	if (!ADCwarning) printWarning("More volumes than described in header (ADC or isotropic?)\n");
     }
-    if ((numSlice2D % num2DExpected) != 0) {
+	if ((numSlice2D % num2DExpected) != 0) {
     	printMessage("Found %d slices, but expected divisible by %d: slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d %s\n", numSlice2D, num2DExpected,
     		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels, parname);
