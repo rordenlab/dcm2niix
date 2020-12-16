@@ -5017,6 +5017,15 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
                     d.compressionScheme = kCompressYes;
                     //printMessage("JPEG2000 Lossless support is new: please validate conversion\n");
+                } else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.1.99") == 0)){
+                    //n.b. Deflate compression applied applies to the encoding of the **entire** DICOM Data Set, not just image data
+					// see https://www.medicalconnections.co.uk/kb/Transfer-Syntax/
+					//#ifndef myDisableZLib
+                    //d.compressionScheme = kCompressDeflate;
+                    //#else
+                    printWarning("Unsupported transfer syntax '%s' (inflate files with 'dcmconv +te gz.dcm raw.dcm' or 'gdcmconv -w gz.dcm raw.dcm)'\n",transferSyntax);
+                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    //#endif
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)) {
                     d.compressionScheme = kCompressYes;
                     //printMessage("JPEG2000 support is new: please validate conversion\n");

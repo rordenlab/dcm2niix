@@ -50,11 +50,11 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20201211"
+#define kDCMdate "v1.0.20201216"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
-static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Philips) images
+static const int kMaxSlice2D = 65535; //issue460 maximum number of 2D slices in 4D (Philips) images
 static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI directions for 4D (Philips) images, also maximum number of 2D slices for Enhanced DICOM and PAR/REC
 
 #define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268

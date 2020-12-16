@@ -6018,14 +6018,18 @@ int isSameFloatDouble (double a, double b) {
 }
 
 struct TWarnings { //generate a warning only once per set
-        bool acqNumVaries, dimensionVaries, dateTimeVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
+        bool manufacturerVaries, modalityVaries, derivedVaries, acqNumVaries, dimensionVaries, dateTimeVaries, studyUidVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
 };
 
 TWarnings setWarnings() {
 	TWarnings r;
+	r.manufacturerVaries = false;
+	r.modalityVaries = false;
+	r.derivedVaries = false;
 	r.acqNumVaries = false;
 	r.dimensionVaries = false;
 	r.dateTimeVaries = false;
+	r.studyUidVaries = false;
 	r.phaseVaries = false;
 	r.echoVaries = false;
 	r.triggerVaries = false;
@@ -6041,14 +6045,29 @@ TWarnings setWarnings() {
 bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opts, struct TWarnings* warnings, bool *isMultiEcho, bool *isNonParallelSlices, bool *isCoilVaries) {
     //returns true if d1 and d2 should be stacked together as a single output
     if (!d1.isValid) return false;
-    if (!d2.isValid) return false;
-    if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
-    if (d1.isDerived != d2.isDerived) return false; //do not stack raw and derived image types
+    if (!d2.isValid) return false; 
+	if ((opts->isVerbose) && (d1.seriesNum == d2.seriesNum)) {
+		//one would never want to combine in these situations: only raise warning for verbose modes to help troubleshooting
+		if ((d1.manufacturer != d2.manufacturer) && (!warnings->manufacturerVaries)) {
+        	printMessage("Volumes not stacked: manufacturer varies.\n");
+        	warnings->manufacturerVaries = true;
+		}
+		if ((d1.modality != d2.modality) && (!warnings->modalityVaries)) {
+        	printMessage("Volumes not stacked: modality varies.\n");
+        	warnings->modalityVaries = true;
+		}
+		if ((d1.isDerived != d2.isDerived) && (!warnings->derivedVaries)) {
+        	printMessage("Volumes not stacked: derived varies.\n");
+        	warnings->derivedVaries = true;
+		}		
+	}
     if (d1.manufacturer != d2.manufacturer) return false; //do not stack data from different vendors
-	bool isForceStackSeries = false;
+	if (d1.modality != d2.modality) return false; //do not stack MR and CT data!
+    if (d1.isDerived != d2.isDerived) return false; //do not stack raw and derived image types
+    bool isForceStackSeries = false;
 	if ((opts->isForceStackDCE) && (d1.isStackableSeries) && (d2.isStackableSeries) && (d1.seriesNum != d2.seriesNum)) {
 		if (!warnings->forceStackSeries)
-        	printMessage("Siemens volumes stacked despite varying series number (use '-m o' to turn off merging).\n");
+        	printMessage("Volumes stacked despite varying series number (use '-m o' to turn off merging).\n");
         warnings->forceStackSeries = true;
         isForceStackSeries = true;
 	}
@@ -6079,8 +6098,20 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     bool isSameTime = isSameFloatDouble(d1.dateTime, d2.dateTime);
     if ((isSameStudyInstanceUID) && (d1.isXA10A) && (d2.isXA10A))
 		isSameTime = true; //kludge XA10A 0008,0030 incorrect https://github.com/rordenlab/dcm2niix/issues/236
-    if ((!isSameStudyInstanceUID) && (!isSameTime)) return false;
-    if ( (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) ) {
+    bool isDimensionVaries = ( (d1.xyzDim[1] != d2.xyzDim[1]) || (d1.xyzDim[2] != d2.xyzDim[2]) || (d1.xyzDim[3] != d2.xyzDim[3]) );
+	if ((!isSameStudyInstanceUID) && (!isSameTime)) {
+		if (opts->isForceStackDCE) {
+			if (!warnings->studyUidVaries)
+    			printMessage("Slices stacked despite Study Date/Time (0008,0020;0008,0030) and Study UID (0020,000E) variation %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+    		warnings->studyUidVaries = true;		
+		} else {
+			if (!warnings->studyUidVaries)
+    			printMessage("Slices not stacked: Study Date/Time (0008,0020;0008,0030) and Study UID (0020,000E) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+    		warnings->studyUidVaries = true;		
+			return false;
+		}
+	}
+    if (isDimensionVaries) {
         if (!warnings->dimensionVaries)
         	printMessage("Slices not stacked: dimensions vary across slices\n");
         warnings->dimensionVaries = true;
@@ -6089,7 +6120,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     #ifndef myIgnoreStudyTime
     if (!isSameTime) { //beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
     	if (!warnings->dateTimeVaries)
-    		printMessage("Slices not stacked: Study Date/Time (0008,0020 / 0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+    		printMessage("Slices not stacked: Study Date/Time (0008,0020;0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
     	warnings->dateTimeVaries = true;
     	return false;
     }
@@ -6124,11 +6155,18 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
         return false;
     }
     if (d1.coilCrc != d2.coilCrc) {
-        if (!warnings->coilVaries)
-        	printMessage("Slices not stacked: coil varies '%s' vs '%s'\n", d1.coilName, d2.coilName);
-        warnings->coilVaries = true;
-        *isCoilVaries = true;
-        return false;
+		if (opts->isForceStackDCE) {
+	        if (!warnings->coilVaries)
+	        	printMessage("Slices stacked despite coil variation '%s' vs '%s'\n", d1.coilName, d2.coilName);
+	        warnings->coilVaries = true;
+	        *isCoilVaries = true;
+		} else {
+	        if (!warnings->coilVaries)
+	        	printMessage("Slices not stacked: coil varies '%s' vs '%s'\n", d1.coilName, d2.coilName);
+	        warnings->coilVaries = true;
+	        *isCoilVaries = true;
+	        return false;
+		}
     }
     if ((strlen(d1.protocolName) < 1) && (strlen(d2.protocolName) < 1)) {
     	if (!warnings->nameEmpty)
