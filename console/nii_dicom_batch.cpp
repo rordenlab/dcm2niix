@@ -968,6 +968,8 @@ void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
 	TCsaAscii csaAscii;
 	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+	if (strlen(protocolName) >= kDICOMStr)
+		protocolName[kDICOMStr-1] = 0;
 	strcpy(d->protocolName, protocolName);
 #endif
 }
