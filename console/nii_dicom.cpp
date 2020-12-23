@@ -1238,7 +1238,8 @@ void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3D
 	// Nov 1, 2018 <siemens-healthineers.com> wrote:
 	//  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
 	if (minTimeValue < 0) {
-		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
+		//printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n"); //if uncommented, overwhelming number of warnings (one per DICOM input), better once per series
+		CSA->sliceTiming[kMaxEPI3D-1] = -2.0; //issue 271: flag for unified warning
 		for (int z = 0; z < itemsOK; z++)
 			CSA->sliceTiming[z] = CSA->sliceTiming[z] - minTimeValue;
 	}
@@ -7022,29 +7023,31 @@ if (d.isHasPhase)
 			int j = 0;
 			if (d.xyzDim[3] > 1) j = 1;
 			for (int i = 0; i < d.xyzDim[4]; i++) {
+				int slice = j+(i * d.xyzDim[3]);
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
-				dti4D->TE[i] =  dcmDim[j+(i * d.xyzDim[3])].TE;
-				dti4D->isPhase[i] =  dcmDim[j+(i * d.xyzDim[3])].isPhase;
-				dti4D->isReal[i] =  dcmDim[j+(i * d.xyzDim[3])].isReal;
-				dti4D->isImaginary[i] =  dcmDim[j+(i * d.xyzDim[3])].isImaginary;
-				dti4D->triggerDelayTime[i] =  dcmDim[j+(i * d.xyzDim[3])].triggerDelayTime;
-				dti4D->S[i].V[0] = dcmDim[j+(i * d.xyzDim[3])].V[0];
-				dti4D->S[i].V[1] = dcmDim[j+(i * d.xyzDim[3])].V[1];
-				dti4D->S[i].V[2] = dcmDim[j+(i * d.xyzDim[3])].V[2];
-				dti4D->S[i].V[3] = dcmDim[j+(i * d.xyzDim[3])].V[3];
+				dti4D->TE[i] =  dcmDim[slice].TE;
+				dti4D->isPhase[i] =  dcmDim[slice].isPhase;
+				dti4D->isReal[i] =  dcmDim[slice].isReal;
+				dti4D->isImaginary[i] =  dcmDim[slice].isImaginary;
+				dti4D->triggerDelayTime[i] =  dcmDim[slice].triggerDelayTime;
+				dti4D->S[i].V[0] = dcmDim[slice].V[0];
+				dti4D->S[i].V[1] = dcmDim[slice].V[1];
+				dti4D->S[i].V[2] = dcmDim[slice].V[2];
+				dti4D->S[i].V[3] = dcmDim[slice].V[3];
 				//printf("te=\t%g\tscl=\t%g\tintercept=\t%g\n",dti4D->TE[i], dti4D->intenScale[i],dti4D->intenIntercept[i]);
 				if ((!isSameFloatGE(dti4D->TE[i],0.0)) && (dti4D->TE[i] != d.TE)) isTEvaries = true;
 				if (dti4D->isPhase[i] != isPhase) d.isScaleOrTEVaries = true;
 				if (dti4D->triggerDelayTime[i] != d.triggerDelayTime) d.isScaleOrTEVaries = true;
 				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary) d.isScaleOrTEVaries = true;
-				//dti4D->intenScale[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScale;
-				//dti4D->intenIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].intenIntercept;
-				//dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
-				//dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
-				//dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
-				//if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
-				//if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
+				/*Philips can vary intensity scalings for separate slices within a volume!
+				dti4D->intenScale[i] =  dcmDim[slice].intenScale;
+				dti4D->intenIntercept[i] =  dcmDim[slice].intenIntercept;
+				dti4D->intenScalePhilips[i] =  dcmDim[slice].intenScalePhilips;
+				dti4D->RWVIntercept[i] =  dcmDim[slice].RWVIntercept;
+				dti4D->RWVScale[i] =  dcmDim[slice].RWVScale;
+				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
+				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;*/
 			}
 			if((isScaleVaries) || (isTEvaries)) d.isScaleOrTEVaries = true;
 			if (isTEvaries) d.isMultiEcho = true;
@@ -7055,8 +7058,10 @@ if (d.isHasPhase)
 			}*/
 			if ((isVerbose) && (d.isScaleOrTEVaries)) {
 				printMessage("Parameters vary across 3D volumes packed in single DICOM file:\n");
-				for (int i = 0; i < d.xyzDim[4]; i++)
-					printMessage(" %d TE=%g Slope=%g Inter=%g PhilipsScale=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[i], dti4D->intenIntercept[i], dti4D->intenScalePhilips[i], dti4D->isPhase[i] );
+				for (int i = 0; i < d.xyzDim[4]; i++) {
+					int slice = (i * d.xyzDim[3]);
+					printMessage(" %d TE=%g Slope=%g Inter=%g PhilipsScale=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[slice], dti4D->intenIntercept[slice], dti4D->intenScalePhilips[slice], dti4D->isPhase[i] );
+				}
 			}
 		}
 		if ((d.xyzDim[3] == maxInStackPositionNumber) && (maxInStackPositionNumber > 1) &&  (d.zSpacing <= 0.0)) {
@@ -7249,7 +7254,9 @@ if (d.isHasPhase)
 } // readDICOM()
 
 struct TDICOMdata readDICOM(char * fname) {
-    TDTI4D unused;
-    return readDICOMv(fname, false, kCompressSupport, &unused);
+    struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D)); //unused
+    TDICOMdata ret = readDICOMv(fname, false, kCompressSupport, dti4D);
+	free(dti4D);
+	return ret;
 } // readDICOM()
 

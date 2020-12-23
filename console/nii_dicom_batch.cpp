@@ -4467,6 +4467,8 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
 		nSlices++;
 	if (nSlices < 1) return;
+	if (d->CSA.sliceTiming[kMaxEPI3D-1] < 1.0) 
+		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n"); 
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
 	if (isForceSliceTimeHHMMSS) isSliceTimeHHMMSS = true;
 	//if (d->isXA10A) isSliceTimeHHMMSS = true; //for XA10 use TimeAfterStart 0x0021,0x1104 -> Siemens de-identification can corrupt acquisition ties https://github.com/rordenlab/dcm2niix/issues/236
@@ -5516,9 +5518,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
 			printMessage("|%d|%s\n", i, nameList->str[dcmSort[i].indx]);	 
      }
     #endif
+     if (strlen(dcmList[dcmSort[0].indx].protocolName) < 1) //beware: tProtocolName can vary within a series "t1+AF8-mpr+AF8-ns+AF8-sag+AF8-p2+AF8-iso" vs "T1_mprage_ns_sag_p2_iso 1.0mm_192"
+     	rescueProtocolName(&dcmList[dcmSort[0].indx], nameList->str[dcmSort[0].indx]);
     //move before headerDcm2Nii2 checkSliceTiming(&dcmList[indx0], &dcmList[indx1]);
     char pathoutname[2048] = {""};
-    if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) {
+    if (nii_createFilename(dcmList[dcmSort[0].indx], pathoutname, opts) == EXIT_FAILURE) { //make sure call is subsequent to rescueProtocolName()
         free(imgM);
         return EXIT_FAILURE;
     }
@@ -5580,8 +5584,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
     	free(img4D);
     	saveAs3D = false;
     }
-    if (strlen(dcmList[dcmSort[0].indx].protocolName) < 1) //beware: tProtocolName can vary within a series "t1+AF8-mpr+AF8-ns+AF8-sag+AF8-p2+AF8-iso" vs "T1_mprage_ns_sag_p2_iso 1.0mm_192"
-    	rescueProtocolName(&dcmList[dcmSort[0].indx], nameList->str[dcmSort[0].indx]);
     // Prevent these DICOM files from being reused.
     for(int i = 0; i < nConvert; ++i)
       dcmList[dcmSort[i].indx].converted2NII = 1;
