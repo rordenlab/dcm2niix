@@ -44,7 +44,7 @@ extern "C" {
 #endif
 #if defined(__arm__) || defined(__ARM_ARCH)
     #define kCPUsuf " ARM" 
-#elif defined(__x86_64) 
+#elif defined(__x86_64)
     #define kCPUsuf " x86-64"
 #else
     #define kCPUsuf " " //unknown CPU
