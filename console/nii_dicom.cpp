@@ -5317,7 +5317,6 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	break;
             }
             case kProtocolName : {
-                //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
                 dcmStr(lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
             case kPatientOrient :
@@ -6040,7 +6039,6 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	dcmStr(lLength, &buffer[lPos], d.scanOptions);
             	break;
             case kSequenceName : {
-                //if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
                 dcmStr(lLength, &buffer[lPos], d.sequenceName);
                 break;
             }
@@ -6862,8 +6860,13 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     	printWarning("0008,0008=MOSAIC but number of slices not specified: %s\n", fname);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
     	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
-    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) {//GE uses a generic session name here: do not overwrite kProtocolNameGE
+		//issue 473: swap protocolName and seriesDescription
+		char tempTxt[kDICOMStr] = "";
+		strcpy(tempTxt, d.protocolName);
 		strcpy(d.protocolName, d.seriesDescription);
+		strcpy(d.seriesDescription, tempTxt);
+	}
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
 	if ((strlen(d.protocolName) > 1) && (isMoCo))
@@ -7145,7 +7148,7 @@ if (d.isHasPhase)
 		d.triggerDelayTime = 0.0;
 	//printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (d.isXA10A) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
-    	//printWarning("Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
+    	//printWarning(">>Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
     	d.isStackableSeries = true;
 		d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, seriesTimeTxt); // dest <- src
@@ -7193,7 +7196,7 @@ if (d.isHasPhase)
         }
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
-    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
     	d.isLocalizer = true;
 	}
 	//UIH 3D T1 scans report echo train length, which is interpreted as 3D EPI
