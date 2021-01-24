@@ -1547,8 +1547,6 @@ tse3d: T2*/
 	//	effectiveEchoSpacing =  d.CSA.sliceMeasurementDuration / (reconMatrixPE * 1000.0);
 	if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
 	    effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
-    if (d.effectiveEchoSpacingGE > 0.0)
-    	effectiveEchoSpacing = d.effectiveEchoSpacingGE / 1000000.0;
     if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0) && (reconMatrixPE > 1)) {
     	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
     	//https://github.com/rordenlab/dcm2niix/issues/377
@@ -1571,6 +1569,15 @@ tse3d: T2*/
 		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
         fprintf(fp, "\t\"EstimatedTotalReadoutTime\": %g,\n", totalReadoutTime);
     }
+	if (d.effectiveEchoSpacingGE > 0.0) {
+		//TotalReadoutTime = [ ceil (PE_AcquisitionMatrix / Asset_R_factor) - 1] * ESP
+		float totalReadoutTime = ((ceil (0.5 * d.phaseEncodingLines / d.accelFactPE) * 2.0) - 1.0) * d.effectiveEchoSpacingGE * 0.000001;
+		printf("ASSET= %g PE_AcquisitionMatrix= %d ESP= %d TotalReadoutTime= %g\n", d.accelFactPE, d.phaseEncodingLines, d.effectiveEchoSpacingGE, totalReadoutTime);
+		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
+		float effectiveEchoSpacingGE = totalReadoutTime / (reconMatrixPE - 1);
+		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingGE);
+		effectiveEchoSpacing = 0.0;    
+	}
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
 	// i.e., should match "echoSpacing" extracted from the ASCII CSA header, when that exists

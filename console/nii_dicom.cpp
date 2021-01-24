@@ -739,6 +739,11 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.coilName, "");
     strcpy(d.coilElements, "");
     strcpy(d.radiopharmaceutical, "");
+    strcpy(d.convolutionKernel, "");
+    strcpy(d.unitsPT, "");
+    strcpy(d.decayCorrection, "");
+    strcpy(d.attenuationCorrectionMethod, "");
+    strcpy(d.reconstructionMethod, "");
     d.phaseEncodingLines = 0;
     //~ d.patientPositionSequentialRepeats = 0;
     //~ d.patientPositionRepeats = 0;

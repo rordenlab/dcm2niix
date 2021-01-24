@@ -34,13 +34,21 @@ Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 6
 
 ## Total Readout Time
 
-One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Total readout time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, and partial Fourier. Not all of these parameters are available from the GE DICOM images, so a user needs to check the scanner console.
+One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Speifically, we are interested in FSL's definition of total read-out time, which may differ from the actual read-out time. FSL expects “the time from the middle of the first each to the middle of the last echo, as it would have been had partial k-space not been used”. So total read-out time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, but not partial Fourier. For GE data we can use the Acquisition Matrix (0018,1310) in the phase-encoding direction, the in-plane acceleration ASSET R factor (0043,1083) and the Effective Echo Spacing (0043,102C).
+
+```
+TotalReadoutTime = ( ( ceil (0.5 * PE_AcquisitionMatrix / Asset_R_factor ) * 2) - 1 ] * EchoSpacing
+```
 
 ## Image Acceleration
 
 The BIDS [ParallelReductionFactorInPlane](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#in-plane-spatial-encoding) can be determined from the reciprocal of the first element of the private tag `Asset R Factors` (0043,1083). The first value is for acceleration in the phase direction equivalent to the public tag 0018,9069), the second for the slice direction (equivalent to the public tag 0018,9155). For 2D EPI scans, the second value will always be 1, whereas for 3D acquisitions [acceleration can take place in both the phase-encoding and the slice-encoding directions](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4459721/). For example, a scan using a acceleration factor of 1.5 would be reported as `(0043,1083) DS [0.666667\1]`.
 
 The BIDS [MultibandAccelerationFactor](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#rf-contrast) can be determined from the private tag `Multiband Parameters` (0043,10B6). This is an array with at least three values, the first is the Multiband (aka HyperBand) factor, the second is the Slice FOV Shift Factor, and the final is the Calibration method. For example, a scan using a multiband factor of 2 could be reported as `(0043,10b6) LO [2\4\19\\\\]`. 
+
+## Missing Information
+
+While GE DICOMs will report if the image uses partial Fourier, it will not reveal the partial Fourier fraction.
 
 ## Phase-Encoding Polarity
 
