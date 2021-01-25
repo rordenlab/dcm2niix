@@ -30,6 +30,6 @@ If applicable, output generated converting data.
 ```
 git clone --branch development https://github.com/rordenlab/dcm2niix.git
 cd dcm2niix/console
-g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer  -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
+g++  -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
 ./dcm2niix ....
 ```
