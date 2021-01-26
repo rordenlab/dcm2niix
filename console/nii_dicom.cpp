@@ -739,6 +739,11 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.coilName, "");
     strcpy(d.coilElements, "");
     strcpy(d.radiopharmaceutical, "");
+    strcpy(d.convolutionKernel, "");
+    strcpy(d.unitsPT, "");
+    strcpy(d.decayCorrection, "");
+    strcpy(d.attenuationCorrectionMethod, "");
+    strcpy(d.reconstructionMethod, "");
     d.phaseEncodingLines = 0;
     //~ d.patientPositionSequentialRepeats = 0;
     //~ d.patientPositionRepeats = 0;
@@ -848,6 +853,7 @@ struct TDICOMdata clear_dicom_data() {
     	d.overlayStart[i] = 0;
     d.isHasOverlay = false;
     d.isPrivateCreatorRemap = false;
+	d.isRealIsPhaseMapHz = false;
     d.numberOfImagesInGridUIH = 0;
     d.phaseEncodingRC = '?';
     d.patientSex = '?';
@@ -1237,7 +1243,8 @@ void checkSliceTimes(struct TCSAdata *CSA, int itemsOK, int isVerbose, bool is3D
 	// Nov 1, 2018 <siemens-healthineers.com> wrote:
 	//  If you have an interleaved dataset we can more definitively validate this formula (aka sliceTime(i) - min(sliceTimes())).
 	if (minTimeValue < 0) {
-		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");
+		//printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n"); //if uncommented, overwhelming number of warnings (one per DICOM input), better once per series
+		CSA->sliceTiming[kMaxEPI3D-1] = -2.0; //issue 271: flag for unified warning
 		for (int z = 0; z < itemsOK; z++)
 			CSA->sliceTiming[z] = CSA->sliceTiming[z] - minTimeValue;
 	}
@@ -1646,15 +1653,13 @@ int isSameFloatGE (float a, float b) {
     return (fabs (a - b) <= 0.0001);
 }
 
-struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {
+struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase) {	
 struct TDICOMdata d = clear_dicom_data();
 dti4D->sliceOrder[0] = -1;
 dti4D->volumeOnsetTime[0] = -1;
 dti4D->decayFactor[0] = -1;
 dti4D->frameDuration[0] = -1;
 dti4D->intenScale[0] = 0.0;
-dti4D->repetitionTimeExcitation = 0.0;
-dti4D->repetitionTimeInversion = 0.0;
 strcpy(d.protocolName, ""); //erase dummy with empty
 strcpy(d.seriesDescription, ""); //erase dummy with empty
 strcpy(d.sequenceName, ""); //erase dummy with empty
@@ -1769,7 +1774,7 @@ int	kbval = 33; //V3: 27
 	 				* maxNumberOfCardiacPhases * maxNumberOfEchoes * maxNumberOfDynamics * maxNumberOfMixes;
             	num2DExpected = d.xyzDim[3] * num3DExpected;
 	 			if ((num2DExpected ) >= kMaxSlice2D) {
-					printError("Use dicm2nii or increase kMaxDTI4D to be more than %d\n", num2DExpected);
+					printError("Use dicm2nii or increase kMaxSlice2D to be more than %d\n", num2DExpected);
 					printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d*%d\n",
             		d.xyzDim[3],  maxNumberOfGradientOrients,maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
@@ -1970,11 +1975,10 @@ int	kbval = 33; //V3: 27
 		}
 		//diskSlice ++;
         bool isADC = false;
-        if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv2]) ) {
+        if ((maxNumberOfGradientOrients >= 2) && (cols[kbval] > 50) && isSameFloat(0.0, cols[kv1]) && isSameFloat(0.0, cols[kv2]) && isSameFloat(0.0, cols[kv3]) ) {
         	isADC = true;
         	ADCwarning = true;
         }
-        //printMessage(">>%d  %d\n", (int)cols[kSlice],  diskSlice);
         if (numSlice2D < 1) {
             d.xyzMM[1] = cols[kXmm];
             d.xyzMM[2] = cols[kYmm];
@@ -2019,9 +2023,10 @@ int	kbval = 33; //V3: 27
         }
         if (cols[kImageType] == 0) d.isHasMagnitude = true;
         if (cols[kImageType] != 0) d.isHasPhase = true;
-        if ((isSameFloat(cols[kImageType],18)) && (!isTypeWarning)) {
-        	printWarning("Field map in Hz will be saved as the 'real' image.\n");
-        	isTypeWarning = true;
+        if (isSameFloat(cols[kImageType],18))  {
+        	//printWarning("Field map in Hz will be saved as the 'real' image.\n");
+        	//isTypeWarning = true;
+			d.isRealIsPhaseMapHz = true;
         } else if (((cols[kImageType] < 0.0) || (cols[kImageType] > 4.0)) && (!isTypeWarning)) {
         	printError("Unknown type %g: not magnitude[0], real[1], imaginary[2] or phase[3].\n", cols[kImageType]);
         	isTypeWarning = true;
@@ -2109,6 +2114,10 @@ int	kbval = 33; //V3: 27
 			bool isReal = (cols[kImageType] == 1);
 			bool isImaginary = (cols[kImageType] == 2);
 			bool isPhase = (cols[kImageType] == 3);
+			if (cols[kImageType] == 18) {
+				isReal = true;
+				d.isRealIsPhaseMapHz = true;
+			} 
 			if (cols[kImageType] == 4) {
 				if (!isType4Warning) {
         			printWarning("Unknown image type (4). Be aware the 'phase' image is of an unknown type.\n");
@@ -2116,8 +2125,13 @@ int	kbval = 33; //V3: 27
         		}
 				isPhase = true; //2019
 			}
-			if ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))
+			if ((cols[kImageType] != 18) && ((cols[kImageType] < 0.0) || (cols[kImageType] > 3.0))) {
+				if (!isType4Warning) {
+        			printWarning("Unknown image type (%g). Be aware the 'phase' image is of an unknown type.\n", round(cols[kImageType]));
+        			isType4Warning = true;
+        		}
 				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
+			}
 			if (isReal) vol += num3DExpected;
 			if (isImaginary) vol += (2*num3DExpected);
 			if (isPhase) vol += (3*num3DExpected);
@@ -2129,7 +2143,7 @@ int	kbval = 33; //V3: 27
 					free (cols);
 					return d;
 	 		}
-	 		// dti4D->S[vol].V[0] = cols[kbval];
+			// dti4D->S[vol].V[0] = cols[kbval];
 			//dti4D->gradDynVol[vol] = gradDynVol;
 			dti4D->TE[vol] = cols[kTEcho];
 			if (isSameFloatGE(cols[kTEcho], 0))
@@ -2152,7 +2166,7 @@ int	kbval = 33; //V3: 27
     			if ((vol+1) > d.CSA.numDti)
     				d.CSA.numDti = vol+1;
 			}
-			if (numSlice2D < kMaxSlice2D) {//issue 363: intensity can vary with each 2D slice of 4D volume
+			if (numSlice2D < kMaxDTI4D) {//issue 363: intensity can vary with each 2D slice of 4D volume
 				//printf("%d %g %g\n", numSlice2D, cols[kRI], cols[kRS]);
             	dti4D->intenIntercept[numSlice2D] = cols[kRI];
 				dti4D->intenScale[numSlice2D] = cols[kRS];
@@ -2179,6 +2193,14 @@ int	kbval = 33; //V3: 27
 		printError("Invalid PAR format header (unable to detect version or slices) %s\n", parname);
     	return d;
     }
+    if (numSlice2D > kMaxSlice2D) { //check again after reading, as top portion of header does not report image types or isotropics
+    	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
+        return d;
+    }
+	if (numSlice2D > kMaxDTI4D) { //since issue460, kMaxSlice2D == kMaxSlice4D, so we should never get here
+    	printError("Increase kMaxDTI4D from %d to at least %d (or use dicm2nii).\n", kMaxDTI4D, numSlice2D);
+        return d;		
+	}
     d.manufacturer = kMANUFACTURER_PHILIPS;
     d.isValid = true;
     d.isSigned = true;
@@ -2203,10 +2225,6 @@ int	kbval = 33; //V3: 27
     }
     if (d.CSA.numDti > 0) d.CSA.numDti = maxVol; //e.g. gradient 2 can skip B=0 but include isotropic
     //remove unused slices - this will happen if unless we have all 4 image types: real, imag, mag, phase
-    if (numSlice2D > kMaxSlice2D) { //check again after reading, as top portion of header does not report image types or isotropics
-    	printError("Increase kMaxSlice2D from %d to at least %d (or use dicm2nii).\n", kMaxSlice2D, numSlice2D);
-        d.isValid = false;
-    }
     int slice = 0;
     for (int i = 0; i < kMaxSlice2D; i++) {
         if (dti4D->sliceOrder[i] > -1) { //this slice was populated
@@ -2242,7 +2260,7 @@ int	kbval = 33; //V3: 27
         	dti4D->intenScalePhilips[i] = tmp.intenScalePhilips[j];
         }
     }
-    d.isScaleOrTEVaries = true;
+	d.isScaleOrTEVaries = true;
 	if (numSlice2D > kMaxSlice2D) {
 		printError("Overloaded slice re-ordering. Number of slices (%d) exceeds kMaxSlice2D (%d)\n", numSlice2D, kMaxSlice2D);
 		dti4D->sliceOrder[0] = -1;
@@ -2269,14 +2287,14 @@ int	kbval = 33; //V3: 27
     		printWarning("Reported TR=%gms, measured TR=%gms (prospect. motion corr.?)\n", d.TR, TRms);
     	d.TR = TRms;
     }
-    if ((isTypeWarning) && ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
+	if ((isTypeWarning) && ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
     	num2DExpected = numSlice2D;
     }
     if ( ((numSlice2D % num2DExpected) != 0) && ((numSlice2D % d.xyzDim[3]) == 0) ) {
     	num2DExpected = d.xyzDim[3] * (int)(numSlice2D / d.xyzDim[3]);
     	if (!ADCwarning) printWarning("More volumes than described in header (ADC or isotropic?)\n");
     }
-    if ((numSlice2D % num2DExpected) != 0) {
+	if ((numSlice2D % num2DExpected) != 0) {
     	printMessage("Found %d slices, but expected divisible by %d: slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d %s\n", numSlice2D, num2DExpected,
     		d.xyzDim[3],  maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
     		maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes,maxNumberOfLabels, parname);
@@ -2438,6 +2456,7 @@ int	kbval = 33; //V3: 27
     d.imageStart = 0;
     if (d.CSA.numDti >= kMaxDTI4D) {
         printError("Unable to convert DTI [increase kMaxDTI4D] found %d directions\n", d.CSA.numDti);
+		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*label = %d*%d*%d*%d*%d*%d*%d*%d\n", d.xyzDim[3],  maxNumberOfGradientOrients,maxNumberOfDiffusionValues, maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
         d.CSA.numDti = 0;
     };
     //check if dimensions vary
@@ -4064,8 +4083,6 @@ struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, stru
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
 	dti4D->intenScale[0] = 0.0;
-	dti4D->repetitionTimeExcitation = 0.0;
-	dti4D->repetitionTimeInversion = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
     struct stat s;
     if( stat(fname,&s) == 0 ) {
@@ -5006,6 +5023,15 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
                     d.compressionScheme = kCompressYes;
                     //printMessage("JPEG2000 Lossless support is new: please validate conversion\n");
+                } else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.1.99") == 0)){
+                    //n.b. Deflate compression applied applies to the encoding of the **entire** DICOM Data Set, not just image data
+					// see https://www.medicalconnections.co.uk/kb/Transfer-Syntax/
+					//#ifndef myDisableZLib
+                    //d.compressionScheme = kCompressDeflate;
+                    //#else
+                    printWarning("Unsupported transfer syntax '%s' (inflate files with 'dcmconv +te gz.dcm raw.dcm' or 'gdcmconv -w gz.dcm raw.dcm)'\n",transferSyntax);
+                    d.imageStart = 1;//abort as invalid (imageStart MUST be >128)
+                    //#endif
                 } else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)) {
                     d.compressionScheme = kCompressYes;
                     //printMessage("JPEG2000 support is new: please validate conversion\n");
@@ -5067,6 +5093,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 	//d.isDerived = true; //this would have 'i- y' skip MoCo images
                 	isMoCo = true;
                 }
+				if ((slen > 5) && strstr(d.imageType, "B0") && strstr(d.imageType, "MAP"))
+					d.isRealIsPhaseMapHz = true;
 				if((slen > 5) && strstr(d.imageType, "_ADC_") )
                 	d.isDerived = true;
 				if((slen > 5) && strstr(d.imageType, "_TRACEW_") )
@@ -5175,7 +5203,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 //issue 256: Philips files report real ComplexImageComponent but Magnitude ImageType https://github.com/rordenlab/dcm2niix/issues/256
                 isPhase = false;
                 isReal = false;
-                isImaginary = false;
+				isImaginary = false;
                 isMagnitude = false;
                 //see Table C.8-85 http://dicom.nema.org/medical/Dicom/2017c/output/chtml/part03/sect_C.8.13.3.html
                 if ((buffer[lPos]=='R') && (toupper(buffer[lPos+1]) == 'E'))
@@ -5189,7 +5217,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 //not mutually exclusive: possible for Philips enhanced DICOM to store BOTH magnitude and phase in the same image
                 if (isPhase) d.isHasPhase = true;
                 if (isReal) d.isHasReal = true;
-                if (isImaginary) d.isHasImaginary = true;
+				if (isImaginary) d.isHasImaginary = true;
                 if (isMagnitude) d.isHasMagnitude = true;
                 break;
             case kAcquisitionContrast:
@@ -5216,7 +5244,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 dcmStr(lLength, &buffer[lPos], seriesTimeTxt);
                 break;     
             case kStudyTime :
-                dcmStr(lLength, &buffer[lPos], d.studyTime);
+                if (strlen(d.studyTime) < 2)
+                	dcmStr(lLength, &buffer[lPos], d.studyTime);
                 break;
             case kPatientName :
                 dcmStr(lLength, &buffer[lPos], d.patientName);
@@ -5293,7 +5322,6 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	break;
             }
             case kProtocolName : {
-                //if ((strlen(d.protocolName) < 1) || (d.manufacturer != kMANUFACTURER_GE)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
                 dcmStr(lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
                 break; }
             case kPatientOrient :
@@ -6016,7 +6044,6 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	dcmStr(lLength, &buffer[lPos], d.scanOptions);
             	break;
             case kSequenceName : {
-                //if (strlen(d.protocolName) < 1) //precedence given to kProtocolName and kProtocolNameGE
                 dcmStr(lLength, &buffer[lPos], d.sequenceName);
                 break;
             }
@@ -6708,9 +6735,6 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
         }   //printMessage(" tag=%04x,%04x length=%u pos=%ld %c%c nest=%d\n",   groupElement & 65535,groupElement>>16, lLength, lPos,vr[0], vr[1], nest);
 #endif
         lPos = lPos + (lLength);
-        //printMessage("%d\n",d.imageStart);
-    	//printMessage(" DWI bxyz %g %g %g %g %d\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], d.CSA.numDti);
-
     } //while d.imageStart == 0
     free (buffer);
     if (d.bitsStored < 0) d.isValid = false;
@@ -6841,8 +6865,13 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     	printWarning("0008,0008=MOSAIC but number of slices not specified: %s\n", fname);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
     	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
-    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) //GE uses a generic session name here: do not overwrite kProtocolNameGE
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) {//GE uses a generic session name here: do not overwrite kProtocolNameGE
+		//issue 473: swap protocolName and seriesDescription
+		char tempTxt[kDICOMStr] = "";
+		strcpy(tempTxt, d.protocolName);
 		strcpy(d.protocolName, d.seriesDescription);
+		strcpy(d.seriesDescription, tempTxt);
+	}
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
 	if ((strlen(d.protocolName) > 1) && (isMoCo))
@@ -6901,7 +6930,6 @@ if (d.isHasPhase)
     if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
-	//printMessage("%d %g\n", d.imageNum, sliceLocation); //shame this tag is optional
 	if (isVerbose) {
         printMessage("DICOM file: %s\n", fname);
         printMessage(" patient position (0020,0032)\t%g\t%g\t%g\n", d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
@@ -7003,29 +7031,31 @@ if (d.isHasPhase)
 			int j = 0;
 			if (d.xyzDim[3] > 1) j = 1;
 			for (int i = 0; i < d.xyzDim[4]; i++) {
+				int slice = j+(i * d.xyzDim[3]);
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
-				dti4D->TE[i] =  dcmDim[j+(i * d.xyzDim[3])].TE;
-				dti4D->isPhase[i] =  dcmDim[j+(i * d.xyzDim[3])].isPhase;
-				dti4D->isReal[i] =  dcmDim[j+(i * d.xyzDim[3])].isReal;
-				dti4D->isImaginary[i] =  dcmDim[j+(i * d.xyzDim[3])].isImaginary;
-				dti4D->triggerDelayTime[i] =  dcmDim[j+(i * d.xyzDim[3])].triggerDelayTime;
-				dti4D->S[i].V[0] = dcmDim[j+(i * d.xyzDim[3])].V[0];
-				dti4D->S[i].V[1] = dcmDim[j+(i * d.xyzDim[3])].V[1];
-				dti4D->S[i].V[2] = dcmDim[j+(i * d.xyzDim[3])].V[2];
-				dti4D->S[i].V[3] = dcmDim[j+(i * d.xyzDim[3])].V[3];
+				dti4D->TE[i] =  dcmDim[slice].TE;
+				dti4D->isPhase[i] =  dcmDim[slice].isPhase;
+				dti4D->isReal[i] =  dcmDim[slice].isReal;
+				dti4D->isImaginary[i] =  dcmDim[slice].isImaginary;
+				dti4D->triggerDelayTime[i] =  dcmDim[slice].triggerDelayTime;
+				dti4D->S[i].V[0] = dcmDim[slice].V[0];
+				dti4D->S[i].V[1] = dcmDim[slice].V[1];
+				dti4D->S[i].V[2] = dcmDim[slice].V[2];
+				dti4D->S[i].V[3] = dcmDim[slice].V[3];
 				//printf("te=\t%g\tscl=\t%g\tintercept=\t%g\n",dti4D->TE[i], dti4D->intenScale[i],dti4D->intenIntercept[i]);
 				if ((!isSameFloatGE(dti4D->TE[i],0.0)) && (dti4D->TE[i] != d.TE)) isTEvaries = true;
 				if (dti4D->isPhase[i] != isPhase) d.isScaleOrTEVaries = true;
 				if (dti4D->triggerDelayTime[i] != d.triggerDelayTime) d.isScaleOrTEVaries = true;
 				if (dti4D->isReal[i] != isReal) d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary) d.isScaleOrTEVaries = true;
-				//dti4D->intenScale[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScale;
-				//dti4D->intenIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].intenIntercept;
-				//dti4D->intenScalePhilips[i] =  dcmDim[j+(i * d.xyzDim[3])].intenScalePhilips;
-				//dti4D->RWVIntercept[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVIntercept;
-				//dti4D->RWVScale[i] =  dcmDim[j+(i * d.xyzDim[3])].RWVScale;
-				//if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
-				//if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;
+				/*Philips can vary intensity scalings for separate slices within a volume!
+				dti4D->intenScale[i] =  dcmDim[slice].intenScale;
+				dti4D->intenIntercept[i] =  dcmDim[slice].intenIntercept;
+				dti4D->intenScalePhilips[i] =  dcmDim[slice].intenScalePhilips;
+				dti4D->RWVIntercept[i] =  dcmDim[slice].RWVIntercept;
+				dti4D->RWVScale[i] =  dcmDim[slice].RWVScale;
+				if (dti4D->intenScale[i] != d.intenScale) isScaleVaries = true;
+				if (dti4D->intenIntercept[i] != d.intenIntercept) isScaleVaries = true;*/
 			}
 			if((isScaleVaries) || (isTEvaries)) d.isScaleOrTEVaries = true;
 			if (isTEvaries) d.isMultiEcho = true;
@@ -7036,8 +7066,10 @@ if (d.isHasPhase)
 			}*/
 			if ((isVerbose) && (d.isScaleOrTEVaries)) {
 				printMessage("Parameters vary across 3D volumes packed in single DICOM file:\n");
-				for (int i = 0; i < d.xyzDim[4]; i++)
-					printMessage(" %d TE=%g Slope=%g Inter=%g PhilipsScale=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[i], dti4D->intenIntercept[i], dti4D->intenScalePhilips[i], dti4D->isPhase[i] );
+				for (int i = 0; i < d.xyzDim[4]; i++) {
+					int slice = (i * d.xyzDim[3]);
+					printMessage(" %d TE=%g Slope=%g Inter=%g PhilipsScale=%g Phase=%d\n", i, dti4D->TE[i], dti4D->intenScale[slice], dti4D->intenIntercept[slice], dti4D->intenScalePhilips[slice], dti4D->isPhase[i] );
+				}
 			}
 		}
 		if ((d.xyzDim[3] == maxInStackPositionNumber) && (maxInStackPositionNumber > 1) &&  (d.zSpacing <= 0.0)) {
@@ -7121,7 +7153,7 @@ if (d.isHasPhase)
 		d.triggerDelayTime = 0.0;
 	//printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (d.isXA10A) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
-    	//printWarning("Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
+    	//printWarning(">>Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
     	d.isStackableSeries = true;
 		d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, seriesTimeTxt); // dest <- src
@@ -7169,7 +7201,7 @@ if (d.isHasPhase)
         }
 		d.seriesUidCrc = mz_crc32X((unsigned char*) &d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
-    if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
     	d.isLocalizer = true;
 	}
 	//UIH 3D T1 scans report echo train length, which is interpreted as 3D EPI
@@ -7230,7 +7262,9 @@ if (d.isHasPhase)
 } // readDICOM()
 
 struct TDICOMdata readDICOM(char * fname) {
-    TDTI4D unused;
-    return readDICOMv(fname, false, kCompressSupport, &unused);
+    struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D)); //unused
+    TDICOMdata ret = readDICOMv(fname, false, kCompressSupport, dti4D);
+	free(dti4D);
+	return ret;
 } // readDICOM()
 
