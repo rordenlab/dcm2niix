@@ -68,6 +68,7 @@ mat44 nifti_mat44_inverse( mat44 R );
 mat44 nifti_mat44_mul( mat44 A , mat44 B );
 vec3 crossProduct(vec3 u, vec3 v);
 vec3 nifti_vect33_norm (vec3 v);
+vec4 nifti_vect44_norm (vec4 v);
 vec3 nifti_vect33mat33_mul(vec3 v, mat33 m );
 ivec3 setiVec3(int x, int y, int z);
 vec3 setVec3(float x, float y, float z);
