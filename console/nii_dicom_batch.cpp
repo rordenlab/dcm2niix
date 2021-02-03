@@ -1572,11 +1572,9 @@ tse3d: T2*/
         float roundFactor = 2.0;
         if (d.isPartialFourier) roundFactor = 4.0;
         float totalReadoutTime = ((ceil (1/roundFactor * d.phaseEncodingLines / d.accelFactPE) * roundFactor) - 1.0) * d.effectiveEchoSpacingGE * 0.000001;
-		printf("ASSET= %g PE_AcquisitionMatrix= %d ESP= %d TotalReadoutTime= %g\n", d.accelFactPE, d.phaseEncodingLines, d.effectiveEchoSpacingGE, totalReadoutTime);
+		//printf("ASSET= %g PE_AcquisitionMatrix= %d ESP= %d TotalReadoutTime= %g\n", d.accelFactPE, d.phaseEncodingLines, d.effectiveEchoSpacingGE, totalReadoutTime);
 		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
-		float effectiveEchoSpacingGE = totalReadoutTime / (reconMatrixPE - 1);
-		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingGE);
-		effectiveEchoSpacing = 0.0;    
+		effectiveEchoSpacing = totalReadoutTime / (reconMatrixPE - 1);   
 	}
     json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
