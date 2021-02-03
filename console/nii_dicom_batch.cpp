@@ -1569,7 +1569,9 @@ tse3d: T2*/
     }
 	if (d.effectiveEchoSpacingGE > 0.0) {
 		//TotalReadoutTime = [ ceil (PE_AcquisitionMatrix / Asset_R_factor) - 1] * ESP
-		float totalReadoutTime = ((ceil (0.5 * d.phaseEncodingLines / d.accelFactPE) * 2.0) - 1.0) * d.effectiveEchoSpacingGE * 0.000001;
+        float roundFactor = 2.0;
+        if (d.isPartialFourier) roundFactor = 4.0;
+        float totalReadoutTime = ((ceil (1/roundFactor * d.phaseEncodingLines / d.accelFactPE) * roundFactor) - 1.0) * d.effectiveEchoSpacingGE * 0.000001;
 		printf("ASSET= %g PE_AcquisitionMatrix= %d ESP= %d TotalReadoutTime= %g\n", d.accelFactPE, d.phaseEncodingLines, d.effectiveEchoSpacingGE, totalReadoutTime);
 		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
 		float effectiveEchoSpacingGE = totalReadoutTime / (reconMatrixPE - 1);
