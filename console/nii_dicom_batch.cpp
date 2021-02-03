@@ -57,11 +57,9 @@
 #endif
 
 #if defined(_WIN64) || defined(_WIN32)
-	#define myTextFileInputLists //comment out to disable this feature: https://github.com/rordenlab/dcm2niix/issues/288
 	const char kPathSeparator ='\\';
 	const char kFileSep[2] = "\\";
 #else
-	#define myTextFileInputLists
 	const char kPathSeparator ='/';
 	const char kFileSep[2] = "/";
 #endif
@@ -6249,77 +6247,6 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     return ret;
 }// singleDICOM()
 
-#ifdef myTextFileInputLists //https://github.com/rordenlab/dcm2niix/issues/288
-int textDICOM(struct TDCMopts* opts, char *fname) {
-	//check input file
-    FILE *fp = fopen(fname, "r");
-    if (fp == NULL)
-#ifdef USING_R
-        return EXIT_FAILURE;
-#else
-    	exit(EXIT_FAILURE);
-#endif
-	int nConvert = 0;
-    char dcmname[2048];
-    while (fgets(dcmname, sizeof(dcmname), fp)) {
-		int sz = strlen(dcmname);
-		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0; //Unix LF
-		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0; //Windows CR/LF
-		//if (isDICOMfile(dcmname) == 0) { //<- this will reject DICOM metadata not wrapped with a header
-        if ((!is_fileexists(dcmname)) || (!is_fileNotDir(dcmname)) ) { //<-this will accept meta data
-        	fclose(fp);
-        	printError("Problem with file '%s'\n", dcmname);
-        	return EXIT_FAILURE;
-    	}
-    	//printf("%s\n", dcmname);
-		nConvert ++;
-    }
-    fclose(fp);
-    if (nConvert < 1) {
-    	printError("No DICOM files found '%s'\n", dcmname);
-    	return EXIT_FAILURE;
-    }
-    printMessage("Found %d DICOM file(s)\n", nConvert);
-    #ifndef USING_R
-    fflush(stdout); //show immediately if run from MRIcroGL GUI
-    #endif
-    TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
-	struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nConvert * sizeof(struct  TDICOMdata));
-    struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
-    struct TSearchList nameList;
-    nameList.maxItems = nConvert; // larger requires more memory, smaller more passes
-    nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
-    nameList.numItems = 0;
-	nConvert = 0;
-	fp = fopen(fname, "r");
-    while (fgets(dcmname, sizeof(dcmname), fp)) {
-		int sz = strlen(dcmname);
-		if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0; //Unix LF
-		if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0; //Windows CR/LF
-		nameList.str[nameList.numItems]  = (char *)malloc(strlen(dcmname)+1);
-    	strcpy(nameList.str[nameList.numItems],dcmname);
-    	nameList.numItems++;
-		dcmList[nConvert] = readDICOMv(nameList.str[nConvert], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
-		fillTDCMsort(dcmSort[nConvert], nConvert, dcmList[nConvert]);
-		nConvert ++;
-    }
-    fclose(fp);
-    qsort(dcmSort, nConvert, sizeof(struct TDCMsort), compareTDCMsort); //sort based on series and image numbers....
-	int ret = saveDcm2Nii(nConvert, dcmSort, dcmList, &nameList, *opts, dti4D);
-    free(dcmSort);
-    free(dcmList);
-	free(dti4D);
-    freeNameList(nameList);
-    return ret;
-}//textDICOM()
-
-#else //ifdef myTextFileInputLists
-int textDICOM(struct TDCMopts* opts, char *fname) {
-	printError("Unable to parse txt files: re-compile with 'myTextFileInputLists' (see issue 288)");
-	return EXIT_FAILURE;
-}
-#endif
-
 size_t fileBytes(const char * fname) {
     FILE *fp = fopen(fname, "rb");
 	if (!fp)  return 0;
@@ -6684,25 +6611,57 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
     #ifdef myTimer
     clock_t start = clock();
     #endif
-	//1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
-    for (int i = 0; i < 2; i++ ) {
-        nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
-        nameList.numItems = 0;
-        searchDirForDICOM(indir, &nameList, opts->dirSearchDepth, 0, opts);
-        if (nameList.numItems <= nameList.maxItems)
-            break;
-        freeNameList(nameList);
-        nameList.maxItems = nameList.numItems+1;
-        //printMessage("Second pass required, found %ld images\n", nameList.numItems);
-    }
-    if (nameList.numItems < 1) {
-        if (opts->dirSearchDepth > 0)
-        	printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", indir, opts->dirSearchDepth);
-        else //keep silent for dirSearchDepth = 0 - presumably searching multiple folders
-        	{};
-        free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
-        return kEXIT_NO_VALID_FILES_FOUND;
-    }
+    if ((is_fileNotDir(opts->indir)) && isExt(opts->indir, ".txt") ){
+		nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
+		nameList.numItems = 0;
+		FILE *fp = fopen(opts->indir, "r"); //textDICOM
+		if (fp == NULL)
+			return EXIT_FAILURE;
+		char dcmname[2048];
+		while (fgets(dcmname, sizeof(dcmname), fp)) {
+			int sz = (int)strlen(dcmname);
+			if (sz > 0 && dcmname[sz-1] == '\n') dcmname[sz-1] = 0; //Unix LF
+			if (sz > 1 && dcmname[sz-2] == '\r') dcmname[sz-2] = 0; //Windows CR/LF
+			if ((!is_fileexists(dcmname)) || (!is_fileNotDir(dcmname)) ) { //<-this will accept meta data
+				fclose(fp);
+				printError("Problem with file '%s'\n", dcmname);
+				return EXIT_FAILURE;
+			}
+			if (nameList.numItems < nameList.maxItems) {
+				nameList.str[nameList.numItems]  = (char *)malloc(strlen(dcmname)+1);
+				strcpy(nameList.str[nameList.numItems],dcmname);
+			}
+			nameList.numItems ++;
+		}
+		fclose(fp);
+		if (nameList.numItems >= nameList.maxItems) {
+			printError("Too many file names in '%s'\n", opts->indir);
+			return EXIT_FAILURE;
+		}
+		if (nameList.numItems < 1)
+			return kEXIT_NO_VALID_FILES_FOUND;
+		printMessage("Found %lu files in '%s'\n", nameList.numItems, opts->indir);
+    } else {
+		//1: find filenames of dicom files: up to two passes if we found more files than we allocated memory
+		for (int i = 0; i < 2; i++ ) {
+			nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
+			nameList.numItems = 0;
+			searchDirForDICOM(indir, &nameList, opts->dirSearchDepth, 0, opts);
+			if (nameList.numItems <= nameList.maxItems)
+				break;
+			freeNameList(nameList);
+			nameList.maxItems = nameList.numItems+1;
+			//printMessage("Second pass required, found %ld images\n", nameList.numItems);
+		}
+		if (nameList.numItems < 1) {
+			if (opts->dirSearchDepth > 0)
+				printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", indir, opts->dirSearchDepth);
+			else //keep silent for dirSearchDepth = 0 - presumably searching multiple folders
+				{};
+			free(nameList.str); //ignore compile warning - memory only freed on first of 2 passes
+			return kEXIT_NO_VALID_FILES_FOUND;
+		}
+	}
     size_t nDcm = nameList.numItems;
     printMessage( "Found %lu DICOM file(s)\n", nameList.numItems); //includes images and other non-image DICOMs
     #ifdef myTimer
@@ -7043,8 +7002,10 @@ int nii_loadDir(struct TDCMopts* opts) {
             return convert_parRec(pname, *opts);
         };
     }
-    if (isFile && (opts->isOnlySingleFile) && isExt(indir, ".txt") )
-    	return textDICOM(opts, indir);
+	if (isFile && (opts->isOnlySingleFile) && isExt(indir, ".txt") ) {
+		strcpy(opts->indir,indir);
+		return nii_loadDirCore(opts->indir, opts);
+	}
 	if (opts->isRenameNotConvert) {
 		int nConvert = searchDirRenameDICOM(opts->indir, opts->dirSearchDepth, 0, opts);
 		if (nConvert < 0) return kEXIT_RENAME_ERROR;

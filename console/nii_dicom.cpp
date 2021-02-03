@@ -5322,7 +5322,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	break;
             }
             case kProtocolName : {
-                dcmStr(lLength, &buffer[lPos], d.protocolName); //see also kSequenceName
+                dcmStr(lLength, &buffer[lPos], d.protocolName);
                 break; }
             case kPatientOrient :
                 dcmStr(lLength, &buffer[lPos], d.patientOrient);
@@ -6027,7 +6027,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				//Canon/Toshiba omits 0018,9018, but reports [SE\EP];[GR\EP] for 0018,0020
 				//GE omits 0018,9018, but reports [EP\GR];[EP\SE] for 0018,0020
 				//Philips reports 0018,9018, but reports [SE];[GR] for 0018,0020
-                if ((lLength > 1) && (strstr(d.scanningSequence, "IR") != NULL))
+				if ((lLength > 1) && (strstr(d.scanningSequence, "IR") != NULL))
                 	d.isIR = true;
                 if ((lLength > 1) && (strstr(d.scanningSequence, "EP") != NULL))
                 	d.isEPI = true;
@@ -6042,6 +6042,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             }
             case kScanOptions:
             	dcmStr(lLength, &buffer[lPos], d.scanOptions);
+				if ((lLength > 1) && (strstr(d.scanOptions, "PFF") != NULL))
+                	d.isPartialFourier = true; //e.g. GE does not populate (0018,9081)			
             	break;
             case kSequenceName : {
                 dcmStr(lLength, &buffer[lPos], d.sequenceName);
@@ -6865,13 +6867,14 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     	printWarning("0008,0008=MOSAIC but number of slices not specified: %s\n", fname);
     if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
     	d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
-    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) {//GE uses a generic session name here: do not overwrite kProtocolNameGE
-		//issue 473: swap protocolName and seriesDescription
+	/*
+    if ((d.manufacturer == kMANUFACTURER_GE) && (d.modality == kMODALITY_MR) && (strlen(d.seriesDescription) > 1)) {
+		//issue 473, 476: swap protocolName and seriesDescription
 		char tempTxt[kDICOMStr] = "";
 		strcpy(tempTxt, d.protocolName);
 		strcpy(d.protocolName, d.seriesDescription);
 		strcpy(d.seriesDescription, tempTxt);
-	}
+	}*/
     if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
 	if ((strlen(d.protocolName) > 1) && (isMoCo))

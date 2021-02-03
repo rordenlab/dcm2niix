@@ -102,7 +102,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
     printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
-    printf("  -t : text notes includes private patient details (y/n, default n)\n");
+	//text notes replaced with BIDS: this function is deprecated
+    //printf("  -t : text notes includes private patient details (y/n, default n)\n");
     #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
 	printf("  -u : up-to-date check\n");
 	#endif

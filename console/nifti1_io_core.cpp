@@ -192,6 +192,18 @@ vec3 nifti_vect33_norm (vec3 v) { //normalize vector length
     return vO;
 }
 
+vec4 nifti_vect44_norm (vec4 v) { //normalize vector length
+    vec4 vO = v;
+    float vLen = sqrt( (v.v[0]*v.v[0])
+                      + (v.v[1]*v.v[1])
+                      + (v.v[2]*v.v[2])
+                      + (v.v[3]*v.v[3]));
+    if (vLen <= FLT_EPSILON) return vO; //avoid divide by zero
+    for (int i = 0; i < 4; i++)
+        vO.v[i] = v.v[i]/vLen;
+    return vO;
+}
+
 vec3 nifti_vect33mat33_mul(vec3 v, mat33 m ) { //multiply vector * 3x3matrix
     vec3 vO;
     for (int i=0; i<3; i++) { //multiply Pcrs * m
