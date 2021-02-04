@@ -40,6 +40,7 @@ The formula for FSL's definition of TotalReadoutTime (in seconds) is:
 
 ```
 TotalReadoutTime = ( ( ceil ((1/Round_factor) * PE_AcquisitionMatrix / Asset_R_factor ) * Round_factor) - 1 ] * EchoSpacing * 0.000001
+EffectiveEchoSpacing = TotalReadoutTime/ (reconMatrixPE - 1)
 ```
 
 Consider an example:
