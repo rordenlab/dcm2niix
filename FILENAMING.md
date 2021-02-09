@@ -68,9 +68,9 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 
 ## Special Characters
 
-[Some characters are not permitted](https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names) in file names. The following characters will be replaced with underscorces (`_`). Note that the forbidden characters vary between operating systems (Linux only forbids the forward slash, MacOS forbids forward slash and colon, while Windows forbids any of the characters listed below). To ensure that files can be easily copied between file systems, [dcm2niix restricts file names to characters allowed by Windows](https://github.com/rordenlab/dcm2niix/issues/237).
+[Some characters are not permitted](https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names) in file names. The following characters will be replaced with underscorces (`_`). Note that the forbidden characters vary between operating systems (Linux only forbids the forward slash, MacOS forbids forward slash and colon, while Windows forbids any of the characters listed below). To ensure that files can be easily copied between file systems, [dcm2niix restricts file names to characters allowed by Windows](https://github.com/rordenlab/dcm2niix/issues/237). While technically legal in all filesystems, the semicolon can wreak havoc in [Windows](https://stackoverflow.com/questions/3869594/semi-colons-in-windows-filenames) and [Linux](https://forums.plex.tv/t/linux-hates-semicolons-in-file-names/49098/2). 
 
-### List of Forbidden Characters (based on Windows)
+### List of Forbidden Characters
 ```
 < (less than)
 > (greater than)
@@ -81,6 +81,7 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 | (vertical bar or pipe)
 ? (question mark)
 * (asterisk)
+; (semicolon) 
 ```
 
 [Control characters](https://en.wikipedia.org/wiki/ASCII#Control_characters) like backspace and tab are also forbidden.

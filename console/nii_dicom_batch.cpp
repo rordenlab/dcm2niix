@@ -2709,7 +2709,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
     #endif
     #if defined(_WIN64) || defined(_WIN32) || defined(kMASK_WINDOWS_SPECIAL_CHARACTERS)//https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
     for (size_t pos = 0; pos<strlen(outname); pos ++)
-        if ((outname[pos] == '\\') || (outname[pos] == '/') || (outname[pos] == ' ') || (outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':')
+        if ((outname[pos] == '\\') || (outname[pos] == '/') || (outname[pos] == ' ') || (outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':') || (outname[pos] == ';')
             || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
             //|| (outname[pos] == '^') issue398
             || (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
