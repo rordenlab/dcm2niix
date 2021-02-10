@@ -6166,7 +6166,7 @@ bool isSameSet (struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts* opt
     if (d1.coilCrc != d2.coilCrc) {
 		if (opts->isForceStackDCE) {
 	        if (!warnings->coilVaries)
-	        	printMessage("Slices stacked despite coil variation '%s' vs '%s'\n", d1.coilName, d2.coilName);
+	        	printMessage("Slices stacked despite coil variation '%s' vs '%s' (use '-m o' to turn off merging)\n", d1.coilName, d2.coilName);
 	        warnings->coilVaries = true;
 	        *isCoilVaries = true;
 		} else {
