@@ -1375,7 +1375,7 @@ tse3d: T2*/
 			} //for k */
 			for (int k = 3; k < 11; k++) { //vessel locations
 				char newstr[256];
-				sprintf(newstr, "\t\"sWipMemBlock.AdFree%d\": %%g,\n", k);
+				sprintf(newstr, "\t\"sWipMemBlockAdFree%d\": %%g,\n", k); //issue483: sWipMemBlock.AdFree -> sWipMemBlockAdFree
 				json_FloatNotNan(fp, newstr, csaAscii.adFree[k]);
 			}
 		}
@@ -2665,8 +2665,8 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
         strcat (outname,newstr);
         isEchoReported = true;
     }
-    if ((dcm.isNonParallelSlices) && (!isImageNumReported)) {
-    	sprintf(newstr, "_i%05d", dcm.imageNum);
+	if ((dcm.isNonParallelSlices) && (!isImageNumReported)) {
+		sprintf(newstr, "_i%05d", dcm.imageNum);
         strcat (outname,newstr);
     }
     /*if (dcm.maxGradDynVol > 0) { //Philips segmented
@@ -4474,7 +4474,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
 		nSlices++;
 	if (nSlices < 1) return;
-	if (d->CSA.sliceTiming[kMaxEPI3D-1] < 1.0) 
+	if (d->CSA.sliceTiming[kMaxEPI3D-1] < 1.0)
 		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n"); 
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
 	if (isForceSliceTimeHHMMSS) isSliceTimeHHMMSS = true;
@@ -6773,10 +6773,10 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 			if (nConvert < 1) nConvert = 1; //prevents compiler warning for next line: never executed since j=i always causes nConvert ++
 			TDCMsort * dcmSort = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 			nConvert = 0;
-			//isNonParallelSlices = false; //issue481
 			for (int j = i; j < (int)nDcm; j++) {
 				isMultiEcho = false;
 				isCoilVaries = false;
+				isNonParallelSlices = false; 
 				if (isSameSet(dcmList[i], dcmList[j], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries)) {
                     dcmList[j].converted2NII = 1; //do not reprocess repeats
                     fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
@@ -6839,6 +6839,25 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 				nConvert++;
 			}
 		} //for all images with same seriesUID as first one
+		if ((isNonParallelSlices) && (dcmList[ii].CSA.mosaicSlices > 1) && (nConvert > 0)) { //issue481: if ANY volumes are non-parallel, save ALL as 3D
+			printWarning("Saving mosaics with non-parallel slices as 3D (issue 481)\n");
+			for (int j = i; j < (int)nDcm; j++) {
+				int ji = crcSort[j].indx;
+				if (dcmList[ii].seriesUidCrc != dcmList[ji].seriesUidCrc) break; 
+				dcmList[ji].converted2NII = 1;
+				dcmList[ji].isNonParallelSlices = true;
+				if (isMultiEcho) dcmList[ji].isMultiEcho = true;
+				if (isCoilVaries) dcmList[ji].isCoilVaries = true;
+				struct TDCMsort dcmSort[1];
+				fillTDCMsort(dcmSort[0], ji, dcmList[ji]);
+				int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
+				if (ret == EXIT_SUCCESS)
+					nConvertTotal++;
+				else
+					convertError = true;		
+			}
+			continue;
+		} //issue481
 		//issue 381: ensure all images are informed if there are variations in echo, parallel slices, coil name:
 		if (isMultiEcho)
 			for (int j = i; j <= jMax; j++) {
