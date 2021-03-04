@@ -1139,9 +1139,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
 //	char cString[lByteLength + 1];
 //#endif
 	int ret = kMANUFACTURER_UNKNOWN;
-    cString[lByteLength] =0;
+    cString[lByteLength] = 0;
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
-    //printMessage("MANU %s\n",cString);
     if ((toupper(cString[0])== 'S') && (toupper(cString[1])== 'I'))
         ret = kMANUFACTURER_SIEMENS;
     if ((toupper(cString[0])== 'G') && (toupper(cString[1])== 'E'))
@@ -1159,6 +1158,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
         ret = kMANUFACTURER_UIH;
     if ((toupper(cString[0])== 'B') && (toupper(cString[1])== 'R'))
         ret = kMANUFACTURER_BRUKER;
+	if (ret == kMANUFACTURER_UNKNOWN)
+    	printWarning("Unknown manufacturer %s\n",cString);
 //#ifdef _MSC_VER
 	free(cString);
 //#endif
@@ -5185,7 +5186,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 	d.modality = kMODALITY_US;
                 break;
             case kManufacturer:
-                d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
+				if (d.manufacturer == kMANUFACTURER_UNKNOWN)
+                	d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
                 volDiffusion.manufacturer = d.manufacturer;
                 break;
             case kInstitutionName:
