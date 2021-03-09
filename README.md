@@ -121,7 +121,7 @@ The following tools exploit dcm2niix
   - [abcd-dicom2bids](https://github.com/DCAN-Labs/abcd-dicom2bids) selectively downloads high quality ABCD datasets. 
   - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
   - [BiDirect_BIDS_Converter](https://github.com/wulms/BiDirect_BIDS_Converter) for conversion from DICOM to the BIDS standard.
-  - [BIDScoin](https://github.com/Donders-Institute/bidscoin) is a DICOM to BIDS converter with thorough [documentation](https://bircibrain.github.io/computingguide/docs/bids/bidscoin).
+  - [BIDScoin](https://github.com/Donders-Institute/bidscoin) is a DICOM to BIDS converter with a GUI and thorough [documentation](https://bidscoin.readthedocs.io).
   - [BIDS Toolbox](https://github.com/cardiff-brain-research-imaging-centre/bids-toolbox) is a web service for the creation and manipulation of BIDS datasets, using dcm2niix for importing DICOM data.
   - [birc-bids](https://github.com/bircibrain/birc-bids) provides a Docker/Singularity container with various BIDS conversion utilities.
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.

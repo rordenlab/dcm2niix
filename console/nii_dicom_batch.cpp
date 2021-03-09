@@ -188,6 +188,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
     //COL then if swap the x and y value and reverse the sign on the z value.
     //If the phase encoding is not COL, then just reverse the sign on the x value.
     if ((d->manufacturer != kMANUFACTURER_GE) && (d->manufacturer != kMANUFACTURER_CANON)) return;
+	if (d->isBVecWorldCoordinates) return; //Canon classic DICOMs use image space, enhanced use world space!
     if ((!d->isEPI) && (d->CSA.numDti == 1)) d->CSA.numDti = 0; //issue449
     if (d->CSA.numDti < 1) return;
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
@@ -204,7 +205,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
         return;
     }
     if (abs(sliceDir) != 3)
-        printWarning("GE DTI only tested for axial acquisitions (solution: use Xiangrui Li's dicm2nii)\n");
+        printWarning("Limited validation for non-Axial DTI: confirm gradient vector transformation.\n");
     //GE vectors from Xiangrui Li' dicm2nii, validated with datasets from https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
 	ivec3 flp;
 	if (abs(sliceDir) == 1)
@@ -291,9 +292,9 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     //convert DTI vectors from scanner coordinates to image frame of reference
     //Uses 6 orient values from ImageOrientationPatient  (0020,0037)
     // requires PatientPosition 0018,5100 is HFS (head first supine)
-    if ((d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
+    if ((!d->isBVecWorldCoordinates) && (d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS)) return;
     if (d->CSA.numDti < 1) return;
-    if (d->manufacturer == kMANUFACTURER_UIH) {
+	if (d->manufacturer == kMANUFACTURER_UIH) {
     	for (int i = 0; i < d->CSA.numDti; i++) {
     		vx[i].V[2] = -vx[i].V[2];
     		for (int v= 0; v < 4; v++)
@@ -1545,9 +1546,10 @@ tse3d: T2*/
 	//	effectiveEchoSpacing =  d.CSA.sliceMeasurementDuration / (reconMatrixPE * 1000.0);
 	if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
 	    effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
-    if ((effectiveEchoSpacing == 0.0) && (d.fieldStrength > 0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0) && (reconMatrixPE > 1)) {
-    	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
-    	//https://github.com/rordenlab/dcm2niix/issues/377
+	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
+    if ((effectiveEchoSpacing == 0.0) && (d.imagingFrequency > 0.0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0) && (reconMatrixPE > 1)) {
+    	//in theory we could use either fieldStrength or imagingFrequency, but the former is typically provided with low precision
+		//https://github.com/rordenlab/dcm2niix/issues/377
         // EchoSpacing 1/BW/EPI_factor https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1308&L=FSL&D=0&P=113520
     	// this formula from https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
     	// https://neurostars.org/t/consolidating-epi-echo-spacing-and-readout-time-for-philips-scanner/4406
@@ -1561,11 +1563,12 @@ tse3d: T2*/
 		ReconMatrixPE = 0028,0010 or 0028,0011 depending on 0018,1312
 		
         */
-        float actualEchoSpacing = d.waterFatShift / (d.imagingFrequency * 3.4 * (d.echoTrainLength + 1));
+		float actualEchoSpacing = d.waterFatShift / (d.imagingFrequency * 3.4 * (d.echoTrainLength + 1));
         float totalReadoutTime = actualEchoSpacing * d.echoTrainLength;
 		float effectiveEchoSpacingPhil = totalReadoutTime / (reconMatrixPE - 1);
 		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
-        fprintf(fp, "\t\"EstimatedTotalReadoutTime\": %g,\n", totalReadoutTime);
+        
+		fprintf(fp, "\t\"EstimatedTotalReadoutTime\": %g,\n", totalReadoutTime);
     }
 	if (d.effectiveEchoSpacingGE > 0.0) {
 		//TotalReadoutTime = [ ceil (PE_AcquisitionMatrix / Asset_R_factor) - 1] * ESP
