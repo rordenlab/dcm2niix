@@ -6013,6 +6013,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 break;
             case kUnitsPT: //CS
                 dcmStr(lLength, &buffer[lPos], d.unitsPT);
+				printf(">>>>>>>>%s<<<%s\n", d.unitsPT, fname);
             	break;   
             case kAttenuationCorrectionMethod: //LO
                 dcmStr(lLength, &buffer[lPos], d.attenuationCorrectionMethod);
