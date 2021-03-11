@@ -1,6 +1,6 @@
 ## About
 
-dcm2niix attempts to convert all DICOM images to NIfTI. The Philips enhanced DICOM images are elegantly able to save all images from a series as a single file. However, this format is necessarily complex. The usage of this format has evolved over time, and can become further complicated when DICOM are handled by DICOM tools (for example, anonymization, transfer which converts explicit VRs to implicit VRs, etc.).
+dcm2niix attempts to convert all DICOM images to NIfTI. The Philips enhanced DICOM images are elegantly able to save all images from a series as a single file. However, this format is necessarily complex. The usage of this format has evolved over time, and can become further complicated when DICOM are modified by DICOM tools (for example, anonymization, mangled by a [dcm4che/AGFA PACS](https://github.com/neurolabusc/dcm_qa_agfa), conversion of explicit VRs to implicit VRs, etc.).
 
 This web page describes some of the strategies handle these images. However, users should be vigilant when handling these datasets. If you encounter problems using dcm2niix you can explore [alternative DICOM to NIfTI converters](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Alternatives) or [report an issue](https://github.com/rordenlab/dcm2niix).
 
@@ -18,26 +18,48 @@ Therefore, dcm2niix will ignore the IPP enclosed in 2005,140F unless no alternat
 
 ## Image Scaling
 
-dcm2niix losslessy copies the raw data from DICOM to NIfTI format. These values are typically stored as 16-bit integers in the range -32768..32767. Both the DICOM and NIfTI formats describe how scaling intercept and slope values can be used to convert these raw values into calibrated values. For example, with an intercept of 0 and slope of 0.01 the raw value of 50 would be converted to 0.5. 
+How data is represented in DICOM for MR has several challenges and the technology and standard has evolved over the years to accommodate new uses. Unlike CT, where the signal is naturally displayed in Hounsfield units, MR has no natural signal units and the magnitude is influenced by the electronics and the software processing required to bring this to the final image. Secondly most of the original DICOM implementations used small bit number integers to store the underlying images for economy of storage. As a result it is necessary to apply scaling from the internal DICOM storage to a form suitable for radiographic display or quantitative measurement. There remain several challenges with this process, ensuring that the mapping to the integer values makes best use of the available bit depth for images with large dynamic range, or large changes between images, without clipping the data while also preserving the appearance of the noise field which is demanded by the needs of radiographic visual review.
+
+At its simplest this requires a rescale slope and intercept defined by the DICOM standard tags [0028,1053](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1053)) and [0028,1052](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1053)). Whether these values are the same for all images, or image specific depends upon the implementation and potentially the location of these tags withing the DICOM tag structure.
+
+In addition, the DICOM standard introduced the concept of [`real world units`](http://dicom.nema.org/dicom/2013/output/chtml/part03/sect_A.46.html). This allows the storage of one or more mappings to allow selective viewing of the data mapped into different value ranges (which may also be non-linear mappings).
+
+Clearly, scaling is a crucial aspect to be aware of for quantitative methods and which representation is used depends upon your needs.
+
+Philips thinks in terms of three different representations (using the terminology of the documentation available to Philips collaborators):
+
+| Name             | ID            | Description|
+| ---------------- | ------------- | ------------- |
+| Stored Value     | SV            | Raw data stored in DICOM tag PIXEL DATA tag (7FE0,0010)|
+| Displayed Value  | DV            | The value which is shown to the user when using scanner interface, ROIS, measurements etc.  |
+| Floating Point   | FP            | An internal value at a point earlier in the reconstruction chain before the conversion to DICOM/integer for image presentation.  |
+
+In general SV should not be used for quantitative measurements as it is an integer format. In practice, if the Rescale values are the same for all images (the typical case, but not guaranteed) SV can be used to compare signal intensities between images from the same scan.
+
+DV can be used for quantitative comparison of signal intensities between images in the same scan as long as the relevant rescale values are taken into account. These rescale values may come from the tags standard tags 0028,1053 and 0028,1052 or from a relevant RealWorld block if present.
+
+If the DV is derived from a RealWorld block with defined units (tag (0008,0104) such as Hz or ms rather than “no units”) or a RescaleType (0028,1054) with a non-US type (not defined by the standard), then the DV is already quantitative and cross scan comparison may be done.
+
+However, in general DV is not sufficient to compare images from different scans, especially if the signal intensity varies a lot (eg multiple inversion recovery scans) in which case the FP value may be used as this may be compared (with some caveats) across scans and across timescales. This scaling requires an additional scale factor on top of the DV value, the Scale Slope (private tag (2005,100E))
+
+dcm2niix copies the raw pixel data from the DICOM tag 7FE0,0010) to NIfTI image. These values are typically stored as 16-bit integers in the range -32768..32767. Both the DICOM and NIfTI formats describe how scaling intercept and slope values can be used to convert these raw values into calibrated values. For example, with an intercept of 0 and slope of 0.01 the raw value of 50 would be converted to 0.5. 
 
 The [NIfTI](https://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1.h) header provides the `scl_slope` and `scl_inter` fields so each voxel value in the dataset is scaled as:
 
 ```
-I = scl_slope * R + scl_inter
+I = scl_slope * SV + scl_inter
 ```
 
-where `R` is the voxel value stored and `I` is the "true" transformed voxel intensity.
+where `SV` is the raw stored value and `I` is the "true" transformed voxel intensity.
 
-For all manufacturers except Philips, the `scl_slope` and `scl_inter` correspond to the DICOM tags [0028,1053](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1053)) and [0028,1052](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0028,1053)), respectively.
+Philips has three possible intensity transforms for their DICOM images (world (`W`), display (`D`), precise (`P`)). All of these transforms might be provided in a single DICOM image, while the [NIfTI](https://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1.h) header only designates a single `scl_slope` and `scl_inter` for each image. dcm2niix will retain the stored values (`SV`) and sets the NIfTI `scl_inter` and `scl_slope values` for the desired intensity transform. dcm2niix will use `W` if possible. If this is not possible it will use `P` unless the user specifies `-p n` to disable the precise calculation resulting in `D`.
 
-Philips has three possible intensity transforms for their DICOM images (world (`W`), display (`D`),precise (`P`)). All of these transforms might be provided in a single DICOM image, while the NIfTI standard only designates a single `scl_slope` and `scl_inter` for each image. dcm2niix will retain the raw value (`R`) and sets the NIfTI `scl_inter` and `scl_slope` values for the desired intensity transform.  dcm2niix will use `W` if possible. If this is not possible it will use `P` unless the user specifies `-p n` to disable the precise calculation resulting in `D`.  
-
-The formulates are provided below. The DICOM tags are in brackets (e.g. `(0040,9225)`) and the BIDS tag is in double quotes (e.g. `"PhilipsRWVSlope"`). Since all the scaling values are stored in the BIDS sidecar, you can always use these to generate your preferred intensity transform.
+The formulas are provided below. The DICOM tags are in brackets (e.g. `(0040,9225)`) and the BIDS tag is in double quotes (e.g. `"PhilipsRWVSlope"`). Since all the scaling values are stored in the BIDS sidecar, you can always use these to generate your preferred intensity transform.
  
 
 ```
 Inputs:
- R = raw stored value of voxel in DICOM without scaling
+ SV = stored value of DICOM PIXEL DATA without scaling
  WS = RealWorldValue slope (0040,9225) "PhilipsRWVSlope"
  WI = RealWorldValue intercept (0040,9224) "PhilipsRWVIntercept"
  RS = rescale slope (0028,1053) "PhilipsRescaleSlope"
@@ -48,8 +70,8 @@ Outputs:
  P = precise value
  D = displayed value
 Formulas:
- W = R * WS + WI
- D = R * RS + RI
+ W = SV * WS + WI
+ D = SV * RS + RI
  P = D / (RS * SS)
 ```
 
@@ -146,5 +168,8 @@ Prior versions of dcm2niix used different methods to sort images. However, these
 ## Sample Datasets
 
  - [National Alliance for Medical Image Computing (NAMIC) samples](http://www.insight-journal.org/midas/collection/view/194)
- - [Unusual Philips Examples](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Unusual_MRI).
- - [Diffusion Examples](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging).
+ - [Unusual Philips Examples (e.g. multi-echo)](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Unusual_MRI)
+ - [Archival samples](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Archival_MRI)
+ - [Diffusion Examples](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging)
+ - [Additional Diffusion Examples](https://github.com/neurolabusc/dcm_qa_philips)
+ - [Enhanced DICOMs](https://github.com/neurolabusc/dcm_qa_enh)
