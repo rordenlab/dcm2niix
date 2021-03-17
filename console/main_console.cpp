@@ -400,9 +400,14 @@ int main(int argc, const char * argv[])
                     opts.isForceStackSameSeries = 1;
 				if ((argv[i][0] == '2'))
                     opts.isForceStackSameSeries = 2;
-                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
                     opts.isForceStackDCE = false;
-
+					//printf("Advanced feature: '-m o' merges images despite varying series number\n");
+				}
+                if ((argv[i][0] == '2')) {
+                    opts.isIgnoreSeriesInstanceUID = true;
+					printf("Advanced feature: '-m 2' ignores Series Instance UID.\n");
+				}
             } else if ((argv[i][1] == 'p') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

@@ -4308,7 +4308,8 @@ float PhilipsPreciseVal (float lPV, float lRS, float lRI, float lSS) {
 void PhilipsPrecise(struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling, struct nifti_1_header *h, int verbose) {
 	if (d->manufacturer != kMANUFACTURER_PHILIPS) return; //not Philips
 	if (d->isScaleVariesEnh) return; //issue363 rescaled before slice reordering
-	if (!isSameFloatGE(0.0, d->RWVScale)) {
+	/*
+	if (!isSameFloatGE(0.0, d->RWVScale)) { //https://github.com/rordenlab/dcm2niix/issues/493
 		h->scl_slope = d->RWVScale;
     	h->scl_inter = d->RWVIntercept;
 		printMessage("Using RWVSlope:RWVIntercept = %g:%g\n",d->RWVScale,d->RWVIntercept);
@@ -4319,7 +4320,7 @@ void PhilipsPrecise(struct TDICOMdata * d, bool isPhilipsFloatNotDisplayScaling,
 		printMessage(" RS = rescale slope, RI = rescale intercept,  SS = scale slope\n");
 		printMessage(" D = R * RS + RI    , P = D/(RS * SS)\n");
 		return;
-	}
+	}*/
 	if (d->intenScalePhilips == 0)  return; //no Philips Precise
 	//we will report calibrated "FP" values http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/
 	float l0 = PhilipsPreciseVal (0, d->intenScale, d->intenIntercept, d->intenScalePhilips);
@@ -6696,7 +6697,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             continue;
     	}
         dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
-        //if (!dcmList[i].isValid) printf(">>>>Not a valid DICOM %s\n", nameList.str[i]);
+        if (opts->isIgnoreSeriesInstanceUID)
+			 dcmList[i].seriesUidCrc = dcmList[i].seriesNum;
+		//if (!dcmList[i].isValid) printf(">>>>Not a valid DICOM %s\n", nameList.str[i]);
         if ((dcmList[i].isValid) && ((dti4D->sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { //4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
 			struct TDCMsort dcmSort[1];
 			fillTDCMsort(dcmSort[0], i, dcmList[i]);
@@ -7235,6 +7238,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isRenameNotConvert = false;
     opts->isForceStackSameSeries = 2; //automatic: stack CTs, do not stack MRI
     opts->isForceStackDCE = true;
+	opts->isIgnoreSeriesInstanceUID = false;
     opts->isIgnoreDerivedAnd2D = false;
     opts->isForceOnsetTimes = true;
     opts->isPhilipsFloatNotDisplayScaling = true;

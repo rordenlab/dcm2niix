@@ -2,6 +2,10 @@
 
 dcm2niix can convert Canon (né Toshiba) DICOM format images to NIfTI. This page notes vendor specific conversion details.
 
+## Avoid Classic DICOM
+
+Users of Canon MRI equipment are strongly advised to export data from their scanners as enhanced DICOM (with all images from the series stored as a single file) rather than classic DICOM (each 2D slice stored as a separate file). Limitations of the Canon classic DICOMs are described [here](https://github.com/rordenlab/dcm2niix/issues/495) and [here](https://github.com/neurolabusc/dcm_qa_canon).
+
 ## Diffusion Weighted Imaging Notes
 
 In contrast to several other vendors, Toshiba used public tags to report diffusion properties. Specifically, [DiffusionBValue (0018,9087)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9087)) and [DiffusionGradientOrientation (0018,9089)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9089)). Be aware that these tags are only populated for images where a diffusion gradient is applied. Consider a typical diffusion series where some volumes are acquired with B=0 while others have B=1000. In this case, only the volumes with B>0 will report a DiffusionBValue. These coordinates are with respect to the scanner bore, not image space.
