@@ -88,7 +88,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #else
      #define kQstr ""
     #endif
-    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
+    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%g=accession number, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
@@ -102,7 +102,8 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
     printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
     printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
-    printf("  -t : text notes includes private patient details (y/n, default n)\n");
+	//text notes replaced with BIDS: this function is deprecated
+    //printf("  -t : text notes includes private patient details (y/n, default n)\n");
     #if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
 	printf("  -u : up-to-date check\n");
 	#endif
@@ -399,9 +400,14 @@ int main(int argc, const char * argv[])
                     opts.isForceStackSameSeries = 1;
 				if ((argv[i][0] == '2'))
                     opts.isForceStackSameSeries = 2;
-                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
                     opts.isForceStackDCE = false;
-
+					//printf("Advanced feature: '-m o' merges images despite varying series number\n");
+				}
+                if ((argv[i][0] == '2')) {
+                    opts.isIgnoreSeriesInstanceUID = true;
+					printf("Advanced feature: '-m 2' ignores Series Instance UID.\n");
+				}
             } else if ((argv[i][1] == 'p') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

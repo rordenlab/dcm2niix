@@ -44,18 +44,18 @@ extern "C" {
 #endif
 #if defined(__arm__) || defined(__ARM_ARCH)
     #define kCPUsuf " ARM" 
-#elif defined(__x86_64) 
+#elif defined(__x86_64)
     #define kCPUsuf " x86-64"
 #else
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20201102"
+#define kDCMdate "v1.0.20210317"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
-static const int kMaxDTI4D = 18000; //maximum number of DTI directions for 4D (Philips) images, also maximum number of 3D slices for Philips 3D and 4D images
-static const int kMaxSlice2D = 64000; //maximum number of 2D slices in 4D (Philips) images
+static const int kMaxSlice2D = 65535; //issue460 maximum number of 2D slices in 4D (Philips) images
+static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI directions for 4D (Philips) images, also maximum number of 2D slices for Enhanced DICOM and PAR/REC
 
 #define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
 #define kDICOMStrLarge 256
@@ -139,7 +139,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         bool isReal[kMaxDTI4D];
         bool isImaginary[kMaxDTI4D];
         bool isPhase[kMaxDTI4D];
-        float repetitionTimeExcitation, repetitionTimeInversion; 
+        float repetitionTimeExcitation, repetitionTimeInversion;
     };
 
 #ifdef _MSC_VER //Microsoft nomenclature for packed structures is different...
@@ -192,7 +192,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         char institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
-        bool isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
+        bool isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
     };
 
