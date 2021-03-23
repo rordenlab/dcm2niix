@@ -22,9 +22,7 @@ matrix:
 
 before_install:
   - eval "${MATRIX_EVAL}"
-  - git submodule update --init --depth=3 dcm_qa
-  - git submodule update --init --depth=3 dcm_qa_nih
-  - git submodule update --init --depth=3 dcm_qa_uih
+  - git submodule update --init --remote --depth=3
 
 script:
   # - mkdir build && cd build && cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=true -DZLIB_IMPLEMENTATION=Cloudflare .. && make && cd -
