@@ -3051,11 +3051,16 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
     double effectiveEchoSpacing = 0.0;
     if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
         effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
-    if (data.effectiveEchoSpacingGE > 0.0)
-        effectiveEchoSpacing = data.effectiveEchoSpacingGE / 1000000.0;
+    if (data.effectiveEchoSpacingGE > 0.0) {
+        double roundFactor = data.isPartialFourier ? 4.0 : 2.0;
+        double totalReadoutTime = ((ceil(1.0/roundFactor * data.phaseEncodingLines / data.accelFactPE) * roundFactor) - 1.0) * data.effectiveEchoSpacingGE * 0.000001;
+        effectiveEchoSpacing = totalReadoutTime / (reconMatrixPE - 1);
+    }
     
     images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
-    if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
+    if (data.manufacturer == kMANUFACTURER_UIH)
+        images->addAttribute("effectiveReadoutTime", data.acquisitionDuration / 1000.0);
+    else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
         images->addAttribute("effectiveReadoutTime", effectiveEchoSpacing * (reconMatrixPE - 1.0));
     images->addAttribute("pixelBandwidth", data.pixelBandwidth);
     if ((data.manufacturer == kMANUFACTURER_SIEMENS) && (data.dwellTime > 0))
