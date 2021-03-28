@@ -3392,6 +3392,18 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
 
 #endif
 
+#ifdef USING_R
+
+#ifndef max
+ #define max(a,b) std::max(a,b)
+#endif
+
+#ifndef min
+ #define min(a,b) std::min(a,b)
+#endif
+
+#else
+
 #ifndef max
  #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
@@ -3404,6 +3416,8 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a < _b ? _a : _b; })   
+#endif
+
 #endif
 
 void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
