@@ -4694,7 +4694,7 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose,char geVersio
     sepStart += 1;
     len = 11;
     char * versionString = (char *)malloc(sizeof(char) * len);
-    versionString[len] =0;
+    versionString[len-1] =0;
     memcpy(versionString, sepStart, len);
     int ver1, ver2, ver3;
     char c1, c2, c3, c4;
