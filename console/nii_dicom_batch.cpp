@@ -6749,8 +6749,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             bool matched = false;
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
-                bool isMultiEchoUnused, isNonParallelSlices, isCoilVaries;
-                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused, &isNonParallelSlices, &isCoilVaries)) {
+                bool isMultiEcho = false, isNonParallelSlices = false, isCoilVaries = false;
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries)) {
                     opts->series[j].files.push_back(nameList.str[i]);
                     matched = true;
                     break;
