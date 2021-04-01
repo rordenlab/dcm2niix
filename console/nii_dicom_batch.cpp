@@ -4734,7 +4734,7 @@ void sliceTimingGE_Testx0021x105E(struct TDICOMdata * d, struct TDCMopts opts, s
 	float mxErr = 0.0; 
 	for (int v = 0; v < hdr->dim[3]; v++) {
 		sliceTiming[v] = (sliceTiming[v] - mn) * 1000.0; //subtract offset, convert sec -> ms
-		mxErr = max(mxErr, fabs(sliceTiming[v] - d->CSA.sliceTiming[v]));
+		mxErr = max(mxErr, float(fabs(sliceTiming[v] - d->CSA.sliceTiming[v])));
 	}
 	printMessage("Slice Timing Error between calculated and RTIA timer(0021,105E): %gms\n", mxErr);
 	if ((mxErr < 1.0) && (opts.isVerbose < 1)) return;
