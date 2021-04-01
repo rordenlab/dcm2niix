@@ -823,12 +823,12 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	bool isFCOMMENT = ((flags & 0x10) == 0x10);
 	uint32_t hdrSz = 10;
 	if (isFNAME) {//skip null-terminated string FNAME
-		for (hdrSz = hdrSz; hdrSz < cmpSz; hdrSz++)
+		for (; hdrSz < cmpSz; hdrSz++)
 			if (pCmp[hdrSz] == 0) break;
 		hdrSz++;
 	}
 	if (isFCOMMENT) {//skip null-terminated string COMMENT
-		for (hdrSz = hdrSz; hdrSz < cmpSz; hdrSz++)
+		for (; hdrSz < cmpSz; hdrSz++)
 			if (pCmp[hdrSz] == 0) break;
 		hdrSz++;
 	}
