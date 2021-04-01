@@ -3424,7 +3424,7 @@ void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
 	//NRRD does not have scl_slope scl_inter. Adjust data if possible
 	// https://discourse.slicer.org/t/preserve-image-rescale-and-slope-when-saving-in-nrrd-file/13357
 	if  (isSameFloat(hdr->scl_inter,0.0) && isSameFloat(hdr->scl_slope,1.0)) return;
-	if ((!isSameFloat(fmod(hdr->scl_inter, 1.0),0.0)) || (!isSameFloat(fmod(hdr->scl_slope, 1.0),0.0))) return;	
+	if ((!isSameFloat(fmod(hdr->scl_inter, 1.0f),0.0)) || (!isSameFloat(fmod(hdr->scl_slope, 1.0f),0.0))) return;
 	int nVox = 1;
 	for (int i = 1; i < 8; i++)
 		if (hdr->dim[i] > 1) nVox = nVox * hdr->dim[i];
