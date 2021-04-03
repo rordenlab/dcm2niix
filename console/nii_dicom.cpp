@@ -4094,7 +4094,10 @@ int compareTDCMdimRev(void const *item1, void const *item2) {
 
 #endif // USING_R
 
-struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+struct TDICOMdata readDICOMx(char * fname, struct TDCMprefs* prefs, struct TDTI4D *dti4D) {
+//struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+	int isVerbose = prefs->isVerbose;
+	int compressFlag = prefs->compressFlag;
 	struct TDICOMdata d = clear_dicom_data();
 	d.imageNum = 0; //not set
     strcpy(d.protocolName, ""); //erase dummy with empty
@@ -5641,6 +5644,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	sqDepth00189114 = sqDepth - 1;
             	break;
 			case kTriggerDelayTime: { //0x0020+uint32_t(0x9153<< 16 ) //FD
+				if (prefs->isIgnoreTriggerTimes) break;//issue499
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				//if (isVerbose < 2) break;
 				double trigger = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5839,6 +5843,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	d.imagingFrequency = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
            	case kTriggerTime: {
+				if (prefs->isIgnoreTriggerTimes) break;//issue499
 				//untested method to detect slice timing for GE PSD “epi” with multiphase option
 				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
             	if ((d.manufacturer != kMANUFACTURER_GE) && (d.manufacturer != kMANUFACTURER_PHILIPS)) break; //issue384            	
@@ -7315,6 +7320,22 @@ if (d.isHasPhase)
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	return d;
 } // readDICOM()
+
+void setDefaultPrefs (struct TDCMprefs *prefs) {
+	prefs->isVerbose = false;
+	prefs->compressFlag = kCompressSupport;	
+	prefs->isIgnoreTriggerTimes = false;
+}
+
+struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+	struct TDCMprefs prefs;
+	setDefaultPrefs(&prefs);
+	prefs.isVerbose = isVerbose;
+	prefs.compressFlag = compressFlag;
+	TDICOMdata ret = readDICOMx(fname, &prefs, dti4D);
+	return ret;	
+}
+	
 
 struct TDICOMdata readDICOM(char * fname) {
     struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D)); //unused

@@ -176,6 +176,13 @@ bool is_exe(const char* path) { //requires #include <sys/stat.h>
 	}// is_dir()
 #endif
 
+void opts2Prefs (struct TDCMopts* opts, struct TDCMprefs *prefs) {
+	setDefaultPrefs(prefs);
+	prefs->isVerbose = opts->isVerbose;
+	prefs->compressFlag = opts->compressFlag;	
+	prefs->isIgnoreTriggerTimes = opts->isIgnoreTriggerTimes;
+}
+	
 void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isVerbose){
     //0018,1312 phase encoding is either in row or column direction
     //0043,1039 (or 0043,a039). b value (as the first number in the string).
@@ -6234,6 +6241,8 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc( sizeof(struct  TDICOMdata));
     struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
     struct TSearchList nameList;
+	struct TDCMprefs prefs;
+	opts2Prefs (opts, &prefs);
     nameList.maxItems = 1; // larger requires more memory, smaller more passes
     nameList.str = (char **) malloc((nameList.maxItems+1) * sizeof(char *)); //reserve one pointer (32 or 64 bits) per potential file
     nameList.numItems = 0;
@@ -6242,7 +6251,8 @@ int singleDICOM(struct TDCMopts* opts, char *fname) {
     nameList.numItems++;
     TDCMsort * dcmSort = (TDCMsort *)malloc(sizeof(TDCMsort));
     dcmList[0].converted2NII = 1;
-    dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
+    dcmList[0] = readDICOMx(nameList.str[0], &prefs, dti4D); //ignore compile warning - memory only freed on first of 2 passes
+    //dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
     fillTDCMsort(dcmSort[0], 0, dcmList[0]);
     int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
     freeNameList(nameList);
@@ -6678,6 +6688,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
 	// struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
     struct TDICOMdata *dcmList  = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct  TDICOMdata));
     struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D));
+	struct TDCMprefs prefs;
+	opts2Prefs (opts, &prefs);
     int nConvertTotal = 0;
     bool compressionWarning = false;
     bool convertError = false;
@@ -6696,7 +6708,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             	convertError = true;
             continue;
     	}
-        dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
+        dcmList[i] = readDICOMx(nameList.str[i], &prefs, dti4D); //ignore compile warning - memory only freed on first of 2 passes
+        //dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
         if (opts->isIgnoreSeriesInstanceUID)
 			 dcmList[i].seriesUidCrc = dcmList[i].seriesNum;
 		//if (!dcmList[i].isValid) printf(">>>>Not a valid DICOM %s\n", nameList.str[i]);
@@ -7248,6 +7261,7 @@ void setDefaultOpts (struct TDCMopts *opts, const char * argv[]) { //either "set
     opts->isSaveNativeEndian = true;
 	opts->isAddNamePostFixes = true; //e.g. "_e2" added for second echo 
     opts->isTestx0021x105E = false; //GE test slice times stored in 0021,105E
+	opts->isIgnoreTriggerTimes = false;
     opts->isSaveNRRD = false;
     opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
     opts->isSave3D = false;
