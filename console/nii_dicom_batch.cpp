@@ -69,6 +69,9 @@
 
 #undef isnan
 #define isnan ISNAN
+
+#undef isfinite
+#define isfinite R_FINITE
 #endif
 
 #define newTilt
@@ -307,8 +310,10 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
     		for (int v= 0; v < 4; v++)
             	if (vx[i].V[v] == -0.0f) vx[i].V[v] = 0.0f; //remove sign from values that are virtually zero
 		}
+#ifndef USING_R
     	for (int i = 0; i < 3; i++)
     		printf("%g = %g %g %g\n", vx[i].V[0], vx[i].V[1], vx[i].V[2], vx[i].V[3]);
+#endif
     	return;
     } //https://github.com/rordenlab/dcm2niix/issues/225
     if ((toupper(d->patientOrient[0])== 'H') && (toupper(d->patientOrient[1])== 'F') && (toupper(d->patientOrient[2])== 'S'))
@@ -385,9 +390,7 @@ void nii_saveText(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
     fclose(fp);
 }// nii_saveText()
 
-#ifndef USING_R
 #define myReadAsciiCsa
-#endif
 
 #ifdef myReadAsciiCsa
 //read from the ASCII portion of the Siemens CSA series header
@@ -820,12 +823,12 @@ int  geProtocolBlock(const char * filename,  int geOffset, int geLength, int isV
 	bool isFCOMMENT = ((flags & 0x10) == 0x10);
 	uint32_t hdrSz = 10;
 	if (isFNAME) {//skip null-terminated string FNAME
-		for (hdrSz = hdrSz; hdrSz < cmpSz; hdrSz++)
+		for (; hdrSz < cmpSz; hdrSz++)
 			if (pCmp[hdrSz] == 0) break;
 		hdrSz++;
 	}
 	if (isFCOMMENT) {//skip null-terminated string COMMENT
-		for (hdrSz = hdrSz; hdrSz < cmpSz; hdrSz++)
+		for (; hdrSz < cmpSz; hdrSz++)
 			if (pCmp[hdrSz] == 0) break;
 		hdrSz++;
 	}
@@ -1682,6 +1685,8 @@ tse3d: T2*/
     fclose(fp);
 }// nii_SaveBIDSX()
 
+#ifndef USING_R
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename) {
 struct TDTI4D *dti4D;
 dti4D->sliceOrder[0] = -1;
@@ -1692,6 +1697,8 @@ dti4D->repetitionTimeExcitation = 0.0;
 dti4D->repetitionTimeInversion = 0.0;
 nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 }// nii_SaveBIDSX()
+
+#endif
 
 bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
 	return ((!isSameFloat(bvec.V[0],0.0f)) && //not a B-0 image
@@ -2761,7 +2768,7 @@ int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopt
 #if defined(USING_R) && (defined(_WIN64) || defined(_WIN32))
     // R also uses forward slash on Windows, so allow it here
     if (!sep)
-        sep = strchr(outname, kForeignPathSeparator);
+        sep = strchr(outname, '/');
 #endif
     if (sep) {
     	char newdir[2048] = {""};
@@ -3000,37 +3007,23 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         case kMANUFACTURER_HITACHI: images->addAttribute("manufacturer", "Hitachi"); break;
         case kMANUFACTURER_CANON:   images->addAttribute("manufacturer", "Canon");   break;
     }
-    if (strlen(data.manufacturersModelName) > 0)
-        images->addAttribute("scannerModelName", data.manufacturersModelName);
-    if (strlen(data.imageType) > 0)
-        images->addAttribute("imageType", data.imageType);
+    images->addAttribute("scannerModelName", data.manufacturersModelName);
+    images->addAttribute("imageType", data.imageType);
     if (data.seriesNum > 0)
         images->addAttribute("seriesNumber", int(data.seriesNum));
-    if (strlen(data.seriesDescription) > 0)
-        images->addAttribute("seriesDescription", data.seriesDescription);
-    if (strlen(data.sequenceName) > 0)
-        images->addAttribute("sequenceName", data.sequenceName);
-    if (strlen(data.protocolName) > 0)
-        images->addAttribute("protocolName", data.protocolName);
-    if (strlen(data.studyDate) >= 8 && strcmp(data.studyDate,"00000000") != 0)
-        images->addDateAttribute("studyDate", data.studyDate);
-    if (strlen(data.studyTime) > 0 && strncmp(data.studyTime,"000000",6) != 0)
-        images->addAttribute("studyTime", data.studyTime);
-    if (data.fieldStrength > 0.0)
-        images->addAttribute("fieldStrength", data.fieldStrength);
-    if (data.flipAngle > 0.0)
-        images->addAttribute("flipAngle", data.flipAngle);
-    if (data.TE > 0.0)
-        images->addAttribute("echoTime", data.TE);
-    if (data.TR > 0.0)
-        images->addAttribute("repetitionTime", data.TR);
-    if (data.TI > 0.0)
-        images->addAttribute("inversionTime", data.TI);
+    images->addAttribute("seriesDescription", data.seriesDescription);
+    images->addAttribute("sequenceName", data.sequenceName);
+    images->addAttribute("protocolName", data.protocolName);
+    images->addDateAttribute("studyDate", data.studyDate);
+    images->addTimeAttribute("studyTime", data.studyTime);
+    images->addAttribute("fieldStrength", data.fieldStrength);
+    images->addAttribute("flipAngle", data.flipAngle);
+    images->addAttribute("echoTime", data.TE);
+    images->addAttribute("repetitionTime", data.TR);
+    images->addAttribute("inversionTime", data.TI);
     if (!data.isXRay) {
-        if (data.zThick > 0.0)
-            images->addAttribute("sliceThickness", data.zThick);
-        if (data.zSpacing > 0.0)
-            images->addAttribute("sliceSpacing", data.zSpacing);
+        images->addAttribute("sliceThickness", data.zThick);
+        images->addAttribute("sliceSpacing", data.zSpacing);
     }
     if (data.CSA.multiBandFactor > 1)
         images->addAttribute("multibandFactor", data.CSA.multiBandFactor);
@@ -3058,18 +3051,21 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
     double effectiveEchoSpacing = 0.0;
     if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
         effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
-    if (data.effectiveEchoSpacingGE > 0.0)
-        effectiveEchoSpacing = data.effectiveEchoSpacingGE / 1000000.0;
-
-    if (effectiveEchoSpacing > 0.0)
-        images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
-    if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
+    if (data.effectiveEchoSpacingGE > 0.0) {
+        double roundFactor = data.isPartialFourier ? 4.0 : 2.0;
+        double totalReadoutTime = ((ceil(1.0/roundFactor * data.phaseEncodingLines / data.accelFactPE) * roundFactor) - 1.0) * data.effectiveEchoSpacingGE * 0.000001;
+        effectiveEchoSpacing = totalReadoutTime / (reconMatrixPE - 1);
+    }
+    
+    images->addAttribute("effectiveEchoSpacing", effectiveEchoSpacing);
+    if (data.manufacturer == kMANUFACTURER_UIH)
+        images->addAttribute("effectiveReadoutTime", data.acquisitionDuration / 1000.0);
+    else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
         images->addAttribute("effectiveReadoutTime", effectiveEchoSpacing * (reconMatrixPE - 1.0));
-    if (data.pixelBandwidth > 0.0)
-        images->addAttribute("pixelBandwidth", data.pixelBandwidth);
+    images->addAttribute("pixelBandwidth", data.pixelBandwidth);
     if ((data.manufacturer == kMANUFACTURER_SIEMENS) && (data.dwellTime > 0))
         images->addAttribute("dwellTime", data.dwellTime * 1e-9);
-
+    
     // Phase encoding polarity
     // We only save these attributes if both direction and polarity are known
     bool isSkipPhaseEncodingAxis = data.is3DAcq;
@@ -3099,22 +3095,17 @@ void nii_saveAttributes (struct TDICOMdata &data, struct nifti_1_header &header,
         images->addAttribute("sliceTiming", sliceTimes);
     }
 
-    if (strlen(data.patientID) > 0)
-        images->addAttribute("patientIdentifier", data.patientID);
-    if (strlen(data.patientName) > 0)
-        images->addAttribute("patientName", data.patientName);
-    if (strlen(data.patientBirthDate) >= 8 && strcmp(data.patientBirthDate,"00000000") != 0)
-        images->addDateAttribute("patientBirthDate", data.patientBirthDate);
+    images->addAttribute("patientIdentifier", data.patientID);
+    images->addAttribute("patientName", data.patientName);
+    images->addDateAttribute("patientBirthDate", data.patientBirthDate);
     if (strlen(data.patientAge) > 0 && strcmp(data.patientAge,"000Y") != 0)
         images->addAttribute("patientAge", data.patientAge);
     if (data.patientSex == 'F')
         images->addAttribute("patientSex", "F");
     else if (data.patientSex == 'M')
         images->addAttribute("patientSex", "M");
-    if (data.patientWeight > 0.0)
-        images->addAttribute("patientWeight", data.patientWeight);
-    if (strlen(data.imageComments) > 0)
-        images->addAttribute("comments", data.imageComments);
+    images->addAttribute("patientWeight", data.patientWeight);
+    images->addAttribute("comments", data.imageComments);
 }
 
 #else
@@ -3399,6 +3390,19 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
     return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+#endif
+
+#ifdef USING_R
+
+#ifndef max
+ #define max(a,b) std::max(a,b)
+#endif
+
+#ifndef min
+ #define min(a,b) std::min(a,b)
+#endif
+
+#else
 
 #ifndef max
  #define max(a,b) \
@@ -3414,11 +3418,13 @@ int nii_saveNRRD(char * niiFilename, struct nifti_1_header hdr, unsigned char* i
      _a < _b ? _a : _b; })   
 #endif
 
+#endif
+
 void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
 	//NRRD does not have scl_slope scl_inter. Adjust data if possible
 	// https://discourse.slicer.org/t/preserve-image-rescale-and-slope-when-saving-in-nrrd-file/13357
 	if  (isSameFloat(hdr->scl_inter,0.0) && isSameFloat(hdr->scl_slope,1.0)) return;
-	if ((!isSameFloat(fmod(hdr->scl_inter, 1.0),0.0)) || (!isSameFloat(fmod(hdr->scl_slope, 1.0),0.0))) return;	
+	if ((!isSameFloat(fmod(hdr->scl_inter, 1.0f),0.0)) || (!isSameFloat(fmod(hdr->scl_slope, 1.0f),0.0))) return;
 	int nVox = 1;
 	for (int i = 1; i < 8; i++)
 		if (hdr->dim[i] > 1) nVox = nVox * hdr->dim[i];
@@ -3462,6 +3468,8 @@ void removeSclSlopeInter(struct nifti_1_header* hdr, unsigned char* img) {
 	}
     //printWarning("NRRD unable to record scl_slope/scl_inter %g/%g\n", hdr->scl_slope, hdr->scl_inter);	
 }
+
+#ifndef USING_R
 
 void swapEndian(struct nifti_1_header* hdr, unsigned char* im, bool isNative) {
 	//swap endian from big->little or little->big
@@ -4686,7 +4694,7 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose,char geVersio
     sepStart += 1;
     len = 11;
     char * versionString = (char *)malloc(sizeof(char) * len);
-    versionString[len] =0;
+    versionString[len-1] =0;
     memcpy(versionString, sepStart, len);
     int ver1, ver2, ver3;
     char c1, c2, c3, c4;
@@ -4726,7 +4734,7 @@ void sliceTimingGE_Testx0021x105E(struct TDICOMdata * d, struct TDCMopts opts, s
 	float mxErr = 0.0; 
 	for (int v = 0; v < hdr->dim[3]; v++) {
 		sliceTiming[v] = (sliceTiming[v] - mn) * 1000.0; //subtract offset, convert sec -> ms
-		mxErr = max(mxErr, fabs(sliceTiming[v] - d->CSA.sliceTiming[v]));
+		mxErr = max(mxErr, float(fabs(sliceTiming[v] - d->CSA.sliceTiming[v])));
 	}
 	printMessage("Slice Timing Error between calculated and RTIA timer(0021,105E): %gms\n", mxErr);
 	if ((mxErr < 1.0) && (opts.isVerbose < 1)) return;
@@ -6755,8 +6763,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts* opts) {
             bool matched = false;
             // If the file matches an existing series, add it to the corresponding file list
             for (int j = 0; j < opts->series.size(); j++) {
-                bool isMultiEchoUnused, isNonParallelSlices, isCoilVaries;
-                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEchoUnused, &isNonParallelSlices, &isCoilVaries)) {
+                bool isMultiEcho = false, isNonParallelSlices = false, isCoilVaries = false;
+                if (isSameSet(opts->series[j].representativeData, dcmList[i], opts, &warnings, &isMultiEcho, &isNonParallelSlices, &isCoilVaries)) {
                     opts->series[j].files.push_back(nameList.str[i]);
                     matched = true;
                     break;

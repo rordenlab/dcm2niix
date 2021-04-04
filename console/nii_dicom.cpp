@@ -263,7 +263,7 @@ cleanup2:
     opj_destroy_codec(codec);
     return ret;
 }
-#endif //if
+#endif //myDisableOpenJPEG
 
 #ifndef M_PI
 #define M_PI           3.14159265358979323846
@@ -4968,7 +4968,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 			privateCreatorRemaps[nRemaps] = privateCreatorRemap; 
 			//printf("new remapping %04x,%04x -> %04x,%04x\n", privateCreatorMask & 65535, privateCreatorMask >> 16, privateCreatorRemap & 65535, privateCreatorRemap >> 16);	
 			if (isVerbose > 1)
-				printf("new remapping (%d) %04x,%02xxy -> %04x,%02xxy\n", nRemaps, privateCreatorMask & 65535, privateCreatorMask >> 24, privateCreatorRemap & 65535, privateCreatorRemap >> 24);	
+				printMessage("new remapping (%d) %04x,%02xxy -> %04x,%02xxy\n", nRemaps, privateCreatorMask & 65535, privateCreatorMask >> 24, privateCreatorRemap & 65535, privateCreatorRemap >> 24);	
 			nRemaps += 1;
 			//for (int i = 0; i < nRemaps; i++)
 			//	printf(" %d = %04x,%02xxy -> %04x,%02xxy\n", i, privateCreatorMasks[i] & 65535, privateCreatorMasks[i] >> 24, privateCreatorRemaps[i] & 65535, privateCreatorRemaps[i] >> 24);	
@@ -4983,13 +4983,13 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				remappedGroupElement = privateCreatorRemaps[i] + (groupElement & 0x00FF0000);
 		if (remappedGroupElement == 0) goto skipRemap;
 		if (isVerbose > 1)
-			printf("remapping %04x,%04x -> %04x,%04x\n", groupElement & 65535, groupElement >> 16, remappedGroupElement & 65535, remappedGroupElement >> 16);	
+			printMessage("remapping %04x,%04x -> %04x,%04x\n", groupElement & 65535, groupElement >> 16, remappedGroupElement & 65535, remappedGroupElement >> 16);	
 		groupElement = remappedGroupElement;
 		}
 		skipRemap:
 		#endif // salvageAgfa
 		if ((lLength % 2) != 0) { //https://www.nitrc.org/forum/forum.php?thread_id=11827&forum_id=4703
-			printf("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535,groupElement>>16, lLength, fname);
+			printMessage("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535,groupElement>>16, lLength, fname);
 			//proper to return here, but we can carry on as a hail mary
 			// d.isValid = false;
 			//return d;
