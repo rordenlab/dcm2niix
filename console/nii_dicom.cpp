@@ -5531,6 +5531,9 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	if (strstr(epiStr, "epiRT") != NULL){
             	   d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
                 }
+                if (strcmp(epiStr, "3db0map") == 0){ 
+                    isGEfieldMap = true; //issue501
+                }
             	break;            
             }     
             case kInternalPulseSequenceNameGE : { //LO  'EPI'(gradient echo)/'EPI2'(spin echo): 
@@ -5546,8 +5549,9 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (strcmp(epiStr, "EPI2") == 0){
                     d.internalepiVersionGE = 2; //-1 = not epi, 1 = EPI, 2 = EPI2
                 }
-                if ((strcmp(epiStr, "EFGRE3D") == 0) || (strcmp(epiStr, "B0map") == 0)) 
+                if (strcmp(epiStr, "B0map") == 0){ 
                     isGEfieldMap = true; //issue501
+                }
                 break;
             }       
             case kBandwidthPerPixelPhaseEncode:
