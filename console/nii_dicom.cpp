@@ -4350,6 +4350,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kFloatPixelPaddingValue 0x0028+(0x0122 << 16 ) // https://github.com/rordenlab/dcm2niix/issues/262
 #define  kIntercept 0x0028+(0x1052 << 16 )
 #define  kSlope 0x0028+(0x1053 << 16 )
+//#define  kRescaleType 0x0028+(0x1053 << 16 ) //LO e.g. for Philips Fieldmap: [Hz]  
 //#define  kSpectroscopyDataPointColumns 0x0028+(0x9002 << 16 ) //IS
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
@@ -4527,6 +4528,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     bool isSwitchToBigEndian = false;
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     bool isMosaic = false;
+	bool isGEfieldMap = false; //issue501
     int patientPositionNum = 0;
     float B0Philips = -1.0;
     float vRLPhilips = 0.0;
@@ -5544,6 +5546,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (strcmp(epiStr, "EPI2") == 0){
                     d.internalepiVersionGE = 2; //-1 = not epi, 1 = EPI, 2 = EPI2
                 }
+                if ((strcmp(epiStr, "EFGRE3D") == 0) || (strcmp(epiStr, "B0map") == 0)) 
+                    isGEfieldMap = true; //issue501
                 break;
             }       
             case kBandwidthPerPixelPhaseEncode:
@@ -6839,6 +6843,12 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     		//printMessage("Issue 373: Check for ZIP2 Factor: %d  SliceThickness+SliceGap: %f, SpacingBetweenSlices: %f \n", zipFactor, d.xyzMM[3], d.zSpacing);
     		locationsInAcquisitionGE *= zipFactor; // Multiply number of slices by ZIP factor. Do this prior to checking for conflict below (?).
     	}
+    	if (isGEfieldMap) { //issue501 : to do check zip factor
+    		//Volume 1) derived phase field map [Hz] and 2) magnitude volume.
+    		d.isDerived = (d.imageNum <= locationsInAcquisitionGE); //first volume	 
+    		d.isRealIsPhaseMapHz = d.isDerived;
+    		d.isHasReal = d.isDerived;
+    	} 
     	/* SAH.end */
     	if (locationsInAcquisitionGE < d.locationsInAcquisition) {
     		d.locationsInAcquisitionConflict = d.locationsInAcquisition;

@@ -1201,6 +1201,9 @@ tse3d: T2*/
 		fprintf(fp, "\t\"PhilipsScaleSlope\": %g,\n", d.intenScalePhilips );
 		fprintf(fp, "\t\"UsePhilipsFloatNotDisplayScaling\": %d,\n", opts.isPhilipsFloatNotDisplayScaling);
 	}
+	//https://bids-specification--622.org.readthedocs.build/en/622/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#case-3-direct-field-mapping
+	if ((d.isRealIsPhaseMapHz) && (d.isHasReal))
+		fprintf(fp, "\t\"Units\": \"Hz\",\n"); //
 	//PET ISOTOPE MODULE ATTRIBUTES
 	json_Str(fp, "\t\"Radiopharmaceutical\": \"%s\",\n", d.radiopharmaceutical);
 	json_Float(fp, "\t\"RadionuclidePositronFraction\": %g,\n", d.radionuclidePositronFraction );
