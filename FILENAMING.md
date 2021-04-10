@@ -12,6 +12,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %d=description (from 0008,103E)
  - %e=echo number (from 0018,0086)
  - %f=folder name (name of folder containing first DICOM)
+ - %g=accession number (0008,0050)
  - %i=ID of patient (from 0010,0020)
  - %j=series instance UID (from 0020,000E)
  - %k=study instance UID (from 0020,000D)
@@ -19,7 +20,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %m=manufacturer short name (from 0008,0070: GE, Ph, Si, To, UI, NA)
  - %n=name of patient (from 0010,0010)
  - %o=mediaObjectInstanceUID (0002,0003)*
- - %p=protocol name (from 0018,1030). If 0018,1030 is empty, or if the Manufacturer (0008,0070) is GE with Modality (0008,0060) of MR, then the SequenceName (0018,0024) is used if it is not empty.
+ - %p=protocol name (from 0018,1030). If 0018,1030 is empty, the SequenceName (0018,0024) is used.
  - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)
@@ -68,9 +69,9 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 
 ## Special Characters
 
-[Some characters are not permitted](https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names) in file names. The following characters will be replaced with underscorces (`_`). Note that the forbidden characters vary between operating systems (Linux only forbids the forward slash, MacOS forbids forward slash and colon, while Windows forbids any of the characters listed below). To ensure that files can be easily copied between file systems, [dcm2niix restricts file names to characters allowed by Windows](https://github.com/rordenlab/dcm2niix/issues/237).
+[Some characters are not permitted](https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names) in file names. The following characters will be replaced with underscorces (`_`). Note that the forbidden characters vary between operating systems (Linux only forbids the forward slash, MacOS forbids forward slash and colon, while Windows forbids any of the characters listed below). To ensure that files can be easily copied between file systems, [dcm2niix restricts file names to characters allowed by Windows](https://github.com/rordenlab/dcm2niix/issues/237). While technically legal in all filesystems, the semicolon can wreak havoc in [Windows](https://stackoverflow.com/questions/3869594/semi-colons-in-windows-filenames) and [Linux](https://forums.plex.tv/t/linux-hates-semicolons-in-file-names/49098/2). 
 
-### List of Forbidden Characters (based on Windows)
+### List of Forbidden Characters
 ```
 < (less than)
 > (greater than)
@@ -81,6 +82,7 @@ dcm2niix will attempt to write your image using the naming scheme you specify wi
 | (vertical bar or pipe)
 ? (question mark)
 * (asterisk)
+; (semicolon) 
 ```
 
 [Control characters](https://en.wikipedia.org/wiki/ASCII#Control_characters) like backspace and tab are also forbidden.

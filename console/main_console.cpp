@@ -88,7 +88,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #else
      #define kQstr ""
     #endif
-    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
+    printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%g=accession number, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
     printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
     printf("  -h : show help\n");
     printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
@@ -131,6 +131,7 @@ void showHelp(const char * argv[], struct TDCMopts opts) {
     #endif
     printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
    	printf("  --progress : report progress (y/n, default n)\n");
+    printf("  --ignore_trigger_times : disregard values in 0018,1060 and 0020,9153\n");
     printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
     printf("  --version : report version\n");
    	printf("  --xml : Slicer format features\n");
@@ -286,6 +287,9 @@ int main(int argc, const char * argv[])
                     opts.isSaveNativeEndian = false;
                     printf("NIfTI data will be little-endian\n");
                 }
+            } else if ( ! strcmp(argv[i], "--ignore_trigger_times")) {
+				opts.isIgnoreTriggerTimes = true;
+				printf("ignore_trigger_times may have unintended consequences (issue 499)\n");
             } else if ( ! strcmp(argv[i], "--terse")) {
 				opts.isAddNamePostFixes = false;
             } else if ( ! strcmp(argv[i], "--version")) {
@@ -400,9 +404,14 @@ int main(int argc, const char * argv[])
                     opts.isForceStackSameSeries = 1;
 				if ((argv[i][0] == '2'))
                     opts.isForceStackSameSeries = 2;
-                if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
+                if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
                     opts.isForceStackDCE = false;
-
+					//printf("Advanced feature: '-m o' merges images despite varying series number\n");
+				}
+                if ((argv[i][0] == '2')) {
+                    opts.isIgnoreSeriesInstanceUID = true;
+					printf("Advanced feature: '-m 2' ignores Series Instance UID.\n");
+				}
             } else if ((argv[i][1] == 'p') && ((i+1) < argc)) {
                 i++;
                 if (invalidParam(i, argv)) return 0;

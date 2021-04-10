@@ -263,7 +263,7 @@ cleanup2:
     opj_destroy_codec(codec);
     return ret;
 }
-#endif //if
+#endif //myDisableOpenJPEG
 
 #ifndef M_PI
 #define M_PI           3.14159265358979323846
@@ -810,6 +810,7 @@ struct TDICOMdata clear_dicom_data() {
     d.is2DAcq = false; //
     d.isDerived = false; //0008,0008 = DERIVED,CSAPARALLEL,POSDISP
     d.isSegamiOasis = false; //these images do not store spatial coordinates
+	d.isBVecWorldCoordinates = false; //bvecs can be in image space (GE) or world coordinates (Siemens)
     d.isGrayscaleSoftcopyPresentationState = false;
     d.isRawDataStorage = false;
     d.isPartialFourier = false;
@@ -1139,9 +1140,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
 //	char cString[lByteLength + 1];
 //#endif
 	int ret = kMANUFACTURER_UNKNOWN;
-    cString[lByteLength] =0;
+    cString[lByteLength] = 0;
     memcpy(cString, (char*)&lBuffer[0], lByteLength);
-    //printMessage("MANU %s\n",cString);
     if ((toupper(cString[0])== 'S') && (toupper(cString[1])== 'I'))
         ret = kMANUFACTURER_SIEMENS;
     if ((toupper(cString[0])== 'G') && (toupper(cString[1])== 'E'))
@@ -1159,6 +1159,8 @@ int dcmStrManufacturer (const int lByteLength, unsigned char lBuffer[]) {//read 
         ret = kMANUFACTURER_UIH;
     if ((toupper(cString[0])== 'B') && (toupper(cString[1])== 'R'))
         ret = kMANUFACTURER_BRUKER;
+	if (ret == kMANUFACTURER_UNKNOWN)
+    	printWarning("Unknown manufacturer %s\n",cString);
 //#ifdef _MSC_VER
 	free(cString);
 //#endif
@@ -4052,12 +4054,22 @@ bool compareTDCMdim (const TDCMdim &dcm1, const TDCMdim &dcm2) {
     return false;
 } //compareTDCMdim()
 
+bool compareTDCMdimRev (const TDCMdim &dcm1, const TDCMdim &dcm2) {
+	for (int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; i++) {
+        if(dcm1.dimIdx[i] < dcm2.dimIdx[i])
+            return true;
+        else if(dcm1.dimIdx[i] > dcm2.dimIdx[i])
+            return false;
+    }
+    return false;
+} //compareTDCMdimRev()
+
 #else
 
 int compareTDCMdim(void const *item1, void const *item2) {
 	struct TDCMdim const *dcm1 = (const struct TDCMdim *)item1;
 	struct TDCMdim const *dcm2 = (const struct TDCMdim *)item2;
-	//for(int i=0; i < MAX_NUMBER_OF_DIMENSIONS; ++i){
+	//for (int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; i++) {
 	for(int i=MAX_NUMBER_OF_DIMENSIONS-1; i >=0; i--){
 
 		if(dcm1->dimIdx[i] < dcm2->dimIdx[i])
@@ -4068,9 +4080,24 @@ int compareTDCMdim(void const *item1, void const *item2) {
 	return 0;
 } //compareTDCMdim()
 
+int compareTDCMdimRev(void const *item1, void const *item2) {
+	struct TDCMdim const *dcm1 = (const struct TDCMdim *)item1;
+	struct TDCMdim const *dcm2 = (const struct TDCMdim *)item2;
+	for (int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; i++) {
+		if(dcm1->dimIdx[i] < dcm2->dimIdx[i])
+		  return -1;
+		else if(dcm1->dimIdx[i] > dcm2->dimIdx[i])
+		  return 1;
+	}
+	return 0;
+} //compareTDCMdimRev()
+
 #endif // USING_R
 
-struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+struct TDICOMdata readDICOMx(char * fname, struct TDCMprefs* prefs, struct TDTI4D *dti4D) {
+//struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+	int isVerbose = prefs->isVerbose;
+	int compressFlag = prefs->compressFlag;
 	struct TDICOMdata d = clear_dicom_data();
 	d.imageNum = 0; //not set
     strcpy(d.protocolName, ""); //erase dummy with empty
@@ -4293,6 +4320,8 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kTriggerDelayTime 0x0020+uint32_t(0x9153<< 16 ) //FD
 #define  kDimensionIndexValues 0x0020+uint32_t(0x9157<< 16 ) // UL n-dimensional index of frame.
 #define  kInStackPositionNumber 0x0020+uint32_t(0x9057<< 16 ) // UL can help determine slices in volume
+
+#define  kTemporalPositionIndex 0x0020+uint32_t(0x9128<< 16 ) // UL 
 #define  kDimensionIndexPointer 0x0020+uint32_t(0x9165<< 16 )
 //Private Group 21 as Used by Siemens:
 #define  kSequenceVariant21 0x0021+(0x105B<< 16 )//CS
@@ -4321,6 +4350,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kFloatPixelPaddingValue 0x0028+(0x0122 << 16 ) // https://github.com/rordenlab/dcm2niix/issues/262
 #define  kIntercept 0x0028+(0x1052 << 16 )
 #define  kSlope 0x0028+(0x1053 << 16 )
+//#define  kRescaleType 0x0028+(0x1053 << 16 ) //LO e.g. for Philips Fieldmap: [Hz]  
 //#define  kSpectroscopyDataPointColumns 0x0028+(0x9002 << 16 ) //IS
 #define  kGeiisFlag 0x0029+(0x0010 << 16 ) //warn user if dreaded GEIIS was used to process image
 #define  kCSAImageHeaderInfo  0x0029+(0x1010 << 16 )
@@ -4441,6 +4471,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
     size_t dimensionIndexPointerCounter = 0;
     int maxInStackPositionNumber = 0;
+	int temporalPositionIndex = 0;
+	int maxTemporalPositionIndex = 0;
     //int temporalPositionIdentifier = 0;
     int locationsInAcquisitionPhilips = 0;
     int imagesInAcquisition = 0;
@@ -4496,6 +4528,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     bool isSwitchToBigEndian = false;
     bool isAtFirstPatientPosition = false; //for 3d and 4d files: flag is true for slices at same position as first slice
     bool isMosaic = false;
+	bool isGEfieldMap = false; //issue501
     int patientPositionNum = 0;
     float B0Philips = -1.0;
     float vRLPhilips = 0.0;
@@ -4604,7 +4637,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     	is2005140FSQ = false;
     	if (sqDepth < 0) sqDepth = 0; //should not happen, but protect for faulty anonymization
     	//if we leave the folder MREchoSequence 0018,9114
-    	if (( nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
+    	if (( nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
     		sqDepth00189114 = -1; //triggered
     		//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 			if (inStackPositionNumber > 0) {
@@ -4639,7 +4672,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 
             // Bruker Enhanced MR IOD: reorder dimensions to ensure InStackPositionNumber corresponds to the first one
             // This will ensure correct ordering of slices in 4D datasets
-            if (d.manufacturer == kMANUFACTURER_BRUKER) {
+            /*
+			if (d.manufacturer == kMANUFACTURER_BRUKER) {
                 for(size_t i = 1; i < dimensionIndexPointerCounter; i++){
                     if (dimensionIndexPointer[i] == kInStackPositionNumber){
                         //swap with first
@@ -4647,8 +4681,9 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                         dimensionIndexOrder[0] = i;
                     }
                 }
-            }
+            }*/ //Canon and Bruker reverse dimensionIndexItem order relative to Philips: new versions introduce compareTDCMdimRev
 			int ndim = nDimIndxVal;
+			//printf("%d: %d %d %d %d\n", ndim, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2], d.dimensionIndexValues[3]);
 			for (int i = 0; i < ndim; i++)
 				dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
 			dcmDim[numDimensionIndexValues].TE = TE;
@@ -4935,7 +4970,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 			privateCreatorRemaps[nRemaps] = privateCreatorRemap; 
 			//printf("new remapping %04x,%04x -> %04x,%04x\n", privateCreatorMask & 65535, privateCreatorMask >> 16, privateCreatorRemap & 65535, privateCreatorRemap >> 16);	
 			if (isVerbose > 1)
-				printf("new remapping (%d) %04x,%02xxy -> %04x,%02xxy\n", nRemaps, privateCreatorMask & 65535, privateCreatorMask >> 24, privateCreatorRemap & 65535, privateCreatorRemap >> 24);	
+				printMessage("new remapping (%d) %04x,%02xxy -> %04x,%02xxy\n", nRemaps, privateCreatorMask & 65535, privateCreatorMask >> 24, privateCreatorRemap & 65535, privateCreatorRemap >> 24);	
 			nRemaps += 1;
 			//for (int i = 0; i < nRemaps; i++)
 			//	printf(" %d = %04x,%02xxy -> %04x,%02xxy\n", i, privateCreatorMasks[i] & 65535, privateCreatorMasks[i] >> 24, privateCreatorRemaps[i] & 65535, privateCreatorRemaps[i] >> 24);	
@@ -4950,13 +4985,13 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				remappedGroupElement = privateCreatorRemaps[i] + (groupElement & 0x00FF0000);
 		if (remappedGroupElement == 0) goto skipRemap;
 		if (isVerbose > 1)
-			printf("remapping %04x,%04x -> %04x,%04x\n", groupElement & 65535, groupElement >> 16, remappedGroupElement & 65535, remappedGroupElement >> 16);	
+			printMessage("remapping %04x,%04x -> %04x,%04x\n", groupElement & 65535, groupElement >> 16, remappedGroupElement & 65535, remappedGroupElement >> 16);	
 		groupElement = remappedGroupElement;
 		}
 		skipRemap:
 		#endif // salvageAgfa
 		if ((lLength % 2) != 0) { //https://www.nitrc.org/forum/forum.php?thread_id=11827&forum_id=4703
-			printf("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535,groupElement>>16, lLength, fname);
+			printMessage("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535,groupElement>>16, lLength, fname);
 			//proper to return here, but we can carry on as a hail mary
 			// d.isValid = false;
 			//return d;
@@ -5185,7 +5220,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 	d.modality = kMODALITY_US;
                 break;
             case kManufacturer:
-                d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
+				if (d.manufacturer == kMANUFACTURER_UNKNOWN)
+                	d.manufacturer = dcmStrManufacturer (lLength, &buffer[lPos]);
                 volDiffusion.manufacturer = d.manufacturer;
                 break;
             case kInstitutionName:
@@ -5510,6 +5546,8 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (strcmp(epiStr, "EPI2") == 0){
                     d.internalepiVersionGE = 2; //-1 = not epi, 1 = EPI, 2 = EPI2
                 }
+                if ((strcmp(epiStr, "EFGRE3D") == 0) || (strcmp(epiStr, "B0map") == 0)) 
+                    isGEfieldMap = true; //issue501
                 break;
             }       
             case kBandwidthPerPixelPhaseEncode:
@@ -5591,11 +5629,15 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (d.imageNum < 1) d.imageNum = dcmStrInt(lLength, &buffer[lPos]);  //Philips renames each image again in 2001,9000, which can lead to duplicates
 				break;
 			case kInStackPositionNumber:
-				if ((d.manufacturer != kMANUFACTURER_HITACHI) && (d.manufacturer != kMANUFACTURER_UNKNOWN) && (d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
+				if ((d.manufacturer != kMANUFACTURER_CANON) && (d.manufacturer != kMANUFACTURER_HITACHI) && (d.manufacturer != kMANUFACTURER_UNKNOWN) && (d.manufacturer != kMANUFACTURER_PHILIPS) && (d.manufacturer != kMANUFACTURER_BRUKER)) break;
 				inStackPositionNumber = dcmInt(4,&buffer[lPos],d.isLittleEndian);
 				//if (inStackPositionNumber == 1) numInStackPositionNumber1 ++;
 				//printf("<%d>\n",inStackPositionNumber);
 				if (inStackPositionNumber > maxInStackPositionNumber) maxInStackPositionNumber = inStackPositionNumber;
+				break;
+			case kTemporalPositionIndex:	
+				temporalPositionIndex = dcmInt(4,&buffer[lPos],d.isLittleEndian);
+				if (temporalPositionIndex > maxTemporalPositionIndex) maxTemporalPositionIndex = temporalPositionIndex;
 				break;
             case kDimensionIndexPointer:
                 dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos],d.isLittleEndian);
@@ -5606,6 +5648,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	sqDepth00189114 = sqDepth - 1;
             	break;
 			case kTriggerDelayTime: { //0x0020+uint32_t(0x9153<< 16 ) //FD
+				if (prefs->isIgnoreTriggerTimes) break;//issue499
 				if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
 				//if (isVerbose < 2) break;
 				double trigger = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);
@@ -5615,13 +5658,13 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             case kDimensionIndexValues: { // kImageNum is not enough for 4D series from Philips 5.*.
                 if (lLength < 4) break;
                 nDimIndxVal = lLength / 4;
-                if(nDimIndxVal > MAX_NUMBER_OF_DIMENSIONS){
+				if(nDimIndxVal > MAX_NUMBER_OF_DIMENSIONS){
                     printError("%d is too many dimensions.  Only up to %d are supported\n", nDimIndxVal,
                                MAX_NUMBER_OF_DIMENSIONS);
                     nDimIndxVal = MAX_NUMBER_OF_DIMENSIONS;  // Truncate
                 }
                 dcmMultiLongs(4 * nDimIndxVal, &buffer[lPos], nDimIndxVal, d.dimensionIndexValues, d.isLittleEndian);
-              	break; }
+				break; }
             case kPhotometricInterpretation: {
  				char interp[kDICOMStr];
                 dcmStr(lLength, &buffer[lPos], interp);
@@ -5804,6 +5847,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	d.imagingFrequency = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
            	case kTriggerTime: {
+				if (prefs->isIgnoreTriggerTimes) break;//issue499
 				//untested method to detect slice timing for GE PSD “epi” with multiphase option
 				// will not work for current PSD “epiRT” (BrainWave RT, fMRI/DTI package provided by Medical Numerics)
             	if ((d.manufacturer != kMANUFACTURER_GE) && (d.manufacturer != kMANUFACTURER_PHILIPS)) break; //issue384            	
@@ -6199,6 +6243,7 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				//d.CSA.dtiV[3] = v[2];
 				//printMessage("><>< 0018,9089: DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
                 hasDwiDirectionality = true;
+				d.isBVecWorldCoordinates = true; //e.g. Canon saved image space coordinates in Comments, world space in 0018, 9089
                 set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
               }
               break;
@@ -6798,6 +6843,12 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     		//printMessage("Issue 373: Check for ZIP2 Factor: %d  SliceThickness+SliceGap: %f, SpacingBetweenSlices: %f \n", zipFactor, d.xyzMM[3], d.zSpacing);
     		locationsInAcquisitionGE *= zipFactor; // Multiply number of slices by ZIP factor. Do this prior to checking for conflict below (?).
     	}
+    	if (isGEfieldMap) { //issue501 : to do check zip factor
+    		//Volume 1) derived phase field map [Hz] and 2) magnitude volume.
+    		d.isDerived = (d.imageNum <= locationsInAcquisitionGE); //first volume	 
+    		d.isRealIsPhaseMapHz = d.isDerived;
+    		d.isHasReal = d.isDerived;
+    	} 
     	/* SAH.end */
     	if (locationsInAcquisitionGE < d.locationsInAcquisition) {
     		d.locationsInAcquisitionConflict = d.locationsInAcquisition;
@@ -6989,9 +7040,10 @@ if (d.isHasPhase)
     //	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %d (see issue 369)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4]);
     if (numDimensionIndexValues > 1)
     	strcpy(d.imageType, imageType1st); //for multi-frame datasets, return name of book, not name of last chapter
-    if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
+	if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
-    	if (isVerbose > 1) { //
+		int maxVariableItem = 0;
+		if (true) { //
 			int mn[MAX_NUMBER_OF_DIMENSIONS];
 			int mx[MAX_NUMBER_OF_DIMENSIONS];
 			for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++) {
@@ -7001,20 +7053,35 @@ if (d.isHasPhase)
 					if (mx[j] < dcmDim[i].dimIdx[j]) mx[j] = dcmDim[i].dimIdx[j];
 					if (mn[j] > dcmDim[i].dimIdx[j]) mn[j] = dcmDim[i].dimIdx[j];
 				}
+				if (mx[j] != mn[j]) maxVariableItem = j; 
 			}
-			printMessage(" DimensionIndexValues (0020,9157), dimensions with variability:\n");
-			for (int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; i++)
-				if (mn[i] != mx[i])
-					printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
+			if (isVerbose > 1) {
+				printMessage(" DimensionIndexValues (0020,9157), dimensions with variability:\n");
+				for (int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; i++)
+					if (mn[i] != mx[i]) 
+						printMessage(" Dimension %d Range: %d..%d\n", i, mn[i], mx[i]);
+		}
     	} //verbose > 1
+		//see http://dicom.nema.org/medical/Dicom/2018d/output/chtml/part03/sect_C.8.24.3.3.html
+		//Philips puts spatial position as lower item than temporal position, the reverse is true for Bruker and Canon
+		int stackPositionItem = 0;
+		if (dimensionIndexPointerCounter > 0)
+	        for(size_t i = 0; i < dimensionIndexPointerCounter; i++)
+	            if (dimensionIndexPointer[i] == kInStackPositionNumber)	stackPositionItem = i;
 		//sort dimensions
 #ifdef USING_R
-        std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
+		if (stackPositionItem < maxVariableItem)
+			std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
+		else
+			std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdimRev);
 #else
-        qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
+		if (stackPositionItem < maxVariableItem)
+			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
+		else
+			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdimRev);
 #endif
 		//for (int i = 0; i < numberOfFrames; i++)
-		//	printf("diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
+		//	printf("i %d diskPos= %d dimIdx= %d  %d %d %d TE= %g\n", i,  dcmDim[i].diskPos, dcmDim[i].dimIdx[0], dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++)  {
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
 			dti4D->intenScale[i] =  dcmDim[i].intenScale;
@@ -7263,6 +7330,22 @@ if (d.isHasPhase)
 	//printMessage("buffer usage %d  %d  %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	return d;
 } // readDICOM()
+
+void setDefaultPrefs (struct TDCMprefs *prefs) {
+	prefs->isVerbose = false;
+	prefs->compressFlag = kCompressSupport;	
+	prefs->isIgnoreTriggerTimes = false;
+}
+
+struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
+	struct TDCMprefs prefs;
+	setDefaultPrefs(&prefs);
+	prefs.isVerbose = isVerbose;
+	prefs.compressFlag = compressFlag;
+	TDICOMdata ret = readDICOMx(fname, &prefs, dti4D);
+	return ret;	
+}
+	
 
 struct TDICOMdata readDICOM(char * fname) {
     struct TDTI4D *dti4D  = (struct TDTI4D *)malloc(sizeof(struct  TDTI4D)); //unused
