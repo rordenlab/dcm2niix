@@ -6865,8 +6865,10 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
     if (d.zSpacing > 0.0)
     	d.xyzMM[3] = d.zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
     //printMessage("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionNum,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
-    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3]))
+    if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3])) {
+		d.CSA.numDti = d.xyzDim[3]; //issue506
         printMessage("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n",patientPositionNum, d.xyzDim[3]); //Philips reported different positions for each slice!
+	}
     if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
     	d.isValid = true;
     //if ((d.imageStart > 144) && (d.xyzDim[1] >= 1) && (d.xyzDim[2] >= 1) && (d.xyzDim[4] > 1)) //Spectroscopy
