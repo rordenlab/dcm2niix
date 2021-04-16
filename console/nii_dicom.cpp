@@ -2747,9 +2747,10 @@ void conv12bit16bit(unsigned char * img, struct nifti_1_header hdr) {
     }
 } //conv12bit16bit()
 
-unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bitsAllocated) {
+unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bitsAllocated, int imageStart32) {
     size_t imgsz = nii_ImgBytes(hdr);
     size_t imgszRead = imgsz;
+	size_t imageStart = imageStart32;
     if (bitsAllocated == 12)
          imgszRead = round(imgsz * 0.75);
     FILE *file = fopen(imgname , "rb");
@@ -2759,18 +2760,14 @@ unsigned char * nii_loadImgCore(char* imgname, struct nifti_1_header hdr, int bi
     }
 	fseek(file, 0, SEEK_END);
 	long fileLen=ftell(file);
-    if (fileLen < (imgszRead+(long) hdr.vox_offset)) {
-        //previously  (fileLen < (imgszRead+hdr.vox_offset))
-        // FileSize < (ImageSize+HeaderSize): 42399788 < (42398702+1086)
-		// FileSize < (ImageSize+HeaderSize): 42399788 < ( 42399792.00)
-        //note hdr.vox_offset is a float, and without a type-cast it can lead to unusual values
+    if (fileLen < (imgszRead + imageStart)) {
+        //note hdr.vox_offset is a float: issue507
         //https://www.nitrc.org/forum/message.php?msg_id=27155
-        printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu+%ld) \n", fileLen, imgszRead, (long)hdr.vox_offset);
-        //printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu) \n", fileLen, imgszRead+(long)hdr.vox_offset);
+        printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu+%zu) \n", fileLen, imgszRead, imageStart);
         printWarning("File not large enough to store image data: %s\n", imgname);
         return NULL;
     }
-	fseek(file, (long) hdr.vox_offset, SEEK_SET);
+	fseek(file, (long) imageStart, SEEK_SET);
     unsigned char *bImg = (unsigned char *)malloc(imgsz);
     //int i = 0;
     //while (bImg[i] == 0) i++;
@@ -3670,7 +3667,7 @@ unsigned char * nii_loadImgXL(char* imgname, struct nifti_1_header *hdr, struct 
         printMessage("Software not set up to decompress DICOM\n");
         return NULL;
     } else
-    	img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated);
+    	img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated, dcm.imageStart);
     if (img == NULL) return img;
     if ((dcm.compressionScheme == kCompressNone) && (dcm.isLittleEndian != littleEndianPlatform()) && (hdr->bitpix > 8))
         img = nii_byteswap(img, hdr);
