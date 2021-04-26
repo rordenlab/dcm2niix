@@ -4752,6 +4752,11 @@ void sliceTimingGE(struct TDICOMdata * d, const char * filename, struct TDCMopts
 	if ((d->is3DAcq) || (d->isLocalizer) || (hdr->dim[4] < 2)) return; //no need for slice times
 	if (hdr->dim[3] < 2) return;
 	if (d->manufacturer != kMANUFACTURER_GE) return;
+	if ((d->protocolBlockStartGE < 128) || (d->protocolBlockLengthGE < 10)) {
+		d->CSA.sliceTiming[0] = -1;
+		printWarning("Unable to determine GE Slice timing, no Protocol Data Block GE (0025,101B): %s\n", filename);
+		return;	
+	}
 	//start version check: 
 	float geMajorVersion = 0;
 	int geMajorVersionInt = 0, geMinorVersionInt = 0, geReleaseVersionInt = 0;
@@ -4786,6 +4791,7 @@ void sliceTimingGE(struct TDICOMdata * d, const char * filename, struct TDCMopts
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
 	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
 	if (ok != EXIT_SUCCESS) {
+		d->CSA.sliceTiming[0] = -1;
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
 		return;
 	}
