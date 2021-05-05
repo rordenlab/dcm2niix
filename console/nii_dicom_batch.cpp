@@ -4496,7 +4496,7 @@ void checkSliceTiming(struct TDICOMdata * d, struct TDICOMdata * d1, int verbose
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
 		nSlices++;
 	if (nSlices < 1) return;
-	if (d->CSA.sliceTiming[kMaxEPI3D-1] < 1.0)
+	if (d->CSA.sliceTiming[kMaxEPI3D-1] < -1.0) //the value -2.0 is used as a flag for negative MosaicRefAcqTimes in checkSliceTimes(), see issue 271
 		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n"); 
 	bool isSliceTimeHHMMSS = (d->manufacturer == kMANUFACTURER_UIH);
 	if (isForceSliceTimeHHMMSS) isSliceTimeHHMMSS = true;
