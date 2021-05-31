@@ -7046,6 +7046,7 @@ if (d.isHasPhase)
 	if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
     	//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
 		int maxVariableItem = 0;
+		int nVariableItems = 0;
 		if (true) { //
 			int mn[MAX_NUMBER_OF_DIMENSIONS];
 			int mx[MAX_NUMBER_OF_DIMENSIONS];
@@ -7056,7 +7057,10 @@ if (d.isHasPhase)
 					if (mx[j] < dcmDim[i].dimIdx[j]) mx[j] = dcmDim[i].dimIdx[j];
 					if (mn[j] > dcmDim[i].dimIdx[j]) mn[j] = dcmDim[i].dimIdx[j];
 				}
-				if (mx[j] != mn[j]) maxVariableItem = j; 
+				if (mx[j] != mn[j]) {
+					maxVariableItem = j;
+					nVariableItems ++;
+				}
 			}
 			if (isVerbose > 1) {
 				printMessage(" DimensionIndexValues (0020,9157), dimensions with variability:\n");
@@ -7071,6 +7075,22 @@ if (d.isHasPhase)
 		if (dimensionIndexPointerCounter > 0)
 	        for(size_t i = 0; i < dimensionIndexPointerCounter; i++)
 	            if (dimensionIndexPointer[i] == kInStackPositionNumber)	stackPositionItem = i;
+		if ((d.manufacturer == kMANUFACTURER_CANON) && (nVariableItems == 1) && (d.xyzDim[4] > 1)) {
+			//WARNING: Canon CANON V6.0SP2001* (0018,9005) = "AX fMRI" strangely sets TemporalPositionIndex(0020,9128) as 1 for all volumes: (0020,9157) and (0020,9128) are INCORRECT!
+			printf("Invalid enhanced DICOM created by Canon: Only single dimension in DimensionIndexValues (0020,9157) varies, for 4D file (e.g. BOTH space and time should vary)\n");
+			printf("%d %d\n", stackPositionItem, maxVariableItem);
+			int stackTimeItem = 0;
+			if (stackPositionItem == 0) {
+				maxVariableItem ++;
+				stackTimeItem ++; //e.g. slot 0 = space, slot 1 = time
+			}
+			int vol = 0;
+			for (int i = 0; i < numDimensionIndexValues; i++) {
+				if (1 == dcmDim[i].dimIdx[stackPositionItem]) vol ++;
+				dcmDim[i].dimIdx[stackTimeItem] = vol;
+				//printf("vol %d slice %d\n", dcmDim[i].dimIdx[stackTimeItem], dcmDim[i].dimIdx[stackPositionItem]);
+			}
+		} //Kuldge for corrupted CANON 0020,9157
 		//sort dimensions
 #ifdef USING_R
 		if (stackPositionItem < maxVariableItem)
