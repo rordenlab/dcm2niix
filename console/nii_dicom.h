@@ -99,6 +99,7 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kEXIT_OUTPUT_FOLDER_READ_ONLY  7
 #define kEXIT_SOME_OK_SOME_BAD  8
 #define kEXIT_RENAME_ERROR  9
+#define kEXIT_INCOMPLETE_VOLUMES_FOUND  10 //issue 515
 
 
 static const int kSliceOrientUnknown = 0;

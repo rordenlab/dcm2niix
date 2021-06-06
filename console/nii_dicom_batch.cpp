@@ -5825,6 +5825,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[],struct TDICOMdata dc
         nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts, nameList->str[dcmSort[0].indx]);
 #endif
     free(imgM);
+	if (dcmList[dcmSort[0].indx].xyzDim[0]  > 1) returnCode = kEXIT_INCOMPLETE_VOLUMES_FOUND; //issue515
     return returnCode;//EXIT_SUCCESS;
 }// saveDcm2NiiCore()
 

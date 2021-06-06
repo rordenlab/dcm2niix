@@ -6980,6 +6980,12 @@ if (d.isHasPhase)
 				d.patientPositionLast[k] = patientPositionEndPhilips[k];
 			}
     }
+	if ((numberOfFrames > 1) && (locationsInAcquisitionPhilips > 0) && ((numberOfFrames % locationsInAcquisitionPhilips) != 0)) { //issue515
+		printWarning("Number of frames (%d) not divisible by locations in acquisition (2001,1018) %d (issue 515)\n", numberOfFrames, locationsInAcquisitionPhilips);
+		d.xyzDim[4] = d.xyzDim[3] / locationsInAcquisitionPhilips;
+		d.xyzDim[3] = locationsInAcquisitionPhilips;
+		d.xyzDim[0] = numberOfFrames;
+	}
 	if ((B0Philips >= 0) && (d.CSA.numDti == 0)) {
 		d.CSA.dtiV[0] = B0Philips;
 		d.CSA.numDti = 1; 	 
