@@ -15,7 +15,7 @@ The Manufacturer section of the tables uses the following abbreviations
 These fields should be the same for all images acquired on a specific scanner.
 
 |Field|Manufacturer|Comments|
-|-----+------------+-----|
+|-----|------------|-----|
 |Manufacturer| | |
 |MagneticFieldStrength| | |
 |Modality| | |
