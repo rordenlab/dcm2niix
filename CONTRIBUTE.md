@@ -2,7 +2,7 @@
 
 Like the [Brain Imaging Data Structure](https://bids.neuroimaging.io/get_involved.html), which it supports, dcm2niix is developed by the community for the community and everybody can become a part of the community.
 
-The easiest way to contribute to dcm2niix is to ask questions you have by [generating Github issues](https://github.com/rordenlab/dcm2niix/issues) or [asking a question on the NITRC forim](https://www.nitrc.org/forum/?group_id=880). 
+The easiest way to contribute to dcm2niix is to ask questions you have by [generating Github issues](https://github.com/rordenlab/dcm2niix/issues) or [asking a question on the NITRC forum](https://www.nitrc.org/forum/?group_id=880). 
 
 The code is open source, and you can share your improvements by [creating a pull request](https://github.com/rordenlab/dcm2niix/pulls).
 dcm2niix is a community project that has benefitted from many [contrbutors](https://github.com/rordenlab/dcm2niix/graphs/contributors). 
