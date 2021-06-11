@@ -166,64 +166,63 @@ Fields specific to MRI scans.
 See BIDS [BEP005 Arterial Spin
 Labeling](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html).
 
-| Field                 | Unit            | Manufacturer | Comments                                                                                                                         | Defined By |
-|-----------------------|-----------------|--------------|----------------------------------------------------------------------------------------------------------------------------------|------------|
-| LabelOffset           |                 | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                   | B          |
-| PostLabelDelay        | s               | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org), [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)            | B          |
-| PostInversionDelay    | s               | S            | 2D [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                         | B          |
-| NumRFBlocks           |                 | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                   | B          |
-| RFGap                 |                 | S            | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org),                                                                    | B          |
-| MeanGzx10             |                 | S            | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                     | B          |
-| PhiAdjust             |                 | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                   | B          |
-| InversionTime         | s               | S            | 2D pASL product (`ep2d_pasl`, `tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`) | B          |
-| SaturationStopTime    | s               | S            | 2D pASL product (`ep2d_pasl`)                                                                                                    | B          |
-| BolusDuration         | s               | S            | 2D pASL product (`tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)              | B          |
-| MeanGzx10             |                 | S            | 3D pCASL [tgse_pcasl](http://www.loft-lab.org)                                                                                   | B          |
-| TagRFFlipAngle        | degrees         | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                     | B          |
-| TagRFDuration         | s               | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                     | B          |
-| TagRFSeparation       |                 | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                     | B          |
-| MeanTagGradient       |                 | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| TagGradientAmplitude  |                 | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| TagDuration           | s               | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| MaximumT1Opt          |                 | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                     | B          |
-| InitialPostLabelDelay | s               | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| sWipMemBlockAdFree*   | multiple values | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| TagPlaneDThickness    |                 | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| TagPlaneUlShape       |                 | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| TagPlaneSPositionDTra |                 | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| TagPlaneSNormalDTra   |                 | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                          | B          |
-| Tag* (if not explicitly listed)  | One value for each                | S            | [Post-label delays](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/ASLpractical/index.html), 3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`jw_tgse_VEPCASL`)                                          | B          |
+| Field                           | Unit               | Manufacturer | Comments                                                                                                                                                                                       | Defined By |
+|---------------------------------|--------------------|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| LabelOffset                     |                    | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| PostLabelDelay                  | s                  | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org), [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                          | B          |
+| PostInversionDelay              | s                  | S            | 2D [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                                                                       | B          |
+| NumRFBlocks                     |                    | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| RFGap                           |                    | S            | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | B          |
+| MeanGzx10                       |                    | S            | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | B          |
+| PhiAdjust                       |                    | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| InversionTime                   | s                  | S            | 2D pASL product (`ep2d_pasl`, `tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                               | B          |
+| SaturationStopTime              | s                  | S            | 2D pASL product (`ep2d_pasl`)                                                                                                                                                                  | B          |
+| BolusDuration                   | s                  | S            | 2D pASL product (`tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                            | B          |
+| MeanGzx10                       |                    | S            | 3D pCASL [tgse_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| TagRFFlipAngle                  | degrees            | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| TagRFDuration                   | s                  | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| TagRFSeparation                 |                    | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| MeanTagGradient                 |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagGradientAmplitude            |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagDuration                     | s                  | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| MaximumT1Opt                    |                    | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| InitialPostLabelDelay           | s                  | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| sWipMemBlockAdFree*             | multiple values    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneDThickness              |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneUlShape                 |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneSPositionDTra           |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneSNormalDTra             |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| Tag* (if not explicitly listed) | One value for each | S            | [Post-label delays](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/ASLpractical/index.html), 3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`jw_tgse_VEPCASL`) | B          |
 
 
 ##### Magnetic Resonance Imaging (Siemens V*)
 
 Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio, Prisma) from the [CSA header](https://nipy.org/nibabel/dicom/siemens_csa.html).
 
-
-|Field|Notes|Comments|
-|-----|-----|-----|
-|EchoTime1| | For Fieldmaps created with two echo times|
-|EchoTime2| | For Fieldmaps created with two echo times|
-|PartialFourier| S | Partial fourier fraction, e.g. image with 6/8 pF will report `0.75` |
-|Interpolation2D| S | If present, slices interpolated within plane|
-|Interpolation3D| S | If present, image interpolated in all spatial dimensions|
-|BaseResolution| S | |
-|ShimSetting| S | |
-|DiffusionScheme| | `Monopolar` or `Bipolar`|
-|DelayTime| S | |
-|TxRefAmp| S | |
-|PhaseResolution| S | |
-|PhaseOversampling| S | |
-|VendorReportedEchoSpacing| S | |
-|ReceiveCoilName| S | |
-|ReceiveCoilActiveElements| S | |
-|CoilString| S | |
-|PulseSequenceDetails| S | |
-|FmriExternalInfo| S | |
-|WipMemBlock| S | |
-|ProtocolName| S | |
-|RefLinesPE| S | |
-|ConsistencyInfo| S | Sequence software version|
+| Field                     | Unit                                            | Manufacturer | Comments                                                                                                                                                                                                                                                                                                                                                                                               | Defined By |
+|---------------------------|-------------------------------------------------|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| EchoTime1                 | s                                               | S            | For Fieldmaps created with two echo times   | D          |
+| EchoTime2                 | s                                               | S            | For Fieldmaps created with two echo times      | D          |
+| PartialFourier            |                                                 | S            | Partial fourier fraction, e.g. image with 6/8 pF will report `0.75`    | D          |
+| Interpolation2D           |                                                 | S            | If present, slices interpolated within plane     |  D          |
+| Interpolation3D           |                                                 | S            | If present, image interpolated in all spatial dimensions     |  D          |
+| BaseResolution            | integer                                              | S            | # of acquisition lines? | D |
+| ShimSetting               | DAC for 1st order terms, mA for 2nd order terms | S            | The 1st 3 values are the 1st order shims from sGRADSPEC.lOffset{X,Y,Z}. The next 5 are 2nd order shims from sGRADSPEC.alShimCurrent[0-4]. Converting to the first order terms to uT/m may be possible using the "gradient sensitivities". Converting the second order terms to uT/m^2 requires information not stored in the DICOM header, but they are fixed for a given shim hardware configuration. | D          |
+| DiffusionScheme           |                                                 | S            | `Monopolar` or `Bipolar`  | D          |
+| DelayTime                 | s | S       |              | D  |
+| TxRefAmp                  | V | S |             | D |
+| PhaseResolution           | fraction | S                               |              | D |
+| PhaseOversampling         |  | S                                               |              | D |
+| VendorReportedEchoSpacing |  |  S                                             |              | D |
+| ReceiveCoilName           |  | S                                               | e.g. "HeadNeck\_64"             | D |
+| ReceiveCoilActiveElements | | S     | Given as groups of channels, instead of individual ones, e.g. "HC1-7" for HeadNeck\_64.  | D |
+| CoilString                |  | S                                               |              | D |
+| PulseSequenceDetails      |  | S                                               | pulse sequence label, e.g. "%SiemensSeq%\\\\tgse\_pasl" | D |
+| FmriExternalInfo          | |  S                                               |              | D |
+| WipMemBlock               | | S                                               |              | D |
+| ProtocolName              | | S                                               | Check SeriesDescription - they might be switched around | D |
+| RefLinesPE                | | S                                               | # of reference lines in the phase encoding direction for acceleration (GRAPPA)              | D |
+| ConsistencyInfo           |                                                 | S            | The more complete software version, e.g. VE11C or VE11E instead of just VE11.   | D          |
 
 ##### Magnetic Resonance Imaging (Siemens XA)
 
