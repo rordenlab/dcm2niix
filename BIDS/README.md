@@ -8,81 +8,84 @@ The Manufacturer section of the tables uses the following abbreviations
  - P : Philips only.
  - S : Siemens only.
  
+The Defined By column uses
 
+- B : The [BIDS](https://bids.neuroimaging.io) standard
+- D : dcm2niix (often, but not always, these come directly from the DICOM header without transformation)
 
 ##### Constants
 
 These fields should be the same for all images acquired on a specific scanner.
 
-|Field|Manufacturer|Comments|
-|-----|------------|-----|
-|Manufacturer| | |
-|MagneticFieldStrength| | |
-|Modality| | |
-|PulseSequenceName| G | |
-|InternalPulseSequenceName| G | |
-|ManufacturersModelName| | |
-|InstitutionName| | |
-|InstitutionalDepartmentName| | |
-|InstitutionAddress| | |
-|DeviceSerialNumber| | |
-|StationName| | |
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|Manufacturer| | | | |
+|MagneticFieldStrength| T | | | |
+|Modality| | | | |
+|PulseSequenceName| | G | | |
+|InternalPulseSequenceName| | G | | |
+|ManufacturersModelName| | | | |
+|InstitutionName| | | | |
+|InstitutionalDepartmentName| | | | |
+|InstitutionAddress| | | | |
+|DeviceSerialNumber| | | | |
+|StationName| | | | |
 
 ##### Private Information
 
 These fields contain personally identifiable information. By default dcm2niix will create anonymized files without these fields. The option `-ba n` will retain private information.
 
 
-
-|Field|Notes|Comments|
-|-----|-----|-----|
-|SeriesInstanceUID| | From DICOM [0020,000E](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0020,000E)) |
-|StudyInstanceUID| | |
-|ReferringPhysicianName| | |
-|StudyID| | |
-|PatientName| | |
-|PatientID| | |
-|AccessionNumber| | |
-|PatientBirthDate| | |
-|PatientWeight| | |
-|AcquisitionDateTime| | |
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|SeriesInstanceUID| | | From DICOM [0020,000E](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0020,000E)) | |
+|StudyInstanceUID| | | |
+|ReferringPhysicianName| | | |
+|StudyID| | | |
+|PatientName| | | |
+|PatientID| | | |
+|AccessionNumber| | | |
+|PatientBirthDate| | | |
+|PatientWeight| nominally kg | | |
+|AcquisitionDateTime| | | |
 
 ##### Series Information
 
 Fields common to all scans, regardless of modality or manufacturer.
 
-|Field|Notes|Comments|
-|-----|-----|-----|
-|BodyPartExamined| | |
-|PatientPosition| | |
-|ProcedureStepDescription| | |
-|SoftwareVersions| | |
-|SeriesDescription| | |
-|ProtocolName| | |
-|ScanningSequence| | |
-|SequenceVariant| | |
-|ScanOptions| | |
-|SequenceName| | |
-|ImageType| | |
-|AcquisitionTime| | |
-|AcquisitionNumber| | |
-|ImageComments| | |
-|ConversionComments| | |
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|BodyPartExamined| | | | |
+|PatientPosition| | | | |
+|ProcedureStepDescription| | | | |
+|SoftwareVersions| | | | |
+|SeriesDescription| | | | |
+|ProtocolName| | | | |
+|ScanningSequence| | | | |
+|SequenceVariant| | | | |
+|ScanOptions| | | | |
+|SequenceName| | | | |
+|ImageType| list | | | |
+|AcquisitionTime| | | | |
+|AcquisitionNumber| | | | |
+|ImageComments| | | | |
+|ConversionSoftware| | | Name of the program that converted from DICOM to NIFTI | |
+|ConversionSoftwareVersion| | | | |
+
 
 ##### Philips Sequence Information
 
 Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/)
 
-
-|Field|Notes|Comments|
-|-----|-----|-----|
-|TriggerDelayTime| P | |
-|PhilipsRWVSlope | P | |
-|PhilipsRWVIntercept | P | |
-|PhilipsRescaleSlope| P | |
-|PhilipsRescaleIntercept| P | |
-|PhilipsScaleSlope| P | |
-|UsePhilipsFloatNotDisplayScaling| P | |
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|TriggerDelayTime| s? | P | |
+|PhilipsRWVSlope | | P | |
+|PhilipsRWVIntercept | | P | |
+|PhilipsRescaleSlope| | P | |
+|PhilipsRescaleIntercept| | P | |
+|PhilipsScaleSlope| | P | |
+|UsePhilipsFloatNotDisplayScaling| | P | |
 
 ##### Positron Emission Tomography Isotope Module Attributes
 
@@ -90,54 +93,54 @@ PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/curre
 
 This is a [work in progress](https://github.com/bids-standard/bids-specification/pull/773).
 
-|Field|Notes|Comments|
-|-----|-----|-----|
-|Radiopharmaceutical| | |
-|RadionuclidePositronFraction| | |
-|RadionuclideTotalDose| | |
-|RadionuclideHalfLife| | |
-|DoseCalibrationFactor| | |
-|IsotopeHalfLife| | |
-|Dosage| | |
-|ConvolutionKernel| | |
-|Units| | |
-|DecayCorrection| | |
-|AttenuationCorrectionMethod| | |
-|ReconstructionMethod| | |
-|DecayFactor| | |
-|FrameTimesStart| | |
-|FrameDuration| | |
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|Radiopharmaceutical| | | | |
+|RadionuclidePositronFraction| | | | |
+|RadionuclideTotalDose| | | | |
+|RadionuclideHalfLife| | | | |
+|DoseCalibrationFactor| | | | |
+|IsotopeHalfLife| s? | | | |
+|Dosage| | | | |
+|ConvolutionKernel| | | | |
+|Units| | | | |
+|DecayCorrection| | | | |
+|AttenuationCorrectionMethod| | | | |
+|ReconstructionMethod| | | | |
+|DecayFactor| | | | |
+|FrameTimesStart| s | | | |
+|FrameDuration| s | | | |
 
 ##### Computerized Tomography
 
 Fields specific to CT scans.
 
-|Field|Notes|Comments|
-|-----|-----|-----|
-|XRayExposure| | Relative x-ray exposure from DICOM [0018,1405](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,1405))|
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|XRayExposure| | | | Relative x-ray exposure from DICOM [0018,1405](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,1405))| |
 
 ##### Magnetic Resonance Imaging
 
 Fields specific to MRI scans.
 
-|Field|Notes|Comments|
-|-----|-----|-----|
-|MRAcquisitionType| |`2D` or `3D` |
-|Units| | `Hz` only for field maps|
-|SliceThickness| | |
-|SpacingBetweenSlices| | |
-|SAR| | |
-|NumberOfAverages| | |
-|EchoNumber| | Only for multi-echo series|
-|EchoTime| | |
-|RepetitionTime| | |
-|RepetitionTimeExcitation| | |
-|RepetitionTimeInversion| | |
-|InversionTime| | |
-|ImagingFrequency| | |
-|FlipAngle| | |
-|PhaseEncodingDirectionDisplayed| | |
-|PhaseEncodingPolarityGE| G | |
+|Field|Unit|Manufacturer|Comments|Defined By|
+|-----|----|------------|--------|----------|
+|MRAcquisitionType| | | `2D` or `3D` | |
+|Units| | | `Hz` only for field maps| |
+|SliceThickness| mm | |  | D |
+|SpacingBetweenSlices| mm | | | D |
+|SAR| | | | |
+|NumberOfAverages| | | | |
+|EchoNumber| | | Only for multi-echo series| |
+|EchoTime| s | | | |
+|RepetitionTime| s | | | |
+|RepetitionTimeExcitation| s | | | |
+|RepetitionTimeInversion| s | | | |
+|InversionTime| s | | | |
+|ImagingFrequency| MHz | | | D? |
+|FlipAngle| degrees | | | |
+|PhaseEncodingDirection| | | i, j | |
+|PhaseEncodingPolarityGE| | G | | D |
 
 
 ##### Arterial Spin Labeling
