@@ -20,8 +20,8 @@ These fields should be the same for all images acquired on a specific scanner.
 |Manufacturer| | |
 |MagneticFieldStrength| | |
 |Modality| | |
-|PulseSequenceName*G| | |
-|InternalPulseSequenceName*G| | |
+|PulseSequenceName| G | |
+|InternalPulseSequenceName| G | |
 |ManufacturersModelName| | |
 |InstitutionName| | |
 |InstitutionalDepartmentName| | |
