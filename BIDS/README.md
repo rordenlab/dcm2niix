@@ -89,6 +89,8 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 
 PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.9.2.html). See BIDS [BEP009 Positron Emission Tomography](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html).
 
+This is a [work in progress](https://github.com/bids-standard/bids-specification/pull/773).
+
 |Field|Notes|Comments|
 |-----|-----|-----|
 |Radiopharmaceutical| | |
@@ -99,7 +101,7 @@ PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/curre
 |IsotopeHalfLife| | |
 |Dosage| | |
 |ConvolutionKernel| | |
-|Units https://github.com/bids-standard/bids-specification/pull/773| | |
+|Units| | |
 |DecayCorrection| | |
 |AttenuationCorrectionMethod| | |
 |ReconstructionMethod| | |
