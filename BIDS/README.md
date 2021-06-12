@@ -42,8 +42,6 @@ The Defined By column uses
 - s : seconds
 - T : Tesla
 
-MBq
-
 ##### Constants
 
 These fields should be the same for all images acquired on a specific scanner using a specific DICOM to BIDS conversion tool.
@@ -115,7 +113,7 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 | UsePhilipsFloatNotDisplayScaling   |      | P            | dcm2niix option `-p y` or `-p n`  |  D         |
 | PartialFourierEnabled              |      | P            | `YES`, n.b. `PartialFourier`      |  D         |
 | PhaseEncodingStepsNoPartialFourier |      | P            |                                   |  D         |
-| WaterFatShift                      |      | P            | DICOM tag 2001,1022               | D          |
+| WaterFatShift                      |      | P            | DICOM tag 2001,1022               |  D         |
 
 
 ##### General Electric Sequence Information
@@ -125,8 +123,8 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 
 | Field                       | Unit | Manufacturer | Comments                 | Defined By |
 |-----------------------------|------|--------------|--------------------------|------------|
-| PulseSequenceName           |      | G            | `epi` or `epiRT`         |            |
-| InternalPulseSequenceName   |      | G            | `EPI` or `EPI2`          |            |
+| PulseSequenceName           |      | G            | `epi` or `epiRT`         | D          |
+| InternalPulseSequenceName   |      | G            | `EPI` or `EPI2`          | D          |
 | PhaseEncodingPolarityGE     |      | G            | `Unflipped` or `Flipped` | D          |
 
 ##### Positron Emission Tomography Isotope Module Attributes
@@ -158,9 +156,9 @@ The term ECAT in the comments suggests that values are defined by the [ECAT7](ht
 
 Fields specific to CT scans.
 
-|Field       |Unit |Manufacturer|Comments            |Defined By|
-|------------|-----|------------|--------------------|----------|
-|XRayExposure| mAs |            | DICOM tag 0018,1152| D        |
+|Field       |Unit |Manufacturer|Comments             |Defined By|
+|------------|-----|------------|---------------------|----------|
+|XRayExposure| mAs |            | DICOM tag 0018,1152 | D        |
 
 ##### Magnetic Resonance Imaging
 
@@ -272,9 +270,9 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 
 Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 
-|Field                         | Manufacturer |Comments            |
-|------------------------------|--------------|--------------------|
-| ReceiveCoilActiveElements    | S            | DICOM tag 0021,114F|
-| BandwidthPerPixelPhaseEncode | S            | DICOM tag 0021,1153|
+|Field                         | Manufacturer |Comments            | Defined By |
+|------------------------------|--------------|--------------------|------------|
+| ReceiveCoilActiveElements    | S            | DICOM tag 0021,114F| D          |
+| BandwidthPerPixelPhaseEncode | S            | DICOM tag 0021,1153| D          |
 
 
