@@ -197,7 +197,8 @@ Labeling](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html
 
 ##### Magnetic Resonance Imaging (Siemens V*)
 
-Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio, Prisma) from the [CSA header](https://nipy.org/nibabel/dicom/siemens_csa.html).
+Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio,
+Trio, Skyra, Prisma) from the [CSA header](https://nipy.org/nibabel/dicom/siemens_csa.html).
 
 | Field                     | Unit                                            | Manufacturer | Comments                                                                                                                                                                                                                                                                                                                                                                                               | Defined By |
 |---------------------------|-------------------------------------------------|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
@@ -226,13 +227,13 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 
 ##### Magnetic Resonance Imaging (Siemens XA)
 
-Fields specific to Siemens XA-series MRI systems (Sola, Vida).
+Fields (possibly?) specific to Siemens XA-series MRI systems (Sola, Vida).
 
-|Field|Notes|Comments|
-|-----|-----|-----|
-|ReceiveCoilActiveElements| S | |
-|CoilString| S | |
-|PartialFourier| S | |
+| Field                     | Unit | Manufacturer | Comments      | Defined By |
+|---------------------------|------|--------------|---------------|------------|
+| ReceiveCoilActiveElements |      | S            | See Siemens V | D          |
+| CoilString                |      | S            | See Siemens V | D          |
+| PartialFourier            |      | S            |               | D          |
 
 ##### Magnetic Resonance Imaging
 
