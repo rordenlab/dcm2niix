@@ -1546,7 +1546,9 @@ tse3d: T2*/
     	bandwidthPerPixelPhaseEncode = 	d.CSA.bandwidthPerPixelPhaseEncode;
     json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode );
     //if ((!d.is3DAcq) && (d.accelFactPE > 1.0)) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-	if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE); //https://github.com/rordenlab/dcm2niix/issues/314
+	if (d.accelFactPE > 1.0) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
+	json_Str(fp, "\t\"ParallelAcquisitionTechnique\": \"%s\",\n", d.parallelAcquisitionTechnique);
+    //https://github.com/rordenlab/dcm2niix/issues/314
 	if (d.accelFactOOP > 1.0) fprintf(fp, "\t\"ParallelReductionOutOfPlane\": %g,\n", d.accelFactOOP); 
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,

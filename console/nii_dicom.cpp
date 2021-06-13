@@ -740,6 +740,7 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.coilElements, "");
     strcpy(d.radiopharmaceutical, "");
     strcpy(d.convolutionKernel, "");
+	strcpy(d.parallelAcquisitionTechnique, "");
     strcpy(d.unitsPT, "");
     strcpy(d.decayCorrection, "");
     strcpy(d.attenuationCorrectionMethod, "");
@@ -4258,6 +4259,7 @@ struct TDICOMdata readDICOMx(char * fname, struct TDCMprefs* prefs, struct TDTI4
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define  kDiffusionDirectionality  0x0018+uint32_t(0x9075<< 16 )   // NONE, ISOTROPIC, or DIRECTIONAL
+#define  kParallelAcquisitionTechnique  0x0018+uint32_t(0x9078<< 16 ) //CS: SENSE, SMASH
 #define  kInversionTimes  0x0018+uint32_t(0x9079<< 16 ) //FD
 #define  kPartialFourier  0x0018+uint32_t(0x9081<< 16 ) //CS
 const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
@@ -5402,6 +5404,9 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (strcmp(dir, "ISOTROPIC") == 0)
                 	isPhilipsDerived = true;
                 break; }
+            case kParallelAcquisitionTechnique: //CS
+                dcmStr(lLength, &buffer[lPos], d.parallelAcquisitionTechnique);
+                break;  
             case kInversionTimes : {//issue 380
                 if ((lLength < 8) || ((lLength % 8) != 0)) break;
             	d.TI = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
