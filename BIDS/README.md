@@ -30,90 +30,90 @@ The Defined By column uses
 
 The Unit column uses
 
-The Defined By column uses
-
 - deg : degrees
 - f : fraction
 - kg : Kilogram
 - list : list of text strings
 - MBq : MegaBecquerels
 - MHz : Megahertz
+- mA : milliAmperes
 - mm : millimeter
 - s : seconds
 - T : Tesla
+- V : Volts
 
 ##### Constants
 
 These fields should be the same for all images acquired on a specific scanner using a specific DICOM to BIDS conversion tool.
 
-| Field                       | Unit | Manufacturer | Comments             | Defined By |
-|-----------------------------|------|--------------|----------------------|------------|
-| Manufacturer                |      |              | DICOM tag 0008,0070  | B          |
-| DeviceSerialNumber          |      |              | DICOM tag 0018,1000  | B          |
-| StationName                 |      |              | DICOM tag 0008,1010  | B          |
-| SoftwareVersions            |      |              | DICOM tag 0018,1020  | B          |
-| Modality                    |      |              | DICOM tag 0008,1060  | D          |
-| ManufacturersModelName      |      |              | DICOM tag 0008,1090  | B          |
-| InstitutionName             |      |              | DICOM tag 0008,0080  | B          |
-| InstitutionalDepartmentName |      |              | DICOM tag 0008,1040  | B          |
-| InstitutionAddress          |      |              | DICOM tag 0008,0081  | B          |
-| DeviceSerialNumber          |      |              | DICOM tag 0018,1000  | B          |
-| StationName                 |      |              | DICOM tag 0008,1010  | B          |
-| ConversionSoftware          |      |              | e.g. `dcm2niix`      | D          |
-| ConversionSoftwareVersion   |      |              | e.g. `v1.0.20210317` | D          |
+| Field                       | Unit | Comments             | Defined By |
+|-----------------------------|------|----------------------|------------|
+| Manufacturer                |      | DICOM tag 0008,0070  | B          |
+| DeviceSerialNumber          |      | DICOM tag 0018,1000  | B          |
+| StationName                 |      | DICOM tag 0008,1010  | B          |
+| SoftwareVersions            |      | DICOM tag 0018,1020  | B          |
+| Modality                    |      | DICOM tag 0008,1060  | D          |
+| ManufacturersModelName      |      | DICOM tag 0008,1090  | B          |
+| InstitutionName             |      | DICOM tag 0008,0080  | B          |
+| InstitutionalDepartmentName |      | DICOM tag 0008,1040  | B          |
+| InstitutionAddress          |      | DICOM tag 0008,0081  | B          |
+| DeviceSerialNumber          |      | DICOM tag 0018,1000  | B          |
+| StationName                 |      | DICOM tag 0008,1010  | B          |
+| ConversionSoftware          |      | e.g. `dcm2niix`      | D          |
+| ConversionSoftwareVersion   |      | e.g. `v1.0.20210317` | D          |
 
 ##### Private Information
 
 These fields contain personally identifiable information. By default dcm2niix will create anonymized files without these fields. The option `-ba n` will retain private information.
 
-| Field                  | Unit | Manufacturer | Comments             | Defined By |
-|------------------------|------|--------------|----------------------|------------|
-| SeriesInstanceUID      |      |              | DICOM tag 0020,000E  | D          |
-| StudyInstanceUID       |      |              | DICOM tag 0020,000D  | D          |
-| ReferringPhysicianName |      |              | DICOM tag 0008,0090  | D          |
-| StudyID                |      |              | DICOM tag 0020,0010  | D          |
-| PatientName            |      |              | DICOM tag 0010,0010  | D          |
-| PatientID              |      |              | DICOM tag 0010,0020  | D          |
-| AccessionNumber        |      |              | DICOM tag 0008,0050  | D          |
-| PatientBirthDate       |      |              | DICOM tag 0010,0030  | D          |
-| PatientWeight          | kg   |              | DICOM tag 0010,1030  | D          |
-| AcquisitionDateTime    |      |              | DICOM tag 0008,002A  | D          |
+| Field                  | Unit | Comments            | Defined By |
+|------------------------|------|---------------------|------------|
+| SeriesInstanceUID      |      | DICOM tag 0020,000E | D          |
+| StudyInstanceUID       |      | DICOM tag 0020,000D | D          |
+| ReferringPhysicianName |      | DICOM tag 0008,0090 | D          |
+| StudyID                |      | DICOM tag 0020,0010 | D          |
+| PatientName            |      | DICOM tag 0010,0010 | D          |
+| PatientID              |      | DICOM tag 0010,0020 | D          |
+| AccessionNumber        |      | DICOM tag 0008,0050 | D          |
+| PatientBirthDate       |      | DICOM tag 0010,0030 | D          |
+| PatientWeight          | kg   | DICOM tag 0010,1030 | D          |
+| AcquisitionDateTime    |      | DICOM tag 0008,002A | D          |
 
 ##### Series Information
 
-| Field                    | Unit | Manufacturer | Comments             | Defined By |
-|--------------------------|------|--------------|----------------------|------------|
-| BodyPartExamined         |      |              | DICOM tag 0018,0015  |  D         |
-| PatientPosition          |      |              | DICOM tag 0020,0032  |  D         |
-| ProcedureStepDescription |      |              | DICOM tag 0040,0254  |  D         |
-| SoftwareVersions         |      |              | DICOM tag 0020,1020  |  B         |
-| SeriesDescription        |      |              | DICOM tag 0008,103E  |  D         |
-| ProtocolName             |      |              | DICOM tag 0018,1030  |  D         |
-| ScanningSequence         |      |              | DICOM tag 0018,0020  |  D         |
-| SequenceVariant          |      |              | DICOM tag 0018,0021  |  D         |
-| ScanOptions              |      |              | DICOM tag 0018,0022  |  D         |
-| SequenceName             |      |              | DICOM tag 0018,0024  |  D         |
-| ImageType                | list |              | DICOM tag 0008,0008  |  D         |
-| AcquisitionTime          |      |              | DICOM tag 0008,0032  |  D         |
-| AcquisitionNumber        |      |              | DICOM tag 0020,0012  |  D         |
-| ImageComments            |      |              | DICOM tag 0020,4000  |  D         |
+| Field                    | Unit | Comments            | Defined By |
+|--------------------------|------|---------------------|------------|
+| BodyPartExamined         |      | DICOM tag 0018,0015 | D          |
+| PatientPosition          |      | DICOM tag 0020,0032 | D          |
+| ProcedureStepDescription |      | DICOM tag 0040,0254 | D          |
+| SoftwareVersions         |      | DICOM tag 0020,1020 | B          |
+| SeriesDescription        |      | DICOM tag 0008,103E | D          |
+| ProtocolName             |      | DICOM tag 0018,1030 | D          |
+| ScanningSequence         |      | DICOM tag 0018,0020 | D          |
+| SequenceVariant          |      | DICOM tag 0018,0021 | D          |
+| ScanOptions              |      | DICOM tag 0018,0022 | D          |
+| SequenceName             |      | DICOM tag 0018,0024 | D          |
+| ImageType                | list | DICOM tag 0008,0008 | D          |
+| AcquisitionTime          |      | DICOM tag 0008,0032 | D          |
+| AcquisitionNumber        |      | DICOM tag 0020,0012 | D          |
+| ImageComments            |      | DICOM tag 0020,4000 | D          |
 
 ##### Philips Sequence Information
 
 Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/)
 
-| Field                              | Unit | Manufacturer | Comments                          | Defined By |
-|------------------------------------|------|--------------|-----------------------------------|------------|
-| TriggerDelayTime                   | s    | P            | DICOM tag 0020,9153 or 0018,1060  |  D         |
-| PhilipsRWVSlope                    |      | P            | DICOM tag 0040,9225               |  D         |
-| PhilipsRWVIntercept                |      | P            | DICOM tag 0040,9224               |  D         |
-| PhilipsRescaleSlope                |      | P            | DICOM tag 0028,1053               |  D         |
-| PhilipsRescaleIntercept            |      | P            | DICOM tag 0028,1052               |  D         |
-| PhilipsScaleSlope                  |      | P            | DICOM tag 2005,100E               |  D         |
-| UsePhilipsFloatNotDisplayScaling   |      | P            | dcm2niix option `-p y` or `-p n`  |  D         |
-| PartialFourierEnabled              |      | P            | `YES`, n.b. `PartialFourier`      |  D         |
-| PhaseEncodingStepsNoPartialFourier |      | P            |                                   |  D         |
-| WaterFatShift                      |      | P            | DICOM tag 2001,1022               |  D         |
+| Field                              | Unit | Comments                         | Defined By |
+|------------------------------------|------|----------------------------------|------------|
+| TriggerDelayTime                   | s    | DICOM tag 0020,9153 or 0018,1060 | D          |
+| PhilipsRWVSlope                    |      | DICOM tag 0040,9225              | D          |
+| PhilipsRWVIntercept                |      | DICOM tag 0040,9224              | D          |
+| PhilipsRescaleSlope                |      | DICOM tag 0028,1053              | D          |
+| PhilipsRescaleIntercept            |      | DICOM tag 0028,1052              | D          |
+| PhilipsScaleSlope                  |      | DICOM tag 2005,100E              | D          |
+| UsePhilipsFloatNotDisplayScaling   |      | dcm2niix option `-p y` or `-p n` | D          |
+| PartialFourierEnabled              |      | `YES`, n.b. `PartialFourier`     | D          |
+| PhaseEncodingStepsNoPartialFourier |      |                                  | D          |
+| WaterFatShift                      |      | DICOM tag 2001,1022              | D          |
 
 
 ##### General Electric Sequence Information
@@ -121,11 +121,11 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Determining these fields from a DICOM image requires decoding the compressed Protocol Data Block (0025,101B).
 
 
-| Field                       | Unit | Manufacturer | Comments                 | Defined By |
-|-----------------------------|------|--------------|--------------------------|------------|
-| PulseSequenceName           |      | G            | `epi` or `epiRT`         | D          |
-| InternalPulseSequenceName   |      | G            | `EPI` or `EPI2`          | D          |
-| PhaseEncodingPolarityGE     |      | G            | `Unflipped` or `Flipped` | D          |
+| Field                     | Unit | Comments                 | Defined By |
+|---------------------------|------|--------------------------|------------|
+| PulseSequenceName         |      | `epi` or `epiRT`         | D          |
+| InternalPulseSequenceName |      | `EPI` or `EPI2`          | D          |
+| PhaseEncodingPolarityGE   |      | `Unflipped` or `Flipped` | D          |
 
 ##### Positron Emission Tomography Isotope Module Attributes
 
@@ -134,106 +134,106 @@ PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/curre
 The term ECAT in the comments suggests that values are defined by the [ECAT7](http://www.turkupetcentre.net/petanalysis/format_image_ecat.html) format. Therefore, these fields will not be populated for DICOM data.
 
 
-| Field                       | Unit | Manufacturer | Comments                    | Defined By |
-|-----------------------------|------|--------------|-----------------------------|------------|
-|Radiopharmaceutical          |      |              | DICOM tag 0018,0031 or ECAT |  D         |
-|RadionuclidePositronFraction | f    |              | DICOM tag 0018,1076         |  D         |
-|RadionuclideTotalDose        | MBq  |              | DICOM tag 0018,1074         |  D         |
-|RadionuclideHalfLife         | s    |              | DICOM tag 0018,1075         |  D         |
-|DoseCalibrationFactor        |      |              | DICOM tag 0054,1322         |  D         |
-|IsotopeHalfLife              |      |              | ECAT                        |  D         |
-|Dosage                       |      |              | ECAT                        |  D         |
-|ConvolutionKernel            |      |              | DICOM tag 0018,1210         |  D         |
-|Units                        |      |              | DICOM tag 0054,1001         |  D         |
-|DecayCorrection              |      |              | DICOM tag 0054,1102         |  D         |
-|AttenuationCorrectionMethod  |      |              | DICOM tag 0054,1101         |  D         |
-|ReconstructionMethod         |      |              | DICOM tag 0054,1103         |  D         |
-|DecayFactor                  |      |              | DICOM tag 0054,1321         |  D         |
-|FrameTimesStart              | s    |              | DICOM tags 0008,0022        |  D         |
-|FrameDuration                | s    |              | DICOM tag 0018,1242         |  D         |
+| Field                        | Unit | Comments                    | Defined By |
+|------------------------------|------|-----------------------------|------------|
+| Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT | D          |
+| RadionuclidePositronFraction | f    | DICOM tag 0018,1076         | D          |
+| RadionuclideTotalDose        | MBq  | DICOM tag 0018,1074         | D          |
+| RadionuclideHalfLife         | s    | DICOM tag 0018,1075         | D          |
+| DoseCalibrationFactor        |      | DICOM tag 0054,1322         | D          |
+| IsotopeHalfLife              |      | ECAT                        | D          |
+| Dosage                       |      | ECAT                        | D          |
+| ConvolutionKernel            |      | DICOM tag 0018,1210         | D          |
+| Units                        |      | DICOM tag 0054,1001         | D          |
+| DecayCorrection              |      | DICOM tag 0054,1102         | D          |
+| AttenuationCorrectionMethod  |      | DICOM tag 0054,1101         | D          |
+| ReconstructionMethod         |      | DICOM tag 0054,1103         | D          |
+| DecayFactor                  |      | DICOM tag 0054,1321         | D          |
+| FrameTimesStart              | s    | DICOM tags 0008,0022        | D          |
+| FrameDuration                | s    | DICOM tag 0018,1242         | D          |
 
 ##### Computerized Tomography
 
 Fields specific to CT scans.
 
-|Field       |Unit |Manufacturer|Comments             |Defined By|
-|------------|-----|------------|---------------------|----------|
-|XRayExposure| mAs |            | DICOM tag 0018,1152 | D        |
+| Field        | Unit | Comments            | Defined By |
+|--------------|------|---------------------|------------|
+| XRayExposure | mAs  | DICOM tag 0018,1152 | D          |
 
 ##### Magnetic Resonance Imaging
 
 Fields specific to MRI scans.
 
-| Field                              | Unit | Manufacturer | Comments                      | Defined By |
-|------------------------------------|------|--------------|-------------------------------|------------|
-| MagneticFieldStrength              | T    |              | DICOM tag 0018,0087           | B          |
-| MRAcquisitionType                  |      |              | DICOM tag 0018,0023             |            |
-| Units                              |      |              | `Hz` (field maps)             | B          |
-| SliceThickness                     | mm   |              | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
-| SpacingBetweenSlices               | mm   |              | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
-| SAR                                |      |              | DICOM tag 0018,1316           | D          |
-| NumberOfAverages                   |      |              | DICOM tag 0018,0083           | D          |
-| EchoNumber                         |      |              | Only multi-echo series        | D          |
-| EchoTime                           | s    |              | DICOM tag 0018,0081           | D          |
-| RepetitionTime                     | s    |              | DICOM tag 0018,0080           | D          |
-| RepetitionTimeExcitation           | s    |              |                               | D          |
-| RepetitionTimeInversion            | s    |              |                               | D          |
-| InversionTime                      | s    |              | DICOM tag 0018,0082           | D          |
-| ImagingFrequency                   | MHz  |              | DICOM tag 0018,0084           | D          |
-| FlipAngle                          | deg  |              | DICOM tag 0018,1314           | B          |
-| MultibandAccelerationFactor        |      |              | aka `SMS`, `HyperBand`        | B          |
-| PercentPhaseFOV                    |      |              | DICOM tag 0018,0094           | D          |
-| PercentSampling                    |      |              | DICOM tag 0018,0093           | D          |
-| EchoTrainLength                    |      |              | DICOM tag 0018,0091           | D          |
-| PhaseEncodingSteps                 |      |              | DICOM tag 0018,0089           | D          |
-| AcquisitionMatrixPE                |      |              |                               | D          |
-| ParallelReductionFactorInPlane     |      |              | aka `SENSE`, `GRAPPA`         | B          |
-| ParallelAcquisitionTechnique       |      |              | DICOM tag 0018, 9078          | B          |
-| ParallelReductionOutOfPlane        |      |              |                               | D          |
-| EstimatedEffectiveEchoSpacing      | s    |              |                               | D          |
-| EstimatedTotalReadoutTime          | s    |              |                               | D          |
-| EffectiveEchoSpacing               | s    |              |                               | D          |
-| DerivedVendorReportedEchoSpacing   | s    |              |                               | D          |
-| TotalReadoutTime                   |      |              | FSL definition                | B          |
-| PixelBandwidth                     |      |              | DICOM tag 0018,0095           | D          |      
-| PhaseEncodingAxis                  |      |              | When polarity unknown         | B          |
-| PhaseEncodingDirection             |      |              | When polarity known           | B          |
-| SliceTiming                        | s    |              |                               | B          |
-| ImageOrientationPatientDICOM       |      |              | DICOM tag 0020,0037           | D          |
-| InPlanePhaseEncodingDirectionDICOM |      |              |                               | D          |
-| ReceiveCoilName                    |      |              | DICOM tag 0018,1250           | B          |
+| Field                              | Unit | Comments                                                                                | Defined By |
+|------------------------------------|------|-----------------------------------------------------------------------------------------|------------|
+| MagneticFieldStrength              | T    | DICOM tag 0018,0087                                                                     | B          |
+| MRAcquisitionType                  |      | DICOM tag 0018,0023                                                                     |            |
+| Units                              |      | `Hz` (field maps)                                                                       | B          |
+| SliceThickness                     | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
+| SpacingBetweenSlices               | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
+| SAR                                |      | DICOM tag 0018,1316                                                                     | D          |
+| NumberOfAverages                   |      | DICOM tag 0018,0083                                                                     | D          |
+| EchoNumber                         |      | Only multi-echo series                                                                  | D          |
+| EchoTime                           | s    | DICOM tag 0018,0081                                                                     | D          |
+| RepetitionTime                     | s    | DICOM tag 0018,0080                                                                     | D          |
+| RepetitionTimeExcitation           | s    |                                                                                         | D          |
+| RepetitionTimeInversion            | s    |                                                                                         | D          |
+| InversionTime                      | s    | DICOM tag 0018,0082                                                                     | D          |
+| ImagingFrequency                   | MHz  | DICOM tag 0018,0084                                                                     | D          |
+| FlipAngle                          | deg  | DICOM tag 0018,1314                                                                     | B          |
+| MultibandAccelerationFactor        |      | aka `SMS`, `HyperBand`                                                                  | B          |
+| PercentPhaseFOV                    |      | DICOM tag 0018,0094                                                                     | D          |
+| PercentSampling                    |      | DICOM tag 0018,0093                                                                     | D          |
+| EchoTrainLength                    |      | DICOM tag 0018,0091                                                                     | D          |
+| PhaseEncodingSteps                 |      | DICOM tag 0018,0089                                                                     | D          |
+| AcquisitionMatrixPE                |      |                                                                                         | D          |
+| ParallelReductionFactorInPlane     |      | aka `SENSE`, `GRAPPA`                                                                   | B          |
+| ParallelAcquisitionTechnique       |      | DICOM tag 0018, 9078                                                                    | B          |
+| ParallelReductionOutOfPlane        |      |                                                                                         | D          |
+| EstimatedEffectiveEchoSpacing      | s    |                                                                                         | D          |
+| EstimatedTotalReadoutTime          | s    |                                                                                         | D          |
+| EffectiveEchoSpacing               | s    |                                                                                         | D          |
+| DerivedVendorReportedEchoSpacing   | s    |                                                                                         | D          |
+| TotalReadoutTime                   | s    | [FSL definition](https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=fsl;d2c47aa4.1606)      | B          |
+| PixelBandwidth                     | Hz   | DICOM tag 0018,0095                                                                     | D          |
+| PhaseEncodingAxis                  |      | When polarity unknown                                                                   | B          |
+| PhaseEncodingDirection             |      | When polarity known                                                                     | B          |
+| SliceTiming                        | s    |                                                                                         | B          |
+| ImageOrientationPatientDICOM       |      | DICOM tag 0020,0037                                                                     | D          |
+| InPlanePhaseEncodingDirectionDICOM |      |                                                                                         | D          |
+| ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 
 ##### Arterial Spin Labeling
 See BIDS [BEP005 Arterial Spin
 Labeling](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html). All these values are specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio, Prisma) from the [CSA header](https://nipy.org/nibabel/dicom/siemens_csa.html).
 
-| Field                           | Unit               | Manufacturer | Comments                                                                                                                                                                                       | Defined By |
-|---------------------------------|--------------------|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
-| LabelOffset                     |                    | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
-| PostLabelDelay                  | s                  | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org), [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                          | B          |
-| PostInversionDelay              | s                  | S            | 2D [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                                                                       | B          |
-| NumRFBlocks                     |                    | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
-| RFGap                           |                    | S            | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | B          |
-| MeanGzx10                       |                    | S            | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | B          |
-| PhiAdjust                       |                    | S            | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
-| InversionTime                   | s                  | S            | 2D pASL product (`ep2d_pasl`, `tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                               | B          |
-| SaturationStopTime              | s                  | S            | 2D pASL product (`ep2d_pasl`)                                                                                                                                                                  | B          |
-| BolusDuration                   | s                  | S            | 2D pASL product (`tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                            | B          |
-| MeanGzx10                       |                    | S            | 3D pCASL [tgse_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
-| TagRFFlipAngle                  | degrees            | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
-| TagRFDuration                   | s                  | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
-| TagRFSeparation                 |                    | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
-| MeanTagGradient                 |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| TagGradientAmplitude            |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| TagDuration                     | s                  | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| MaximumT1Opt                    |                    | S            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
-| InitialPostLabelDelay           | s                  | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| sWipMemBlockAdFree*             | multiple values    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| TagPlaneDThickness              |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| TagPlaneUlShape                 |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| TagPlaneSPositionDTra           |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| TagPlaneSNormalDTra             |                    | S            | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
-| Tag* (if not explicitly listed) | One value for each | S            | [Post-label delays](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/ASLpractical/index.html), 3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`jw_tgse_VEPCASL`) | B          |
+| Field                           | Unit               | Comments                                                                                                                                                                                       | Defined By |
+|---------------------------------|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| LabelOffset                     |                    | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| PostLabelDelay                  | s                  | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org), [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                          | B          |
+| PostInversionDelay              | s                  | 2D [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                                                                       | B          |
+| NumRFBlocks                     |                    | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| RFGap                           |                    | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | B          |
+| MeanGzx10                       |                    | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | B          |
+| PhiAdjust                       |                    | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| InversionTime                   | s                  | 2D pASL product (`ep2d_pasl`, `tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                               | B          |
+| SaturationStopTime              | s                  | 2D pASL product (`ep2d_pasl`)                                                                                                                                                                  | B          |
+| BolusDuration                   | s                  | 2D pASL product (`tgse_pasl`), [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                            | B          |
+| MeanGzx10                       |                    | 3D pCASL [tgse_pcasl](http://www.loft-lab.org)                                                                                                                                                 | B          |
+| TagRFFlipAngle                  | deg            | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| TagRFDuration                   | s                  | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| TagRFSeparation                 |                    | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| MeanTagGradient                 |                    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagGradientAmplitude            |                    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagDuration                     | s                  | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| MaximumT1Opt                    |                    | 2,3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`, `jw_tgse_VEPCASL`)                                                                                   | B          |
+| InitialPostLabelDelay           | s                  | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| sWipMemBlockAdFree*             | multiple values    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneDThickness              |                    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneUlShape                 |                    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneSPositionDTra           |                    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| TagPlaneSNormalDTra             |                    | 2D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`to_ep2d_VEPCASL`)                                                                                                        | B          |
+| Tag* (if not explicitly listed) | One value for each | [Post-label delays](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/ASLpractical/index.html), 3D [VEPCASL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3824178/) (`jw_tgse_VEPCASL`) | B          |
 
 
 ##### Magnetic Resonance Imaging (Siemens V*)
@@ -241,39 +241,39 @@ Labeling](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html
 Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio,
 Trio, Skyra, Prisma) from the [CSA header](https://nipy.org/nibabel/dicom/siemens_csa.html).
 
-| Field                        | Unit                                            | Manufacturer | Comments                                                                                                                                                                                                                                                                                                                                                                                               | Defined By |
-|------------------------------|-------------------------------------------------|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
-| EchoTime1                    | s                                               | S            | For Fieldmaps created with two echo times   | D          |
-| EchoTime2                    | s                                               | S            | For Fieldmaps created with two echo times      | D          |
-| PartialFourier               | f                                               | S            | Partial fourier fraction, e.g. image with 6/8 pF will report `0.75`. Different tags depending on manufacturer    | B          |
-| Interpolation2D              |                                                 | S            | If present, slices interpolated within plane     |  D          |
-| Interpolation3D              |                                                 | S            | If present, image interpolated in all spatial dimensions     |  D          |
-| BaseResolution               | integer                                         | S            | # of acquisition lines? | D |
-| ShimSetting                  | DAC for 1st order terms, mA for 2nd order terms | S            | The 1st 3 values are the 1st order shims from sGRADSPEC.lOffset{X,Y,Z}. The next 5 are 2nd order shims from sGRADSPEC.alShimCurrent[0-4]. Converting to the first order terms to uT/m may be possible using the "gradient sensitivities". Converting the second order terms to uT/m^2 requires information not stored in the DICOM header, but they are fixed for a given shim hardware configuration. | D          |
-| DiffusionScheme              |                                                 | S            | `Monopolar` or `Bipolar`  | D          |
-| DelayTime                    | s                                               | S            |              | D  |
-| TxRefAmp                     | V                                               | S            |             | D |
-| PhaseResolution              | f                                               | S            |              | D |
-| PhaseOversampling            |                                                 | S            |              | D |
-| VendorReportedEchoSpacing    |                                                 | S            |              | B |
-| ReceiveCoilActiveElements    |                                                 | S            | Given as groups of channels, instead of individual ones, e.g. "HC1-7" for HeadNeck\_64.  | D |
-| CoilString                   |                                                 | S            | May or may not match `ReceiveCoilName`             | D |
-| PulseSequenceDetails         |                                                 | S            | pulse sequence label, e.g. "%SiemensSeq%\\\\tgse\_pasl" | D |
-| FmriExternalInfo             |                                                 | S            |              | D |
-| WipMemBlock                  |                                                 | S            |              | D |
-| ProtocolName                 |                                                 | S            | Check SeriesDescription - they might be switched around | D |
-| RefLinesPE                   |                                                 | S            | # of reference lines in the phase encoding direction for acceleration (GRAPPA)              | D |
-| ConsistencyInfo              |                                                 | S            | The more complete software version, e.g. VE11C or VE11E instead of just VE11.   | D          |
-| DwellTime                    |                                                 | S            | DICOM tag 0019,1018                                                             | B          |
-| BandwidthPerPixelPhaseEncode |                                                 | S            |                               | D          |
+| Field                        | Unit                                                                   | Comments                                                                                                                                                                                                                                                                                                                                                                                               | Defined By |
+|------------------------------|------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| EchoTime1                    | s                                                                      | For Fieldmaps created with two echo times                                                                                                                                                                                                                                                                                                                                                              | D          |
+| EchoTime2                    | s                                                                      | For Fieldmaps created with two echo times                                                                                                                                                                                                                                                                                                                                                              | D          |
+| PartialFourier               | f                                                                      | Partial fourier fraction, e.g. image with 6/8 pF will report `0.75`. Different tags depending on manufacturer                                                                                                                                                                                                                                                                                          | B          |
+| Interpolation2D              |                                                                        | If present, slices interpolated within plane                                                                                                                                                                                                                                                                                                                                                           | D          |
+| Interpolation3D              |                                                                        | If present, image interpolated in all spatial dimensions                                                                                                                                                                                                                                                                                                                                               | D          |
+| BaseResolution               | integer                                                                | # of acquisition lines?                                                                                                                                                                                                                                                                                                                                                                                | D          |
+| ShimSetting                  | DAC for 1st order terms, mA for 2nd order terms                        | The 1st 3 values are the 1st order shims from sGRADSPEC.lOffset{X,Y,Z}. The next 5 are 2nd order shims from sGRADSPEC.alShimCurrent[0-4]. Converting to the first order terms to uT/m may be possible using the "gradient sensitivities". Converting the second order terms to uT/m^2 requires information not stored in the DICOM header, but they are fixed for a given shim hardware configuration. | D          |
+| DiffusionScheme              |                                                                        | `Monopolar` or `Bipolar`                                                                                                                                                                                                                                                                                                                                                                               | D          |
+| DelayTime                    | s                                                                      |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| TxRefAmp                     | V                                                                      |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| PhaseResolution              | f                                                                      |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| PhaseOversampling            |                                                                        |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| VendorReportedEchoSpacing    |                                                                        |                                                                                                                                                                                                                                                                                                                                                                                                        | B          |
+| ReceiveCoilActiveElements    |                                                                        | Given as groups of channels, instead of individual ones, e.g. "HC1-7" for HeadNeck\_64.                                                                                                                                                                                                                                                                                                                | D          |
+| CoilString                   |                                                                        | May or may not match `ReceiveCoilName`                                                                                                                                                                                                                                                                                                                                                                 | D          |
+| PulseSequenceDetails         |                                                                        | pulse sequence label, e.g. "%SiemensSeq%\\\\tgse\_pasl"                                                                                                                                                                                                                                                                                                                                                | D          |
+| FmriExternalInfo             |                                                                        |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| WipMemBlock                  |                                                                        |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| ProtocolName                 |                                                                        | Check SeriesDescription - they might be switched around                                                                                                                                                                                                                                                                                                                                                | D          |
+| RefLinesPE                   |                                                                        | # of reference lines in the phase encoding direction for acceleration (GRAPPA)                                                                                                                                                                                                                                                                                                                         | D          |
+| ConsistencyInfo              |                                                                        | The more complete software version, e.g. VE11C or VE11E instead of just VE11.                                                                                                                                                                                                                                                                                                                          | D          |
+| DwellTime                    |                                                                        | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
+| BandwidthPerPixelPhaseEncode | [Hz](https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=fsl;d2c47aa4.1606) |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 
 ##### Magnetic Resonance Imaging (Siemens XA)
 
-Fields (possibly?) specific to Siemens XA-series MRI systems (Sola, Vida).
+Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 
-|Field                         | Manufacturer |Comments            | Defined By |
-|------------------------------|--------------|--------------------|------------|
-| ReceiveCoilActiveElements    | S            | DICOM tag 0021,114F| D          |
-| BandwidthPerPixelPhaseEncode | S            | DICOM tag 0021,1153| D          |
+| Field                        | Unit | Comments            | Defined By |
+|------------------------------|------|---------------------|------------|
+| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F | D          |
+| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153 | D          |
 
 
