@@ -850,6 +850,7 @@ struct TDICOMdata clear_dicom_data() {
     d.maxEchoNumGE = -1;
     d.epiVersionGE = -1;
     d.internalepiVersionGE = -1;
+    d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_UNKNOWN;
     d.interp3D = -1;
     for (int i = 0; i < kMaxOverlay; i++)
     	d.overlayStart[i] = 0;
@@ -4255,6 +4256,7 @@ struct TDICOMdata readDICOMx(char * fname, struct TDCMprefs* prefs, struct TDTI4
 #define  kInversionRecovery  0x0018+uint32_t(0x9009 << 16 ) //'CS' 'YES'/'NO'
 #define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
 #define  kRectilinearPhaseEncodeReordering 0x0018+uint32_t(0x9034 << 16) //'CS' 'REVERSE_LINEAR'/'LINEAR'
+#define  kPartialFourierDirection 0x0018+uint32_t(0x9036 << 16) //'CS'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
 #define  kAcquisitionDuration  0x0018+uint32_t(0x9073<< 16 ) //FD
 //#define  kFrameAcquisitionDateTime  0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
@@ -5380,6 +5382,18 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
                 if (toupper(buffer[lPos]) == 'R')
                 	d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
                 break; }
+            case kPartialFourierDirection : { //'CS' PHASE FREQUENCY SLICE_SELECT COMBINATION
+            	if (lLength < 2) break;
+                if (toupper(buffer[lPos]) == 'P')
+                	d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_PHASE;
+                if (toupper(buffer[lPos]) == 'F')
+                	d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_FREQUENCY;
+                if (toupper(buffer[lPos]) == 'S')
+                	d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_SLICE_SELECT;
+                if (toupper(buffer[lPos]) == 'C')
+                	d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_COMBINATION;
+                break; }
+                
             case kParallelReductionFactorInPlane:
             	if (d.manufacturer == kMANUFACTURER_SIEMENS) break;
             	d.accelFactPE = dcmFloatDouble(lLength, &buffer[lPos],d.isLittleEndian);

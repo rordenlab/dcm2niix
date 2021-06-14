@@ -64,10 +64,10 @@ These fields are present regardless of modality (e.g. MR, CT, PET).
 | SoftwareVersions         |      | DICOM tag 0020,1020 | B          |
 | SeriesDescription        |      | DICOM tag 0008,103E | D          |
 | ProtocolName             |      | DICOM tag 0018,1030 | D          |
-| ScanningSequence         |      | DICOM tag 0018,0020 | D          |
-| SequenceVariant          |      | DICOM tag 0018,0021 | D          |
-| ScanOptions              |      | DICOM tag 0018,0022 | D          |
-| SequenceName             |      | DICOM tag 0018,0024 | D          |
+| ScanningSequence         |      | DICOM tag 0018,0020 | B          |
+| SequenceVariant          |      | DICOM tag 0018,0021 | B          |
+| ScanOptions              |      | DICOM tag 0018,0022 | B          |
+| SequenceName             |      | DICOM tag 0018,0024 | B          |
 | ImageType                | list | DICOM tag 0008,0008 | D          |
 | AcquisitionTime          |      | DICOM tag 0008,0032 | D          |
 | AcquisitionNumber        |      | DICOM tag 0020,0012 | D          |
@@ -110,8 +110,8 @@ Fields specific to MRI scans.
 | Field                              | Unit | Comments                                                                                | Defined By |
 |------------------------------------|------|-----------------------------------------------------------------------------------------|------------|
 | MagneticFieldStrength              | T    | DICOM tag 0018,0087                                                                     | B          |
-| MRAcquisitionType                  |      | DICOM tag 0018,0023                                                                     |            |
-| Units                              |      | `Hz` (field maps)                                                                       | B          |
+| MRAcquisitionType                  |      | DICOM tag 0018,0023                                                                     | B          |
+| Units                              |      | `Hz`,`rad` (field maps)                                                                 | B          |
 | SliceThickness                     | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
 | SpacingBetweenSlices               | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
 | SAR                                |      | DICOM tag 0018,1316                                                                     | D          |
@@ -119,7 +119,7 @@ Fields specific to MRI scans.
 | EchoNumber                         |      | Only multi-echo series                                                                  | D          |
 | EchoTime                           | s    | DICOM tag 0018,0081                                                                     | D          |
 | RepetitionTime                     | s    | DICOM tag 0018,0080                                                                     | D          |
-| RepetitionTimeExcitation           | s    |                                                                                         | D          |
+| RepetitionTimeExcitation           | s    | DICOM tag 0018, 0080 for some manufacturers                                             | B          |
 | RepetitionTimeInversion            | s    |                                                                                         | D          |
 | InversionTime                      | s    | DICOM tag 0018,0082                                                                     | D          |
 | ImagingFrequency                   | MHz  | DICOM tag 0018,0084                                                                     | D          |
@@ -130,9 +130,10 @@ Fields specific to MRI scans.
 | EchoTrainLength                    |      | DICOM tag 0018,0091                                                                     | D          |
 | PhaseEncodingSteps                 |      | DICOM tag 0018,0089                                                                     | D          |
 | AcquisitionMatrixPE                |      | DICOM tag 0018,9231 (aka PhaseEncodingLines)                                            | D          |
-| ParallelReductionFactorInPlane     |      | aka `SENSE`, `GRAPPA`                                                                   | B          |
-| ParallelAcquisitionTechnique       |      | DICOM tag 0018, 9078                                                                    | B          |
-| ParallelReductionOutOfPlane        |      | DICOM tag 0018,9155 (for GE, consider Asset R Factors 0043,1083)                        | D          |
+| ParallelReductionFactorInPlane     |      |                                                                                         | B          |
+| ParallelAcquisitionTechnique       |      | DICOM tag 0018, 9078, aka `SENSE`, `GRAPPA`                                             | B          |
+| ParallelReductionOutOfPlane        |      | DICOM tag 0018,9155                                                                     | D          |
+| PartialFourierDirection            |      | DICOM tag 0018,9036                                                                     | B          |
 | EstimatedEffectiveEchoSpacing      | s    |                                                                                         | D          |
 | EstimatedTotalReadoutTime          | s    |                                                                                         | D          |
 | EffectiveEchoSpacing               | s    |                                                                                         | D          |
@@ -145,7 +146,7 @@ Fields specific to MRI scans.
 | ImageOrientationPatientDICOM       |      | DICOM tag 0020,0037                                                                     | D          |
 | InPlanePhaseEncodingDirectionDICOM |      | DICOM tag 0018,1312                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
-
+		
 ##### Modality Positron Emission Tomography Isotope Module Attributes
 
 PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.9.2.html). See BIDS [BEP009 Positron Emission Tomography](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html). Be aware that many of the fields required by BEP009 are not stored in DICOM or ECAT files. Since dcm2niix is limited to the information provided by the input files, it will generate JSON fields that reflect the meta data stored in the source images.
@@ -211,6 +212,8 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 
 See BIDS [BEP005 Arterial Spin
 Labeling](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html). All these values are specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio, Prisma) from the [CSA header](https://nipy.org/nibabel/dicom/siemens_csa.html).
+Note that [many of the fields listed by BIDS](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#_asljson-file
+) do not have DICOM equivalents.
 
 | Field                           | Unit               | Comments                                                                                                                                                                                       | Defined By |
 |---------------------------------|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
@@ -254,14 +257,14 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | BaseResolution               | integer                                         | # of acquisition lines?                                                                                                                                                                                                                                                                                                                                                                                | D          |
 | ShimSetting                  | DAC for 1st order terms, mA for 2nd order terms | The 1st 3 values are the 1st order shims from sGRADSPEC.lOffset{X,Y,Z}. The next 5 are 2nd order shims from sGRADSPEC.alShimCurrent[0-4]. Converting to the first order terms to uT/m may be possible using the "gradient sensitivities". Converting the second order terms to uT/m^2 requires information not stored in the DICOM header, but they are fixed for a given shim hardware configuration. | D          |
 | DiffusionScheme              |                                                 | `Monopolar` or `Bipolar`                                                                                                                                                                                                                                                                                                                                                                               | D          |
-| DelayTime                    | s                                               |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| DelayTime                    | s                                               | Pause between EPI volumes, where TR is longer than required by TA (`sparse` imaging)                                                                                                                                                                                                                                                                                                                   | D          |
 | TxRefAmp                     | V                                               |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | PhaseResolution              | f                                               |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | PhaseOversampling            |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | VendorReportedEchoSpacing    |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | B          |
 | ReceiveCoilActiveElements    |                                                 | Given as groups of channels, instead of individual ones, e.g. "HC1-7" for HeadNeck\_64.                                                                                                                                                                                                                                                                                                                | B          |
 | CoilString                   |                                                 | May or may not match `ReceiveCoilName`                                                                                                                                                                                                                                                                                                                                                                 | D          |
-| PulseSequenceDetails         |                                                 | pulse sequence label, e.g. "%SiemensSeq%\\\\tgse\_pasl"                                                                                                                                                                                                                                                                                                                                                | D          |
+| PulseSequenceDetails         |                                                 | pulse sequence label, e.g. "%SiemensSeq%\\\\tgse\_pasl"                                                                                                                                                                                                                                                                                                                                                | B          |
 | FmriExternalInfo             |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | WipMemBlock                  |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | ProtocolName                 |                                                 | Check SeriesDescription - they might be switched around                                                                                                                                                                                                                                                                                                                                                | D          |
@@ -278,5 +281,4 @@ Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 |------------------------------|------|---------------------|------------|
 | ReceiveCoilActiveElements    |      | DICOM tag 0021,114F | B          |
 | BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153 | D          |
-
 

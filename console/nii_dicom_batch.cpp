@@ -1518,6 +1518,14 @@ tse3d: T2*/
 	json_Float(fp, "\t\"PercentSampling\": %g,\n", d.percentSampling);
 	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
+    if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_PHASE)
+        fprintf(fp, "\t\"PartialFourierDirection\": \"PHASE\",\n" );
+    if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_FREQUENCY)
+        fprintf(fp, "\t\"PartialFourierDirection\": \"FREQUENCY\",\n" );
+    if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_SLICE_SELECT)
+        fprintf(fp, "\t\"PartialFourierDirection\": \"SLICE_SELECT\",\n" );
+    if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_COMBINATION)
+        fprintf(fp, "\t\"PartialFourierDirection\": \"COMBINATION\",\n" );
     if ((d.phaseEncodingSteps > 0) && (d.isPartialFourier) && (d.manufacturer == kMANUFACTURER_PHILIPS)) {
     	//issue 377
     	fprintf(fp, "\t\"PartialFourierEnabled\": \"YES\",\n" );
