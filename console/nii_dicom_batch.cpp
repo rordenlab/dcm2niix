@@ -646,6 +646,22 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		csaAscii->phaseEncodingLines = readKey(keyStrLns, keyPos, csaLengthTrim);
 		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
 		csaAscii->existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
+		/*
+		//TODO!
+		
+		int combineMode = -1;
+		char keyStrCombineMode[] = "ucCoilCombineMode";
+		combineMode = readKeyN1(keyStrCombineMode, keyPos, csaLengthTrim);
+		//BIDS CoilCombinationMethod <- Siemens 'Coil Combine Mode' CSA ucCoilCombineMode 1 = Sum of Squares, 2 = Adaptive Combine,
+		printf("CoilCombineMode %d\n", combineMode);
+		//BIDS MatrixCoilMode <- Siemens 'PAT mode' CSA ucPATMode ??  1?= "SENSE"  2= "GRAPPA",
+		//sPat.ucPATMode	 = 	2
+		int patMode = -1;
+		char keyStrPATMode[] = "sPat.ucPATMode"; //n.b. field set even if PAT not enabled, e.g. will list SENSE for a R-factor of 1
+		patMode = readKeyN1(keyStrPATMode, keyPos, csaLengthTrim);
+		printf("PATMODE %d\n", patMode);
+		
+		*/
 		char keyStrUcMode[] = "sSliceArray.ucMode";
 		csaAscii->ucMode = readKeyN1(keyStrUcMode, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
@@ -1512,6 +1528,20 @@ tse3d: T2*/
 		//printf("PhaseLines=%d EchoTrainLength=%d  SENSE=%g\n", d.phaseEncodingLines, d.echoTrainLength, d.accelFactPE); //n.b. we can not distinguish pF from SENSE/GRAPPA for UIH
 	}
 	#endif
+	//GE ASL specific tags
+	
+	if (d.aslFlagsGE & kASL_FLAG_GE_CONTINUOUS) 
+			fprintf(fp, "\t\"ASLContrastTechnique\": \"CONTINUOUS\",\n" );
+    if (d.aslFlagsGE & kASL_FLAG_GE_PSEUDOCONTINUOUS) 
+		fprintf(fp, "\t\"ASLContrastTechnique\": \"PSEUDOCONTINUOUS\",\n" );
+    if (d.aslFlagsGE & kASL_FLAG_GE_3DPCASL) 
+		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D pulsed continuous ASL technique\",\n" );
+    if (d.aslFlagsGE & kASL_FLAG_GE_3DCASL) 
+		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D continuous ASL technique\",\n" );
+	if (d.durationLabelPulseGE > 0) {
+		json_Float(fp, "\t\"LabelingDuration\": %g,\n", d.durationLabelPulseGE  / 1000.0);
+		json_Float(fp, "\t\"PostLabelingDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime ->  Post-label delay
+	}
 	if ((d.CSA.multiBandFactor > 1) && (d.modality == kMODALITY_MR)) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);

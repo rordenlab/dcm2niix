@@ -108,7 +108,13 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kEXIT_RENAME_ERROR  9
 #define kEXIT_INCOMPLETE_VOLUMES_FOUND  10 //issue 515
 
-
+//0043,10A3  ---: PSEUDOCONTINUOUS
+//0043,10A4  ---: 3D pulsed continuous ASL technique
+#define kASL_FLAG_GE_3DPCASL 1
+#define kASL_FLAG_GE_3DCASL 2
+#define kASL_FLAG_GE_PSEUDOCONTINUOUS 4
+#define kASL_FLAG_GE_CONTINUOUS 8
+	
 static const int kSliceOrientUnknown = 0;
 static const int kSliceOrientTra = 1;
 static const int kSliceOrientSag = 2;
@@ -188,7 +194,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         int xyzDim[5];
         uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
         int overlayStart[kMaxOverlay];
-        int partialFourierDirection, interp3D, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
+        int partialFourierDirection, interp3D, aslFlagsGE, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
         float groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)

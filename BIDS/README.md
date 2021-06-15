@@ -190,6 +190,10 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | PulseSequenceName         |      | `epi` or `epiRT`         | D          |
 | InternalPulseSequenceName |      | `EPI` or `EPI2`          | D          |
 | PhaseEncodingPolarityGE   |      | `Unflipped` or `Flipped` | D          |
+| ASLContrastTechnique      |      | DICOM tag 0043,10A3      | D          |
+| ASLLabelingTechnique      |      | DICOM tag 0043,10A4      | D          |
+| LabelingDuration          | s    | DICOM tag 0043,10A5      | B          |
+| PostLabelingDelay         | s    | DICOM tag 0018,0082 (TI) | B          |
 
 ##### Manufacturer Philips
 

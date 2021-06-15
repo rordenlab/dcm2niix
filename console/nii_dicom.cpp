@@ -850,6 +850,8 @@ struct TDICOMdata clear_dicom_data() {
     d.maxEchoNumGE = -1;
     d.epiVersionGE = -1;
     d.internalepiVersionGE = -1;
+	d.durationLabelPulseGE = -1;
+	d.aslFlagsGE = 0;
     d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_UNKNOWN;
     d.interp3D = -1;
     for (int i = 0; i < kMaxOverlay; i++)
@@ -4367,6 +4369,9 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDiffusion_bValueGE  0x0043+(0x1039 << 16 ) //IS dicm2nii's SlopInt_6_9
 #define  kEpiRTGroupDelayGE  0x0043+(0x107C << 16 ) //FL
 #define  kAssetRFactorsGE  0x0043+(0x1083 << 16 ) //DS
+#define  kASLContrastTechniqueGE  0x0043+(0x10A3 << 16 ) //CS
+#define  kASLLabelingTechniqueGE  0x0043+(0x10A4 << 16 ) //LO
+#define  kDurationLabelPulseGE  0x0043+(0x10A5 << 16 ) //IS
 #define  kMultiBandGE  0x0043+(0x10B6 << 16 ) //LO
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
@@ -6595,6 +6600,32 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             		d.accelFactOOP = 1.0f / PhaseSlice[2]; 
                 break;            
             }
+            case kASLContrastTechniqueGE: { //CS
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+				char st[kDICOMStr];
+				//aslFlagsGE
+                dcmStr(lLength, &buffer[lPos], st);
+				if (strstr(st, "CONTINUOUS") != NULL)
+				    d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_CONTINUOUS);
+				else if (strstr(st, "PSEUDOCONTINUOUS") != NULL)
+				    d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_PSEUDOCONTINUOUS);
+				break;            
+            }
+            case kASLLabelingTechniqueGE: { //LO issue427GE
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+				char st[kDICOMStr];
+                dcmStr(lLength, &buffer[lPos], st);
+				if (strstr(st, "3D continuous") != NULL)
+				    d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_3DCASL);
+				if (strstr(st, "3D pulsed continuous") != NULL)
+				    d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_3DPCASL);
+            	break;            
+            }
+            case kDurationLabelPulseGE: { //IS
+            	if (d.manufacturer != kMANUFACTURER_GE) break;
+				d.durationLabelPulseGE =  dcmStrInt(lLength, &buffer[lPos]);
+                break;            
+            }			
             case kMultiBandGE: { //LO issue427GE
             	if (d.manufacturer != kMANUFACTURER_GE) break;
             	//LO array: Value 1 = Multiband factor, Value 2 = Slice FOV Shift Factor, Value 3 = Calibration method
