@@ -47,7 +47,7 @@ There are a couple ways to install dcm2niix
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac_arm.pkg`
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_win.zip`
  - [MRIcroGL (NITRC)](https://www.nitrc.org/projects/mricrogl) or [MRIcroGL (GitHub)](https://github.com/rordenlab/MRIcroGL12/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a [holy build box](https://github.com/phusion/holy-build-box), so it should run on any Linux distribution.
- - If you have a MacOS computer with Homebrew you can run `brew install dcm2niix`.
+ - If you have a MacOS computer with Homebrew or MacPorts you can run `brew install dcm2niix` or `sudo port install dcm2niix`, respectively.
  - If you have Conda, [`conda install -c conda-forge dcm2niix`](https://anaconda.org/conda-forge/dcm2niix) on Linux, MacOS or Windows.
  - On Debian Linux computers you can run `sudo apt-get install dcm2niix`.
 
@@ -62,7 +62,7 @@ It is often easier to download and install a precompiled version. However, you c
 
 Ubuntu: `sudo apt-get install cmake pkg-config`
 
-MacOS: `brew install cmake pkg-config`
+MacOS: `brew install cmake pkg-config` or `sudo port install cmake pkgconfig`
 
 **Basic build:**
 ```bash
