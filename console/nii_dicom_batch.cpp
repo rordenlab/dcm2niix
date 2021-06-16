@@ -980,9 +980,9 @@ void json_Float(FILE *fp, const char *sLabel, float sVal) {
 void json_Bool(FILE *fp, const char *sLabel, int sVal) {
 	// json_Str(fp, "\t\"MTState\"", d.mtState);
 	//n.b. in JSON, true and false are lower case, whereas in Python they are capitalized 
-	// only print 0 / 1 for false true, ignore negative values
+	// only print 0 and >=1 for false and true, ignore negative values
 	if (sVal == 0) fprintf(fp, sLabel, "false");
-	if (sVal == 1) fprintf(fp, sLabel, "true");
+	if (sVal > 0) fprintf(fp, sLabel, "true");
 	
 	//if (sVal = 0) fprintf(" : false,\n" );
 	//if (sVal = 1) fprintf(" : true,\n" );
@@ -1285,6 +1285,14 @@ tse3d: T2*/
 	json_Float(fp, "\t\"RepetitionTimeExcitation\": %g,\n", dti4D->repetitionTimeExcitation);
 	json_Float(fp, "\t\"RepetitionTimeInversion\": %g,\n", dti4D->repetitionTimeInversion);
 	json_Bool(fp, "\t\"MTState\": %s,\n", d.mtState);
+	json_Bool(fp, "\t\"SpoilingState\": %s,\n", d.spoiling);
+	if (d.spoiling == kSPOILING_RF)
+		fprintf(fp, "\t\"SpoilingType\": \"RF\",\n" );
+	if (d.spoiling == kSPOILING_GRADIENT)
+		fprintf(fp, "\t\"SpoilingType\": \"GRADIENT\",\n" );
+	if (d.spoiling == kSPOILING_RF_AND_GRADIENT)
+		fprintf(fp, "\t\"SpoilingType\": \"COMBINED\",\n" );
+
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation

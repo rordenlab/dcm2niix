@@ -147,7 +147,9 @@ Fields specific to MRI scans.
 | InPlanePhaseEncodingDirectionDICOM |      | DICOM tag 0018,1312                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 | MTState                            |      | 0018,9020                                                                               | B          |
-		
+| SpoilingState                      |      | 0018,9016                                                                               | B          |
+| SpoilingType                       |      | 0018,9016                                                                               | B          |
+
 ##### Modality Positron Emission Tomography Isotope Module Attributes
 
 PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.9.2.html). See BIDS [BEP009 Positron Emission Tomography](https://bids-specification.readthedocs.io/en/v1.2.1/06-extensions.html). Be aware that many of the fields required by BEP009 are not stored in DICOM or ECAT files. Since dcm2niix is limited to the information provided by the input files, it will generate JSON fields that reflect the meta data stored in the source images.
