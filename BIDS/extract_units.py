@@ -11,15 +11,15 @@ Arguments:
            [default: README.md]
 
 Options:
-  -h --help                      Show this message and exit.
-  --version                      Show version and exit.
+  -h --help                     Show this message and exit.
+  --version                     Show version and exit.
   -e EXISTING --ex=EXISTING     Extract units for all the fields, and only the
-                                 fields in EXISTING, a BIDS file,
-                                 and write the output to
-                                 EXISTING.replace('.json', '_units.json')
-                                 instead of stdout.
+                                fields in EXISTING, a BIDS file, and write the
+                                output to
+                                EXISTING.replace('.json', '_units.json')
+                                instead of stdout.
   -o OUT --out=OUT              If given, save the output to this filename.
-                                 (Overrides the implicit destination of -e.)
+                                (Overrides the implicit destination of -e.)
 """
 from __future__ import print_function
 try:
@@ -75,7 +75,6 @@ if __name__ == '__main__':
     from docopt import docopt
 
     args = docopt(__doc__, version=__version__)
-    #print(args)
 
     # https://github.com/docopt/docopt/issues/214 has been open for
     # almost 7 years, so it looks like docopt isn't getting default
