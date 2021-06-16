@@ -570,7 +570,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
     int phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
-    	difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode;
+    	difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC;
     float alFree[kMaxWipFree] ;
     float adFree[kMaxWipFree];
     float alTI[kMaxWipFree];
@@ -597,7 +597,8 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  	csaAscii->parallelReductionFactorInPlane = 0;
  	csaAscii->refLinesPE = 0;
  	csaAscii->combineMode = 0;
- 	csaAscii->patMode = 0;	
+ 	csaAscii->patMode = 0;
+ 	csaAscii->ucMTC = 0;	
  	for (int i = 0; i < 8; i++)
  		shimSetting[i] = 0.0;
  	strcpy(coilID, "");
@@ -677,6 +678,8 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		//printf("CoilCombineMode %d\n", csaAscii->combineMode);
 		char keyStrPATMode[] = "sPat.ucPATMode"; //n.b. field set even if PAT not enabled, e.g. will list SENSE for a R-factor of 1
 		csaAscii->patMode = readKeyN1(keyStrPATMode, keyPos, csaLengthTrim);
+		char keyStrucMTC[] = "sPrepPulses.ucMTC"; //n.b. field set even if PAT not enabled, e.g. will list SENSE for a R-factor of 1
+		csaAscii->ucMTC = readKeyN1(keyStrucMTC, keyPos, csaLengthTrim);
 		//printf("PATMODE %d\n", csaAscii->patMode);
 		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
 		//*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
@@ -1518,6 +1521,8 @@ tse3d: T2*/
 			fprintf(fp, "\t\"CoilCombinationMethod\": \"Sum of Squares\",\n" );
 		if (csaAscii.combineMode == 2)
 			fprintf(fp, "\t\"CoilCombinationMethod\": \"Adaptive Combine\",\n" );
+		if ((csaAscii.ucMTC == 1) && (d.mtState < 0)) //precedence for 0018,9020 over CSA
+			json_Bool(fp, "\t\"MTState\": %s,\n", 1);
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (csaAscii.parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
 			if (csaAscii.patMode == 1)
