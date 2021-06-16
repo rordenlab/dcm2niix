@@ -6632,11 +6632,11 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				char st[kDICOMStr];
 				//aslFlagsGE
                 dcmStr(lLength, &buffer[lPos], st);
-				if (strstr(st, "CONTINUOUS") != NULL)
-				    d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_CONTINUOUS);
-				else if (strstr(st, "PSEUDOCONTINUOUS") != NULL)
-				    d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_PSEUDOCONTINUOUS);
-				break;            
+				if (strstr(st, "PSEUDOCONTINUOUS") != NULL)
+					d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_PSEUDOCONTINUOUS);
+				else if (strstr(st, "CONTINUOUS") != NULL)
+					d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_CONTINUOUS);
+				break;
             }
             case kASLLabelingTechniqueGE: { //LO issue427GE
             	if (d.manufacturer != kMANUFACTURER_GE) break;
