@@ -570,7 +570,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
     int phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier,echoSpacing,
-    	difBipolar, parallelReductionFactorInPlane, refLinesPE;
+    	difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode;
     float alFree[kMaxWipFree] ;
     float adFree[kMaxWipFree];
     float alTI[kMaxWipFree];
@@ -596,6 +596,8 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
  	csaAscii->difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
  	csaAscii->parallelReductionFactorInPlane = 0;
  	csaAscii->refLinesPE = 0;
+ 	csaAscii->combineMode = 0;
+ 	csaAscii->patMode = 0;	
  	for (int i = 0; i < 8; i++)
  		shimSetting[i] = 0.0;
  	strcpy(coilID, "");
@@ -646,22 +648,6 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		csaAscii->phaseEncodingLines = readKey(keyStrLns, keyPos, csaLengthTrim);
 		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
 		csaAscii->existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
-		/*
-		//TODO!
-		
-		int combineMode = -1;
-		char keyStrCombineMode[] = "ucCoilCombineMode";
-		combineMode = readKeyN1(keyStrCombineMode, keyPos, csaLengthTrim);
-		//BIDS CoilCombinationMethod <- Siemens 'Coil Combine Mode' CSA ucCoilCombineMode 1 = Sum of Squares, 2 = Adaptive Combine,
-		printf("CoilCombineMode %d\n", combineMode);
-		//BIDS MatrixCoilMode <- Siemens 'PAT mode' CSA ucPATMode ??  1?= "SENSE"  2= "GRAPPA",
-		//sPat.ucPATMode	 = 	2
-		int patMode = -1;
-		char keyStrPATMode[] = "sPat.ucPATMode"; //n.b. field set even if PAT not enabled, e.g. will list SENSE for a R-factor of 1
-		patMode = readKeyN1(keyStrPATMode, keyPos, csaLengthTrim);
-		printf("PATMODE %d\n", patMode);
-		
-		*/
 		char keyStrUcMode[] = "sSliceArray.ucMode";
 		csaAscii->ucMode = readKeyN1(keyStrUcMode, keyPos, csaLengthTrim);
 		char keyStrBase[] = "sKSpace.lBaseResolution";
@@ -685,6 +671,13 @@ void siemensCsaAscii(const char * filename, TCsaAscii* csaAscii, int csaOffset, 
 		csaAscii->parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		char keyStrRef[] = "sPat.lRefLinesPE";
 		csaAscii->refLinesPE = readKey(keyStrRef, keyPos, csaLengthTrim);
+		char keyStrCombineMode[] = "ucCoilCombineMode";
+		csaAscii->combineMode = readKeyN1(keyStrCombineMode, keyPos, csaLengthTrim);
+		//BIDS CoilCombinationMethod <- Siemens 'Coil Combine Mode' CSA ucCoilCombineMode 1 = Sum of Squares, 2 = Adaptive Combine,
+		//printf("CoilCombineMode %d\n", csaAscii->combineMode);
+		char keyStrPATMode[] = "sPat.ucPATMode"; //n.b. field set even if PAT not enabled, e.g. will list SENSE for a R-factor of 1
+		csaAscii->patMode = readKeyN1(keyStrPATMode, keyPos, csaLengthTrim);
+		//printf("PATMODE %d\n", csaAscii->patMode);
 		//char keyStrETD[] = "sFastImaging.lEchoTrainDuration";
 		//*echoTrainDuration = readKey(keyStrETD, keyPos, csaLengthTrim);
 		//char keyStrEF[] = "sFastImaging.lEPIFactor";
@@ -984,6 +977,17 @@ void json_Float(FILE *fp, const char *sLabel, float sVal) {
 	fprintf(fp, sLabel, sVal );
 } //json_Float
 
+void json_Bool(FILE *fp, const char *sLabel, int sVal) {
+	// json_Str(fp, "\t\"MTState\"", d.mtState);
+	//n.b. in JSON, true and false are lower case, whereas in Python they are capitalized 
+	// only print 0 and >=1 for false and true, ignore negative values
+	if (sVal == 0) fprintf(fp, sLabel, "false");
+	if (sVal > 0) fprintf(fp, sLabel, "true");
+	
+	//if (sVal = 0) fprintf(" : false,\n" );
+	//if (sVal = 1) fprintf(" : true,\n" );
+} //json_Bool
+
 void rescueProtocolName(struct TDICOMdata *d, const char * filename) {
 	//tools like gdcmanon strip protocol name (0018,1030) but for Siemens we can recover it from CSASeriesHeaderInfo (0029,1020)
 	if ((d->manufacturer != kMANUFACTURER_SIEMENS) || (d->CSA.SeriesHeader_offset < 1) || (d->CSA.SeriesHeader_length < 1)) return;
@@ -1263,9 +1267,7 @@ tse3d: T2*/
 			fprintf(fp, "\t\t%g", dti4D->frameDuration[i] / 1000.0 ); // from 0018,1242 ms -> sec
 		}
 		fprintf(fp, "\t],\n");
-	}	
-	
-	
+	}
 	//CT parameters
 	if ((d.TE > 0.0) && (d.isXRay)) fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE );
     //MRI parameters
@@ -1282,6 +1284,15 @@ tse3d: T2*/
 	json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0 );
 	json_Float(fp, "\t\"RepetitionTimeExcitation\": %g,\n", dti4D->repetitionTimeExcitation);
 	json_Float(fp, "\t\"RepetitionTimeInversion\": %g,\n", dti4D->repetitionTimeInversion);
+	json_Bool(fp, "\t\"MTState\": %s,\n", d.mtState);
+	json_Bool(fp, "\t\"SpoilingState\": %s,\n", d.spoiling);
+	if (d.spoiling == kSPOILING_RF)
+		fprintf(fp, "\t\"SpoilingType\": \"RF\",\n" );
+	if (d.spoiling == kSPOILING_GRADIENT)
+		fprintf(fp, "\t\"SpoilingType\": \"GRADIENT\",\n" );
+	if (d.spoiling == kSPOILING_RF_AND_GRADIENT)
+		fprintf(fp, "\t\"SpoilingType\": \"COMBINED\",\n" );
+
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0 );
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle );
 	bool interp = false; //2D interpolation
@@ -1502,8 +1513,17 @@ tse3d: T2*/
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
 		if (csaAscii.refLinesPE > 0)
 			fprintf(fp, "\t\"RefLinesPE\": %d,\n", csaAscii.refLinesPE);
+		//https://github.com/bids-standard/bids-specification/pull/681#issuecomment-861767213
+		if (csaAscii.combineMode == 1)
+			fprintf(fp, "\t\"CoilCombinationMethod\": \"Sum of Squares\",\n" );
+		if (csaAscii.combineMode == 2)
+			fprintf(fp, "\t\"CoilCombinationMethod\": \"Adaptive Combine\",\n" );
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
 		if (csaAscii.parallelReductionFactorInPlane > 0) {//AccelFactorPE -> phase encoding
+			if (csaAscii.patMode == 1)
+				fprintf(fp, "\t\"MatrixCoilMode\": \"SENSE\",\n" );
+			if (csaAscii.patMode == 2)
+				fprintf(fp, "\t\"MatrixCoilMode\": \"GRAPPA\",\n" );
 			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
 				d.accelFactPE = csaAscii.parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
 				//fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
@@ -1529,7 +1549,6 @@ tse3d: T2*/
 	}
 	#endif
 	//GE ASL specific tags
-	
 	if (d.aslFlagsGE & kASL_FLAG_GE_CONTINUOUS) 
 			fprintf(fp, "\t\"ASLContrastTechnique\": \"CONTINUOUS\",\n" );
     if (d.aslFlagsGE & kASL_FLAG_GE_PSEUDOCONTINUOUS) 

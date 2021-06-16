@@ -853,6 +853,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.durationLabelPulseGE = -1;
 	d.aslFlagsGE = 0;
     d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_UNKNOWN;
+	d.mtState = -1;
+	d.spoiling = kSPOILING_UNKOWN;
     d.interp3D = -1;
     for (int i = 0; i < kMaxOverlay; i++)
     	d.overlayStart[i] = 0;
@@ -4256,7 +4258,10 @@ struct TDICOMdata readDICOMx(char * fname, struct TDCMprefs* prefs, struct TDTI4
 #define  kSAR  0x0018+(0x1316 << 16 ) //'DS' 'SAR'
 #define  kPatientOrient  0x0018+(0x5100<< 16 )    //0018,5100. patient orientation - 'HFS'
 #define  kInversionRecovery  0x0018+uint32_t(0x9009 << 16 ) //'CS' 'YES'/'NO'
+#define  kSpoiling  0x0018+uint32_t(0x9016 << 16 ) //'CS' 
 #define  kEchoPlanarPulseSequence  0x0018+uint32_t(0x9018 << 16 ) //'CS' 'YES'/'NO'
+#define  kMagnetizationTransferAttribute  0x0018+uint32_t(0x9020 << 16 ) //'CS' 'ON_RESONANCE','OFF_RESONANCE','NONE'
+	
 #define  kRectilinearPhaseEncodeReordering 0x0018+uint32_t(0x9034 << 16) //'CS' 'REVERSE_LINEAR'/'LINEAR'
 #define  kPartialFourierDirection 0x0018+uint32_t(0x9036 << 16) //'CS'
 #define  kParallelReductionFactorInPlane  0x0018+uint32_t(0x9069<< 16 ) //FD
@@ -5373,13 +5378,35 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 				if (lLength < 2) break;
                 if (toupper(buffer[lPos]) == 'Y')
                 	d.isIR = true;
-                break;                
+                break;   
+            case kSpoiling : // CS 0018,9016
+                if (lLength < 2) break;
+                char sTxt[kDICOMStr];
+                dcmStr(lLength, &buffer[lPos], sTxt);
+                if ((strstr(sTxt, "RF") != NULL) && (strstr(sTxt, "RF") != NULL))
+                	d.spoiling = kSPOILING_RF_AND_GRADIENT;
+                else if (strstr(sTxt, "RF") != NULL)
+                	d.spoiling = kSPOILING_RF;
+                else if (strstr(sTxt, "GRADIENT") != NULL)
+                	d.spoiling = kSPOILING_GRADIENT;
+                else if (strstr(sTxt, "NONE") != NULL)
+                	d.spoiling = kSPOILING_NONE;
+                break;
             case kEchoPlanarPulseSequence : // CS [YES],[NO]
 				if (lLength < 2) break;
                 if (toupper(buffer[lPos]) == 'Y')
                 	d.isEPI = true;
                 break;
-            case kRectilinearPhaseEncodeReordering : { //'CS' [REVERSE_LINEAR],[LINEAR],[CENTRIC],[REVERSE_CENTRIC]
+			case kMagnetizationTransferAttribute : //'CS' 'ON_RESONANCE','OFF_RESONANCE','NONE'
+				if (lLength < 2) break; //https://github.com/bids-standard/bids-specification/pull/681
+	            if ((toupper(buffer[lPos]) == 'O') && (toupper(buffer[lPos]) == 'F')) // OFF_RESONANCE
+	           		 d.mtState = 1; //TRUE
+	            if ((toupper(buffer[lPos]) == 'O') && (toupper(buffer[lPos]) == 'N')) // ON_RESONANCE and NONE
+	            	d.mtState = 0; //FALSE
+	            if ((toupper(buffer[lPos]) == 'N') && (toupper(buffer[lPos]) == 'O')) // ON_RESONANCE and NONE
+	            	d.mtState = 0; //FALSE
+	            break;			
+				case kRectilinearPhaseEncodeReordering : { //'CS' [REVERSE_LINEAR],[LINEAR],[CENTRIC],[REVERSE_CENTRIC]
             	if (d.manufacturer != kMANUFACTURER_GE) break; //only found in GE software beginning with RX27
             	if (lLength < 2) break;
                 if (toupper(buffer[lPos]) == 'L')
