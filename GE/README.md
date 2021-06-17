@@ -4,14 +4,17 @@ dcm2niix attempts to convert GE DICOM format images to NIfTI. The current genera
 
 ## Arterial Spin Labeling
 
-As noted by David Shin (GE), the GE product ASL sequence sequence produces two 3D volumes. The Perfusion Weighted (PW) first pass acquires ASL tag/control spirals in interleaved fashion over many volumes (TRs), and does the subtraction and averaging in k-space. Therefore, the result is a single 3D volume. The second pass acquires a Proton Density (PD) reference volume. The PW and PD images can be combined offline to generate quantified CBF map. [Stanford](https://cni.stanford.edu/wiki/Data_Processing) includes useful notes on this sequence. The sequence specific details are listed in the table. 
+As noted by David Shin (GE), the GE product ASL sequence sequence produces two 3D volumes. The Perfusion Weighted (PW) first pass acquires ASL tag/control spirals in interleaved fashion over many volumes (TRs), and does the subtraction and averaging in k-space. Therefore, the result is a single 3D volume. The second pass acquires a Proton Density (PD) reference volume. The PW and PD images can be combined offline to generate quantified Cerebral Blood Flow(CBF) map. [Stanford](https://cni.stanford.edu/wiki/Data_Processing) includes useful notes on this sequence. Note that Number of Excitations (NEX) is needed for CBF quantification. The sequence specific details are listed in the table. 
 
 | DICOM Tag | Pass 1 (PW)                        | Pass 2 (PD)                        |
 |-----------|------------------------------------|------------------------------------|
 | 0043,10A3 | PSEUDOCONTINUOUS                   |CONTINUOUS                          |
 | 0043,10A4 | 3D pulsed continuous ASL technique |3D continuous ASL technique         |
 | 0043,10A5 | Label Duration (ms)                |Label Duration (ms)                 |
-| 0018,0082 |Post Label Delay (ms)               | NA                                 |
+| 0018,0082 | Post Label Delay (ms)              | NA                                 |
+| 0027,1060 | Number of Points per Arm           | NA                                 |
+| 0027,1061 | Number of Arms                     | NA                                 |
+| 0027,1062 | Number of Excitations              | NA                                 |
 
 The GE product ASL sequence is optimized for clinical diagnosis with emphasis on 3D acquisition and multi-shot interleaving for high spatial resolution. For 4D type acquisition (time resolved single-shot acquisition), GE researchers can leverage the [multi-band ASL/BOLD sequence](https://journals.plos.org/plosone/article/authors?id=10.1371/journal.pone.0190427).
 

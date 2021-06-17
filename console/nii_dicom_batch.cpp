@@ -1566,6 +1566,9 @@ tse3d: T2*/
 		json_Float(fp, "\t\"LabelingDuration\": %g,\n", d.durationLabelPulseGE  / 1000.0);
 		json_Float(fp, "\t\"PostLabelingDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime ->  Post-label delay
 	}
+	json_Float(fp, "\t\"NumberOfPointsPerArm\": %g,\n", d.numberOfPointsPerArm);
+	json_Float(fp, "\t\"NumberOfArms\": %g,\n", d.numberOfArms);
+	json_Float(fp, "\t\"NumberOfExcitations\": %g,\n", d.numberOfExcitations);
 	if ((d.CSA.multiBandFactor > 1) && (d.modality == kMODALITY_MR)) //AccelFactorSlice
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
@@ -1741,6 +1744,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\t%g", d.orient[i]);
 	}
 	fprintf(fp, "\t],\n");
+	json_Str(fp, "\t\"ImageOrientationText\": \"%s\",\n", d.imageOrientationText);
 	if (d.phaseEncodingRC == 'C') fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"COL\",\n" );
 	if (d.phaseEncodingRC == 'R') fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n" );
 	// Finish up with info on the conversion tool

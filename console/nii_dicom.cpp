@@ -741,7 +741,8 @@ struct TDICOMdata clear_dicom_data() {
     strcpy(d.radiopharmaceutical, "");
     strcpy(d.convolutionKernel, "");
 	strcpy(d.parallelAcquisitionTechnique, "");
-    strcpy(d.unitsPT, "");
+	strcpy(d.imageOrientationText, "");
+	strcpy(d.unitsPT, "");
     strcpy(d.decayCorrection, "");
     strcpy(d.attenuationCorrectionMethod, "");
     strcpy(d.reconstructionMethod, "");
@@ -854,6 +855,9 @@ struct TDICOMdata clear_dicom_data() {
 	d.aslFlagsGE = 0;
     d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_UNKNOWN;
 	d.mtState = -1;
+	d.numberOfExcitations  = -1;
+	d.numberOfArms  = -1;
+	d.numberOfPointsPerArm  = -1;
 	d.spoiling = kSPOILING_UNKOWN;
     d.interp3D = -1;
     for (int i = 0; i < kMaxOverlay; i++)
@@ -4344,6 +4348,9 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kLocationsInAcquisitionGE 0x0021+(0x104F<< 16 )//SS 'LocationsInAcquisitionGE'
 #define  kRTIA_timer 0x0021+(0x105E<< 16 )//DS
 #define  kProtocolDataBlockGE 0x0025+(0x101B<< 16 )//OB
+#define  kNumberOfPointsPerArm 0x0027+(0x1060<< 16 )//FL
+#define  kNumberOfArms 0x0027+(0x1061<< 16 )//FL
+#define  kNumberOfExcitations 0x0027+(0x1062<< 16 )//FL
 #define  kSamplesPerPixel 0x0028+(0x0002 << 16 )
 #define  kPhotometricInterpretation 0x0028+(0x0004 << 16 )
 #define  kPlanarRGB 0x0028+(0x0006 << 16 )
@@ -4379,6 +4386,7 @@ const uint32_t kEffectiveTE  = 0x0018+ (0x9082 << 16);
 #define  kDurationLabelPulseGE  0x0043+(0x10A5 << 16 ) //IS
 #define  kMultiBandGE  0x0043+(0x10B6 << 16 ) //LO
 #define  kAcquisitionMatrixText  0x0051+(0x100B << 16 ) //LO
+#define  kImageOrientationText  0x0051+(0x100E << 16 ) //
 #define  kCoilSiemens  0x0051+(0x100F << 16 )
 #define  kImaPATModeText  0x0051+(0x1011 << 16 )
 #define  kLocationsInAcquisition  0x0054+(0x0081 << 16 )
@@ -5816,6 +5824,21 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
             	d.protocolBlockStartGE = (int)lPos+(int)lFileOffset+4;
             	//printError("ProtocolDataBlockGE %d  @ %d\n", d.protocolBlockLengthGE, d.protocolBlockStartGE);
             	break;
+            case kNumberOfExcitations : //FL 
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+            	d.numberOfExcitations =  dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            	break;
+            case kNumberOfArms : //FL 
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+            	d.numberOfArms =  dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            	break;
+            case kNumberOfPointsPerArm : //FL 
+            	if (d.manufacturer != kMANUFACTURER_GE)
+            		break;
+            	d.numberOfPointsPerArm =  dcmFloat(lLength, &buffer[lPos],d.isLittleEndian);
+            	break;
             case kDoseCalibrationFactor :
                 d.doseCalibrationFactor = dcmStrFloat(lLength, &buffer[lPos]);
                 break;
@@ -6034,6 +6057,10 @@ uint32_t kSequenceDelimitationItemTag = 0xFFFE +(0xE0DD << 16 );
 						isInterpolated = true;
             	}
                break; }
+            case kImageOrientationText: //issue522
+            	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+            	dcmStr(lLength, &buffer[lPos], d.imageOrientationText);
+            	break;
             case kCoilSiemens : {
                 if (d.manufacturer == kMANUFACTURER_SIEMENS) {
                     //see if image from single coil "H12" or an array "HEA;HEP"

@@ -216,6 +216,9 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | ASLLabelingTechnique      |      | DICOM tag 0043,10A4      | D          |
 | LabelingDuration          | s    | DICOM tag 0043,10A5      | B          |
 | PostLabelingDelay         | s    | DICOM tag 0018,0082 (TI) | B          |
+| NumberOfPointsPerArm      |      | DICOM tag 0027,1060      | D          |
+| NumberOfArms              |      | DICOM tag 0027,1061      | D          |
+| NumberOfExcitations       |      | DICOM tag 0027,1062      | D          |
 
 ### Manufacturer Philips
 
@@ -300,6 +303,7 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | MatrixCoilMode               |                                                 | Detects `SENSE` and `GRAPPA`                                                                                                                                                                                                                                                                                                                                                                           | B          |
 | DwellTime                    |                                                 | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | BandwidthPerPixelPhaseEncode | Hz                                              | DICOM tag 0019,1028                                                                                                                                                                                                                                                                                                                                                                                    | D          |
+| ImageOrientationText         | Hz                                              | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
 
 ### Manufacturer Siemens Magnetic Resonance Imaging (XA)
 
