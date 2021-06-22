@@ -1,4 +1,6 @@
-#### dcm2niix is a community effort
+#### Introduction
+
+dcm2niix is a community effort
 
 Like the [Brain Imaging Data Structure](https://bids.neuroimaging.io/get_involved.html), which it supports, dcm2niix is developed by the community for the community and everybody can become a part of the community.
 
@@ -16,4 +18,12 @@ The INCF suggests indicating who is responsible for maintaining software for [st
  - Michael Harms (@mharms): Advanced modalities
  - Roger D Newman-Norlund (@rogiedodgie): User support
  - Rob Reid (@captainnova): Clinical modalities
- - Chris Rorden (@neurolabusc): General development, user support 
+ - Chris Rorden (@neurolabusc): General development, user support
+ 
+#### Style Guide
+
+dcm2niix is written in C. Different programmers prefer different styles of indentation. Feel free to contribute code without being concerned about matching the style of the rest of the code. Once in a while, the code base will be automatically reformatted to make it appear more consistent for all users. This is done automatically with clang-format:
+
+```
+clang-format -i -style="{BasedOnStyle: LLVM, IndentWidth: 4, IndentCaseLabels: false, TabWidth: 4, UseTab: Always, ColumnLimit: 0}" *.cpp *.h
+```

@@ -39,13 +39,13 @@ The Unit column uses:
 - f : fraction
 - kg : Kilogram
 - list : list of text strings
-- MBq : MegaBecquerels
-- MHz : Megahertz
-- mA : milliAmperes
+- MBq : megabecquerel
+- MHz : megahertz
+- mA : milliampere
 - mm : millimeter
-- s : seconds
-- T : Tesla
-- V : Volts
+- s : second
+- T : tesla
+- V : volt
 
 ## Global Fields
 
@@ -166,7 +166,7 @@ Fields specific to MRI scans.
 | InPlanePhaseEncodingDirectionDICOM |      | DICOM tag 0018,1312                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 | MTState                            |      | 0018,9020                                                                               | B          |
-| SpoilingState                      |      | 0018,9016                                                                               | B          |
+| SpoilingState                      |      | 0018,9016 or 0018,0021                                                                  | B          |
 | SpoilingType                       |      | 0018,9016                                                                               | B          |
 
 ### Modality Positron Emission Tomography
@@ -296,6 +296,8 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | PulseSequenceDetails         |                                                 | pulse sequence label, e.g. "%SiemensSeq%\\\\tgse\_pasl"                                                                                                                                                                                                                                                                                                                                                | B          |
 | FmriExternalInfo             |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | WipMemBlock                  |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
+| AveragesDouble               |                                                 | CSA `dAveragesDouble`, fractions possible, independent of DICOM `NumberOfAverages` (0018,0083)                                                                                                                                                                                                                                                                                                         | D          |
+| AccelFact3D                  |                                                 | 3D Acquisitions (Parallel Reduction Factor Across Slices)                                                                                                                                                                                                                                                                                                                                              | D          |
 | ProtocolName                 |                                                 | Check SeriesDescription - they might be switched around                                                                                                                                                                                                                                                                                                                                                | D          |
 | RefLinesPE                   |                                                 | # of reference lines in the phase encoding direction for acceleration (GRAPPA)                                                                                                                                                                                                                                                                                                                         | D          |
 | ConsistencyInfo              |                                                 | The more complete software version, e.g. VE11C or VE11E instead of just VE11.                                                                                                                                                                                                                                                                                                                          | D          |
@@ -303,7 +305,7 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | MatrixCoilMode               |                                                 | Detects `SENSE` and `GRAPPA`                                                                                                                                                                                                                                                                                                                                                                           | B          |
 | DwellTime                    |                                                 | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | BandwidthPerPixelPhaseEncode | Hz                                              | DICOM tag 0019,1028                                                                                                                                                                                                                                                                                                                                                                                    | D          |
-| ImageOrientationText         | Hz                                              | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
+| ImageOrientationText         |                                                 | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
 
 ### Manufacturer Siemens Magnetic Resonance Imaging (XA)
 

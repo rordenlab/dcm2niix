@@ -8,13 +8,13 @@ As noted by David Shin (GE), the GE product ASL sequence sequence produces two 3
 
 | DICOM Tag | Pass 1 (PW)                        | Pass 2 (PD)                        |
 |-----------|------------------------------------|------------------------------------|
-| 0043,10A3 | PSEUDOCONTINUOUS                   |CONTINUOUS                          |
-| 0043,10A4 | 3D pulsed continuous ASL technique |3D continuous ASL technique         |
-| 0043,10A5 | Label Duration (ms)                |Label Duration (ms)                 |
+| 0043,10A3 | PSEUDOCONTINUOUS                   | CONTINUOUS                         |
+| 0043,10A4 | 3D pulsed continuous ASL technique | 3D continuous ASL technique        |
+| 0043,10A5 | Label Duration (ms)                | Label Duration (ms)                |
 | 0018,0082 | Post Label Delay (ms)              | NA                                 |
-| 0027,1060 | Number of Points per Arm           | NA                                 |
-| 0027,1061 | Number of Arms                     | NA                                 |
-| 0027,1062 | Number of Excitations              | NA                                 |
+| 0027,1060 | Number of Points per Arm           | Number of Points per Arm           |
+| 0027,1061 | Number of Arms                     | Number of Arms                     |
+| 0027,1062 | Number of Excitations              | Number of Excitations              |
 
 The GE product ASL sequence is optimized for clinical diagnosis with emphasis on 3D acquisition and multi-shot interleaving for high spatial resolution. For 4D type acquisition (time resolved single-shot acquisition), GE researchers can leverage the [multi-band ASL/BOLD sequence](https://journals.plos.org/plosone/article/authors?id=10.1371/journal.pone.0190427).
 
