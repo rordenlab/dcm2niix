@@ -139,6 +139,7 @@ The following tools exploit dcm2niix
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [boutiques-dcm2niix](https://github.com/lalet/boutiques-dcm2niix) is a dockerfile for installing and validating dcm2niix.
+  - [conversion](https://github.com/pnlbwh/conversion) is a Python library that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
   - [DAC2BIDS](https://github.com/dangom/dac2bids) uses dcm2niibatch to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Here is a [tutorial](https://andysbrainbook.readthedocs.io/en/latest/OpenScience/OS/BIDS_Overview.html) describing usage.
   - [dcm2niir](https://github.com/muschellij2/dcm2niir) R wrapper for dcm2niix/dcm2nii.
@@ -156,7 +157,7 @@ The following tools exploit dcm2niix
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Data acquired using the [reproin](https://github.com/ReproNim/reproin) convention can be easily converted to BIDS.
   - [kipettools](https://github.com/mathesong/kipettools) uses dcm2niix to load PET data.
   - [LEAD-DBS](http://www.lead-dbs.org/) uses dcm2niix for [DICOM import](https://github.com/leaddbs/leaddbs/blob/master/ea_dicom_import.m).
-  - [lin4neuro](http://www.lin4neuro.net/lin4neuro/18.04bionic/vm/) releases such as the English l4n-18.04.4-amd64-20200801-en.ova include MRIcroGL and dcm2niix pre-installed. This allows user with VirtualBox or VMWarePlayer to use these tools (and many other neuroimaging tools) in a graphical virtual machine.	
+  - [lin4neuro](http://www.lin4neuro.net/lin4neuro/18.04bionic/vm/) releases such as the English l4n-18.04.4-amd64-20200801-en.ova include MRIcroGL and dcm2niix pre-installed. This allows user with VirtualBox or VMWarePlayer to use these tools (and many other neuroimaging tools) in a graphical virtual machine.
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
   - [neurodocker](https://github.com/kaczmarj/neurodocker) includes dcm2niix as a lean, minimal install Dockerfile.
   - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a single, static Dockerfile.
@@ -166,9 +167,9 @@ The following tools exploit dcm2niix
   - [Neuroinformatics Database (NiDB)](https://github.com/gbook/nidb) is designed to store, retrieve, analyze, and share neuroimaging data. It uses dcm2niix for image QA and handling some formats. 
   - [NiftyPET](https://niftypet.readthedocs.io/en/latest/install.html) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
-  - [conversion](https://github.com/pnlbwh/conversion) is a Python library that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
-  - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
+  - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
+  - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
