@@ -2837,12 +2837,12 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, newstr);
 					//isAcquisitionReported = true;
 				} else {
-#ifdef mySegmentByAcq
 					sprintf(newstr, "%d", dcm.acquNum);
 					strcat(outname, newstr);
-//isAcquisitionReported = true;
+#ifdef mySegmentByAcq
+	//isAcquisitionReported = true;
 #else
-					printWarning("Ignoring '%%u' in output filename (recompile to segment by acquisition)\n");
+					printWarning("'%%u' in output filename can be misleading (issue 526)\n");
 #endif
 				}
 			}

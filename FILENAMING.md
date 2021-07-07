@@ -24,7 +24,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)
- - %u=acquisition number (from 0020,0012). This option is only avaiable for [DICOM renaming](RENAMING.md), not DICOM to NIfTI conversion (as [BIDS compatible](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html) 4D datasets collapses multiple acquisitions to a single file). 
+ - %u=acquisition number (from 0020,0012). This option is recommended for [DICOM renaming](RENAMING.md). It is [not recommended](https://github.com/rordenlab/dcm2niix/issues/526) for DICOM to NIfTI conversion (as [BIDS compatible](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html) 4D datasets collapses multiple acquisitions to a single file). 
  - %v=vendor long name (from 0008,0070: GE, Philips, Siemens, Toshiba, UIH, NA)
  - %x=study ID (from 0020,0010)
  - %y=youth in series: GE RawDataRunNumber ([0019,10A2](https://github.com/rordenlab/dcm2niix/issues/359)) else TemporalPosition ([0020,0100](https://github.com/rordenlab/dcm2niix/issues/357))*
