@@ -1773,10 +1773,10 @@ tse3d: T2*/
 	// FSL definition is start of first line until start of last line.
 	// Other than the use of (n-1), the value is basically just 1.0/bandwidthPerPixelPhaseEncode.
 	// https://github.com/rordenlab/dcm2niix/issues/130
-	if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0) && (d.manufacturer != kMANUFACTURER_UIH))
-		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0)); //do not store INF issue 512
-	if (d.manufacturer == kMANUFACTURER_UIH) //https://github.com/rordenlab/dcm2niix/issues/225
-		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
+    if ((d.manufacturer == kMANUFACTURER_UIH) && (effectiveEchoSpacing <= 0.0)) //issue225, issue531
+    	json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
+    else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0) )
+	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
 	json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth);
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);

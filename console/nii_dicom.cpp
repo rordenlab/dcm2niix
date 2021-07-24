@@ -4214,25 +4214,23 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kMREchoSequence 0x0018 + uint32_t(0x9114 << 16) //SQ
 #define kMRAcquisitionPhaseEncodingStepsInPlane 0x0018 + uint32_t(0x9231 << 16) //US
 #define kNumberOfImagesInMosaic 0x0019 + (0x100A << 16) //US NumberOfImagesInMosaic
-#define kSeriesPlaneGE 0x0019 + (0x1017 << 16) //SS
-#define kDwellTime 0x0019 + (0x1018 << 16) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 // https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
 #define kDiffusion_bValueSiemens 0x0019 + (0x100C << 16) //IS
-#define kSliceTimeSiemens 0x0019 + (0x1029 << 16) ///FD
 #define kDiffusionGradientDirectionSiemens 0x0019 + (0x100E << 16) //FD
-#define kNumberOfDiffusionDirectionGE 0x0019 + (0x10E0 << 16) ///DS NumberOfDiffusionDirection:UserData24
+#define kSeriesPlaneGE 0x0019 + (0x1017 << 16) //SS
+#define kDwellTime 0x0019 + (0x1018 << 16) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define kLastScanLoc 0x0019 + (0x101B << 16)
+#define kBandwidthPerPixelPhaseEncode 0x0019 + (0x1028 << 16) //FD
+#define kSliceTimeSiemens 0x0019 + (0x1029 << 16) ///FD
+#define kPulseSequenceNameGE 0x0019 + (0x109C << 16) //LO 'epiRT' or 'epi'
+#define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
 #define kRawDataRunNumberGE 0x0019 + (0x10A2 << 16)//SL
-#define kMaxEchoNumGE 0x0019 + (0x10a9 << 16) //DS
+#define kMaxEchoNumGE 0x0019 + (0x10A9 << 16) //DS
 #define kDiffusionDirectionGEX 0x0019 + (0x10BB << 16) //DS phase diffusion direction
 #define kDiffusionDirectionGEY 0x0019 + (0x10BC << 16) //DS frequency diffusion direction
 #define kDiffusionDirectionGEZ 0x0019 + (0x10BD << 16) //DS slice diffusion direction
-#define kPulseSequenceNameGE 0x0019 + (0x109C << 16) //LO 'epiRT' or 'epi'
-#define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
-#define kSharedFunctionalGroupsSequence 0x5200 + uint32_t(0x9229 << 16) // SQ
-#define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
-#define kBandwidthPerPixelPhaseEncode 0x0019 + (0x1028 << 16) //FD
+#define kNumberOfDiffusionDirectionGE 0x0019 + (0x10E0 << 16) ///DS NumberOfDiffusionDirection:UserData24
 #define kStudyID 0x0020 + (0x0010 << 16)
 #define kSeriesNum 0x0020 + (0x0011 << 16)
 #define kAcquNum 0x0020 + (0x0012 << 16)
@@ -4362,6 +4360,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPrivatePerFrameSq 0x2005 + (0x140F << 16)
 #define kMRImageDiffBValueNumber 0x2005 + (0x1412 << 16) //IS
 //#define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
+#define kSharedFunctionalGroupsSequence 0x5200 + uint32_t(0x9229 << 16) // SQ
+#define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
 #define kWaveformSq 0x5400 + (0x0100 << 16)
 #define kSpectroscopyData 0x5600 + (0x0020 << 16) //OF
 #define kImageStart 0x7FE0 + (0x0010 << 16)
