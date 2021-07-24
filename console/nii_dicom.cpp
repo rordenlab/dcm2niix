@@ -4179,6 +4179,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kConvolutionKernel 0x0018 + (0x1210 << 16) //SH
 #define kFrameDuration 0x0018 + (0x1242 << 16) //IS
 #define kReceiveCoilName 0x0018 + (0x1250 << 16) // SH
+//#define kTransmitCoilName 0x0018 + (0x1251 << 16) // SH issue527
 #define kAcquisitionMatrix 0x0018 + (0x1310 << 16) //US
 #define kFlipAngle 0x0018 + (0x1314 << 16)
 #define kInPlanePhaseEncodingDirection 0x0018 + (0x1312 << 16) //CS

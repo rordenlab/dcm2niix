@@ -112,6 +112,7 @@ If you have any problems with the cmake build script described above or want to 
  - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) has great support for various vendors.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package. In my limited experience this tool works well for GE and Siemens data, but fails with Philips 4D datasets.
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
+ - [nanconvert](https://github.com/spinicist/nanconvert) uses the ITK library to convert DICOM from GE and proprietary Bruker to standard formats like DICOM.  
  - [PET CT viewer](http://petctviewer.org/index.php/feature/results-exports/nifti-export) for [Fiji](https://fiji.sc) can load DICOM images and export as NIfTI.
  - [Plastimatch](https://www.plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [Simple Dicom Reader 2 (Sdr2)](http://ogles.sourceforge.net/sdr2-doc/index.html) uses [dcmtk](https://dicom.offis.de/dcmtk.php.en) to read DICOM images and convert them to the NIfTI format.
@@ -152,6 +153,7 @@ The following tools exploit dcm2niix
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a web service for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
   - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
+  - [fMRIprep.dcm2niix](https://github.com/BrettNordin/fMRIprep.dcm2niix) is designed to convert DICOM format to the NIfTI format.
   - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
   - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Data acquired using the [reproin](https://github.com/ReproNim/reproin) convention can be easily converted to BIDS.
@@ -167,12 +169,14 @@ The following tools exploit dcm2niix
   - [Neuroinformatics Database (NiDB)](https://github.com/gbook/nidb) is designed to store, retrieve, analyze, and share neuroimaging data. It uses dcm2niix for image QA and handling some formats. 
   - [NiftyPET](https://niftypet.readthedocs.io/en/latest/install.html) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
+  - [py2bids](https://github.com/Jolinda/py2bids) dcm2niix dicom to bids conversion wrapper.
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
+  - [shimming-toolbox](https://github.com/shimming-toolbox/shimming-toolbox) enabled static and real-time shimming, using dcm2niix to import DICOM data.
   - The [SlicerDcm2nii extension](https://github.com/Slicer/ExtensionsIndex/blob/master/SlicerDcm2nii.s4ext) is one method to import DICOM data into Slicer.
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).
