@@ -479,6 +479,7 @@ typedef struct nifti1_extension nifti1_extension ;
 -----------------------------------------------------------------------------*/
 
 #undef DT_UNKNOWN  /* defined in dirent.h on some Unix systems */
+#undef DT_NONE /* defined in sysemu.h ?*/
 
 /*! \defgroup NIFTI1_DATATYPES
     \brief nifti1 datatype codes
