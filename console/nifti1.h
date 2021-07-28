@@ -478,8 +478,7 @@ typedef struct nifti1_extension nifti1_extension ;
    when it encounters a dataset with a type it doesn't like.
 -----------------------------------------------------------------------------*/
 
-#undef DT_UNKNOWN  /* defined in dirent.h on some Unix systems */
-#undef DT_NONE /* defined in sysemu.h ?*/
+//#undef DT_UNKNOWN  /* defined in dirent.h on some Unix systems */
 
 /*! \defgroup NIFTI1_DATATYPES
     \brief nifti1 datatype codes
@@ -487,7 +486,7 @@ typedef struct nifti1_extension nifti1_extension ;
  */
                             /*--- the original ANALYZE 7.5 type codes ---*/
 #define DT_NONE                    0
-#define DT_UNKNOWN                 0     /* what it says, dude           */
+//#define DT_UNKNOWN                 0     /* what it says, dude           */
 #define DT_BINARY                  1     /* binary (1 bit/voxel)         */
 #define DT_UNSIGNED_CHAR           2     /* unsigned char (8 bits/voxel) */
 #define DT_SIGNED_SHORT            4     /* signed short (16 bits/voxel) */
