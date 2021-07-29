@@ -7036,12 +7036,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			printWarning("Philips instance number (%d) does not make sense: slice %d of %d, volume %d\n", d.imageNum, sliceNumberMrPhilips, locationsInAcquisitionPhilips, volumeNumberMrPhilips);
 		d.imageNum = instanceNum;
 	}
-	if ((numDimensionIndexValues == 0) && (sliceNumberMrPhilips > 0) && (volumeNumberMrPhilips > 0) && (locationsInAcquisitionPhilips > 0)) {//issue529
-		int instanceNum = ((volumeNumberMrPhilips-1) * locationsInAcquisitionPhilips) + sliceNumberMrPhilips;
-		if ((d.imageNum != instanceNum) && (isVerbose))
-			printWarning("Philips instance number (%d) does not make sense: slice %d of %d, volume %d\n", d.imageNum, sliceNumberMrPhilips, locationsInAcquisitionPhilips, volumeNumberMrPhilips);
-		d.imageNum = instanceNum;
-	}
 	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { //issue 372
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numberOfFrames);
 		for (int i = 0; i < numberOfFrames; i++) {
