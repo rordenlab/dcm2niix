@@ -4345,7 +4345,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 //#define kNumberOfLocationsPhilips 0x2001+(0x1015 << 16 ) //SS
 //#define kStackSliceNumber 0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define kNumberOfDynamicScans 0x2001 + (0x1081 << 16) //'2001' '1081' 'IS' 'NumberOfDynamicScans'
-#define kMRAcquisitionTypePhilips 0x2005 + (0x106F << 16)
+#define kMRfMRIStatusIndicationPhilips 0x2005 + (0x1063 << 16)
+#define kMRAcquisitionTypePhilips 0x2005 + (0x106F << 16) //SS
 #define kAngulationAP 0x2005 + (0x1071 << 16) //'2005' '1071' 'FL' 'MRStackAngulationAP'
 #define kAngulationFH 0x2005 + (0x1072 << 16) //'2005' '1072' 'FL' 'MRStackAngulationFH'
 #define kAngulationRL 0x2005 + (0x1073 << 16) //'2005' '1073' 'FL' 'MRStackAngulationRL'
@@ -4415,6 +4416,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int imagesInAcquisition = 0;
 	//int sumSliceNumberMrPhilips = 0;
 	int sliceNumberMrPhilips = 0;
+	int volumeNumberMrPhilips = 0;
 	int numberOfFrames = 0;
 	//int MRImageGradientOrientationNumber = 0;
 	//int minGradNum = kMaxDTI4D + 1;
@@ -6110,6 +6112,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], d.sequenceName);
 			break;
 		}
+		case kMRfMRIStatusIndicationPhilips: //fmri volume number
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break; //see GE dataset in dcm_qa_nih
+			volumeNumberMrPhilips = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
 		case kMRAcquisitionTypePhilips: //kMRAcquisitionType
 			if (lLength > 1)
 				d.is3DAcq = (buffer[lPos] == '3') && (toupper(buffer[lPos + 1]) == 'D');
@@ -6238,9 +6245,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
 			}
 			break;
-		//case kSliceNumberMrPhilips :
-		//	sliceNumberMrPhilips3D = dcmStrInt(lLength, &buffer[lPos]);
-		//	break;
 		case kImagingFrequency2:
 			d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
@@ -7025,6 +7029,18 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #else
 		exit(kEXIT_CORRUPT_FILE_FOUND);
 #endif
+	}
+	if ((numDimensionIndexValues == 0) && (sliceNumberMrPhilips > 0) && (volumeNumberMrPhilips > 0) && (locationsInAcquisitionPhilips > 0)) {//issue529
+		int instanceNum = ((volumeNumberMrPhilips-1) * locationsInAcquisitionPhilips) + sliceNumberMrPhilips;
+		if ((d.imageNum != instanceNum) && (isVerbose))
+			printWarning("Philips instance number (%d) does not make sense: slice %d of %d, volume %d\n", d.imageNum, sliceNumberMrPhilips, locationsInAcquisitionPhilips, volumeNumberMrPhilips);
+		d.imageNum = instanceNum;
+	}
+	if ((numDimensionIndexValues == 0) && (sliceNumberMrPhilips > 0) && (volumeNumberMrPhilips > 0) && (locationsInAcquisitionPhilips > 0)) {//issue529
+		int instanceNum = ((volumeNumberMrPhilips-1) * locationsInAcquisitionPhilips) + sliceNumberMrPhilips;
+		if ((d.imageNum != instanceNum) && (isVerbose))
+			printWarning("Philips instance number (%d) does not make sense: slice %d of %d, volume %d\n", d.imageNum, sliceNumberMrPhilips, locationsInAcquisitionPhilips, volumeNumberMrPhilips);
+		d.imageNum = instanceNum;
 	}
 	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { //issue 372
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numberOfFrames);
