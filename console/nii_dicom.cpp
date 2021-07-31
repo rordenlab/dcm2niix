@@ -4239,9 +4239,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kSeriesInstanceUID 0x0020 + (0x000E << 16)
 #define kImagePositionPatient 0x0020 + (0x0032 << 16) // Actually !
 #define kOrientationACR 0x0020 + (0x0035 << 16)
-//#define kTemporalPositionIdentifier 0x0020+(0x0100 << 16 ) //IS
 #define kOrientation 0x0020 + (0x0037 << 16)
-//#define kTemporalPosition 0x0020+(0x0100 << 16 ) //IS
+#define kTemporalPosition 0x0020+(0x0100 << 16 ) //IS
 //#define kNumberOfTemporalPositions 0x0020+(0x0105 << 16 ) //IS public tag for NumberOfDynamicScans
 #define kTemporalResolution 0x0020 + (0x0110 << 16) //DS
 #define kImagesInAcquisition 0x0020 + (0x1002 << 16) //IS
@@ -4360,7 +4359,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kDiffusionDirectionFH 0x2005 + (0x10B2 << 16)
 #define kPrivatePerFrameSq 0x2005 + (0x140F << 16)
 #define kMRImageDiffBValueNumber 0x2005 + (0x1412 << 16) //IS
-//#define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
+#define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define kSharedFunctionalGroupsSequence 0x5200 + uint32_t(0x9229 << 16) // SQ
 #define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
 #define kWaveformSq 0x5400 + (0x0100 << 16)
@@ -4416,7 +4415,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int imagesInAcquisition = 0;
 	//int sumSliceNumberMrPhilips = 0;
 	int sliceNumberMrPhilips = 0;
-	int volumeNumberMrPhilips = 0;
+	int volumeNumberMrPhilips = -1;
+	int gradientOrientationNumberPhilips = -1;
 	int numberOfFrames = 0;
 	//int MRImageGradientOrientationNumber = 0;
 	//int minGradNum = kMaxDTI4D + 1;
@@ -6114,7 +6114,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		}
 		case kMRfMRIStatusIndicationPhilips: //fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
-				break; //see GE dataset in dcm_qa_nih
+				break;
 			volumeNumberMrPhilips = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kMRAcquisitionTypePhilips: //kMRAcquisitionType
@@ -6390,9 +6390,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			//	printWarning("expected VR of 2005,140F to be 'SQ' (prior DICOM->DICOM conversion error?)\n");
 			is2005140FSQ = true;
 			//is2005140FSQwarned = true;
-			//case kMRImageGradientOrientationNumber :
-			//	if (d.manufacturer == kMANUFACTURER_PHILIPS)
-			//	MRImageGradientOrientationNumber = dcmStrInt(lLength, &buffer[lPos]);
+			break;
+		case kMRImageGradientOrientationNumber :
+			if (d.manufacturer == kMANUFACTURER_PHILIPS)
+				gradientOrientationNumberPhilips = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		case kMRImageDiffBValueNumber:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -6651,6 +6652,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			isOrient = true;
 			break;
 		}
+		case kTemporalPosition: //fall through, both kSliceNumberMrPhilips (2001,100A) and kTemporalPosition are is
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break;
+			volumeNumberMrPhilips = dcmStrInt(lLength, &buffer[lPos]);
+			break;
 		case kTemporalResolution:
 			temporalResolutionMS = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
@@ -7030,12 +7036,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		exit(kEXIT_CORRUPT_FILE_FOUND);
 #endif
 	}
-	if ((numDimensionIndexValues == 0) && (sliceNumberMrPhilips > 0) && (volumeNumberMrPhilips > 0) && (locationsInAcquisitionPhilips > 0)) {//issue529
+	/*if ((numDimensionIndexValues == 0) && (sliceNumberMrPhilips > 0) && (volumeNumberMrPhilips > 0) && (locationsInAcquisitionPhilips > 0)) {//issue529
 		int instanceNum = ((volumeNumberMrPhilips-1) * locationsInAcquisitionPhilips) + sliceNumberMrPhilips;
 		if ((d.imageNum != instanceNum) && (isVerbose))
 			printWarning("Philips instance number (%d) does not make sense: slice %d of %d, volume %d\n", d.imageNum, sliceNumberMrPhilips, locationsInAcquisitionPhilips, volumeNumberMrPhilips);
 		d.imageNum = instanceNum;
-	}
+	}*/
 	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { //issue 372
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numberOfFrames);
 		for (int i = 0; i < numberOfFrames; i++) {
@@ -7345,6 +7351,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
+	//start: issue529
+	if ((!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
+		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...
+	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumberMrPhilips) ? d.rawDataRunNumber : volumeNumberMrPhilips;
+	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
+	//end: issue529
 	if (hasDwiDirectionality)
 		d.isVectorFromBMatrix = false; //issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
 	//printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);

@@ -76,6 +76,39 @@ const char kFileSep[2] = "/";
 
 #define newTilt
 
+#ifdef USING_R
+
+#ifndef max
+#define max(a, b) std::max(a, b)
+#endif
+
+#ifndef min
+#define min(a, b) std::min(a, b)
+#endif
+
+#else
+
+#ifndef max
+#define max(a, b) \
+	({ __typeof__ (a) _a = (a); \
+		__typeof__ (b) _b = (b); \
+	_a > _b ? _a : _b; })
+#endif
+
+#ifndef min
+#define min(a, b) \
+	({ __typeof__ (a) _a = (a); \
+		__typeof__ (b) _b = (b); \
+	_a < _b ? _a : _b; })
+#endif
+
+#endif
+
+bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
+	return ((!isSameFloat(bvec.V[0], 0.0f)) && //not a B-0 image
+			((isSameFloat(bvec.V[1], 0.0f)) && (isSameFloat(bvec.V[2], 0.0f)) && (isSameFloat(bvec.V[3], 0.0f))));
+}
+
 struct TDCMsort {
 	uint64_t indx, img;
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
@@ -1869,11 +1902,6 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 
 #endif
 
-bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
-	return ((!isSameFloat(bvec.V[0], 0.0f)) && //not a B-0 image
-			((isSameFloat(bvec.V[1], 0.0f)) && (isSameFloat(bvec.V[2], 0.0f)) && (isSameFloat(bvec.V[3], 0.0f))));
-}
-
 unsigned char *removeADC(struct nifti_1_header *hdr, unsigned char *inImg, int numADC) {
 	//for speed we just clip the number of volumes, the realloc routine would be nice
 	// we do not want to copy input to a new smaller array since 4D DTI datasets can be huge
@@ -2461,16 +2489,20 @@ float intersliceDistanceSigned(struct TDICOMdata d1, struct TDICOMdata d2) {
 
 //https://stackoverflow.com/questions/36714030/c-sort-float-array-while-keeping-track-of-indices/36714204
 struct TFloatSort {
-	float value;
-	int index;
+	float position;
+	int volume, index;
 };
 
 int compareTFloatSort(const void *a, const void *b) {
 	struct TFloatSort *a1 = (struct TFloatSort *)a;
 	struct TFloatSort *a2 = (struct TFloatSort *)b;
-	if ((*a1).value > (*a2).value)
+	if ((*a1).volume > (*a2).volume)
 		return 1;
-	if ((*a1).value < (*a2).value)
+	if ((*a1).volume < (*a2).volume)
+		return -1;
+	if ((*a1).position > (*a2).position)
+		return 1;
+	if ((*a1).position < (*a2).position)
 		return -1;
 	//if value is tied, retain index order (useful for TXYZ images?)
 	if ((*a1).index > (*a2).index)
@@ -2489,35 +2521,46 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 	bool isAscending1 = (dx > 0);
 	bool isConsistent = true;
-	for (int i = 1; i < d3; i++) {
-		dx = intersliceDistanceSigned(dcmList[dcmSort[i - 1].indx], dcmList[dcmSort[i].indx]);
-		bool isAscending = (dx > 0);
-		if (isAscending != isAscending1)
-			isConsistent = false; //direction reverses
+	for (int v = 0; v < d4; v++) {
+		int volStart = v * d3;
+		for (int i = 1; i < d3; i++) {
+			dx = intersliceDistanceSigned(dcmList[dcmSort[volStart + i - 1].indx], dcmList[dcmSort[volStart + i].indx]);
+			bool isAscending = (dx > 0);
+			//printf("volume %d slice %d distanceFromSlice1 %g DICOMvolume %d\n", v, i+1, dx, dcmList[dcmSort[volStart + i].indx].rawDataRunNumber);
+			if (isAscending != isAscending1)
+				isConsistent = false; //direction reverses
+		}
 	}
 	if (isConsistent)
 		return true;
-	printWarning("Order specified by DICOM instance number is not spatial (reordering).\n");
-	TFloatSort *floatSort = (TFloatSort *)malloc(d3 * sizeof(TFloatSort));
-	for (int i = 0; i < d3; i++) {
+	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
+	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
+	int maxVol = minVol;
+	for (int i = 0; i < nConvert; i++) {
 		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
-		floatSort[i].value = dx;
+		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
+		floatSort[i].volume = vol;
+		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
+			vol = d4 + 1;
+		minVol = min(minVol, vol);
+		maxVol = max(maxVol, vol);
+		floatSort[i].position = dx;
 		floatSort[i].index = i;
 	}
+	if ((maxVol-minVol+1) != d4) 
+		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVol, maxVol);
+	else
+		printWarning("Order specified by DICOM instance number is not spatial (reordering).\n"); 
 	TDCMsort *dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 	for (int i = 0; i < nConvert; i++)
 		dcmSortIn[i] = dcmSort[i];
-	qsort(floatSort, d3, sizeof(struct TFloatSort), compareTFloatSort); //sort based on series and image numbers....
-	for (int vol = 0; vol < d4; vol++) {
-		int volInc = vol * d3;
-		for (int i = 0; i < d3; i++)
-			dcmSort[volInc + i] = dcmSortIn[volInc + floatSort[i].index];
-	}
+	qsort(floatSort, nConvert, sizeof(struct TFloatSort), compareTFloatSort); //sort based on series and image numbers....
+	for (int i = 0; i < nConvert; i++)
+		dcmSort[i] = dcmSortIn[floatSort[i].index];
 	free(floatSort);
 	free(dcmSortIn);
 	return false;
 } // ensureSequentialSlicePositions()
-//#endif //myInstanceNumberOrderIsNotSpatial
 
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
 	//swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...
@@ -3683,34 +3726,6 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	fclose(fp);
 	return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
-
-#endif
-
-#ifdef USING_R
-
-#ifndef max
-#define max(a, b) std::max(a, b)
-#endif
-
-#ifndef min
-#define min(a, b) std::min(a, b)
-#endif
-
-#else
-
-#ifndef max
-#define max(a, b) \
-	({ __typeof__ (a) _a = (a); \
-		__typeof__ (b) _b = (b); \
-	_a > _b ? _a : _b; })
-#endif
-
-#ifndef min
-#define min(a, b) \
-	({ __typeof__ (a) _a = (a); \
-		__typeof__ (b) _b = (b); \
-	_a < _b ? _a : _b; })
-#endif
 
 #endif
 
@@ -5490,6 +5505,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
 			//if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
 			if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT) || ((opts.isForceOnsetTimes) && (dcmList[indx0].manufacturer != kMANUFACTURER_GE)))) {
+				if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)
+					ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList); //issue529
+				//printf("Bogo529\n"); return EXIT_SUCCESS;
 				//note: GE 0008,0032 unreliable, see mb=6 data from sw27.0 20201026
 				//issue 407
 				int nTR = 0;
