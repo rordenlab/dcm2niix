@@ -5646,7 +5646,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 					if ((isInconsistenSliceDir) && (slicePositionRepeats == 1)) {
 						//printWarning("Slice order as defined by instance number not spatially sequential.\n");
 						//printWarning("Attempting to reorder slices based on spatial position.\n");
-						ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList);
+						ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose);
 						dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 						hdr0.pixdim[3] = dx;
 						isInconsistenSliceDir = false;
