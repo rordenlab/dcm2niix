@@ -6112,11 +6112,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], d.sequenceName);
 			break;
 		}
-		case kMRfMRIStatusIndicationPhilips: //fmri volume number
+		case kMRfMRIStatusIndicationPhilips: {//fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
-			volumeNumberMrPhilips = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			int i = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (i > 0) //only if positive value, see Magdeburg_2014 sample data from dcm_qa_philips Philips MR 51.0
+				volumeNumberMrPhilips = i;
 			break;
+		}
 		case kMRAcquisitionTypePhilips: //kMRAcquisitionType
 			if (lLength > 1)
 				d.is3DAcq = (buffer[lPos] == '3') && (toupper(buffer[lPos + 1]) == 'D');

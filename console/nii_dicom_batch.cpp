@@ -2469,7 +2469,10 @@ float intersliceDistance(struct TDICOMdata d1, struct TDICOMdata d2) {
 //#ifdef myInstanceNumberOrderIsNotSpatial
 
 float intersliceDistanceSigned(struct TDICOMdata d1, struct TDICOMdata d2) {
-	//reports distance between two slices, signed as 2nd slice can be in front or behind 1st
+// Compute the signed slice position on the through-slice axis
+//  https://nipy.org/nibabel/dicom/dicom_orientation.html#working-out-the-z-coordinates-for-a-set-of-slices
+//  https://itk.org/pipermail/insight-users/2003-September/004762.html
+//reports distance between two slices, signed as 2nd slice can be in front or behind 1st
 	vec3 slice_vector = setVec3(d2.patientPosition[1] - d1.patientPosition[1],
 								d2.patientPosition[2] - d1.patientPosition[2],
 								d2.patientPosition[3] - d1.patientPosition[3]);
@@ -2512,17 +2515,19 @@ int compareTFloatSort(const void *a, const void *b) {
 	return 0;
 } // compareTFloatSort()
 
-bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[]) {
+bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], int verbose) {
 	//ensure slice position is sequential: either ascending [1 2 3] or descending [3 2 1], not [1 3 2], [3 1 2] etc.
 	//n.b. as currently designed, this will force swapDim3Dim4() for 4D data
 	int nConvert = d3 * d4;
 	if (d3 < 3)
 		return true; //always consistent
 	float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
+	bool isConsistent = !isSameFloatGE(dx, 0.0); //slice distance of zero is not consistent with XYZT order (perhaps XYTZ) 
 	bool isAscending1 = (dx > 0);
-	bool isConsistent = true;
 	for (int v = 0; v < d4; v++) {
 		int volStart = v * d3;
+		if (!isSameFloatGE(intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[volStart].indx]), 0.0)) 
+			isConsistent = false; //XYZT requires first slice of each volume is at same position
 		for (int i = 1; i < d3; i++) {
 			dx = intersliceDistanceSigned(dcmList[dcmSort[volStart + i - 1].indx], dcmList[dcmSort[volStart + i].indx]);
 			bool isAscending = (dx > 0);
@@ -2539,9 +2544,11 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	for (int i = 0; i < nConvert; i++) {
 		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
 		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
+		if (verbose > 1) //only report slice data for logorrheic verbosity
+			printf("slice %d position %g volume %d\n", i, dx, vol);
 		floatSort[i].volume = vol;
 		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
-			vol = d4 + 1;
+			vol = d4;
 		minVol = min(minVol, vol);
 		maxVol = max(maxVol, vol);
 		floatSort[i].position = dx;
@@ -5506,7 +5513,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			//if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
 			if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT) || ((opts.isForceOnsetTimes) && (dcmList[indx0].manufacturer != kMANUFACTURER_GE)))) {
 				if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)
-					ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList); //issue529
+					ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose); //issue529
 				//printf("Bogo529\n"); return EXIT_SUCCESS;
 				//note: GE 0008,0032 unreliable, see mb=6 data from sw27.0 20201026
 				//issue 407
@@ -5594,7 +5601,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			float dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 #ifdef myInstanceNumberOrderIsNotSpatial
 			if (!isSameFloat(dx, 0.0)) //only for XYZT, not TXYZ: perhaps run for swapDim3Dim4? Extremely rare anomaly
-				if (!ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList))
+				if (!ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose))
 					dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 			indx0 = dcmSort[0].indx;
 			if (nConvert > 1)
