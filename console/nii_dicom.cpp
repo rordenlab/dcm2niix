@@ -854,12 +854,13 @@ struct TDICOMdata clear_dicom_data() {
 	d.epiVersionGE = -1;
 	d.internalepiVersionGE = -1;
 	d.durationLabelPulseGE = -1;
-	d.aslFlagsGE = 0;
+	d.aslFlags = kASL_FLAG_NONE;
 	d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_UNKNOWN;
 	d.mtState = -1;
 	d.numberOfExcitations = -1;
 	d.numberOfArms = -1;
 	d.numberOfPointsPerArm = -1;
+	d.phaseNumber = - 1; //Philips Multi-Phase ASL
 	d.spoiling = kSPOILING_UNKOWN;
 	d.interp3D = -1;
 	for (int i = 0; i < kMaxOverlay; i++)
@@ -4191,6 +4192,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kMagnetizationTransferAttribute 0x0018 + uint32_t(0x9020 << 16) //'CS' 'ON_RESONANCE','OFF_RESONANCE','NONE'
 #define kRectilinearPhaseEncodeReordering 0x0018 + uint32_t(0x9034 << 16) //'CS' 'REVERSE_LINEAR'/'LINEAR'
 #define kPartialFourierDirection 0x0018 + uint32_t(0x9036 << 16) //'CS'
+#define kCardiacSynchronizationTechnique 0x0018 + uint32_t(0x9037 << 16) //'CS'
 #define kParallelReductionFactorInPlane 0x0018 + uint32_t(0x9069 << 16) //FD
 #define kAcquisitionDuration 0x0018 + uint32_t(0x9073 << 16) //FD
 //#define kFrameAcquisitionDateTime 0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
@@ -4198,7 +4200,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kParallelAcquisitionTechnique 0x0018 + uint32_t(0x9078 << 16) //CS: SENSE, SMASH
 #define kInversionTimes 0x0018 + uint32_t(0x9079 << 16) //FD
 #define kPartialFourier 0x0018 + uint32_t(0x9081 << 16) //CS
-	const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
+const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 //#define kDiffusionBFactorSiemens 0x0019+(0x100C<< 16 ) // 0019;000C;SIEMENS MR HEADER;B_value
 #define kDiffusion_bValue 0x0018 + uint32_t(0x9087 << 16) // FD
 #define kDiffusionOrientation 0x0018 + uint32_t(0x9089 << 16) // FD, seen in enhanced DICOM from Philips 5.* and Siemens XA10.
@@ -4329,6 +4331,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPMSCT_RLE1 0x07a1 + (0x100a << 16) //Elscint/Philips compression
 #define kPrivateCreator 0x2001 + (0x0010 << 16) // LO (Private creator is any tag where group is odd and element is x0010-x00FF
 #define kDiffusion_bValuePhilips 0x2001 + (0x1003 << 16) // FL
+#define kPhaseNumber 0x2001 + (0x1008 << 16) //IS
 #define kCardiacSync 0x2001 + (0x1010 << 16) //CS
 //#define kDiffusionDirectionPhilips 0x2001+(0x1004 << 16 )//CS Diffusion Direction
 #define kSliceNumberMrPhilips 0x2001 + (0x100A << 16) //IS Slice_Number_MR
@@ -4360,6 +4363,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPrivatePerFrameSq 0x2005 + (0x140F << 16)
 #define kMRImageDiffBValueNumber 0x2005 + (0x1412 << 16) //IS
 #define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
+#define kMRImageLabelType 0x2005 + (0x1429 << 16) //CS ASL LBL_CTL https://github.com/physimals/dcm_convert_phillips/
 #define kSharedFunctionalGroupsSequence 0x5200 + uint32_t(0x9229 << 16) // SQ
 #define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
 #define kWaveformSq 0x5400 + (0x0100 << 16)
@@ -4390,8 +4394,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int overlayRows = 0;
 	int overlayCols = 0;
 	bool isTriggerSynced = false;
+	bool isProspectiveSynced = false;
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
+	bool isASL = false;
 	//double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
@@ -4624,7 +4630,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
 				dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 				dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
-				if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime))
+				//printf("%d %d %g????\n", isTriggerSynced, isProspectiveSynced, d.triggerDelayTime);
+				if ((isASL) || (d.aslFlags != kASL_FLAG_NONE)) d.triggerDelayTime = 0.0; //see dcm_qa_philips_asl
+				if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
+					d.triggerDelayTime = 0.0;
+				if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime) )
 					dcmDim[numDimensionIndexValues].triggerDelayTime = 0.0; //issue395
 				else
 					dcmDim[numDimensionIndexValues].triggerDelayTime = d.triggerDelayTime;
@@ -5165,6 +5175,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], acqContrast);
 			if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
 				d.isDiffusion = true;
+			if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "PERFUSION") != NULL))
+				isASL = true; //see series 301 of dcm_qa_philips_asl
 			break;
 		case kAcquisitionTime: {
 			char acquisitionTimeTxt[kDICOMStr];
@@ -5335,6 +5347,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_COMBINATION;
 			break;
 		}
+		case kCardiacSynchronizationTechnique:
+			if (toupper(buffer[lPos]) == 'P')
+				isProspectiveSynced = true;
+			break;
 		case kParallelReductionFactorInPlane:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
 				break;
@@ -6182,6 +6198,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			B0Philips = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
 			set_bVal(&volDiffusion, B0Philips);
 			break;
+		case kPhaseNumber: //IS issue529
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break;
+			d.phaseNumber = dcmStrInt(lLength, &buffer[lPos]); //see dcm_qa_philips_asl
+			break;
 		case kCardiacSync: //CS [TRIGGERED],[NO]
 			if (lLength < 2)
 				break;
@@ -6398,6 +6419,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (d.manufacturer == kMANUFACTURER_PHILIPS)
 				gradientOrientationNumberPhilips = dcmStrInt(lLength, &buffer[lPos]);
 			break;
+		case kMRImageLabelType : //CS ??? LBL CTL 
+			if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 2)) break;
+			//TODO529: issue529 for ASL LBL/CTL  "LABEL"
+			//if (toupper(buffer[lPos]) == 'L') isLabel = true;
+			if (toupper(buffer[lPos]) == 'L') d.aslFlags = kASL_FLAG_PHILIPS_LABEL;
+			if (toupper(buffer[lPos]) == 'C') d.aslFlags = kASL_FLAG_PHILIPS_CONTROL;
+			break;
 		case kMRImageDiffBValueNumber:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
@@ -6577,12 +6605,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			char st[kDICOMStr];
-			//aslFlagsGE
+			//aslFlags
 			dcmStr(lLength, &buffer[lPos], st);
 			if (strstr(st, "PSEUDOCONTINUOUS") != NULL)
-				d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_PSEUDOCONTINUOUS);
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_PSEUDOCONTINUOUS);
 			else if (strstr(st, "CONTINUOUS") != NULL)
-				d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_CONTINUOUS);
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_CONTINUOUS);
 			break;
 		}
 		case kASLLabelingTechniqueGE: { //LO issue427GE
@@ -6591,9 +6619,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			char st[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], st);
 			if (strstr(st, "3D continuous") != NULL)
-				d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_3DCASL);
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_3DCASL);
 			if (strstr(st, "3D pulsed continuous") != NULL)
-				d.aslFlagsGE = (d.aslFlagsGE | kASL_FLAG_GE_3DPCASL);
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_3DPCASL);
 			break;
 		}
 		case kDurationLabelPulseGE: { //IS
@@ -6782,7 +6810,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					isStr = true;
 				if ((vr[0] == 'A') && (vr[1] == 'S'))
 					isStr = true;
-				//if ((vr[0]=='A') && (vr[1]=='T')) isStr = xxx;
 				if ((vr[0] == 'C') && (vr[1] == 'S'))
 					isStr = true;
 				if ((vr[0] == 'D') && (vr[1] == 'A'))
@@ -7039,12 +7066,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		exit(kEXIT_CORRUPT_FILE_FOUND);
 #endif
 	}
-	/*if ((numDimensionIndexValues == 0) && (sliceNumberMrPhilips > 0) && (volumeNumberMrPhilips > 0) && (locationsInAcquisitionPhilips > 0)) {//issue529
-		int instanceNum = ((volumeNumberMrPhilips-1) * locationsInAcquisitionPhilips) + sliceNumberMrPhilips;
-		if ((d.imageNum != instanceNum) && (isVerbose))
-			printWarning("Philips instance number (%d) does not make sense: slice %d of %d, volume %d\n", d.imageNum, sliceNumberMrPhilips, locationsInAcquisitionPhilips, volumeNumberMrPhilips);
-		d.imageNum = instanceNum;
-	}*/
 	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { //issue 372
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numberOfFrames);
 		for (int i = 0; i < numberOfFrames; i++) {
@@ -7260,8 +7281,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char *)&d.protocolName, strlen(d.protocolName));
 	}
-	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (!isTriggerSynced)) //issue408
-		d.triggerDelayTime = 0.0;
+	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
+		d.triggerDelayTime = 0.0; 		 //Philips ASL use "(0018,9037) CS [NONE]" but "(2001,1010) CS [TRIGGERED]", a situation not described in issue408
 	if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime)) //issue395
 		d.triggerDelayTime = 0.0;
 	//printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
@@ -7357,8 +7378,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	//start: issue529
 	if ((!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
 		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...
+	//printf("%d %d %d\n", d.rawDataRunNumber, volumeNumberMrPhilips, phaseNumber);
 	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumberMrPhilips) ? d.rawDataRunNumber : volumeNumberMrPhilips;
 	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
+	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	//end: issue529
 	if (hasDwiDirectionality)
 		d.isVectorFromBMatrix = false; //issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix

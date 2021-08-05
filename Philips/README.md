@@ -71,6 +71,14 @@ Formulas:
  FP = DV / (RS * SS)
 ```
 
+## Volume Ordering
+
+The DICOM standard does not require that the [Instance Number (0020,0013)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0020,0013)) be sequential or even unique. As a convention, most manufacturers provide instance numbers that are sequential with the temporal or spatial order. However, Philips often generates these values in a random order. This can lead to images appearing in a jumbled order when displayed with many DICOM viewers (e.g. [Horos](https://horosproject.org)). dcm2niix will attempt to automatically resolve this. Hopefully, fMRI volumes will be ordered temporally, diffusion data will be ordered by gradient number (with derived TRACE/ADC maps being made the final volume), and ASL scans will follow the order hierarchical order of [repeat, phase, label/control](https://github.com/neurolabusc/dcm_qa_philips_asl)). dcm2niix makes assumptions about the volume based on assumptions observed in previous Philips data. These heuristics may not be robust for future Philips data or for DICOM images that have been manipulated (e.g. anonymized, dcuncat, touched by an AGFA/dcmche PACS). Therefore, users need to use caution when dealing with Philips data converted by dcm2niix.
+
+## Arterial Spin Labelling
+
+Details and sample datasets for Philips Arterial Spin Labeling (ASL) are provided with the [dcm_qa_philips_asl](https://github.com/neurolabusc/dcm_qa_philips_asl) repository.
+
 ## Derived parametric maps stored with raw diffusion data
 
 Some Philips diffusion DICOM images include derived image(s) along with the images. Other manufacturers save these derived images as a separate series number, and the DICOM standard seems ambiguous on whether it is allowable to mix raw and derived data in the same series (see PS 3.3-2008, C.7.6.1.1.2-3). In practice, many Philips diffusion images append [derived parametric maps](http://www.revisemri.com/blog/2008/diffusion-tensor-imaging/) with the original data. With Philips, appending the derived isotropic image is optional - it is only created for the 'clinical' DTI schemes for radiography analysis and is triggered if the first three vectors in the gradient table are the unit X,Y and Z vectors. For conventional DWI, the result is the conventional mean of the ADC X,Y,Z for DTI it the conventional mean of the 3 principle Eigen vectors. As scientists, we want to discard these derived images, as they will disrupt data processing and we can generate better parametric maps after we have applied undistortion methods such as [Eddy and Topup](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy/UsersGuide). The current version of dcm2niix uses the Diffusion Directionality (0018,9075) tag to detect B=0 unweighted ("NONE"), B-weighted ("DIRECTIONAL"), and derived ("ISOTROPIC") images. Note that the Dimension Index Values (0020,9157) tag provides an alternative approach to discriminate these images. Here are sample tags from a Philips enhanced image that includes and derived map (3rd dimension is "1" while the other images set this to "2").
@@ -167,4 +175,5 @@ Prior versions of dcm2niix used different methods to sort images. However, these
  - [Archival samples](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Archival_MRI)
  - [Diffusion Examples](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging)
  - [Additional Diffusion Examples](https://github.com/neurolabusc/dcm_qa_philips)
+ - Classic and enhanced [ASL Examples](https://github.com/neurolabusc/dcm_qa_philips_asl)
  - [Enhanced DICOMs](https://github.com/neurolabusc/dcm_qa_enh)

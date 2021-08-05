@@ -1677,13 +1677,13 @@ tse3d: T2*/
 	}
 #endif
 	//GE ASL specific tags
-	if (d.aslFlagsGE & kASL_FLAG_GE_CONTINUOUS)
+	if (d.aslFlags & kASL_FLAG_GE_CONTINUOUS)
 		fprintf(fp, "\t\"ASLContrastTechnique\": \"CONTINUOUS\",\n");
-	if (d.aslFlagsGE & kASL_FLAG_GE_PSEUDOCONTINUOUS)
+	if (d.aslFlags & kASL_FLAG_GE_PSEUDOCONTINUOUS)
 		fprintf(fp, "\t\"ASLContrastTechnique\": \"PSEUDOCONTINUOUS\",\n");
-	if (d.aslFlagsGE & kASL_FLAG_GE_3DPCASL)
+	if (d.aslFlags & kASL_FLAG_GE_3DPCASL)
 		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D pulsed continuous ASL technique\",\n");
-	if (d.aslFlagsGE & kASL_FLAG_GE_3DCASL)
+	if (d.aslFlags & kASL_FLAG_GE_3DCASL)
 		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D continuous ASL technique\",\n");
 	if (d.durationLabelPulseGE > 0) {
 		json_Float(fp, "\t\"LabelingDuration\": %g,\n", d.durationLabelPulseGE / 1000.0);
@@ -2536,28 +2536,48 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 				isConsistent = false; //direction reverses
 		}
 	}
-	if (isConsistent)
-		return true;
+	//if (isConsistent)
+	//	return true;
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
+	int maxPhase = 1; //Philips Multi-Phase
 	for (int i = 0; i < nConvert; i++) {
-		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
 		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
-		if (verbose > 1) //only report slice data for logorrheic verbosity
-			printf("slice %d position %g volume %d\n", i, dx, vol);
-		floatSort[i].volume = vol;
-		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
-			vol = d4;
 		minVol = min(minVol, vol);
 		maxVol = max(maxVol, vol);
+		maxPhase = max(maxPhase, dcmList[dcmSort[i].indx].phaseNumber);
+	}
+	bool isASL = (dcmList[dcmSort[0].indx].aslFlags != kASL_FLAG_NONE);
+	//we will renumber volumes for Philips ASL (Contrast/Label, phase) and DWI (derived trace)
+	int minVolOut = kMaxDTI4D + 1;
+	int maxVolOut = -1;
+	for (int i = 0; i < nConvert; i++) {
+		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
+		int rawvol = vol;
+		int phase = max(1, dcmList[dcmSort[i].indx].phaseNumber);
+		int isAslLabel = dcmList[dcmSort[i].indx].aslFlags == kASL_FLAG_PHILIPS_LABEL;
+		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
+		if (isASL) {
+			//choose order of volumes, see dcm_qa_philips_asl
+			vol += (phase - 1) * maxVol;	
+			if (isAslLabel) 
+				vol += maxPhase * maxVol;
+		}
+		//if (verbose > 1) //only report slice data for logorrheic verbosity
+			printf("instanceNumber %4d position %g volume %d repeat %d ASLlabel %d phase %d\n", dcmList[dcmSort[i].indx].imageNum, dx, vol, rawvol, isAslLabel, phase);
+		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
+			vol = maxVol + 1;
+		minVolOut = min(minVolOut, vol);
+		maxVolOut = max(maxVolOut, vol);
+		floatSort[i].volume = vol;
 		floatSort[i].position = dx;
 		floatSort[i].index = i;
 	}
-	if ((maxVol-minVol+1) != d4) 
-		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVol, maxVol);
-	else
-		printWarning("Order specified by DICOM instance number is not spatial (reordering).\n"); 
+	//n.b. should we change dim[3] and dim[4] if number of volumes = dim[3]?
+	if ((maxVolOut-minVolOut+1) != d4) 
+		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVolOut, maxVolOut); 
+	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	TDCMsort *dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 	for (int i = 0; i < nConvert; i++)
 		dcmSortIn[i] = dcmSort[i];
@@ -2566,6 +2586,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		dcmSort[i] = dcmSortIn[floatSort[i].index];
 	free(floatSort);
 	free(dcmSortIn);
+	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	return false;
 } // ensureSequentialSlicePositions()
 
