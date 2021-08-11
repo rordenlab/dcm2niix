@@ -799,6 +799,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.intenScalePhilips = 0;
 	d.intenIntercept = 0;
 	d.gantryTilt = 0.0;
+	d.exposureTimeMs = 0.0;
+	d.xRayTubeCurrent = 0.0;
 	d.radionuclidePositronFraction = 0.0;
 	d.radionuclideHalfLife = 0.0;
 	d.doseCalibrationFactor = 0.0;
@@ -1171,6 +1173,8 @@ int dcmStrManufacturer(const int lByteLength, unsigned char lBuffer[]) { //read 
 		ret = kMANUFACTURER_GE;
 	if ((toupper(cString[0]) == 'H') && (toupper(cString[1]) == 'I'))
 		ret = kMANUFACTURER_HITACHI;
+	if ((toupper(cString[0]) == 'M') && (toupper(cString[1]) == 'E'))
+		ret = kMANUFACTURER_MEDISO;
 	if ((toupper(cString[0]) == 'P') && (toupper(cString[1]) == 'H'))
 		ret = kMANUFACTURER_PHILIPS;
 	if ((toupper(cString[0]) == 'T') && (toupper(cString[1]) == 'O'))
@@ -4176,6 +4180,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kRadionuclideHalfLife 0x0018 + (0x1075 << 16)
 #define kRadionuclidePositronFraction 0x0018 + (0x1076 << 16)
 #define kGantryTilt 0x0018 + (0x1120 << 16)
+#define kXRayTimeMS 0x0018 + (0x1150 << 16) //IS
+#define kXRayTubeCurrent 0x0018 + (0x1151 << 16) //IS	
 #define kXRayExposure 0x0018 + (0x1152 << 16)
 #define kConvolutionKernel 0x0018 + (0x1210 << 16) //SH
 #define kFrameDuration 0x0018 + (0x1242 << 16) //IS
@@ -5950,6 +5956,12 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		case kGantryTilt:
 			d.gantryTilt = dcmStrFloat(lLength, &buffer[lPos]);
+			break;
+		case kXRayTimeMS: //IS
+			d.exposureTimeMs = dcmStrInt(lLength, &buffer[lPos]);;
+			break;
+		case kXRayTubeCurrent: //IS
+			d.xRayTubeCurrent = dcmStrInt(lLength, &buffer[lPos]);;
 			break;
 		case kXRayExposure: //CTs do not have echo times, we use this field to detect different exposures: https://github.com/neurolabusc/dcm2niix/pull/48
 			if (d.TE == 0) { // for CT we will use exposure (0018,1152) whereas for MR we use echo time (0018,0081)

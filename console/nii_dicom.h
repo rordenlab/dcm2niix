@@ -59,6 +59,7 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 
 #define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
 #define kDICOMStrLarge 256
+
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
 #define kMANUFACTURER_GE  2
@@ -66,8 +67,9 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kMANUFACTURER_TOSHIBA  4
 #define kMANUFACTURER_UIH  5
 #define kMANUFACTURER_BRUKER  6
-#define kMANUFACTURER_HITACHI 7
+#define kMANUFACTURER_HITACHI  7
 #define kMANUFACTURER_CANON  8
+#define kMANUFACTURER_MEDISO  9
 
 //note: note a complete modality list, e.g. XA,PX, etc
 #define kMODALITY_UNKNOWN  0
@@ -206,7 +208,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
         int overlayStart[kMaxOverlay];
         int phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
-        float numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
+        float 	xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 		float frameDuration, ecat_isotope_halflife, ecat_dosage;

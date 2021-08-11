@@ -1197,6 +1197,9 @@ tse3d: T2*/
 	case kMANUFACTURER_CANON:
 		fprintf(fp, "\t\"Manufacturer\": \"Canon\",\n");
 		break;
+	case kMANUFACTURER_MEDISO:
+		fprintf(fp, "\t\"Manufacturer\": \"Mediso\",\n");
+		break;
 	case kMANUFACTURER_HITACHI:
 		fprintf(fp, "\t\"Manufacturer\": \"Hitachi\",\n");
 		break;
@@ -1375,6 +1378,8 @@ tse3d: T2*/
 		fprintf(fp, "\t],\n");
 	}
 	//CT parameters
+	json_Float(fp, "\t\"ExposureTime\": %g,\n", d.exposureTimeMs / 1000.0);
+	json_Float(fp, "\t\"XRayTubeCurrent\": %g,\n", d.xRayTubeCurrent);
 	if ((d.TE > 0.0) && (d.isXRay))
 		fprintf(fp, "\t\"XRayExposure\": %g,\n", d.TE);
 	//MRI parameters
@@ -2564,7 +2569,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 			if (isAslLabel) 
 				vol += maxPhase * maxVol;
 		}
-		//if (verbose > 1) //only report slice data for logorrheic verbosity
+		if (verbose > 1) //only report slice data for logorrheic verbosity
 			printf("instanceNumber %4d position %g volume %d repeat %d ASLlabel %d phase %d\n", dcmList[dcmSort[i].indx].imageNum, dx, vol, rawvol, isAslLabel, phase);
 		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
 			vol = maxVol + 1;
@@ -3332,6 +3337,9 @@ void nii_saveAttributes(struct TDICOMdata &data, struct nifti_1_header &header, 
 		break;
 	case kMANUFACTURER_GE:
 		images->addAttribute("manufacturer", "GE");
+		break;
+	case kMANUFACTURER_MEDISO:
+		images->addAttribute("manufacturer", "Mediso");
 		break;
 	case kMANUFACTURER_PHILIPS:
 		images->addAttribute("manufacturer", "Philips");

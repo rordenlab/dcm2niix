@@ -118,9 +118,11 @@ These fields are specific to modality (e.g. MR, CT, PET).
 
 Fields specific to CT scans.
 
-| Field        | Unit | Comments            | Defined By |
-|--------------|------|---------------------|------------|
-| XRayExposure | mAs  | DICOM tag 0018,1152 | D          |
+| Field           | Unit | Comments            | Defined By |
+|-----------------|------|---------------------|------------|
+| ExposureTime    | s    | DICOM tag 0018,1150 | D          |
+| XRayTubeCurrent | mA   | DICOM tag 0018,1151 | D          |
+| XRayExposure    | mAs  | DICOM tag 0018,1152 | D          |
 
 ### Modality Magnetic Resonance Imaging
 
