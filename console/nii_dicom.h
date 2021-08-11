@@ -50,7 +50,7 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.202100805"
+#define kDCMdate "v1.0.202100811"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -85,6 +85,19 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kPARTIAL_FOURIER_DIRECTION_FREQUENCY  2
 #define kPARTIAL_FOURIER_DIRECTION_SLICE_SELECT  3
 #define kPARTIAL_FOURIER_DIRECTION_COMBINATION  4
+
+//GE EPI settings
+#define kGE_EPI_UNKNOWN  -1
+#define kGE_EPI_EPI  0
+#define kGE_EPI_EPIRT  1
+#define kGE_EPI_EPI2  2
+#define kGE_EPI_PEPOLAR_FWD  3
+#define kGE_EPI_PEPOLAR_REV  4
+#define kGE_EPI_PEPOLAR_REV_FWD  5
+#define kGE_EPI_PEPOLAR_FWD_REV  6
+#define kGE_EPI_PEPOLAR_REV_FWD_FLIP  7
+#define kGE_EPI_PEPOLAR_FWD_REV_FLIP  8
+
 
 //GE phase encoding
 #define kGE_PHASE_ENCODING_POLARITY_UNKNOWN  -1
@@ -237,6 +250,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     struct TDICOMdata clear_dicom_data(void);
     struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase);
     unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h);
+    unsigned char *nii_flipImgY(unsigned char *bImg, struct nifti_1_header *hdr);
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
     //*unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h, struct TDTI4D *dti4D);
     void changeExt (char *file_name, const char* ext);

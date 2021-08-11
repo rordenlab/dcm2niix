@@ -1215,6 +1215,9 @@ tse3d: T2*/
 		fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI\",\n");
 	if (d.internalepiVersionGE == 2)
 		fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI2\",\n");
+	//GE pepolar with phase encoding direction reversed within a series
+	//if (d.epiVersionGE >= kGE_EPI_PEPOLAR_FWD)
+	//	printWarning("Validate results for custom ABCD GE pepolar sequence\n");
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
 	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
@@ -5061,7 +5064,9 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	// Estimate GE Slice Time only for EPI Multi-Phase (epi) or EPI fMRI/BrainWave (epiRT)
 	//
 	// BrainWave (epiRT)
-	if ((d->epiVersionGE == 1) || (strstr(ioptGE, "FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+	if (d->epiVersionGE >= kGE_EPI_PEPOLAR_FWD) 
+		printWarning("GE ABCD pepolar research sequence handling is experimental\n");//
+	else if ((d->epiVersionGE == 1) || (strstr(ioptGE, "FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
 		d->epiVersionGE = 1;
 		d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
 		if (!isSameFloatGE(groupDelay, d->groupDelay))
@@ -5939,6 +5944,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		isFlipY = true;
 	} else
 		printMessage("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
+	if ((dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP) || (dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
+		imgM = nii_flipImgY(imgM, &hdr0);
+	}
 	//begin: gantry tilt we need to save the shear in the transform
 	mat44 sForm;
 	LOAD_MAT44(sForm,

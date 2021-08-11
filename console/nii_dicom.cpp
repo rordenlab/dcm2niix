@@ -4235,6 +4235,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
 #define kRawDataRunNumberGE 0x0019 + (0x10A2 << 16)//SL
 #define kMaxEchoNumGE 0x0019 + (0x10A9 << 16) //DS
+#define kUserData12GE 0x0019 + (0x10B3 << 16) //DS phase diffusion direction
 #define kDiffusionDirectionGEX 0x0019 + (0x10BB << 16) //DS phase diffusion direction
 #define kDiffusionDirectionGEY 0x0019 + (0x10BC << 16) //DS frequency diffusion direction
 #define kDiffusionDirectionGEZ 0x0019 + (0x10BD << 16) //DS slice diffusion direction
@@ -4397,6 +4398,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	float MRImageDynamicScanBeginTime = 0.0;
 	bool is2005140FSQ = false;
 	bool overlayOK = true;
+	int userData12GE = 0;
 	int overlayRows = 0;
 	int overlayCols = 0;
 	bool isTriggerSynced = false;
@@ -4427,7 +4429,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	int imagesInAcquisition = 0;
 	//int sumSliceNumberMrPhilips = 0;
 	int sliceNumberMrPhilips = 0;
-	int volumeNumberMrPhilips = -1;
+	int volumeNumber = -1;
 	int gradientOrientationNumberPhilips = -1;
 	int numberOfFrames = 0;
 	//int MRImageGradientOrientationNumber = 0;
@@ -5487,6 +5489,11 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				break;
 			d.maxEchoNumGE = round(dcmStrFloat(lLength, &buffer[lPos]));
 			break;
+		case kUserData12GE: {
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			userData12GE = round(dcmStrFloat(lLength, &buffer[lPos]));
+			break; }
 		case kDiffusionDirectionGEX:
 			if (d.manufacturer == kMANUFACTURER_GE)
 				set_diffusion_directionGE(&volDiffusion, lLength, (&buffer[lPos]), 0);
@@ -5504,14 +5511,14 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				break;
 			char epiStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], epiStr);
-			if ((strstr(epiStr, "epi") != NULL) && (strstr(epiStr, "epi2") == NULL)) {
-				d.epiVersionGE = 0; //-1 = not epi, 0 = epi, 1 = epiRT
-			}
-			if (strstr(epiStr, "epi2") != NULL) {
-				d.epiVersionGE = 2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
-			}
-			if (strstr(epiStr, "epiRT") != NULL) {
-				d.epiVersionGE = 1; //-1 = not epi, 0 = epi, 1 = epiRT
+			if (strstr(epiStr, "epi_pepolar") != NULL) {
+				d.epiVersionGE = kGE_EPI_PEPOLAR_FWD; //n.b. combine with 0019,10B3
+			} else if (strstr(epiStr, "epi2") != NULL) {
+				d.epiVersionGE = kGE_EPI_EPI2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
+			} else if (strstr(epiStr, "epiRT") != NULL) {
+				d.epiVersionGE = kGE_EPI_EPIRT; //-1 = not epi, 0 = epi, 1 = epiRT
+			} else if (strstr(epiStr, "epi") != NULL) {
+				d.epiVersionGE = kGE_EPI_EPI; //-1 = not epi, 0 = epi, 1 = epiRT
 			}
 			if (strcmp(epiStr, "3db0map") == 0) {
 				isGEfieldMap = true; //issue501
@@ -5523,7 +5530,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				break;
 			char epiStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], epiStr);
-			if (strcmp(epiStr, "EPI") == 0) {
+			if ((d.epiVersionGE < kGE_EPI_PEPOLAR_FWD) && (strcmp(epiStr, "EPI") == 0)) {
 				d.internalepiVersionGE = 1; //-1 = not EPI, 1 = EPI, 2 = EPI2
 				if (d.epiVersionGE != 1) {	// 1 = epiRT by kEpiRTGroupDelayGE or kPulseSequenceNameGE
 					d.epiVersionGE = 0;		// 0 = epi (multi-phase epi)
@@ -6145,7 +6152,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				break;
 			int i = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			if (i > 0) //only if positive value, see Magdeburg_2014 sample data from dcm_qa_philips Philips MR 51.0
-				volumeNumberMrPhilips = i;
+				volumeNumber = i;
 			break;
 		}
 		case kMRAcquisitionTypePhilips: //kMRAcquisitionType
@@ -6696,9 +6703,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		}
 		case kTemporalPosition: //fall through, both kSliceNumberMrPhilips (2001,100A) and kTemporalPosition are is
-			if (d.manufacturer != kMANUFACTURER_PHILIPS)
-				break;
-			volumeNumberMrPhilips = dcmStrInt(lLength, &buffer[lPos]);
+			volumeNumber = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		case kTemporalResolution:
 			temporalResolutionMS = dcmStrFloat(lLength, &buffer[lPos]);
@@ -7351,6 +7356,24 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
 		d.isLocalizer = true;
 	}
+	//detect pepolar https://github.com/nipy/heudiconv/issues/479
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 1))
+		d.epiVersionGE = kGE_EPI_PEPOLAR_REV;
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 2))
+		d.epiVersionGE = kGE_EPI_PEPOLAR_REV_FWD;
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 3))
+		d.epiVersionGE = kGE_EPI_PEPOLAR_FWD_REV;
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD) && (volumeNumber > 0) && ((volumeNumber % 2) == 1))
+		d.epiVersionGE = kGE_EPI_PEPOLAR_REV_FWD_FLIP;
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV) && (volumeNumber > 0) && ((volumeNumber % 2) == 0))
+		d.epiVersionGE = kGE_EPI_PEPOLAR_FWD_REV_FLIP;
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP)  || (d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
+		d.seriesNum += 1000;
+		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+		else if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
+				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+	}
 	//UIH 3D T1 scans report echo train length, which is interpreted as 3D EPI
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (strstr(d.sequenceName, "gre_fsp") != NULL))
 		d.echoTrainLength = 0;
@@ -7391,7 +7414,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	if ((!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
 		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...
 	//printf("%d %d %d\n", d.rawDataRunNumber, volumeNumberMrPhilips, phaseNumber);
-	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumberMrPhilips) ? d.rawDataRunNumber : volumeNumberMrPhilips;
+	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumber) ? d.rawDataRunNumber : volumeNumber;
 	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	//end: issue529
