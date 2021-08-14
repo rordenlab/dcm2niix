@@ -5944,7 +5944,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		isFlipY = true;
 	} else
 		printMessage("DICOM row order preserved: may appear upside down in tools that ignore spatial transforms\n");
-	if ((dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP) || (dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
+	if ((dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_REV) || (dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP) || (dcmList[dcmSort[0].indx].epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
 		imgM = nii_flipImgY(imgM, &hdr0);
 	}
 	//begin: gantry tilt we need to save the shear in the transform

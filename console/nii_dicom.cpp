@@ -5493,6 +5493,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			userData12GE = round(dcmStrFloat(lLength, &buffer[lPos]));
+			//printf("%d<<<<\n", userData12GE);
 			break; }
 		case kDiffusionDirectionGEX:
 			if (d.manufacturer == kMANUFACTURER_GE)
@@ -7367,8 +7368,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV_FWD_FLIP;
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV) && (volumeNumber > 0) && ((volumeNumber % 2) == 0))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_FWD_REV_FLIP;
-	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP)  || (d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
-		d.seriesNum += 1000;
+	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_REV) || (d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP)  || (d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
+		if (d.epiVersionGE != kGE_EPI_PEPOLAR_REV) d.seriesNum += 1000;
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
 				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
 		else if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
