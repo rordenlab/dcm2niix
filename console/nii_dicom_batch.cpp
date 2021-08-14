@@ -2572,7 +2572,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 			if (isAslLabel) 
 				vol += maxPhase * maxVol;
 		}
-		if (verbose > 1) //only report slice data for logorrheic verbosity
+		//TODO: if (verbose > 1) //only report slice data for logorrheic verbosity
 			printf("instanceNumber %4d position %g volume %d repeat %d ASLlabel %d phase %d\n", dcmList[dcmSort[i].indx].imageNum, dx, vol, rawvol, isAslLabel, phase);
 		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
 			vol = maxVol + 1;
