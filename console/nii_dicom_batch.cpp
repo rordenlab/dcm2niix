@@ -1466,8 +1466,11 @@ tse3d: T2*/
 				print_FloatNotNan("alTI[%d]=\t%g\n",i, csaAscii.alTI[i]);
 		} //verbose
 		*/
+		bool isPCASL = false;
+		bool isPASL = false;
 		//ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
 		if ((strstr(pulseSequenceDetails, "ep2d_pcasl")) || (strstr(pulseSequenceDetails, "ep2d_pcasl_UI_PHC"))) {
+			isPCASL = true;
 			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
@@ -1477,23 +1480,27 @@ tse3d: T2*/
 		}
 		//ASL specific tags - 3D pCASL Danny J.J. Wang http://www.loft-lab.org
 		if (strstr(pulseSequenceDetails, "tgse_pcasl")) {
+			isPCASL = true;
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);				// mT/m
 			json_FloatNotNan(fp, "\t\"T1\": %g,\n", csaAscii.adFree[12] * (1.0 / 1000000.0));	//usec -> sec
 		}
 		//ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails, "ep2d_pasl")) {
-			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); //us -> sec
-			json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); //us -> sec
+			isPASL = true;
+			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); //usec->sec
+			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); //usec -> sec
 		}
 		//ASL specific tags - 3D PASL Siemens Product http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf
 		if (strstr(pulseSequenceDetails, "tgse_pasl")) {
+			isPASL = true;
 			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); //usec->sec
 			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); //usec -> sec
 			//json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
 		}
 		//PASL http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
 		if (strstr(pulseSequenceDetails, "ep2d_fairest")) {
+			isPASL = true;
 			json_FloatNotNan(fp, "\t\"PostInversionDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000.0)); //usec->sec
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000.0)); //usec -> sec
 		}
@@ -1501,6 +1508,7 @@ tse3d: T2*/
 		bool isOxfordASL = false;
 		if (strstr(pulseSequenceDetails, "to_ep2d_VEPCASL")) { //Oxford 2D pCASL
 			isOxfordASL = true;
+			isPCASL = true;
 			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); //ms->sec
 			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); //usec -> sec
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", csaAscii.alFree[4]);
@@ -1544,6 +1552,7 @@ tse3d: T2*/
 			}
 		}
 		if (strstr(pulseSequenceDetails, "jw_tgse_VEPCASL")) { //Oxford 3D pCASL
+			isPCASL = true;
 			isOxfordASL = true;
 			json_Float(fp, "\t\"TagRFFlipAngle\": %g,\n", csaAscii.alFree[6]);
 			json_Float(fp, "\t\"TagRFDuration\": %g,\n", csaAscii.alFree[7] / 1000000.0);	//usec -> sec
@@ -1586,6 +1595,10 @@ tse3d: T2*/
 			fprintf(fp, "\t\"TagPlaneSPositionDTra\": %g,\n", csaAscii.sPositionDTra);
 			fprintf(fp, "\t\"TagPlaneSNormalDTra\": %g,\n", csaAscii.sNormalDTra);
 		}
+		if (isPCASL)
+			fprintf(fp, "\t\"ArterialSpinLabelingType\": \"PCASL\",\n");
+		if (isPASL)
+			fprintf(fp, "\t\"ArterialSpinLabelingType\": \"PASL\",\n");
 		//general properties
 		if ((csaAscii.partialFourier > 0) && ((d.modality == kMODALITY_MR))) { //check MR, e.g. do not report for Siemens PET
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
