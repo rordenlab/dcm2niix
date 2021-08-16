@@ -2562,13 +2562,27 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
+	int maxVolNotADC = -1;
+	int minInstance = dcmList[dcmSort[0].indx].imageNum;
+	int maxInstance = minInstance;
 	int maxPhase = 1; //Philips Multi-Phase
 	for (int i = 0; i < nConvert; i++) {
 		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
 		minVol = min(minVol, vol);
 		maxVol = max(maxVol, vol);
+		if (vol < kMaxDTI4D)
+			maxVolNotADC = max(maxVolNotADC, vol);
+		int instance = dcmList[dcmSort[i].indx].imageNum;
+		minInstance = min(minInstance, instance);
+		maxInstance = max(maxInstance, instance);
 		maxPhase = max(maxPhase, dcmList[dcmSort[i].indx].phaseNumber);
 	}
+	bool isUseInstanceNumberForVolume = false;
+	if ((maxPhase == 1) && (minVol == maxVolNotADC) && (minInstance < maxInstance)) {
+		printWarning("Volume number does not vary (0019,10A2; 0020,0100; 2005,1063; 2005,1413), assuming meaningful instance number (0020,0013).\n"); 
+		isUseInstanceNumberForVolume = true;
+	}
+	printMessage("ranges volume %d..%d instance %d..%d\n", minVol, maxVolNotADC, minInstance, maxInstance); //TODO
 	bool isASL = (dcmList[dcmSort[0].indx].aslFlags != kASL_FLAG_NONE);
 	//we will renumber volumes for Philips ASL (Contrast/Label, phase) and DWI (derived trace)
 	int minVolOut = kMaxDTI4D + 1;
@@ -2576,6 +2590,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	for (int i = 0; i < nConvert; i++) {
 		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
 		int rawvol = vol;
+		int instance = dcmList[dcmSort[i].indx].imageNum;
 		int phase = max(1, dcmList[dcmSort[i].indx].phaseNumber);
 		int isAslLabel = dcmList[dcmSort[i].indx].aslFlags == kASL_FLAG_PHILIPS_LABEL;
 		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
@@ -2585,8 +2600,10 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 			if (isAslLabel) 
 				vol += maxPhase * maxVol;
 		}
-		//TODO: if (verbose > 1) //only report slice data for logorrheic verbosity
-			printf("instanceNumber %4d position %g volume %d repeat %d ASLlabel %d phase %d\n", dcmList[dcmSort[i].indx].imageNum, dx, vol, rawvol, isAslLabel, phase);
+		if (isUseInstanceNumberForVolume)
+			vol = instance;
+		//TODO if (verbose > 1) //only report slice data for logorrheic verbosity
+			printMessage("instanceNumber %4d position %g volume %d repeat %d ASLlabel %d phase %d\n", instance, dx, vol, rawvol, isAslLabel, phase);
 		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
 			vol = maxVol + 1;
 		minVolOut = min(minVolOut, vol);

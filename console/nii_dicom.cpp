@@ -7417,6 +7417,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//printf("%d %d %d\n", d.rawDataRunNumber, volumeNumberMrPhilips, phaseNumber);
 	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumber) ? d.rawDataRunNumber : volumeNumber;
 	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
+	if ((d.rawDataRunNumber < 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (d.dimensionIndexValues[nDimIndxVal - 1] > 0))
+		d.rawDataRunNumber =  d.dimensionIndexValues[nDimIndxVal - 1]; //Philips enhanced scans converted to classic with dcuncat 
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	//end: issue529
 	if (hasDwiDirectionality)
