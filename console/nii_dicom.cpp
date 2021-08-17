@@ -7368,6 +7368,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV_FWD_FLIP;
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV) && (volumeNumber > 0) && ((volumeNumber % 2) == 0))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_FWD_REV_FLIP;
+	#ifndef myDisableGEPEPolarFlip //e.g. to disable patch for issue 532 "make CFLAGS=-DmyDisableGEPEPolarFlip" 
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_REV) || (d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP)  || (d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
 		if (d.epiVersionGE != kGE_EPI_PEPOLAR_REV) d.seriesNum += 1000;
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
@@ -7375,6 +7376,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		else if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
 				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
 	}
+	#endif
 	//UIH 3D T1 scans report echo train length, which is interpreted as 3D EPI
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (strstr(d.sequenceName, "gre_fsp") != NULL))
 		d.echoTrainLength = 0;
