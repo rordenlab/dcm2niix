@@ -4419,6 +4419,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	int locationsInAcquisitionGE = 0;
 	int PETImageIndex = 0;
 	int inStackPositionNumber = 0;
+	bool isKludgeIssue533 = false;
 	uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
 	size_t dimensionIndexPointerCounter = 0;
 	int maxInStackPositionNumber = 0;
@@ -4593,6 +4594,21 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; //triggered
 				//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
+				// d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
+				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && (d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL)) {
+					isKludgeIssue533 = true;
+					for (int i = 0; i < nDimIndxVal; i++)
+						d.dimensionIndexValues[i] = 0;
+					int phase = d.phaseNumber;
+					if (d.phaseNumber < 0) phase = 0; //if not set: we are saving as UINT
+					d.dimensionIndexValues[0] = inStackPositionNumber; //dim[3] slice changes fastest
+					d.dimensionIndexValues[1] = phase; //dim[4] successive volumes are phase
+					d.dimensionIndexValues[2] = d.aslFlags == kASL_FLAG_PHILIPS_LABEL; //dim[5] Control/Label
+					d.dimensionIndexValues[3] = volumeNumber; //dim[6] Repeat changes slowest
+					nDimIndxVal = 4; //slice < phase < control/label < volume
+					//printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
+				}
+				int ndim = nDimIndxVal;
 				if (inStackPositionNumber > 0) {
 					//for images without SliceNumberMrPhilips (2001,100A)
 					int sliceNumber = inStackPositionNumber;
@@ -4625,7 +4641,6 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				// Bruker Enhanced MR IOD: reorder dimensions to ensure InStackPositionNumber corresponds to the first one
 				// This will ensure correct ordering of slices in 4D datasets
 				//Canon and Bruker reverse dimensionIndexItem order relative to Philips: new versions introduce compareTDCMdimRev
-				int ndim = nDimIndxVal;
 				//printf("%d: %d %d %d %d\n", ndim, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2], d.dimensionIndexValues[3]);
 				for (int i = 0; i < ndim; i++)
 					dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
@@ -6705,6 +6720,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		}
 		case kTemporalPosition: //fall through, both kSliceNumberMrPhilips (2001,100A) and kTemporalPosition are is
 			volumeNumber = dcmStrInt(lLength, &buffer[lPos]);
+			//temporalPositionIdentifier = volumeNumber;
 			break;
 		case kTemporalResolution:
 			temporalResolutionMS = dcmStrFloat(lLength, &buffer[lPos]);
@@ -7171,6 +7187,19 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				//printf("vol %d slice %d\n", dcmDim[i].dimIdx[stackTimeItem], dcmDim[i].dimIdx[stackPositionItem]);
 			}
 		} //Kuldge for corrupted CANON 0020,9157
+		/* //issue533: this code fragment will replicate dicm2nii (reverse order of volume hierarchy) https://github.com/xiangruili/dicm2nii/blob/f918366731162e6895be6e5ee431444642e0e7f9/dicm2nii.m#L2205
+		if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (stackPositionItem == 1) && ( maxVariableItem > 2)) {
+			//replicate dicm2nii: s2.DimensionIndexValues([3:end 1])
+				uint32_t tmp[MAX_NUMBER_OF_DIMENSIONS];
+				for (int i = 0; i < numDimensionIndexValues; i++) {
+					for (int j = 2; j <= maxVariableItem; j++)
+						tmp[j] = dcmDim[i].dimIdx[j];
+					for (int j = 2; j <= maxVariableItem; j++)
+						dcmDim[i].dimIdx[j] = tmp[maxVariableItem - j + 2];
+				}
+		}*/
+		if ((isKludgeIssue533) && (numDimensionIndexValues > 1))
+			printWarning("Guessing temporal order for Philips enhanced DICOM ASL (issue 532).\n");
 		//sort dimensions
 #ifdef USING_R
 		if (stackPositionItem < maxVariableItem)
@@ -7413,10 +7442,11 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
-	//start: issue529
+	//start: issue529 TODO JJJJ
 	if ((!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
 		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...
-	//printf("%d %d %d\n", d.rawDataRunNumber, volumeNumberMrPhilips, phaseNumber);
+	//if (sliceNumberMrPhilips == 1) printf("instance\t %d\ttime\t%g\tvolume\t%d\tgradient\t%d\tphase\t%d\tisLabel\t%d\n", d.imageNum,  MRImageDynamicScanBeginTime, volumeNumber, gradientOrientationNumberPhilips, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL);
+	//if (sliceNumberMrPhilips == 1) printf("ACQtime\t%g\tinstance\t %d\ttime\t%g\tvolume\t%d\tphase\t%d\tisLabel\t%d\n", d.acquisitionTime, d.imageNum,  MRImageDynamicScanBeginTime, volumeNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL);
 	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumber) ? d.rawDataRunNumber : volumeNumber;
 	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
 	if ((d.rawDataRunNumber < 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (d.dimensionIndexValues[nDimIndxVal - 1] > 0))

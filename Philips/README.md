@@ -77,7 +77,7 @@ The DICOM standard does not require that the [Instance Number (0020,0013)](http:
 
 ## Arterial Spin Labelling
 
-Details and sample datasets for Philips Arterial Spin Labeling (ASL) are provided with the [dcm_qa_philips_asl](https://github.com/neurolabusc/dcm_qa_philips_asl) repository.
+Details and sample datasets for Philips Arterial Spin Labeling (ASL) are provided with the [dcm_qa_philips_asl](https://github.com/neurolabusc/dcm_qa_philips_asl) (classic DICOM) and [dcm_qa_philips_asl_enh](https://github.com/neurolabusc/dcm_qa_philips_asl) (enhanced DICOM) repositories.
 
 ## Derived parametric maps stored with raw diffusion data
 

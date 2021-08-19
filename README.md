@@ -179,5 +179,6 @@ The following tools exploit dcm2niix
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
   - [shimming-toolbox](https://github.com/shimming-toolbox/shimming-toolbox) enabled static and real-time shimming, using dcm2niix to import DICOM data.
   - The [SlicerDcm2nii extension](https://github.com/Slicer/ExtensionsIndex/blob/master/SlicerDcm2nii.s4ext) is one method to import DICOM data into Slicer.
+  - [tar2bids](https://github.com/khanlab/tar2bids) converts DICOM tarball(s) to BIDS using heudiconv which invokes dcm2niix.
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).

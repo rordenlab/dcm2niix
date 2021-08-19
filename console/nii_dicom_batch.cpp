@@ -2595,14 +2595,22 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		int isAslLabel = dcmList[dcmSort[i].indx].aslFlags == kASL_FLAG_PHILIPS_LABEL;
 		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
 		if (isASL) {
-			//choose order of volumes, see dcm_qa_philips_asl
-			vol += (phase - 1) * maxVol;	
-			if (isAslLabel) 
-				vol += maxPhase * maxVol;
+			#ifdef myMatchEnhanced00209157 //issue533: make classic DICOMs match enhanced DICOM volume order
+				//disk order: slice < repeat < phase < label/control
+				vol += (phase - 1) * maxVol;	
+				if (isAslLabel) 
+					vol += maxPhase * maxVol;
+			#else
+				//"temporal" disk order: slice < phase < label/control < repeat : should match instance number
+				vol = phase;	
+				if (isAslLabel) 
+					vol += maxPhase;
+				vol += (rawvol - 1) * (2 * maxPhase);
+			#endif
 		}
 		if (isUseInstanceNumberForVolume)
 			vol = instance;
-		//TODO if (verbose > 1) //only report slice data for logorrheic verbosity
+		//if (verbose > 1) //only report slice data for logorrheic verbosity
 			printMessage("instanceNumber %4d position %g volume %d repeat %d ASLlabel %d phase %d\n", instance, dx, vol, rawvol, isAslLabel, phase);
 		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
 			vol = maxVol + 1;
