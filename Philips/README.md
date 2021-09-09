@@ -77,7 +77,7 @@ The DICOM standard does not require that the [Instance Number (0020,0013)](http:
 
 ## Arterial Spin Labelling
 
-Details and sample datasets for Philips Arterial Spin Labeling (ASL) are provided with the [dcm_qa_philips_asl](https://github.com/neurolabusc/dcm_qa_philips_asl) (classic DICOM) and [dcm_qa_philips_asl_enh](https://github.com/neurolabusc/dcm_qa_philips_asl) (enhanced DICOM) repositories.
+Details and sample datasets for Philips Arterial Spin Labeling (ASL) are provided with the [dcm_qa_philips_asl](https://github.com/neurolabusc/dcm_qa_philips_asl) (classic DICOM) and [dcm_qa_philips_asl_enh](https://github.com/neurolabusc/dcm_qa_philips_asl) (enhanced DICOM) repositories. dcm2niix v1.0.20210819 and later will attempt to store volumes in [temporal order](https://github.com/rordenlab/dcm2niix/issues/533) regardless of whether the data is acquired as classic or enhanced DICOM. The [BIDS BEP005](https://bids.neuroimaging.io/get_involved) requires ASL sequences to report `PostLabelingDelay` with respect to the first slice of the volume. Curiously, Philips reports label delay independently for each slice (using DICOM tags 0020,9153; 0018,1060). In theory, this might allow a method to infer slice timing (though details like descending acquisitions may complicate these methods).
 
 ## Derived parametric maps stored with raw diffusion data
 
@@ -139,6 +139,8 @@ MyCustomDirections
 ## Missing Information
 
 Philips DICOMs do not contain all the information desired by many neuroscientists. Due to this, the [BIDS](http://bids.neuroimaging.io/) files created by dcm2niix are impoverished relative to data from other vendors. This reflects a limitation in the Philips DICOMs, not dcm2niix.
+
+Research users may want to explore the direct NIfTI export provided by Philips. This tool may have access to sequence information not provided in the DICOM export. However, this [manufacturer provided NIfTI export](https://github.com/rordenlab/dcm2niix/issues/529) is limited to certain image types and sequences and does not support features like FSL format diffusion bvec/bvals or BIDS sidecars.
 
 [Slice timing correction](https://www.mccauslandcenter.sc.edu/crnl/tools/stc) can account for some variability in fMRI datasets. Unfortunately, Philips DICOM data [does not encode slice timing information](https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/4). Therefore, dcm2niix is unable to populate the "SliceTiming" BIDS field. However, one can typically infer slice timing by recording the [mode and number of packages](https://en.wikibooks.org/w/index.php?title=SPM/Slice_Timing&stable=0#Philips_scanners) reported for the sequence on the scanner console or the [sequence PDF](http://adni.loni.usc.edu/wp-content/uploads/2017/09/ADNI-3-Basic-Philips-R5.pdf). For precise timing, it is also worth knowing if equidistant "temporal slice spacing" is set and whether "prospect. motion corr." is on or off (if on, a short delay occurs between volumes).
 

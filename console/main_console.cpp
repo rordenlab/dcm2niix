@@ -158,6 +158,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 #endif
 	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
 	printf("  --progress : Slicer format progress information (y/n, default n)\n");
+	printf("  --ignore_trigger_times : disregard values in 0018,1060 and 0020,9153\n");
 	printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
 	printf("  --version : report version\n");
 	printf("  --xml : Slicer format features\n");

@@ -4654,9 +4654,12 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 				dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
 				//printf("%d %d %g????\n", isTriggerSynced, isProspectiveSynced, d.triggerDelayTime);
-				if ((isASL) || (d.aslFlags != kASL_FLAG_NONE)) d.triggerDelayTime = 0.0; //see dcm_qa_philips_asl
-				if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
-					d.triggerDelayTime = 0.0;
+				//TODO533: isKludgeIssue533 alias Philips ASL as FrameDuration?
+				//if ((d.triggerDelayTime > 0.0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (d.aslFlags != kASL_FLAG_NONE))
+				//printf(">>>%g\n", d.triggerDelayTime);
+				//if ((isASL) || (d.aslFlags != kASL_FLAG_NONE)) d.triggerDelayTime = 0.0; //see dcm_qa_philips_asl
+				//if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
+				//	d.triggerDelayTime = 0.0;
 				if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime) )
 					dcmDim[numDimensionIndexValues].triggerDelayTime = 0.0; //issue395
 				else
@@ -7234,8 +7237,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			bool isScaleVaries = false;
 			//setting j = 1 in next few lines is a hack, just in case TE/scale/intercept listed AFTER dimensionIndexValues
 			int j = 0;
-			if (d.xyzDim[3] > 1)
-				j = 1;
+			//if (d.xyzDim[3] > 1) //not sure why this was included, disrupts Philips multiPLD ASL where each slice has different triggertime
+			//	j = 1;
 			for (int i = 0; i < d.xyzDim[4]; i++) {
 				int slice = j + (i * d.xyzDim[3]);
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
@@ -7328,9 +7331,12 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char *)&d.protocolName, strlen(d.protocolName));
 	}
-	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
-		d.triggerDelayTime = 0.0; 		 //Philips ASL use "(0018,9037) CS [NONE]" but "(2001,1010) CS [TRIGGERED]", a situation not described in issue408
+	//TODO533: alias Philips ASL PLD as frameDuration? isKludgeIssue533
+	//if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
+	//	d.triggerDelayTime = 0.0; 		 //Philips ASL use "(0018,9037) CS [NONE]" but "(2001,1010) CS [TRIGGERED]", a situation not described in issue408
 	if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime)) //issue395
+		d.triggerDelayTime = 0.0;
+	if (d.phaseNumber > 0) //Philips TurboQUASAR set this uniquely for each slice
 		d.triggerDelayTime = 0.0;
 	//printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (d.isXA10A) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
