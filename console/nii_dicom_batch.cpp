@@ -6186,7 +6186,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		} else
 			printMessage("Tilt correction skipped\n");
 	}
-	if (sliceMMarray != NULL) {
+	if ((sliceMMarray != NULL) &&  (!isSetOrtho)) {
 		if (dcmList[indx0].isResampled) {
 			printMessage("Slice thickness correction skipped: 0008,2111 reports RESAMPLED\n");
 		} else
