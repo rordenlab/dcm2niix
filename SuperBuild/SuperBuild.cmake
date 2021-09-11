@@ -156,4 +156,3 @@ option(BUILD_DOCS "Build documentation (manpages)" OFF)
 if(BUILD_DOCS)
     add_subdirectory(docs)
 endif()
-

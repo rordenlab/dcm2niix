@@ -26,4 +26,3 @@ Below is a list of possible return values from running dcm2niix.
 | 7           | Unable to write to output folder (check file permissions)   |
 | 8           | Converted some but not all of the input DICOMs              |
 | 9           | Unable to rename files (result of `dcm2niix -r y ~/in`)     |
-

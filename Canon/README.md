@@ -17,7 +17,7 @@ Since the acquisition by Canon, these public tags are no longer populated for im
  (0020,4000) LT [b=1500(0.445,0.000,0.895)]              #  26, 1 ImageComments
 ```
 
-In contrast, when exporting images as enhanced (4D) DICOM, information is stored in public tags and does appear to compensate for phase encode polarity. These coordinates are with respect to the scanner bore, not image space. A Canon classic DICOM DWI image may report: 
+In contrast, when exporting images as enhanced (4D) DICOM, information is stored in public tags and does appear to compensate for phase encode polarity. These coordinates are with respect to the scanner bore, not image space. A Canon classic DICOM DWI image may report:
 
 ```
 (0018,9087) FD 1500                                     #   8, 1 DiffusionBValue

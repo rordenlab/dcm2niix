@@ -62,7 +62,7 @@ Options
                 If "y", create default file on completion
                 If "n", default will not be written
                 If "o", only reset and write defaults
-                If "i", the values of the defualts file are ignored
+                If "i", the values of the defaults file are ignored
                 : reset defaults], default n)
 
 -h              Show help

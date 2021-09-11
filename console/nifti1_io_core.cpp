@@ -855,10 +855,3 @@ vec3 nifti_mat33_eig3(double bxx, double bxy, double bxz, double byy, double byz
     //printf("bvec = [%g 0 0; 0 %g 0; 0 0 %g]\n", v3.v[0], v3.v[1], v3.v[2]);
     return v3;
 }
-
-
-
-
-
-
-
