@@ -72,7 +72,7 @@ int decodePixelDifference(unsigned char *lRawRA, long *lRawPos, int *lCurrentBit
         do {
             lInputBits++;
             lInput = (lInput << 1) + readBit(lRawRA, lRawPos, lCurrentBitPos);
-            if (l.DHTliRA[lInputBits] != 0) { //if any entires with this length
+            if (l.DHTliRA[lInputBits] != 0) { //if any entries with this length
                 for (int lI = l.DHTstartRA[lInputBits]; lI <= (l.DHTstartRA[lInputBits]+l.DHTliRA[lInputBits]-1); lI++) {
                     if (lInput == l.HufCode[lI])
                         lHufValSSSS = l.HufVal[lI];

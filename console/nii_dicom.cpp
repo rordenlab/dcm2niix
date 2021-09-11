@@ -103,7 +103,7 @@ unsigned char * imagetoimg(opj_image_t * image)
         return NULL;
     }
     //n.b. Analyze rgb-24 are PLANAR e.g. RRR..RGGG..GBBB..B not RGBRGBRGB...RGB
-    int pix = 0; //ouput pixel
+    int pix = 0; //output pixel
     for (int cmptno = 0; cmptno < numcmpts; ++cmptno) {
         int cpix = 0; //component pixel
         int* v = image->comps[cmptno].data;
@@ -1499,7 +1499,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
         return EXIT_FAILURE;
     }
     if ((h->datatype == DT_UINT16) && (d.bitsStored > 0) &&(d.bitsStored < 16))
-        h->datatype = DT_INT16; // DT_INT16 is more widely supported, same represenation for values 0..32767
+        h->datatype = DT_INT16; // DT_INT16 is more widely supported, same representation for values 0..32767
     for (int i = 0; i < 8; i++) {
         h->pixdim[i] = 0.0f;
         h->dim[i] = 0;
@@ -2848,7 +2848,7 @@ unsigned char * nii_rgb2planar(unsigned char* bImg, struct nifti_1_header *hdr, 
 } //nii_rgb2Planar()
 
 unsigned char * nii_iVaries(unsigned char *img, struct nifti_1_header *hdr, struct TDTI4D *dti4D){
-    //each DICOM image can have its own intesity scaling, whereas NIfTI requires the same scaling for all images in a file
+    //each DICOM image can have its own intensity scaling, whereas NIfTI requires the same scaling for all images in a file
     //WARNING: do this BEFORE nii_check16bitUnsigned!!!!
     //if (hdr->datatype != DT_INT16) return img;
     int dim3to7 = 1;

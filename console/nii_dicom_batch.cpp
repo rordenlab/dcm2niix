@@ -238,7 +238,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
         if ((vLen > 0.03) && (vLen < 0.97)) {
         	//bVal scaled by norm(g)^2 issue163,245
             float bValtemp = 0, bVal = 0, bVecScale=0;
-            // rounding by 5 with mimimum of 5 if b-value > 0
+            // rounding by 5 with minimum of 5 if b-value > 0
             bValtemp = vx[i].V[0] * (vLen * vLen);
             if (bValtemp > 0 && bValtemp < 5) {
                 bVal = 5;
@@ -4797,7 +4797,7 @@ void sliceTimingGE(struct TDICOMdata * d, const char * filename, struct TDCMopts
 		}
 		// EPI Multi-Phase (epi) with Variable Delays (Unsupported)
 		if (groupDelay < -0.5) { 
-			printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
+			printWarning("SliceTiming Unsupported: GE Multi-Phase EPI with Variable Delays\n");
 			d->CSA.sliceTiming[0] = -1;
 			return;
 		}

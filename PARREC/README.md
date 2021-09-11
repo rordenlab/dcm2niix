@@ -1,9 +1,9 @@
 ## About
 
-dcm2niix attempts to convert Philips PAR/REC format images to NIfTI. While this format remains popular with users, it is slowly being superceded by Philips enhanced DICOM format, an XML/REC format as well as the direct NIfTI export. Note that dcm2niix does not support the XML/REC format.
+dcm2niix attempts to convert Philips PAR/REC format images to NIfTI. While this format remains popular with users, it is slowly being superseded by Philips enhanced DICOM format, an XML/REC format as well as the direct NIfTI export. Note that dcm2niix does not support the XML/REC format.
 
 
-According to [Matthew Clemence](https://www.nitrc.org/forum/forum.php?thread_id=9319&forum_id=4703) DICOM (classic and enhanced) and XML/REC are supported in the base product, NIFTI forms part of a Neuroscience commercial option from release 5 onwards. PAR/REC requires a research agreement to obtain. For the two formats XML/REC and PAR/REC, the "REC" part is identical but instead of a plain text file of the "par" format, the same information is now available as an XML file. This descision has been taken to allow the information to be more easily extended as the PAR file was getting increasingly limited.
+According to [Matthew Clemence](https://www.nitrc.org/forum/forum.php?thread_id=9319&forum_id=4703) DICOM (classic and enhanced) and XML/REC are supported in the base product, NIFTI forms part of a Neuroscience commercial option from release 5 onwards. PAR/REC requires a research agreement to obtain. For the two formats XML/REC and PAR/REC, the "REC" part is identical but instead of a plain text file of the "par" format, the same information is now available as an XML file. This decision has been taken to allow the information to be more easily extended as the PAR file was getting increasingly limited.
 
 ## Detecting, Reporting and Fixing the V4 Image offcentre Bug
 
