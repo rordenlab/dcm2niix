@@ -159,4 +159,3 @@ Once the installation is completed, you can revert these changes:
 git config --global --unset-all url.https://github.com/.insteadof
 git config --global --unset-all url.https://.insteadof
 ```
-

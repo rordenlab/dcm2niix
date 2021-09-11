@@ -1,7 +1,7 @@
 //  main.m dcm2niix
 // by Chris Rorden on 3/22/14, see license.txt
 //  Copyright (c) 2014 Chris Rorden. All rights reserved.
-//  yaml batch suport by Benjamin Irving, 2016 - maintains copyright
+//  yaml batch support by Benjamin Irving, 2016 - maintains copyright
 
 #include <stdbool.h> //requires VS 2015 or later
 #ifdef _MSC_VER

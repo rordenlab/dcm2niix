@@ -328,6 +328,5 @@ Fields specific to United Imaging Healthcare systems (e.g. uMR 770).
 
 | Field                          | Unit | Comments                 | Defined By |
 |--------------------------------|------|--------------------------|------------|
-| BandwidthPerPixelPhaseEncode   | Hz   | DICOM tag 0019,1028      | B          |      
+| BandwidthPerPixelPhaseEncode   | Hz   | DICOM tag 0019,1028      | B          |
 | ParallelReductionFactorInPlane |      | DICOM tag 0065,100D      | B          |
-

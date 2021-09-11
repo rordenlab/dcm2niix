@@ -13,4 +13,3 @@ rm  ./xcode/dcm2/core/*.c
 rm  ./xcode/dcm2/core/*.cpp
 rm  ./xcode/dcm2/core/*.h
 rm  ./xcode/dcm2/core/tinydir.h
-

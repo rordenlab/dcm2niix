@@ -284,7 +284,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
 		if ((vLen > 0.03) && (vLen < 0.97)) {
 			//bVal scaled by norm(g)^2 issue163,245
 			float bValtemp = 0, bVal = 0, bVecScale = 0;
-			// rounding by 5 with mimimum of 5 if b-value > 0
+			// rounding by 5 with minimum of 5 if b-value > 0
 			bValtemp = vx[i].V[0] * (vLen * vLen);
 			if (bValtemp > 0 && bValtemp < 5) {
 				bVal = 5;
@@ -1408,7 +1408,7 @@ tse3d: T2*/
 	json_Float(fp, "\t\"RepetitionTimeExcitation\": %g,\n", dti4D->repetitionTimeExcitation);
 	json_Float(fp, "\t\"RepetitionTimeInversion\": %g,\n", dti4D->repetitionTimeInversion);
 	json_Bool(fp, "\t\"MTState\": %s,\n", d.mtState); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
-	//SpoilingState 
+	//SpoilingState
 	bool isSpoiled = (d.spoiling > kSPOILING_NONE);
 	if ((d.spoiling == kSPOILING_UNKOWN) && (strstr(d.sequenceVariant, "\\SP") != NULL)) //BIDS suggests 0018,9016 Siemens V-series do not populate this, (0018,0021) CS [SK\MTC\SP]
 		isSpoiled = true;
@@ -2584,11 +2584,11 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	if (d3 < 3)
 		return true; //always consistent
 	float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
-	bool isConsistent = !isSameFloatGE(dx, 0.0); //slice distance of zero is not consistent with XYZT order (perhaps XYTZ) 
+	bool isConsistent = !isSameFloatGE(dx, 0.0); //slice distance of zero is not consistent with XYZT order (perhaps XYTZ)
 	bool isAscending1 = (dx > 0);
 	for (int v = 0; v < d4; v++) {
 		int volStart = v * d3;
-		if (!isSameFloatGE(intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[volStart].indx]), 0.0)) 
+		if (!isSameFloatGE(intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[volStart].indx]), 0.0))
 			isConsistent = false; //XYZT requires first slice of each volume is at same position
 		for (int i = 1; i < d3; i++) {
 			dx = intersliceDistanceSigned(dcmList[dcmSort[volStart + i - 1].indx], dcmList[dcmSort[volStart + i].indx]);
@@ -2620,11 +2620,11 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	}
 	bool isUseInstanceNumberForVolume = false;
 	if ((d4 > 1) && (maxPhase == 1) && (minVol == maxVolNotADC) && (minInstance < maxInstance)) {
-		printWarning("Volume number does not vary (0019,10A2; 0020,0100; 2005,1063; 2005,1413), assuming meaningful instance number (0020,0013).\n"); 
+		printWarning("Volume number does not vary (0019,10A2; 0020,0100; 2005,1063; 2005,1413), assuming meaningful instance number (0020,0013).\n");
 		isUseInstanceNumberForVolume = true;
 	}
 	bool isVerbose = (verbose > 1); //issue533
-	if (isVerbose) 
+	if (isVerbose)
 		printMessage("Ranges volume %d..%d instance %d..%d\n", minVol, maxVolNotADC, minInstance, maxInstance); //TODO
 	bool isASL = (dcmList[dcmSort[0].indx].aslFlags != kASL_FLAG_NONE);
 	//we will renumber volumes for Philips ASL (Contrast/Label, phase) and DWI (derived trace)
@@ -2645,13 +2645,13 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		if (isASL) {
 			#ifdef myMatchEnhanced00209157 //issue533: make classic DICOMs match enhanced DICOM volume order
 				//disk order: slice < repeat < phase < label/control
-				vol += (phase - 1) * maxVol;	
-				if (isAslLabel) 
+				vol += (phase - 1) * maxVol;
+				if (isAslLabel)
 					vol += maxPhase * maxVol;
 			#else
 				//"temporal" disk order: slice < phase < label/control < repeat : should match instance number
-				vol = phase;	
-				if (isAslLabel) 
+				vol = phase;
+				if (isAslLabel)
 					vol += maxPhase;
 				vol += (rawvol - 1) * (2 * maxPhase);
 			#endif
@@ -2669,8 +2669,8 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		floatSort[i].index = i;
 	}
 	//n.b. should we change dim[3] and dim[4] if number of volumes = dim[3]?
-	if ((maxVolOut-minVolOut+1) != d4) 
-		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVolOut, maxVolOut); 
+	if ((maxVolOut-minVolOut+1) != d4)
+		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVolOut, maxVolOut);
 	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	TDCMsort *dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 	for (int i = 0; i < nConvert; i++)
@@ -5112,7 +5112,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	//used for oldSliceTimingGE
 	if (!opts.isIgnorex0021x105E) {
 		if ((geMajorVersionInt >= 28) && (d->CSA.sliceTiming[0] >= 0.0)) {
-			//if (opts.isVerbose > 1) 
+			//if (opts.isVerbose > 1)
 			printMessage("GEversion %.1f, slice timing from DICOM (0021,105E).\n", geMajorVersion);
 			return; //trust slice timings for versions > 27, see issue 336
 		}
@@ -5150,7 +5150,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	// Estimate GE Slice Time only for EPI Multi-Phase (epi) or EPI fMRI/BrainWave (epiRT)
 	//
 	// BrainWave (epiRT)
-	if (d->epiVersionGE >= kGE_EPI_PEPOLAR_FWD) 
+	if (d->epiVersionGE >= kGE_EPI_PEPOLAR_FWD)
 		printWarning("GE ABCD pepolar research sequence handling is experimental\n");//
 	else if ((d->epiVersionGE == 1) || (strstr(ioptGE, "FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
 		d->epiVersionGE = 1;
@@ -5168,7 +5168,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 		}
 		// EPI Multi-Phase (epi) with Variable Delays (Unsupported)
 		if (groupDelay < -0.5) {
-			printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
+			printWarning("SliceTiming Unsupported: GE Multi-Phase EPI with Variable Delays\n");
 			d->CSA.sliceTiming[0] = -1;
 			return;
 		}
@@ -5634,7 +5634,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT) || ((opts.isForceOnsetTimes) && (dcmList[indx0].manufacturer != kMANUFACTURER_GE)))) {
 				if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS) {
 					ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose); //issue529
-					indx0 = dcmSort[0].indx;	
+					indx0 = dcmSort[0].indx;
 				}
 				//printf("Bogo529\n"); return EXIT_SUCCESS;
 				//note: GE 0008,0032 unreliable, see mb=6 data from sw27.0 20201026
@@ -6039,7 +6039,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		if (nConvert > 0) {
 			float dx = sliceMMarray[1] - sliceMMarray[0];
 			float thr = fabs(dx) * 0.1;
-			for (int i = 2; i < nConvert; i++) 
+			for (int i = 2; i < nConvert; i++)
 				if (fabs(dx- (sliceMMarray[i]-sliceMMarray[i-1])) > (thr) ) {
 					printWarning("Unable to rotate 3D volume: slices not equidistant: %g != %g\n", dx, sliceMMarray[i]-sliceMMarray[i-1]);
 					isSliceEquidistant = false;
@@ -6298,7 +6298,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 				dcmList[indx].isHasPhase = dti4D->isPhase[i];
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
-				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i]; 
+				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i];
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
 				break;
@@ -7556,14 +7556,14 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 #else
 	char str[PATH_MAX];
 	//possible pigz names
-	const char *nams[] = {
+	const char *names[] = {
 		"pigz",
 		"pigz_mricron",
 		"pigz_afni",
 	};
-#define n_nam (sizeof(nams) / sizeof(const char *))
+#define n_nam (sizeof(names) / sizeof(const char *))
 	for (int n = 0; n < (int)n_nam; n++) {
-		if (findpathof(str, nams[n])) {
+		if (findpathof(str, names[n])) {
 			strcpy(opts->pigzname, str);
 			//printMessage("Found pigz: %s\n", str);
 			return;
@@ -7584,16 +7584,16 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		strcat(exepth, appendChar);
 	//see if pigz in any path
 	for (int n = 0; n < (int)n_nam; n++) {
-		//printf ("%d: %s\n", i, nams[n]);
+		//printf ("%d: %s\n", i, names[n]);
 		for (int p = 0; p < (int)n_pth; p++) {
 			strcpy(str, pths[p]);
-			strcat(str, nams[n]);
+			strcat(str, names[n]);
 			if (is_exe(str))
 				goto pigzFound;
 		} //p
 		//check exepth
 		strcpy(str, exepth);
-		strcat(str, nams[n]);
+		strcat(str, names[n]);
 		if (is_exe(str))
 			goto pigzFound;
 	} //n
