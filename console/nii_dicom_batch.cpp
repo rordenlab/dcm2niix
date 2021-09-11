@@ -6022,7 +6022,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #ifndef USING_R
 	fflush(stdout); //show immediately if run from MRIcroGL GUI
 #endif
-	//~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
+		//~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
 	//~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
 	//hdr0.pixdim[3] = dxNoTilt;
 	if (hdr0.dim[3] < 2)
@@ -6035,8 +6035,21 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	bool isFlipY = false;
 	bool isSetOrtho = false;
 	if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (!dcmList[dcmSort[0].indx].isEPI) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4)) {
-		imgM = nii_setOrtho(imgM, &hdr0);
-		isSetOrtho = true;
+		bool isSliceEquidistant = true; //issue539
+		if (nConvert > 0) {
+			float dx = sliceMMarray[1] - sliceMMarray[0];
+			float thr = fabs(dx) * 0.1;
+			for (int i = 2; i < nConvert; i++) 
+				if (fabs(dx- (sliceMMarray[i]-sliceMMarray[i-1])) > (thr) ) {
+					printWarning("Unable to rotate 3D volume: slices not equidistant: %g != %g\n", dx, sliceMMarray[i]-sliceMMarray[i-1]);
+					isSliceEquidistant = false;
+					break;
+				}
+		}
+		if (isSliceEquidistant) {
+			imgM = nii_setOrtho(imgM, &hdr0);
+			isSetOrtho = true;
+		}
 	} else if (opts.isFlipY) { //(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
 		imgM = nii_flipY(imgM, &hdr0);
 		isFlipY = true;

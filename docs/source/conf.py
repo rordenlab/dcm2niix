@@ -49,7 +49,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'dcm2niix'
-copyright = u'2016 The dcm2niix contributors'
+copyright = u'2021 The dcm2niix contributors'
 author = u'The dcm2niix contributors'
 
 # The version info for the project you're documenting, acts as replacement for
