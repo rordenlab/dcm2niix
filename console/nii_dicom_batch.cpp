@@ -5086,15 +5086,29 @@ void sliceTimingGE_Testx0021x105E(struct TDICOMdata *d, struct TDCMopts opts, st
 		printMessage("\t%g\t%g\n", d->CSA.sliceTiming[v], sliceTiming[v]);
 }
 
+void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename) {
+#ifdef myReadGeProtocolBlock
+	if ((d->manufacturer != kMANUFACTURER_GE) || (d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19))
+		return;
+	int viewOrderGE = -1;
+	int sliceOrderGE = -1;
+	int mbAccel = -1;
+	int nSlices = -1;
+	float groupDelay = 0.0;
+	char ioptGE[3000] = "";
+	geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, 2, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
+#endif
+}
+
 void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts opts, struct nifti_1_header *hdr, struct TDCMsort *dcmSort, struct TDICOMdata *dcmList) {
 	//we can often read GE slice timing from TriggerTime (0018,1060) or RTIA Timer (0021,105E)
 	// if both of these methods fail, we can often guess based on slice order stored in the Private Protocol Data Block (0025,101B)
 	// this is referred to as "rescue" as we only know the TR, not the TA. So assumes continuous scans with no gap
+	if (d->manufacturer != kMANUFACTURER_GE)
+		return;
 	if ((d->is3DAcq) || (d->isLocalizer) || (hdr->dim[4] < 2))
 		return; //no need for slice times
 	if (hdr->dim[3] < 2)
-		return;
-	if (d->manufacturer != kMANUFACTURER_GE)
 		return;
 	if ((d->protocolBlockStartGE < 128) || (d->protocolBlockLengthGE < 10)) {
 		d->CSA.sliceTiming[0] = -1;
@@ -5134,7 +5148,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	float groupDelay = 0.0;
 	char ioptGE[3000] = "";
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, opts.isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, 0, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
 	if (ok != EXIT_SUCCESS) {
 		d->CSA.sliceTiming[0] = -1;
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
@@ -5902,6 +5916,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
 			checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert - 1].indx]);
 	}
+	if (opts.isVerbose > 1)
+		reportProtocolBlockGE(&dcmList[indx0], nameList->str[dcmSort[0].indx]);
 	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert, opts);
 #ifdef myReportSliceFilenames
 	if (sliceDir < 0) {
