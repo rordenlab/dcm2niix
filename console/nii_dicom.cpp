@@ -4401,6 +4401,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	int userData12GE = 0;
 	int overlayRows = 0;
 	int overlayCols = 0;
+	bool isNeologica = false;
 	bool isTriggerSynced = false;
 	bool isProspectiveSynced = false;
 	bool isDICOMANON = false; //issue383
@@ -5138,6 +5139,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		case kStudyDate:
 			dcmStr(lLength, &buffer[lPos], d.studyDate);
+			if (((int)strlen(d.studyDate) > 7) && (strstr(d.studyDate, "19000101") != NULL))
+				isNeologica = true;
 			break;
 		case kModality:
 			if (lLength < 2)
@@ -7448,6 +7451,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
+	//issue 542
+	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
+		printWarning("GE DWI vectors may have been removed by Neologica DICOM Anonymizer Pro (Issue 542)\n");
 	//start: issue529 TODO JJJJ
 	if ((!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
 		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...

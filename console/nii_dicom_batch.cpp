@@ -2209,7 +2209,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 				bvals[i] = kADCval;
 			} else
 				vx[i].V[0] = 0; //e.g. GE raw B=0 where bval=900, bvec=0,0,0
-		}						//see issue 245
+		} //see issue 245, however this does impact some anonymized files where bvec but not bval removed https://neurostars.org/t/dcm2bids-after-conversion-to-bids-bvals-are-zeros/20198/11
 		if (((dcmList[indx0].manufacturer == kMANUFACTURER_PHILIPS)) && (isADCnotDTI(vx[i]))) {
 			*numADC = *numADC + 1;
 			bvals[i] = kADCval;
