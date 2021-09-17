@@ -3613,17 +3613,25 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 } // pigz_File()
 
 #define kMGHpad 97
-//typedef struct __attribute__((packed)) {
-struct __attribute__((__packed__)) Tmgh {
+
+#ifdef _MSC_VER
+#  define PACKED_STRUCT(name) \
+    __pragma(pack(push, 1)) struct name __pragma(pack(pop))
+#elif defined(__GNUC__)
+#  define PACKED_STRUCT(name) struct __attribute__((packed)) name
+#endif
+
+PACKED_STRUCT(Tmgh) {
 	int32_t version, width,height,depth,nframes,type,dof;
 	int16_t goodRASFlag;
 	float spacingX,spacingY,spacingZ,xr,xa,xs,yr,ya,ys,zr,za,zs,cr,ca,cs;
 	int16_t pad[kMGHpad];
 };
 
-struct __attribute__((__packed__)) TmghFooter {
+PACKED_STRUCT(TmghFooter) {
 	float TR, FlipAngle, TE, TI;
 };
+
 	
 void writeMghGz(char *baseName, struct Tmgh hdr, struct TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
 	//create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
