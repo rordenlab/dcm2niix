@@ -3614,26 +3614,24 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 
 #define kMGHpad 97
 
-#ifdef _MSC_VER
-#  define PACKED_STRUCT(name) \
-    __pragma(pack(push, 1)) struct name __pragma(pack(pop))
-#elif defined(__GNUC__)
-#  define PACKED_STRUCT(name) struct __attribute__((packed)) name
+#ifdef __GNUC__
+#define PACKD(...) __VA_ARGS__ __attribute__((__packed__))
+#else
+#define PACKD(...) __pragma(pack(push, 1)) __VA_ARGS__ __pragma(pack(pop))
 #endif
 
-PACKED_STRUCT(Tmgh) {
+PACKD(typedef struct {
 	int32_t version, width,height,depth,nframes,type,dof;
 	int16_t goodRASFlag;
 	float spacingX,spacingY,spacingZ,xr,xa,xs,yr,ya,ys,zr,za,zs,cr,ca,cs;
 	int16_t pad[kMGHpad];
-};
+}) Tmgh;
 
-PACKED_STRUCT(TmghFooter) {
+PACKD(typedef struct {
 	float TR, FlipAngle, TE, TI;
-};
+}) TmghFooter;
 
-	
-void writeMghGz(char *baseName, struct Tmgh hdr, struct TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
+void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
 	//create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
 	// in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
 	char fname[2048] = {""};
