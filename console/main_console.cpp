@@ -80,7 +80,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
 	printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters e.g. '-c first_visit')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
-	printf("  -e : export as NRRD instead of NIfTI (y/n, default n)\n");
+	printf("  -e : export as NRRD (y) or MGH (o) instead of NIfTI (y/n/o, default n)\n");
 #ifdef mySegmentByAcq
 #define kQstr " %%q=sequence number,"
 #else
@@ -356,7 +356,9 @@ int main(int argc, const char *argv[]) {
 				if (invalidParam(i, argv))
 					return 0;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == '1'))
-					opts.isSaveNRRD = true;
+					opts.saveFormat = kSaveFormatNRRD;
+				if ((argv[i][0] == 'o') || (argv[i][0] == 'O') || (argv[i][0] == '2'))
+					opts.saveFormat = kSaveFormatMGH;
 			} else if ((argv[i][1] == 'g') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))

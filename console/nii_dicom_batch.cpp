@@ -1949,6 +1949,31 @@ tse3d: T2*/
 
 #ifndef USING_R
 
+void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
+	//swap endian from big->little or little->big
+	// must be told which is native to detect datatype and number of voxels
+	// one could also auto-detect: hdr->sizeof_hdr==348
+	if (!isNative)
+		swap_nifti_header(hdr);
+	int nVox = 1;
+	for (int i = 1; i < 8; i++)
+		if (hdr->dim[i] > 1)
+			nVox = nVox * hdr->dim[i];
+	int bitpix = hdr->bitpix;
+	int datatype = hdr->datatype;
+	if (isNative)
+		swap_nifti_header(hdr);
+	if (datatype == DT_RGBA32)
+		return;
+	//n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
+	if (bitpix == 16)
+		nifti_swap_2bytes(nVox, im);
+	if (bitpix == 32)
+		nifti_swap_4bytes(nVox, im);
+	if (bitpix == 64)
+		nifti_swap_8bytes(nVox, im);
+}
+
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename) {
 	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
 	dti4D->sliceOrder[0] = -1;
@@ -2345,7 +2370,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	images->addDeferredAttribute("bValues", bValues);
 	images->addDeferredAttribute("bVectors", bVectors, numDti, 3);
 #else
-	if (opts.isSaveNRRD) {
+	if (opts.saveFormat != kSaveFormatNIfTI) {
 		if (numDti < kMaxDTI4D) {
 			dcmList[indx0].CSA.numDti = numDti;
 			for (int i = 0; i < numDti; i++) //for each direction
@@ -3254,7 +3279,7 @@ void nii_createDummyFilename(char *niiFilename, struct TDCMopts opts) {
 	nii_createFilename(d, niiFilenameBase, opts);
 	strcpy(niiFilename, "Example output filename: '");
 	strcat(niiFilename, niiFilenameBase);
-	if (opts.isSaveNRRD) {
+	if (opts.saveFormat != kSaveFormatNIfTI) {
 		if (opts.isGz)
 			strcat(niiFilename, ".nhdr'");
 		else
@@ -3316,7 +3341,6 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 		free(pCmp);
 		return;
 	}
-	//unsigned char *pHdr = (unsigned char *)malloc(hdrPadBytes);
 	unsigned char *pHdr;
 	if (!isSkipHeader) {
 		//add header
@@ -3588,6 +3612,202 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	return EXIT_SUCCESS;
 } // pigz_File()
 
+#define kMGHpad 97
+//typedef struct __attribute__((packed)) {
+struct __attribute__((__packed__)) Tmgh {
+	int32_t version, width,height,depth,nframes,type,dof;
+	int16_t goodRASFlag;
+	float spacingX,spacingY,spacingZ,xr,xa,xs,yr,ya,ys,zr,za,zs,cr,ca,cs;
+	int16_t pad[kMGHpad];
+};
+
+struct __attribute__((__packed__)) TmghFooter {
+	float TR, FlipAngle, TE, TI;
+};
+	
+void writeMghGz(char *baseName, struct Tmgh hdr, struct TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
+	//create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
+	// in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
+	char fname[2048] = {""};
+	strcpy(fname, baseName);
+	unsigned long hdrPadBytes = sizeof(hdr); //348 byte header + 4 byte pad
+	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
+	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
+	z_stream strm;
+	strm.total_in = 0;
+	strm.total_out = 0;
+	strm.zalloc = Z_NULL;
+	strm.zfree = Z_NULL;
+	strm.opaque = Z_NULL;
+	strm.next_out = pCmp;					// output char array
+	strm.avail_out = (unsigned int)cmp_len; // size of output
+	int zLevel = MZ_DEFAULT_LEVEL;			//Z_DEFAULT_COMPRESSION;
+	if ((gzLevel > 0) && (gzLevel < 11))
+		zLevel = gzLevel;
+	if (zLevel > MZ_UBER_COMPRESSION)
+		zLevel = MZ_UBER_COMPRESSION;
+	if (deflateInit(&strm, zLevel) != Z_OK) {
+		free(pCmp);
+		return;
+	}
+	unsigned char *pHdr;
+	//add header
+	strm.avail_in = (unsigned int)sizeof(hdr); // size of input
+	strm.next_in = (uint8_t *) &hdr.version;
+	deflate(&strm, Z_NO_FLUSH);
+	//add image
+	strm.avail_in = (unsigned int)src_len; // size of input
+	strm.next_in = (uint8_t *)src_buffer; // input image -- TPX strm.next_in = (Bytef *)src_buffer;
+	deflate(&strm, Z_FINISH); 
+	//add footer
+	strm.avail_in = (unsigned int)sizeof(footer); // size of input
+	strm.next_in = (uint8_t *) &footer.TR;
+	deflate(&strm, Z_NO_FLUSH);
+	//finish up
+	deflateEnd(&strm);
+	unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
+	file_crc32 = mz_crc32(file_crc32, (uint8_t *) &hdr.version, (unsigned int)sizeof(hdr));
+	file_crc32 = mz_crc32(file_crc32, src_buffer, (unsigned int)src_len);
+	file_crc32 = mz_crc32(file_crc32, (uint8_t *) &footer.TR, (unsigned int)sizeof(footer));
+	cmp_len = strm.total_out;
+	if (cmp_len <= 0) {
+		free(pCmp);
+		free(src_buffer);
+		return;
+	}
+	FILE *fileGz = fopen(fname, "wb");
+	if (!fileGz) {
+		free(pCmp);
+		free(src_buffer);
+		return;
+	}
+	//write header http://www.gzip.org/zlib/rfc-gzip.html
+	fputc((char)0x1f, fileGz); //ID1
+	fputc((char)0x8b, fileGz); //ID2
+	fputc((char)0x08, fileGz); //CM - use deflate compression method
+	fputc((char)0x00, fileGz); //FLG - no addition fields
+	fputc((char)0x00, fileGz); //MTIME0
+	fputc((char)0x00, fileGz); //MTIME1
+	fputc((char)0x00, fileGz); //MTIME2
+	fputc((char)0x00, fileGz); //MTIME2
+	fputc((char)0x00, fileGz); //XFL
+	fputc((char)0xff, fileGz); //OS
+	//write Z-compressed data
+	fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
+	//write tail: write redundancy check and uncompressed size as bytes to ensure LITTLE-ENDIAN order
+	fputc((unsigned char)(file_crc32), fileGz);
+	fputc((unsigned char)(file_crc32 >> 8), fileGz);
+	fputc((unsigned char)(file_crc32 >> 16), fileGz);
+	fputc((unsigned char)(file_crc32 >> 24), fileGz);
+	fputc((unsigned char)(strm.total_in), fileGz);
+	fputc((unsigned char)(strm.total_in >> 8), fileGz);
+	fputc((unsigned char)(strm.total_in >> 16), fileGz);
+	fputc((unsigned char)(strm.total_in >> 24), fileGz);
+	fclose(fileGz);
+	free(pCmp);
+} //writeMghGz()
+
+int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
+// FreeeSurfer does not use a permissive license, so we must reverse engineer code
+// https://surfer.nmr.mgh.harvard.edu/fswiki/FsTutorial/MghFormat
+	int n, nDim = hdr.dim[0];
+	//printMessage("NRRD writer is experimental\n");
+	if (nDim < 1)
+		return EXIT_FAILURE;
+	bool isGz = opts.isGz;
+	size_t imgsz = nii_ImgBytes(hdr);
+	if ((isGz) && (imgsz >= 2147483647)) {
+		printWarning("Saving huge image uncompressed (many GZip tools have 2 Gb limit).\n");
+		isGz = false;
+	}
+	//fill the footer
+	TmghFooter footer;
+	footer.TR = d.TR;
+	footer.FlipAngle = d.flipAngle;
+	footer.TE = d.TE;
+	footer.TI = d.TI;
+	#ifdef __LITTLE_ENDIAN__ //mgh data ALWAYS big endian!
+		nifti_swap_4bytes(4, &footer.TR);
+	#endif
+	//fill the header
+	Tmgh mgh;
+	mgh.version = 1;
+	mgh.width = hdr.dim[1];
+	mgh.height = hdr.dim[2];
+	mgh.depth = hdr.dim[3];
+	mgh.nframes = max(hdr.dim[4],1);
+	if (hdr.datatype == DT_UINT8)
+		mgh.type = 0;
+	else if (hdr.datatype == DT_INT16)
+		mgh.type = 4;
+	else if (hdr.datatype == DT_INT32)
+		mgh.type = 1;
+	else if (hdr.datatype == DT_FLOAT32)
+		mgh.type = 3;
+	else {
+		printError("MGH format does not support NIfTI datatype %d\n", hdr.datatype);
+		return EXIT_FAILURE;
+	}
+	mgh.dof = 0;
+	mgh.goodRASFlag = 1;
+	float xmm = hdr.pixdim[1];
+	float ymm = hdr.pixdim[2];
+	float zmm = hdr.pixdim[3];
+	//avoid divide by zero errors:
+	if (xmm <= 0.0) xmm = 1.0;
+	if (ymm <= 0.0) ymm = 1.0;
+	if (zmm <= 0.0) zmm = 1.0;
+	mgh.spacingX = xmm;
+	mgh.spacingY = ymm;
+	mgh.spacingZ = zmm;
+	mgh.xr = hdr.srow_x[0] / xmm;
+	mgh.xa = hdr.srow_y[0] / xmm;
+	mgh.xs = hdr.srow_z[0] / xmm;
+	mgh.yr = hdr.srow_x[1] / ymm;
+	mgh.ya = hdr.srow_y[1] / ymm;
+	mgh.ys = hdr.srow_z[1] / ymm;
+	mgh.zr = hdr.srow_x[2] / zmm;
+	mgh.za = hdr.srow_y[2] / zmm;
+	mgh.zs = hdr.srow_z[2] / zmm;
+	float vec[3];
+	vec[0] = hdr.dim[1] * 0.5;
+	vec[1] = hdr.dim[2] * 0.5;
+	vec[2] = hdr.dim[3] * 0.5;
+	mgh.cr = hdr.srow_x[0]*vec[0] + hdr.srow_x[1]*vec[1] + hdr.srow_x[2]*vec[2]  + hdr.srow_x[3];
+	mgh.ca = hdr.srow_y[0]*vec[0] + hdr.srow_y[1]*vec[1] + hdr.srow_y[2]*vec[2]  + hdr.srow_y[3];
+	mgh.cs = hdr.srow_z[0]*vec[0] + hdr.srow_z[1]*vec[1] + hdr.srow_z[2]*vec[2]  + hdr.srow_z[3];
+	#ifdef __LITTLE_ENDIAN__ //mgh data ALWAYS big endian!
+		nifti_swap_4bytes(7, &mgh.version);
+		nifti_swap_2bytes(1, &mgh.goodRASFlag);
+		nifti_swap_4bytes(15, &mgh.spacingX);
+	#endif
+	for (int i = 0; i < kMGHpad; i++)
+		mgh.pad[i] = 0;
+	//write the data
+	char fname[2048] = {""};
+	strcpy(fname, niiFilename);
+	#ifdef __LITTLE_ENDIAN__ //mgh data ALWAYS big endian!
+		swapEndian(&hdr, im, true); //byte-swap endian (e.g. little->big)
+	#endif
+	if (isGz) {
+		strcat(fname, ".mgz");
+		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel); 
+	} else {
+		strcat(fname, ".mgh");
+		FILE *fp = fopen(fname, "wb");
+		if (!fp)
+			return EXIT_FAILURE;
+		fwrite(&mgh, sizeof(Tmgh), 1, fp);
+		fwrite(&im[0], imgsz, 1, fp);
+		fwrite(&footer, sizeof(TmghFooter), 1, fp);
+		fclose(fp);
+	}
+	#ifdef __LITTLE_ENDIAN__ //mgh data ALWAYS big endian!
+		swapEndian(&hdr, im, false); //byte-swap endian (e.g. little->big)
+	#endif
+	return EXIT_SUCCESS;
+} // nii_saveMGH()
+
 int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
 	int n, nDim = hdr.dim[0];
 	//printMessage("NRRD writer is experimental\n");
@@ -3852,6 +4072,12 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+int nii_saveForeign(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
+	if (opts.saveFormat == kSaveFormatMGH)
+		return nii_saveMGH(niiFilename, hdr, im, opts, d, dti4D, numDTI);
+	return nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, numDTI);
+}// nii_saveForeign()
+
 #endif
 
 void removeSclSlopeInter(struct nifti_1_header *hdr, unsigned char *img) {
@@ -3912,37 +4138,12 @@ void removeSclSlopeInter(struct nifti_1_header *hdr, unsigned char *img) {
 
 #ifndef USING_R
 
-void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
-	//swap endian from big->little or little->big
-	// must be told which is native to detect datatype and number of voxels
-	// one could also auto-detect: hdr->sizeof_hdr==348
-	if (!isNative)
-		swap_nifti_header(hdr);
-	int nVox = 1;
-	for (int i = 1; i < 8; i++)
-		if (hdr->dim[i] > 1)
-			nVox = nVox * hdr->dim[i];
-	int bitpix = hdr->bitpix;
-	int datatype = hdr->datatype;
-	if (isNative)
-		swap_nifti_header(hdr);
-	if (datatype == DT_RGBA32)
-		return;
-	//n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
-	if (bitpix == 16)
-		nifti_swap_2bytes(nVox, im);
-	if (bitpix == 32)
-		nifti_swap_4bytes(nVox, im);
-	if (bitpix == 64)
-		nifti_swap_8bytes(nVox, im);
-}
-
 int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d) {
 	if (opts.isOnlyBIDS)
 		return EXIT_SUCCESS;
-	if (opts.isSaveNRRD) {
+	if (opts.saveFormat != kSaveFormatNIfTI) {
 		struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
-		int ret = nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, 0);
+		int ret = nii_saveForeign(niiFilename, hdr, im, opts, d, dti4D, 0);
 		free(dti4D);
 		return ret;
 	}
@@ -4102,6 +4303,31 @@ void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr) {
 	for (int i = 0; i < nVox; i++)
 		img16[i] = img16[i] & 4095; //12 bit data ranges from 0..4095, any other values are overflow
 }
+
+unsigned char * nii_uint16toFloat32(unsigned char *img, struct nifti_1_header *hdr, int isVerbose) {
+	if (hdr->datatype != DT_UINT16)
+		return img;
+	int dim3to7 = 1;
+	for (int i = 3; i < 8; i++)
+		if (hdr->dim[i] > 1)
+			dim3to7 = dim3to7 * hdr->dim[i];
+	int nVox = hdr->dim[1] * hdr->dim[2] * dim3to7;
+	if (nVox < 1)
+		return img;
+	unsigned short *img16 = (unsigned short *)img;
+	unsigned char *imOut = (unsigned char *)malloc(nVox * 4); // *4 as 32-bits per voxel, sizeof(float) )
+	float *imOut32 = (float *)imOut;
+	for (int i = 0; i < nVox; i++)
+		imOut32[i] = (hdr->scl_slope * img16[i]) + hdr->scl_inter;
+	free(img);
+	hdr->scl_slope = 1.0;
+	hdr->scl_inter = 1.0;
+	hdr->datatype = DT_FLOAT32;
+	hdr->bitpix = 32;
+	if (isVerbose)
+		printMessage("Converted uint16 to float32\n");
+	return imOut;
+} // nii_uint16toFloat32()
 
 void nii_scale16bitSigned(unsigned char *img, struct nifti_1_header *hdr, int isVerbose) {
 	//lossless scaling of INT16 data: e.g. input with range -100...3200 and scl_slope=1
@@ -6024,6 +6250,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
 	if ((dcmList[dcmSort[0].indx].bitsStored == 12) && (dcmList[dcmSort[0].indx].bitsAllocated == 16))
 		nii_mask12bit(imgM, &hdr0);
+	if ((opts.saveFormat == kSaveFormatMGH) && (hdr0.datatype == DT_UINT16))
+		imgM = nii_uint16toFloat32(imgM, &hdr0, opts.isVerbose);
 	if ((opts.isMaximize16BitRange == kMaximize16BitRange_True) && (hdr0.datatype == DT_INT16)) {
 		nii_scale16bitSigned(imgM, &hdr0, opts.isVerbose); //allow INT16 to use full dynamic range
 	} else if ((opts.isMaximize16BitRange == kMaximize16BitRange_True) && (hdr0.datatype == DT_UINT16) && (!dcmList[dcmSort[0].indx].isSigned)) {
@@ -6052,7 +6280,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	bool isSetOrtho = false;
 	if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (!dcmList[dcmSort[0].indx].isEPI) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4)) {
 		bool isSliceEquidistant = true; //issue539
-		if (nConvert > 0) {
+		if ((nConvert > 0)  && (sliceMMarray != NULL)){
 			float dx = sliceMMarray[1] - sliceMMarray[0];
 			float thr = fabs(dx) * 0.1;
 			for (int i = 2; i < nConvert; i++)
@@ -6104,7 +6332,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	int returnCode = EXIT_FAILURE;
 #ifndef myNoSave
 	// Indicates success or failure of the (last) save
-	if (opts.isSaveNRRD)
+	if (opts.saveFormat != kSaveFormatNIfTI)
 		removeSclSlopeInter(&hdr0, imgM);
 	//printMessage(" x--> %d ----\n", nConvert);
 	if (!opts.isRGBplanar) //save RGB as packed RGBRGBRGB... instead of planar RRR..RGGG..GBBB..B
@@ -6182,8 +6410,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #ifndef USING_R
 		if (iVaries)
 			printMessage("Saving as 32-bit float (slope, intercept or bits allocated varies).\n");
-		if (opts.isSaveNRRD)
-			returnCode = nii_saveNRRD(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx], dti4D, dcmList[indx0].CSA.numDti);
+		if (opts.saveFormat != kSaveFormatNIfTI)
+			returnCode = nii_saveForeign(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx], dti4D, dcmList[indx0].CSA.numDti);
 		else if (opts.isSave3D)
 			returnCode = nii_saveNII3D(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 		else
@@ -7671,7 +7899,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	opts->isAddNamePostFixes = true; //e.g. "_e2" added for second echo
 	opts->isTestx0021x105E = false; //GE test slice times stored in 0021,105E
 	opts->isIgnoreTriggerTimes = false;
-	opts->isSaveNRRD = false;
+	opts->saveFormat = kSaveFormatNIfTI;
 	opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
 	opts->isSave3D = false;
 	opts->dirSearchDepth = 5;
