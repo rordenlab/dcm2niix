@@ -5186,15 +5186,22 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 		dcmList[indx0].CSA.sliceTiming[v] -= mn;
 } //sliceTimingXA()
 
-void sliceTimeGE(struct TDICOMdata *d, int mb, int dim3, float TR, bool isInterleaved, bool is27r3, float groupDelaysec) {
+void sliceTimeGE(struct TDICOMdata *d, int mb, int dim3, float TR, bool isInterleaved, float geMajorVersion, bool is27r3, float groupDelaysec) {
 	//mb : multiband factor
 	//dim3 : number of slices in volume
 	//TRsec : repetition time in seconds
 	//isInterleaved : interleaved or sequential slice order
+	//geMajorVersion: version, e.g. 29.0
 	//is27r3 : software release 27.0 R03 or later
 	float sliceTiming[kMaxEPI3D];
 	//multiband can be fractional! 'extra' slices discarded
 	int nExcitations = ceil(float(dim3) / float(mb));
+	if ((mb > 1) && (geMajorVersion < 26.0)) {
+		printWarning("Unable to determine slice times for early GE HyperBand.\n");
+		return;
+	}	
+	if ((mb > 1) && (!is27r3) && ((nExcitations % 2) == 0) ) //number of slices divided by MB factor should is Even
+			nExcitations ++; //https://osf.io/q4d53/wiki/home/; Figure 3 of https://pubmed.ncbi.nlm.nih.gov/26308571/
 	int nDiscardedSlices = (nExcitations * mb) - dim3;
 	float secPerSlice = (TR - groupDelaysec) / (nExcitations);
 	if (!isInterleaved) {
@@ -5435,7 +5442,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 		printMessage("GEiopt: %s, groupDelay (%g), internalepiVersionGE (%d), epiVersionGE(%d)\n", ioptGE, groupDelay, d->internalepiVersionGE, d->epiVersionGE);
 		printMessage("GEversion %s%.1f_R0%d, TRms %g, interleaved %d, multiband %d, groupdelayms %g\n", geVersionPrefix, geMajorVersion, geReleaseVersionInt, d->TR, isInterleaved, d->CSA.multiBandFactor, d->groupDelay);
 	}
-	sliceTimeGE(d, d->CSA.multiBandFactor, hdr->dim[3], d->TR, isInterleaved, is27r3, d->groupDelay);
+	sliceTimeGE(d, d->CSA.multiBandFactor, hdr->dim[3], d->TR, isInterleaved, geMajorVersion, is27r3, d->groupDelay);
 	sliceTimingGE_Testx0021x105E(d, opts, hdr, dcmSort, dcmList);
 #endif
 } //sliceTimingGE()
