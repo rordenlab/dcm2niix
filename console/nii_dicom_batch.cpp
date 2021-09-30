@@ -2657,6 +2657,8 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	int maxVolOut = -1;
 	bool isUsePhaseForVol = false;
 	if ((!isASL) && (minVol == maxVol) && (maxPhase > 1)) isUsePhaseForVol = true;//e.g. TurboQUASAR
+	bool isPhaseIsBValNumber =false;
+	if ((!isASL) && (minVol < maxVol) && (maxPhase > 1)) isPhaseIsBValNumber = true;//DWI track both gradient number and vector number issue 546
 	if (isVerbose)
 		printMessage("InstanceNumber\tPosition\tVolume\tRepeat\tASLlabel\tPhase\tTriggerTime\n");
 	for (int i = 0; i < nConvert; i++) {
@@ -2665,6 +2667,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		int instance = dcmList[dcmSort[i].indx].imageNum;
 		int phase = max(1, dcmList[dcmSort[i].indx].phaseNumber);
 		if (isUsePhaseForVol) vol = phase;
+		if (isPhaseIsBValNumber) vol += phase * maxVol;
 		int isAslLabel = dcmList[dcmSort[i].indx].aslFlags == kASL_FLAG_PHILIPS_LABEL;
 		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
 		if (isASL) {
@@ -2694,7 +2697,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		floatSort[i].index = i;
 	}
 	//n.b. should we change dim[3] and dim[4] if number of volumes = dim[3]?
-	if ((maxVolOut-minVolOut+1) != d4)
+	if ((!isPhaseIsBValNumber) && ((maxVolOut-minVolOut+1) != d4))
 		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVolOut, maxVolOut);
 	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	TDCMsort *dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
@@ -2708,6 +2711,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	return false;
 } // ensureSequentialSlicePositions()
+
 
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
 	//swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...

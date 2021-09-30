@@ -7459,6 +7459,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...
 	//if (sliceNumberMrPhilips == 1) printf("instance\t %d\ttime\t%g\tvolume\t%d\tgradient\t%d\tphase\t%d\tisLabel\t%d\n", d.imageNum,  MRImageDynamicScanBeginTime, volumeNumber, gradientOrientationNumberPhilips, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL);
 	//if (sliceNumberMrPhilips == 1) printf("ACQtime\t%g\tinstance\t %d\ttime\t%g\tvolume\t%d\tphase\t%d\tisLabel\t%d\n", d.acquisitionTime, d.imageNum,  MRImageDynamicScanBeginTime, volumeNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL);
+	d.phaseNumber  =  (d.phaseNumber > philMRImageDiffBValueNumber) ? d.phaseNumber : philMRImageDiffBValueNumber; //we need both BValueNumber(2005,1412) and GradientOrientationNumber(2005,1413) to resolve volumes: issue546
 	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumber) ? d.rawDataRunNumber : volumeNumber;
 	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
 	if ((d.rawDataRunNumber < 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (d.dimensionIndexValues[nDimIndxVal - 1] > 0))
