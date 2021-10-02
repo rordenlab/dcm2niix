@@ -176,6 +176,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         struct TDTI S[kMaxDTI4D];
         int sliceOrder[kMaxSlice2D]; // [7,3,2] means the first slice on disk should be moved to 7th position
         int gradDynVol[kMaxDTI4D]; //used to parse dimensions of Philips data, e.g. file with multiple dynamics, echoes, phase+magnitude
+        //int fragmentOffset[kMaxDTI4D], fragmentLength[kMaxDTI4D]; //for images with multiple compressed fragments
         float frameDuration[kMaxDTI4D], decayFactor[kMaxDTI4D], volumeOnsetTime[kMaxDTI4D], triggerDelayTime[kMaxDTI4D], TE[kMaxDTI4D], RWVScale[kMaxDTI4D], RWVIntercept[kMaxDTI4D], intenScale[kMaxDTI4D], intenIntercept[kMaxDTI4D], intenScalePhilips[kMaxDTI4D];
         bool isReal[kMaxDTI4D];
         bool isImaginary[kMaxDTI4D];

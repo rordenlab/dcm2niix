@@ -1691,6 +1691,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	dti4D->volumeOnsetTime[0] = -1;
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
+	//dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	strcpy(d.protocolName, ""); //erase dummy with empty
 	strcpy(d.seriesDescription, ""); //erase dummy with empty
@@ -3111,7 +3112,7 @@ struct TJPEG {
 	long size;
 };
 
-TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, bool isVerbose, int frames, bool isLittleEndian) {
+TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, int frames, bool isLittleEndian) {
 #define abortGoto() free(lOffsetRA); return NULL;
 	TJPEG *lOffsetRA = (TJPEG *)malloc(frames * sizeof(TJPEG));
 	FILE *reader = fopen(fn, "rb");
@@ -3137,7 +3138,7 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, bool isVerbose,
 		int tagLength = dcmInt(4, &lRawRA[lRawPos], isLittleEndian);
 		long tagEnd = lRawPos + tagLength + 4;
 		if (isVerbose)
-			printMessage("Tag %#x length %d end at %ld\n", tag, tagLength, tagEnd + skipBytes);
+			printMessage("Frame %d Tag %#x length %d end at %ld\n", frame + 1, tag, tagLength, tagEnd + skipBytes);
 		lRawPos += 4; //read tag length
 		if ((lRawRA[lRawPos] != 0xFF) || (lRawRA[lRawPos + 1] != 0xD8) || (lRawRA[lRawPos + 2] != 0xFF)) {
 			if (isVerbose)
@@ -3157,7 +3158,7 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, bool isVerbose,
 	return lOffsetRA;
 }
 
-unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, bool isVerbose) {
+unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int isVerbose) {
 	//arcane and inefficient lossless compression method popularized by dcmcjpeg, examples at http://www.osirix-viewer.com/resources/dicom-image-library/
 	int dimX, dimY, bits, frames;
 	//clock_t start = clock();
@@ -3178,7 +3179,6 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 		printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
 		return NULL;
 	}
-	//printMessage("JPEG %fms\n", ((double)(clock()-start))/1000);
 	if (hdr.dim[3] != frames) { //multi-slice image saved as multiple image fragments rather than a single image
 		//printMessage("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
 		if (ret != NULL)
@@ -3595,7 +3595,7 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		if (hdr->datatype == DT_RGB24) //convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); //do this BEFORE Y-Flip, or RGB order can be flipped
 	} else if (dcm.compressionScheme == kCompressC3)
-		img = nii_loadImgJPEGC3(imgname, *hdr, dcm, (isVerbose > 0));
+		img = nii_loadImgJPEGC3(imgname, *hdr, dcm, isVerbose);
 	else
 #ifndef myDisableOpenJPEG
 		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone))
@@ -4043,6 +4043,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->volumeOnsetTime[0] = -1;
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
+	//dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
@@ -4810,6 +4811,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			lPos = lPos + 4;
 			lLength = d.imageBytes;
 			if (d.imageBytes > 128) {
+				/*if (encapsulatedDataFragments < kMaxDTI4D) {
+					dti4D->fragmentOffset[encapsulatedDataFragments] = (int)lPos + (int)lFileOffset;
+					dti4D->fragmentLength[encapsulatedDataFragments] = lLength;
+				}*/
 				encapsulatedDataFragments++;
 				if (encapsulatedDataFragmentStart == 0)
 					encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
@@ -6754,9 +6759,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			//http://www.dclunie.com/medical-image-faq/html/part6.html
 			//unlike raw data, Encapsulated data is stored as Fragments contained in Items that are the Value field of Pixel Data
 			if ((d.compressionScheme != kCompressNone) && (!isIconImageSequence)) {
-				lLength = 0;
 				isEncapsulatedData = true;
 				encapsulatedDataImageStart = (int)lPos + (int)lFileOffset;
+				lLength = 0;
 			}
 			isIconImageSequence = false;
 			break;
@@ -6914,10 +6919,14 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	//printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	if (encapsulatedDataFragmentStart > 0) {
-		if (encapsulatedDataFragments > 1) {
+		if ((encapsulatedDataFragments > 1) && (encapsulatedDataFragments == numberOfFrames) && (encapsulatedDataFragments < kMaxDTI4D)) {
+			printWarning("Compressed image stored as %d fragments: if conversion fails decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
+			d.imageStart = encapsulatedDataFragmentStart;
+		} else if (encapsulatedDataFragments > 1) {
 			printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
 		} else {
 			d.imageStart = encapsulatedDataFragmentStart;
+			//dti4D->fragmentOffset[0] = -1;
 		}
 	} else if ((isEncapsulatedData) && (d.imageStart < 128)) {
 		//http://www.dclunie.com/medical-image-faq/html/part6.html
