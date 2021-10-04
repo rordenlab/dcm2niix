@@ -5207,7 +5207,6 @@ void sliceTimeGE(struct TDICOMdata *d, int mb, int dim3, float TR, bool isInterl
 	}
 	if ((mb > 1) && (!is27r3) && ((nExcitations % 2) == 0) ) { //number of slices divided by MB factor should is Even
 			nExcitations ++; //https://osf.io/q4d53/wiki/home/; Figure 3 of https://pubmed.ncbi.nlm.nih.gov/26308571/
-			printWarning("Slice times for this GE HyperBand dataset (version %g) are NOT yet fully validated.\n", geMajorVersion);
 		}
 	int nDiscardedSlices = (nExcitations * mb) - dim3;
 	float secPerSlice = (TR - groupDelaysec) / (nExcitations);
