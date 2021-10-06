@@ -4372,6 +4372,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kMRImageDiffBValueNumber 0x2005 + (0x1412 << 16) //IS
 #define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define kMRImageLabelType 0x2005 + (0x1429 << 16) //CS ASL LBL_CTL https://github.com/physimals/dcm_convert_phillips/
+#define kMRImageDiffVolumeNumber 0x2005+(0x1596 << 16) //IS 
 #define kSharedFunctionalGroupsSequence 0x5200 + uint32_t(0x9229 << 16) // SQ
 #define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
 #define kWaveformSq 0x5400 + (0x0100 << 16)
@@ -4411,6 +4412,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
+	int philMRImageDiffVolumeNumber = -1;
 	int sqDepth = 0;
 	int acquisitionTimesGE_UIH = 0;
 	int sqDepth00189114 = -1;
@@ -4644,8 +4646,14 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				// This will ensure correct ordering of slices in 4D datasets
 				//Canon and Bruker reverse dimensionIndexItem order relative to Philips: new versions introduce compareTDCMdimRev
 				//printf("%d: %d %d %d %d\n", ndim, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2], d.dimensionIndexValues[3]);
-				for (int i = 0; i < ndim; i++)
-					dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
+				if ((philMRImageDiffVolumeNumber > 0) && (sliceNumberMrPhilips > 0)) { //issue546: 2005,1596 provides temporal order
+					dcmDim[numDimensionIndexValues].dimIdx[0] = 1;
+					dcmDim[numDimensionIndexValues].dimIdx[1] = sliceNumberMrPhilips;
+					dcmDim[numDimensionIndexValues].dimIdx[2] = philMRImageDiffVolumeNumber;
+				} else { 
+					for (int i = 0; i < ndim; i++)
+						dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
+				}
 				dcmDim[numDimensionIndexValues].TE = TE;
 				dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
 				dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
@@ -6477,6 +6485,11 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				break;
 			philMRImageDiffBValueNumber = dcmStrInt(lLength, &buffer[lPos]);
 			break;
+		case kMRImageDiffVolumeNumber:
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break;
+			philMRImageDiffVolumeNumber = dcmStrInt(lLength, &buffer[lPos]);
+			break;
 		case kWaveformSq:
 			d.imageStart = 1; //abort!!!
 			printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
@@ -7468,12 +7481,16 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		gradientOrientationNumberPhilips = kMaxDTI4D + 1; //Philips includes derived Trace/ADC images into raw DTI, these should be removed...
 	//if (sliceNumberMrPhilips == 1) printf("instance\t %d\ttime\t%g\tvolume\t%d\tgradient\t%d\tphase\t%d\tisLabel\t%d\n", d.imageNum,  MRImageDynamicScanBeginTime, volumeNumber, gradientOrientationNumberPhilips, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL);
 	//if (sliceNumberMrPhilips == 1) printf("ACQtime\t%g\tinstance\t %d\ttime\t%g\tvolume\t%d\tphase\t%d\tisLabel\t%d\n", d.acquisitionTime, d.imageNum,  MRImageDynamicScanBeginTime, volumeNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL);
-	//if (sliceNumberMrPhilips == 1) printf("%d\t%d\t%g\n", philMRImageDiffBValueNumber, gradientOrientationNumberPhilips, d.CSA.dtiV[0]); //issue546
+	//if (sliceNumberMrPhilips == 1) printf("%d\t%d\t%g\t%d\n", philMRImageDiffBValueNumber, gradientOrientationNumberPhilips, d.CSA.dtiV[0], philMRImageDiffVolumeNumber); //issue546
 	d.phaseNumber  =  (d.phaseNumber > philMRImageDiffBValueNumber) ? d.phaseNumber : philMRImageDiffBValueNumber; //we need both BValueNumber(2005,1412) and GradientOrientationNumber(2005,1413) to resolve volumes: issue546
 	d.rawDataRunNumber =  (d.rawDataRunNumber > volumeNumber) ? d.rawDataRunNumber : volumeNumber;
 	d.rawDataRunNumber =  (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
 	if ((d.rawDataRunNumber < 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (d.dimensionIndexValues[nDimIndxVal - 1] > 0))
 		d.rawDataRunNumber =  d.dimensionIndexValues[nDimIndxVal - 1]; //Philips enhanced scans converted to classic with dcuncat 
+	if (philMRImageDiffVolumeNumber > 0) { //use 2005,1596 for Philips DWI >= R5.6
+		d.rawDataRunNumber = philMRImageDiffVolumeNumber;
+		d.phaseNumber  = 0; 
+	}
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	//end: issue529
 	if (hasDwiDirectionality)
