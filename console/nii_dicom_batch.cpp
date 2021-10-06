@@ -4797,7 +4797,7 @@ void sliceTimingGE(struct TDICOMdata * d, const char * filename, struct TDCMopts
 		}
 		// EPI Multi-Phase (epi) with Variable Delays (Unsupported)
 		if (groupDelay < -0.5) { 
-			printWarning("SliceTiming Unspported: GE Multi-Phase EPI with Variable Delays\n");
+			printWarning("SliceTiming Unsupported: GE Multi-Phase EPI with Variable Delays\n");
 			d->CSA.sliceTiming[0] = -1;
 			return;
 		}
