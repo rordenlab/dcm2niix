@@ -7262,8 +7262,6 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			bool isScaleVaries = false;
 			//setting j = 1 in next few lines is a hack, just in case TE/scale/intercept listed AFTER dimensionIndexValues
 			int j = 0;
-			//if (d.xyzDim[3] > 1) //not sure why this was included, disrupts Philips multiPLD ASL where each slice has different triggertime
-			//	j = 1;
 			for (int i = 0; i < d.xyzDim[4]; i++) {
 				int slice = j + (i * d.xyzDim[3]);
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
