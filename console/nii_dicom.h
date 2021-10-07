@@ -43,14 +43,14 @@ extern "C" {
 	#define kCCsuf " CompilerNA" //unknown compiler!
 #endif
 #if defined(__arm__) || defined(__ARM_ARCH)
-    #define kCPUsuf " ARM" 
+    #define kCPUsuf " ARM"
 #elif defined(__x86_64)
     #define kCPUsuf " x86-64"
 #else
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20210317"
+#define kDCMdate "v1.0.20211006"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -59,6 +59,7 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 
 #define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
 #define kDICOMStrLarge 256
+
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
 #define kMANUFACTURER_GE  2
@@ -66,8 +67,9 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kMANUFACTURER_TOSHIBA  4
 #define kMANUFACTURER_UIH  5
 #define kMANUFACTURER_BRUKER  6
-#define kMANUFACTURER_HITACHI 7
+#define kMANUFACTURER_HITACHI  7
 #define kMANUFACTURER_CANON  8
+#define kMANUFACTURER_MEDISO  9
 
 //note: note a complete modality list, e.g. XA,PX, etc
 #define kMODALITY_UNKNOWN  0
@@ -76,6 +78,26 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kMODALITY_MR  3
 #define kMODALITY_PT  4
 #define kMODALITY_US  5
+
+// PartialFourierDirection 0018,9036
+#define kPARTIAL_FOURIER_DIRECTION_UNKNOWN  0
+#define kPARTIAL_FOURIER_DIRECTION_PHASE  1
+#define kPARTIAL_FOURIER_DIRECTION_FREQUENCY  2
+#define kPARTIAL_FOURIER_DIRECTION_SLICE_SELECT  3
+#define kPARTIAL_FOURIER_DIRECTION_COMBINATION  4
+
+//GE EPI settings
+#define kGE_EPI_UNKNOWN  -1
+#define kGE_EPI_EPI  0
+#define kGE_EPI_EPIRT  1
+#define kGE_EPI_EPI2  2
+#define kGE_EPI_PEPOLAR_FWD  3
+#define kGE_EPI_PEPOLAR_REV  4
+#define kGE_EPI_PEPOLAR_REV_FWD  5
+#define kGE_EPI_PEPOLAR_FWD_REV  6
+#define kGE_EPI_PEPOLAR_REV_FWD_FLIP  7
+#define kGE_EPI_PEPOLAR_FWD_REV_FLIP  8
+
 
 //GE phase encoding
 #define kGE_PHASE_ENCODING_POLARITY_UNKNOWN  -1
@@ -99,7 +121,26 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kEXIT_OUTPUT_FOLDER_READ_ONLY  7
 #define kEXIT_SOME_OK_SOME_BAD  8
 #define kEXIT_RENAME_ERROR  9
+#define kEXIT_INCOMPLETE_VOLUMES_FOUND  10 //issue 515
+#define kEXIT_NOMINAL  11 //did not expect to convert files
 
+//0043,10A3  ---: PSEUDOCONTINUOUS
+//0043,10A4  ---: 3D pulsed continuous ASL technique
+#define kASL_FLAG_NONE 0
+#define kASL_FLAG_GE_3DPCASL 1
+#define kASL_FLAG_GE_3DCASL 2
+#define kASL_FLAG_GE_PSEUDOCONTINUOUS 4
+#define kASL_FLAG_GE_CONTINUOUS 8
+#define kASL_FLAG_PHILIPS_CONTROL 16
+#define kASL_FLAG_PHILIPS_LABEL 32
+
+
+//for spoiling 0018,9016
+#define kSPOILING_UNKOWN -1
+#define kSPOILING_NONE 0
+#define kSPOILING_RF 1
+#define kSPOILING_GRADIENT 2
+#define kSPOILING_RF_AND_GRADIENT 3
 
 static const int kSliceOrientUnknown = 0;
 static const int kSliceOrientTra = 1;
@@ -135,6 +176,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         struct TDTI S[kMaxDTI4D];
         int sliceOrder[kMaxSlice2D]; // [7,3,2] means the first slice on disk should be moved to 7th position
         int gradDynVol[kMaxDTI4D]; //used to parse dimensions of Philips data, e.g. file with multiple dynamics, echoes, phase+magnitude
+        //int fragmentOffset[kMaxDTI4D], fragmentLength[kMaxDTI4D]; //for images with multiple compressed fragments
         float frameDuration[kMaxDTI4D], decayFactor[kMaxDTI4D], volumeOnsetTime[kMaxDTI4D], triggerDelayTime[kMaxDTI4D], TE[kMaxDTI4D], RWVScale[kMaxDTI4D], RWVIntercept[kMaxDTI4D], intenScale[kMaxDTI4D], intenIntercept[kMaxDTI4D], intenScalePhilips[kMaxDTI4D];
         bool isReal[kMaxDTI4D];
         bool isImaginary[kMaxDTI4D];
@@ -180,30 +222,37 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         int xyzDim[5];
         uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
         int overlayStart[kMaxOverlay];
-        int interp3D, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
-        float groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
+        int phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
+        float 	xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 		float frameDuration, ecat_isotope_halflife, ecat_dosage;
 		float pixelPaddingValue;  // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
         double acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, acquisitionDate, bandwidthPerPixelPhaseEncode;
-        char radiopharmaceutical[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr],reconstructionMethod[kDICOMStr]; 
-        char coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], scanOptions[kDICOMStr], stationName[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr];
+        char parallelAcquisitionTechnique[kDICOMStr], radiopharmaceutical[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr],reconstructionMethod[kDICOMStr];
+        char imageOrientationText[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], scanOptions[kDICOMStr], stationName[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr];
         char institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
         bool isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
     };
+    struct TDCMprefs {
+        int isVerbose, compressFlag, isIgnoreTriggerTimes;
+	};
 
     size_t nii_ImgBytes(struct nifti_1_header hdr);
+	void setDefaultPrefs (struct TDCMprefs *prefs);
     int isSameFloatGE (float a, float b);
     void getFileNameX( char *pathParent, const char *path, int maxLen);
     struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
-    struct TDICOMdata readDICOM(char * fname);
+    struct TDICOMdata readDICOMx(char * fname, struct TDCMprefs* prefs, struct TDTI4D *dti4D);
+
+	struct TDICOMdata readDICOM(char * fname);
     struct TDICOMdata clear_dicom_data(void);
     struct TDICOMdata  nii_readParRec (char * parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase);
     unsigned char * nii_flipY(unsigned char* bImg, struct nifti_1_header *h);
+    unsigned char *nii_flipImgY(unsigned char *bImg, struct nifti_1_header *hdr);
     unsigned char * nii_flipZ(unsigned char* bImg, struct nifti_1_header *h);
     //*unsigned char * nii_reorderSlices(unsigned char* bImg, struct nifti_1_header *h, struct TDTI4D *dti4D);
     void changeExt (char *file_name, const char* ext);

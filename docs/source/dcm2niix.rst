@@ -26,10 +26,11 @@ Options
 
 -1..-9          gz compression level (1=fastest..9=smallest, default 6)
 
--b <y/i/n>      Save additional BIDS metadata to a side-car .json file.
+-b <y/i/n>      Save additional BIDS metadata to a side-car .json file (default y).
                 The "i"nput-only option reads DICOMs but saves neither BIDS nor NIfTI.
 
--ba <y/n>       anonymize BIDS
+-ba <y/n>       anonymize BIDS (default y).
+                If "n"o, side-car may report patient name, age and weight.
 
 -f <format>     Format string for the output filename(s). The following
                 specifiers are supported:
@@ -41,10 +42,11 @@ Options
                 - %e, echo number
                 - %f, folder name
                 - %i, patient ID
-                - %j, seriesInstanceUID
-                - %k, studyInstanceUID
+                - %j, series instance UID
+                - %k, study instance UID
                 - %m, manufacturer
                 - %n, patient name
+                - %o, media object instance UID
                 - %p, protocol
                 - %r, instance number (of 1st DICOM file)
                 - %s, series number
@@ -56,15 +58,28 @@ Options
 
                 The default format string is "%p_%e_%4s".
 
--i <y/n>        Ignore derived, localizer and 2D images.
+-g <y/n/o/i>    Generate defaults file (default n)
+                If "y", create default file on completion
+                If "n", default will not be written
+                If "o", only reset and write defaults
+                If "i", the values of the defaults file are ignored
+                : reset defaults], default n)
 
--l <y/n>        Losslessly scale 16-bit integers to use maximal dynamic range.
+-h              Show help
 
--m <y/n>        Merge slices from the same series regardless of study time,
-                echo, coil, orientation, etc...
+-i <y/n>        Ignore derived, localizer and 2D images (default n)
 
--n <number>     Only convert this series number. Provide a negative number for
-                listing of series numbers in input folder.
+-l <y/n/o>      Losslessly scale 16-bit integers to use maximal dynamic range (default o).
+                If "y", then intensity rescaled to use full 16-bit range.
+                If "n", data not scaled uint16 will be saved as int16.
+                If "o", original data and datatype preserved.
+
+-m <y/n/2>      Merge slices from the same series regardless of study time,
+                echo, coil, orientation, etc. (default 2).
+                If "2", automatic based on image modality.
+
+-n <number>     Only convert this series CRC number. Provide a negative number for
+                listing of series CRC numbers in input folder.
 
 -o <path>       Output directory where the converted files should be saved. If
                 unspecified, the files are saved within the specified source
@@ -80,14 +95,27 @@ Options
 
 -u              Update check: attempts to see if newer version is available.
 
--v <h/y/n>  	Enable verbose output. "n" for succinct, "y" for verbose, "h" for
+-v <2/y/n>  	Enable verbose output. "n" for succinct, "y" for verbose, "2" for
                 high verbosity
 
--x <y/n>        Crop images. This will attempt to remove excess neck from 3D acquisitions.
+-x <y/n/i>      Crop images. This will attempt to remove excess neck from 3D acquisitions.
+                If "i", images are neither cropped nor rotated to canonical space.
 
 -z <y/i/n>      Desired compression method. The "y"es option uses the external
                 program pigz if available. The "i" option compresses the image
                 using the slower built-in compression routines.
+
+--big-endian <y/n/o>     Byte order (default o). Optimal is machine native
+
+--progress               Slicer format progress information (y/n, default n)
+
+--ignore_trigger_times   Disregard values in 0018,1060 and 0020,9153
+
+--terse                  Omit filename post-fixes (can cause overwrites)
+
+--version                Report version and terminate
+
+--xml                    Slicer format features
 
 Licensing
 ---------

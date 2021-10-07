@@ -24,7 +24,7 @@ You request the output file name with the `-f` argument. For example, consider y
  - %r=instance number (from 0020,0013)*
  - %s=series number (from 0020,0011)
  - %t=time of study (from 0008,0020 and 0008,0030)
- - %u=acquisition number (from 0020,0012)
+ - %u=acquisition number (from 0020,0012). This option is recommended for [DICOM renaming](RENAMING.md). It is [not recommended](https://github.com/rordenlab/dcm2niix/issues/526) for DICOM to NIfTI conversion (as [BIDS compatible](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html) 4D datasets collapses multiple acquisitions to a single file). 
  - %v=vendor long name (from 0008,0070: GE, Philips, Siemens, Toshiba, UIH, NA)
  - %x=study ID (from 0020,0010)
  - %y=youth in series: GE RawDataRunNumber ([0019,10A2](https://github.com/rordenlab/dcm2niix/issues/359)) else TemporalPosition ([0020,0100](https://github.com/rordenlab/dcm2niix/issues/357))*
@@ -38,7 +38,7 @@ In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 
 
  - _cNx.._cNz  where C* refers to the coil name (typically only seen for uncombined data, where a separate image is generated for each antenna)
  - _e1..eN echo number for multi-echo sequences
- - _Eq is commonly seen in [CT scans](https://github.com/neurolabusc/dcm_qa_ct). For example, CT scans of the brain often have many slices closely packed near the brain stem and only a few slices spread far apart near the top of the head. Variable between-slice spacing is rarer in MRI, and if you see this from a MRI sequence you should ensure that [all of the acquired slices have been provided to dcm2niix](https://neurostars.org/t/field-mapping-siemens-scanners-dcm2niix-output-2-bids/2075/7). NIfTI asumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume.
+ - _Eq is commonly seen in [CT scans](https://github.com/neurolabusc/dcm_qa_ct). For example, CT scans of the brain often have many slices closely packed near the brain stem and only a few slices spread far apart near the top of the head. Variable between-slice spacing is rarer in MRI, and if you see this from a MRI sequence you should ensure that [all of the acquired slices have been provided to dcm2niix](https://neurostars.org/t/field-mapping-siemens-scanners-dcm2niix-output-2-bids/2075/7). NIfTI assumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume.
  - _ph phase map
  - _iN appended image number for non-parallel slices
  - _imaginary imaginary component of complex image

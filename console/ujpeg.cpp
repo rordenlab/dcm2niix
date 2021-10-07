@@ -107,7 +107,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 // HEADER SECTION                                                            //
-// copy and pase this into nanojpeg.h if you want                            //
+// copy and paste this into nanojpeg.h if you want                            //
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifndef _NANOJPEG_H

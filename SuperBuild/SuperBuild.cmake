@@ -68,7 +68,7 @@ if(USE_OPENJPEG)
         endif()
 
         if(OPENJPEG_FOUND AND NOT ${OPENJPEG_INCLUDE_DIRS} MATCHES "gdcmopenjpeg")
-            set(OpenJPEG_DIR ${OPENJPEG_LIBDIR}/openjpeg-2.1 CACHE PATH "Path to OpenJPEG configuration file" FORCE)
+	    set(OpenJPEG_DIR ${OPENJPEG_LIBDIR}/openjpeg-${OPENJPEG_VERSION} CACHE PATH "Path to OpenJPEG configuration file" FORCE)
             message("--   Using OpenJPEG library from ${OpenJPEG_DIR}")
         else()
             if(${OPENJPEG_INCLUDE_DIRS} MATCHES "gdcmopenjpeg")
@@ -156,4 +156,3 @@ option(BUILD_DOCS "Build documentation (manpages)" OFF)
 if(BUILD_DOCS)
     add_subdirectory(docs)
 endif()
-
