@@ -6279,7 +6279,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		nii_check16bitUnsigned(imgM, &hdr0, opts.isVerbose); //save UINT16 as INT16 if we can do this losslessly
 	if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert < 2))
 		printWarning("Siemens XA DICOM inadequate for robust conversion (issue 236)\n");
-	if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert > 1))
+	if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert > 1) && (nConvert == (hdr0.dim[3] * hdr0.dim[4])) )
 		printWarning("Siemens XA exported as classic not enhanced DICOM (issue 236)\n");
 	printMessage("Convert %d DICOM as %s (%dx%dx%dx%d)\n", nConvert, pathoutname, hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4]);
 #ifndef USING_R
