@@ -206,4 +206,19 @@ if(APPLE)
     # launchctl plist ./dcm2niix
 endif()
 
+### start of addition for FREESURFER
+set(DCM2NIIXFSLIB dcm2niixfs)
+add_library(${DCM2NIIXFSLIB} STATIC
+    dcm2niix_fswrapper.cpp
+    nii_dicom.cpp
+    jpg_0XC3.cpp
+    ujpeg.cpp
+    nifti1_io_core.cpp
+    nii_foreign.cpp
+    nii_ortho.cpp
+    nii_dicom_batch.cpp)
+target_compile_definitions(${DCM2NIIXFSLIB} PUBLIC -DUSING_DCM2NIIXFSWRAPPER -DUSING_MGH_NIFTI_IO)
+### end of addition for FREESURFER
+
 install(TARGETS ${PROGRAMS} DESTINATION bin)
+

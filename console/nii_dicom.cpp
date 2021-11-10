@@ -765,7 +765,11 @@ struct TDICOMdata clear_dicom_data() {
 	d.lastScanLoc = NAN;
 	d.TR = 0.0;
 	d.TE = 0.0;
+#ifdef USING_DCM2NIIXFSWRAPPER
+	d.TI = -1.0; // default when there is no TI in dicom file
+#else
 	d.TI = 0.0;
+#endif
 	d.flipAngle = 0.0;
 	d.bandwidthPerPixelPhaseEncode = 0.0;
 	d.acquisitionDuration = 0.0;
@@ -6820,7 +6824,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				if (bits == 1)
 					break;
 				//old style Burned-In
-				printMessage("Illegal/Obsolete DICOM: Overlay Bits Allocated must be 1, not %d\n", bits);
+				printMessage("Illegal/Obsolete DICOM (%s): Overlay Bits Allocated must be 1, not %d\n", fname, bits);
 				overlayOK = false;
 				break;
 			}
@@ -6829,7 +6833,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				if (pos == 0)
 					break;
 				//old style Burned-In
-				printMessage("Illegal/Obsolete DICOM: Overlay Bit Position shall be 0, not %d\n", pos);
+				printMessage("Illegal/Obsolete DICOM (%s): Overlay Bit Position shall be 0, not %d\n", fname, pos);
 				overlayOK = false;
 				break;
 			}
@@ -7500,7 +7504,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);
 	//printMessage("buffer usage %d %d %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	return d;
-} // readDICOM()
+} // readDICOMx()
 
 void setDefaultPrefs(struct TDCMprefs *prefs) {
 	prefs->isVerbose = false;

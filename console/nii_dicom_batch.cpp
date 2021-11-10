@@ -104,6 +104,25 @@ const char kFileSep[2] = "/";
 
 #endif
 
+#ifdef USING_DCM2NIIXFSWRAPPER
+// create the struct to save nifti header, image data, TDICOMdata, & TDTI information.
+// no .nii, .bval, .bvec are created.
+MRIFSSTRUCT mrifsStruct;
+
+// retrieve the struct
+MRIFSSTRUCT* nii_getMrifsStruct()
+{
+  return &mrifsStruct;
+}
+
+// free the memory used for the image and dti
+void nii_clrMrifsStruct()
+{
+  free(mrifsStruct.imgM);
+  free(mrifsStruct.tdti);
+}
+#endif
+
 bool isADCnotDTI(TDTI bvec) { //returns true if bval!=0 but all bvecs == 0 (Philips code for derived ADC image)
 	return ((!isSameFloat(bvec.V[0], 0.0f)) && //not a B-0 image
 			((isSameFloat(bvec.V[1], 0.0f)) && (isSameFloat(bvec.V[2], 0.0f)) && (isSameFloat(bvec.V[3], 0.0f))));
@@ -1954,7 +1973,11 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	// must be told which is native to detect datatype and number of voxels
 	// one could also auto-detect: hdr->sizeof_hdr==348
 	if (!isNative)
-		swap_nifti_header(hdr);
+#ifdef USING_MGH_NIFTI_IO
+	  swap_nifti_header(hdr, 1);
+#else
+	  swap_nifti_header(hdr);
+#endif
 	int nVox = 1;
 	for (int i = 1; i < 8; i++)
 		if (hdr->dim[i] > 1)
@@ -1962,7 +1985,11 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	int bitpix = hdr->bitpix;
 	int datatype = hdr->datatype;
 	if (isNative)
-		swap_nifti_header(hdr);
+#ifdef USING_MGH_NIFTI_IO
+	  swap_nifti_header(hdr, 1);
+#else
+	  swap_nifti_header(hdr);
+#endif
 	if (datatype == DT_RGBA32)
 		return;
 	//n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
@@ -2103,6 +2130,10 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		char sep = '\t';
 		if (opts.isCreateBIDS)
 			sep = ' ';
+
+		if (opts.isVerbose)
+		  printMessage("save bval and bvec for allB0 is true\n");
+
 		//save bval
 		char txtname[2048] = {""};
 		strcpy(txtname, pathoutname);
@@ -2377,9 +2408,16 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 				for (int v = 0; v < 4; v++) //for each vector+B-value
 					dti4D->S[i].V[v] = vx[i].V[v];
 		}
+#ifdef USING_DCM2NIIXFSWRAPPER
+		mrifsStruct.tdti = vx;
+		mrifsStruct.numDti = numDti;
+#else
 		free(vx);
+#endif
 		return volOrderIndex;
 	}
+
+#ifndef USING_DCM2NIIXFSWRAPPER
 	char txtname[2048] = {""};
 	strcpy(txtname, pathoutname);
 	strcat(txtname, ".bval");
@@ -2398,10 +2436,18 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	}
 	fprintf(fp, "%g\n", vx[numDti - 1].V[0]);
 	fclose(fp);
+#endif
 	if (isIsotropic) { //issue 405: ISOTROPIC images have bval but not bvec
+#ifdef USING_DCM2NIIXFSWRAPPER
+		mrifsStruct.tdti = vx;
+		mrifsStruct.numDti = numDti;
+#else
 		free(vx);
+#endif
 		return volOrderIndex;
 	}
+
+#ifndef USING_DCM2NIIXFSWRAPPER
 	strcpy(txtname, pathoutname);
 	if (dcmList[indx0].isVectorFromBMatrix)
 		strcat(txtname, ".mvec");
@@ -2425,7 +2471,14 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	}
 	fclose(fp);
 #endif
+#endif
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+	mrifsStruct.tdti = vx;
+	mrifsStruct.numDti = numDti;
+#else
 	free(vx);
+#endif
 	return volOrderIndex;
 } // nii_saveDTI()
 
@@ -4233,6 +4286,8 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		return EXIT_SUCCESS;
 	}
 #endif
+
+#ifndef USING_DCM2NIIXFSWRAPPER
 	FILE *fp = fopen(fname, "wb");
 	if (!fp)
 		return EXIT_FAILURE;
@@ -4243,6 +4298,8 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 	fwrite(&pad, sizeof(pad), 1, fp);
 	fwrite(&im[0], imgsz, 1, fp);
 	fclose(fp);
+#endif
+
 	if (!opts.isSaveNativeEndian)
 		swapEndian(&hdr, im, false); //unbyte-swap endian (e.g. big->little)
 	if ((opts.isGz) && (strlen(opts.pigzname) > 0)) {
@@ -5736,6 +5793,18 @@ void loadOverlay(char *imgname, unsigned char *img, int offset, int x, int y, in
 } //loadOverlay()
 
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
+#ifdef USING_DCM2NIIXFSWRAPPER
+  double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
+  int segVolEcho = segVol;
+  if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+    segVolEcho = dcmList[dcmSort[0].indx].echoNum + 1;
+  if (segVolEcho > 0)
+    seriesNum = seriesNum + ((double)segVolEcho - 1.0) / 10.0;
+
+  if (!isSameDouble(opts.seriesNumber[0], seriesNum))
+    return EXIT_SUCCESS;
+#endif
+
 	bool iVaries = intensityScaleVaries(nConvert, dcmSort, dcmList);
 	float *sliceMMarray = NULL; //only used if slices are not equidistant
 	uint64_t indx = dcmSort[0].indx;
@@ -5788,6 +5857,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #else
 	bool saveAs3D = false;
 #endif
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+        mrifsStruct.tdicomData = dcmList[indx];  // first in sorted list dcmSort
+#endif 
+
 	struct nifti_1_header hdr0;
 	unsigned char *img = nii_loadImgXL(nameList->str[indx], &hdr0, dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose, dti4D);
 	if (strlen(opts.imageComments) > 0) {
@@ -5803,6 +5877,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	unsigned char *imgM = (unsigned char *)malloc(imgsz * (uint64_t)nConvert);
 	memcpy(&imgM[0], &img[0], imgsz);
 	free(img);
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+        printMessage("load Image %s, size %ld\n", nameList->str[indx], imgsz);
+#endif
+
 	//printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
 	bool isHasOverlay = dcmList[indx0].isHasOverlay;
 	if (nConvert > 1) {
@@ -6156,6 +6235,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				}
 				memcpy(&imgM[(uint64_t)i * imgsz], &img[0], imgsz);
 				free(img);
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+                                if (opts.isVerbose)
+				  printMessage("load Image #%d %s, size %ld\n", i, nameList->str[indx], imgsz);
+#endif
 			}
 		} //skip if we are only creating BIDS
 		if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
@@ -6205,7 +6289,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
 	if (opts.isOnlyBIDS) {
 		//note we waste time loading every image, however this ensures hdr0 matches actual output
+#ifndef USING_DCM2NIIXFSWRAPPER
 		free(imgM);
+#endif
 		return EXIT_SUCCESS;
 	}
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
@@ -6259,9 +6345,13 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	struct nifti_1_header hdrrx = hdr0;
 	bool isFlipZ = false;
 	if (sliceDir < 0) {
+#ifdef USING_DCM2NIIXFSWRAPPER     // freesurfer fix dcm/261000-10-6?.dcm
+      printMessage("***USING_DCM2NIIXFSWRAPPER***: skip nii_flipZ() when sliceDir < 0 (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+#else
 		isFlipZ = true;
 		imgM = nii_flipZ(imgM, &hdr0);
 		sliceDir = abs(sliceDir); //change this, we have flipped the image so GE DTI bvecs no longer need to be flipped!
+#endif
 	}
 	nii_saveText(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[indx]);
 	int numADC = 0;
@@ -6281,7 +6371,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		printWarning("Siemens XA DICOM inadequate for robust conversion (issue 236)\n");
 	if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert > 1))
 		printWarning("Siemens XA exported as classic not enhanced DICOM (issue 236)\n");
+#ifndef USING_DCM2NIIXFSWRAPPER
 	printMessage("Convert %d DICOM as %s (%dx%dx%dx%d)\n", nConvert, pathoutname, hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4]);
+#else
+    printMessage( "Convert %d DICOM (%dx%dx%dx%d)\n",  nConvert, hdr0.dim[1],hdr0.dim[2],hdr0.dim[3],hdr0.dim[4]);
+#endif
 #ifndef USING_R
 	fflush(stdout); //show immediately if run from MRIcroGL GUI
 #endif
@@ -6467,7 +6561,16 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	if (returnCode == EXIT_SUCCESS)
 		nii_saveAttributes(dcmList[dcmSort[0].indx], hdr0, opts, nameList->str[dcmSort[0].indx]);
 #endif
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+      hdr0.vox_offset = 352;
+
+      mrifsStruct.hdr0 = hdr0;
+      mrifsStruct.imgsz = nii_ImgBytes(hdr0);
+      mrifsStruct.imgM = imgM;
+#else  
 	free(imgM);
+#endif
 	if (dcmList[dcmSort[0].indx].xyzDim[0] > 1)
 		returnCode = kEXIT_INCOMPLETE_VOLUMES_FOUND; //issue515
 	return returnCode; //EXIT_SUCCESS;
@@ -6791,6 +6894,9 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		//if (((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) && (!d1.isXRay)) {
 		//	*isMultiEcho = true;
 		//}
+#ifdef USING_DCM2NIIXFSWRAPPER
+                printf("isForceStackSameSeries = true, seriesNum %ld, %ld, seriesInstanceUidCrc %d, %d\n", d1.seriesNum, d2.seriesNum, d1.seriesUidCrc, d2.seriesUidCrc);
+#endif
 		return true; //we will stack these images, even if they differ in the following attributes
 	}
 	if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || (d1.isHasReal != d2.isHasReal)) {
@@ -7259,6 +7365,10 @@ int reportProgress(int progressPct, float frac) {
 #endif
 
 int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
+#ifdef USING_DCM2NIIXFSWRAPPER
+  memset(&mrifsStruct, 0, sizeof(mrifsStruct));
+#endif
+
 	struct TSearchList nameList;
 	int nConvertTotal = 0;
 #if defined(_WIN64) || defined(_WIN32) || defined(USING_R)
@@ -7504,6 +7614,15 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 			continue;
 		if (!dcmList[ii].isValid)
 			continue;
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+		if (opts->numSeries > 0) {
+		  double seriesNum = (double) dcmList[ii].seriesUidCrc;
+		  if (!isSameDouble(opts->seriesNumber[0], seriesNum))
+		    continue;   // we convert one series at a time, skip the ones that we are not interested in 
+		}
+#endif
+
 		int nConvert = 0;
 		bool isMultiEcho = false;
 		bool isNonParallelSlices = false;
@@ -7887,7 +8006,8 @@ pigzFound: //Success
 void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDefaultOpts(opts,NULL)" or "setDefaultOpts(opts,argv)" where argv[0] is path to search
 	strcpy(opts->pigzname, "");
 #ifndef USING_R
-	readFindPigz(opts, argv);
+	if (argv != NULL)
+	  readFindPigz(opts, argv);
 #endif
 #ifdef myEnableJasper
 	opts->compressFlag = kCompressYes; //JASPER for JPEG2000
