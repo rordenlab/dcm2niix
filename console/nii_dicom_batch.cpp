@@ -1625,8 +1625,6 @@ tse3d: T2*/
 			interp = true;
 			fprintf(fp, "\t\"Interpolation2D\": %d,\n", interp);
 		}
-		if (d.interp3D > 1) //through-plane interpolation e.g. GE ZIP2 through-plane http://mriquestions.com/zip.html
-			fprintf(fp, "\t\"Interpolation3D\": %d,\n", d.interp3D);
 		if (csaAscii.baseResolution > 0)
 			fprintf(fp, "\t\"BaseResolution\": %d,\n", csaAscii.baseResolution);
 		if (shimSetting[0] != 0.0) {
@@ -1706,6 +1704,8 @@ tse3d: T2*/
 		//printf("PhaseLines=%d EchoTrainLength=%d SENSE=%g\n", d.phaseEncodingLines, d.echoTrainLength, d.accelFactPE); //n.b. we can not distinguish pF from SENSE/GRAPPA for UIH
 	}
 #endif
+		if (d.interp3D > 1) //through-plane interpolation e.g. GE ZIP2 through-plane http://mriquestions.com/zip.html
+			fprintf(fp, "\t\"Interpolation3D\": %d,\n", d.interp3D);
 	// https://neurostars.org/t/repetitiontime-parameters-what-are-they-and-where-to-find-them/20020/6
 	json_Float(fp, "\t\"RepetitionTimePreparation\": %g,\n", repetitionTimePreparation);
 	//Philips ASL specific tags, issue533
@@ -5843,12 +5843,24 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				else
 					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d slices.\n", dcmList[indx0].locationsInAcquisition, nConvert);
 			}
-			if (nAcq < 2) {
-				nAcq = 0;
-				for (int i = 0; i < nConvert; i++)
-					if (isSamePosition(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]))
-						nAcq++;
+			//end validate number of spatial volumes: check that number of times a spatial position is repeated matches number of 3D volumes in 4D dataset
+			int nSamePos = 0;
+			for (int i = 0; i < nConvert; i++)
+			if (isSamePosition(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]))
+				nSamePos++;
+			if ((nAcq < 2) && (nSamePos > 0)) nAcq = nSamePos;
+			if (nAcq > nSamePos) { //issue556
+				if ((dcmList[indx0].manufacturer == kMANUFACTURER_GE) && (dcmList[indx0].zThick > dcmList[indx0].xyzMM[3])) {
+					int zipFactor = (int)roundf(dcmList[indx0].zThick / dcmList[indx0].xyzMM[3]);
+					if (zipFactor > 1) {
+						nAcq = nSamePos;
+						dcmList[dcmSort[0].indx].interp3D = zipFactor;
+					}
+				}
 			}
+			if (nAcq != nSamePos) 
+				printWarning("Expected %d volumes but found spatial position repeats %d times.\n", nAcq, nSamePos);
+			//end validate number of spatial volumes
 			if ((nAcq > 1) && ((nConvert / nAcq) > 1) && ((nConvert % nAcq) == 0)) {
 				hdr0.dim[3] = nConvert / nAcq;
 				hdr0.dim[4] = nAcq;
