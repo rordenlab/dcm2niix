@@ -93,6 +93,22 @@ if(USE_JPEGLS)
     add_executable(dcm2niix ${DCM2NIIX_SRCS} ${CHARLS_SRCS})
 else()
     add_executable(dcm2niix ${DCM2NIIX_SRCS})
+
+    ### start of addition for FREESURFER
+    set(DCM2NIIXFSLIB dcm2niixfs)
+    set(DCM2NIIXFSLIB_SRCS
+    dcm2niix_fswrapper.cpp
+    nii_dicom.cpp
+    jpg_0XC3.cpp
+    ujpeg.cpp
+    nifti1_io_core.cpp
+    nii_foreign.cpp
+    nii_ortho.cpp
+    nii_dicom_batch.cpp)
+ 
+    add_library(${DCM2NIIXFSLIB} STATIC ${DCM2NIIXFSLIB_SRCS})
+    target_compile_definitions(${DCM2NIIXFSLIB} PUBLIC -DUSING_DCM2NIIXFSWRAPPER -DUSING_MGH_NIFTI_IO)
+    ### end of addition for FREESURFER
 endif()
 
 set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
