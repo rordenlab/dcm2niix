@@ -76,6 +76,20 @@ set(DCM2NIIX_SRCS
     nii_ortho.cpp
     nii_dicom_batch.cpp)
 
+set(DCM2NIIXFSLIB dcm2niixfs)
+set(DCM2NIIXFSLIB_SRCS
+    dcm2niix_fswrapper.cpp
+    nii_dicom.cpp
+    jpg_0XC3.cpp
+    ujpeg.cpp
+    nifti1_io_core.cpp
+    nii_foreign.cpp
+    nii_ortho.cpp
+    nii_dicom_batch.cpp)
+ 
+add_library(${DCM2NIIXFSLIB} STATIC ${DCM2NIIXFSLIB_SRCS})
+target_compile_definitions(${DCM2NIIXFSLIB} PRIVATE -DUSING_DCM2NIIXFSWRAPPER -DUSING_MGH_NIFTI_IO)
+
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
 if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
@@ -93,22 +107,6 @@ if(USE_JPEGLS)
     add_executable(dcm2niix ${DCM2NIIX_SRCS} ${CHARLS_SRCS})
 else()
     add_executable(dcm2niix ${DCM2NIIX_SRCS})
-
-    ### start of addition for FREESURFER
-    set(DCM2NIIXFSLIB dcm2niixfs)
-    set(DCM2NIIXFSLIB_SRCS
-    dcm2niix_fswrapper.cpp
-    nii_dicom.cpp
-    jpg_0XC3.cpp
-    ujpeg.cpp
-    nifti1_io_core.cpp
-    nii_foreign.cpp
-    nii_ortho.cpp
-    nii_dicom_batch.cpp)
- 
-    add_library(${DCM2NIIXFSLIB} STATIC ${DCM2NIIXFSLIB_SRCS})
-    target_compile_definitions(${DCM2NIIXFSLIB} PUBLIC -DUSING_DCM2NIIXFSWRAPPER -DUSING_MGH_NIFTI_IO)
-    ### end of addition for FREESURFER
 endif()
 
 set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
@@ -124,6 +122,9 @@ if(NOT ${ZLIB_IMPLEMENTATION} STREQUAL "Miniz")
     add_definitions(-DmyDisableMiniZ)
     target_include_directories(dcm2niix PRIVATE ${ZLIB_INCLUDE_DIRS})
     target_link_libraries(dcm2niix ${ZLIB_LIBRARIES})
+
+    target_include_directories(${DCM2NIIXFSLIB} PRIVATE ${ZLIB_INCLUDE_DIRS})
+    target_link_libraries(${DCM2NIIXFSLIB} ${ZLIB_LIBRARIES})
 endif()
 
 option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
@@ -133,6 +134,9 @@ if(USE_TURBOJPEG)
     add_definitions(-DmyTurboJPEG)
     target_include_directories(dcm2niix PRIVATE ${TURBOJPEG_INCLUDEDIR})
     target_link_libraries(dcm2niix ${TURBOJPEG_LIBRARIES})
+
+    target_include_directories(${DCM2NIIXFSLIB} PRIVATE ${TURBOJPEG_INCLUDEDIR})
+    target_link_libraries(${DCM2NIIXFSLIB} ${TURBOJPEG_LIBRARIES})
 endif()
 
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
@@ -141,6 +145,9 @@ if(USE_JASPER)
     add_definitions(-DmyEnableJasper)
     target_include_directories(dcm2niix PRIVATE ${JASPER_INCLUDE_DIR})
     target_link_libraries(dcm2niix ${JASPER_LIBRARIES})
+
+    target_include_directories(${DCM2NIIXFSLIB} PRIVATE ${JASPER_INCLUDE_DIR})
+    target_link_libraries(${DCM2NIIXFSLIB} ${JASPER_LIBRARIES})
 endif()
 
 option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
@@ -159,6 +166,9 @@ if(USE_OPENJPEG)
 
     target_include_directories(dcm2niix PRIVATE ${OPENJPEG_INCLUDE_DIRS})
     target_link_libraries(dcm2niix ${OPENJPEG_LIBRARIES})
+
+    target_include_directories(${DCM2NIIXFSLIB} PRIVATE ${OPENJPEG_INCLUDE_DIRS})
+    target_link_libraries(${DCM2NIIXFSLIB} ${OPENJPEG_LIBRARIES})
 else ()
     add_definitions(-DmyDisableOpenJPEG)
 endif()
@@ -221,5 +231,6 @@ if(APPLE)
     # otool -l ./dcm2niix | grep info_plist -B1 -A10
     # launchctl plist ./dcm2niix
 endif()
+
 
 install(TARGETS ${PROGRAMS} DESTINATION bin)
