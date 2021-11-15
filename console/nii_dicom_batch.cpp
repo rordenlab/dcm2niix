@@ -5946,6 +5946,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				if ((nVol > 1) && (volumeTimeStartFirstStartLast > 0.0)) {
 					tr = volumeTimeStartFirstStartLast / (nVol - 1.0);
 					if (fabs(tr - hdr0.pixdim[4]) > toleranceSec) {
+						if (hdr0.pixdim[4] > 0.0)
+							printWarning("Discrepancy between reported (%gs) and estimated (%gs) repetition time (issue 560).\n", hdr0.pixdim[4], tr);
 						if ((dcmList[indx0].isIR) && (dcmList[indx0].manufacturer != kMANUFACTURER_PHILIPS))
 							dti4D->repetitionTimeInversion = hdr0.pixdim[4];
 						else
