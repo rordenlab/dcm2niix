@@ -23,7 +23,6 @@ extern "C" {
     };
 #endif
 
-#ifdef USING_DCM2NIIXFSWRAPPER 
 typedef struct 
 {
   struct nifti_1_header hdr0;
@@ -39,7 +38,6 @@ typedef struct
 
 MRIFSSTRUCT* nii_getMrifsStruct();
 void nii_clrMrifsStruct();
-#endif
 
 #define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
 #define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
