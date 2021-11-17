@@ -36,14 +36,23 @@ if(USE_STATIC_RUNTIME)
     endif()
 endif()
 
-option(BLD_DCM2NIIXFSLIB "Build libdcm2niixfs.a" OFF)
-
 option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
 
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
+
+option(BUILD_DCM2NIIXFSLIB "Build libdcm2niixfs.a" OFF)
+
+if(BUILD_DCM2NIIXFSLIB)
+    if(USE_OPENJPEG OR USE_TURBOJPEG OR USE_JASPER)
+        message("-- Set BUILD_DCM2NIIXFSLIB to OFF since USE_TURBOJPEG/USE_JASPER/USE_OPENJPEG is ON.")
+        set(BUILD_DCM2NIIXFSLIB OFF CACHE BOOL "Build libdcm2niixfs.a" FORCE)
+    else()
+        message("-- Build libdcm2niixfs.a: ${BUILD_DCM2NIIXFSLIB}")
+    endif()
+endif()
 
 include(ExternalProject)
 
@@ -55,10 +64,6 @@ if(INSTALL_DEPENDENCIES)
     set(DEP_INSTALL_DIR ${CMAKE_INSTALL_PREFIX})
 else()
     set(DEP_INSTALL_DIR ${CMAKE_BINARY_DIR})
-endif()
-
-if(BLD_DCM2NIIXFSLIB)
-    message("-- Build libdcm2niixfs.a: ${BLD_DCM2NIIXFSLIB}")
 endif()
 
 if(USE_OPENJPEG)
@@ -153,8 +158,8 @@ ExternalProject_Add(console
         # yaml-cpp
         -DBATCH_VERSION:BOOL=${BATCH_VERSION}
         -DYAML-CPP_DIR:PATH=${YAML-CPP_DIR}
-	# Build libdcm2niixfs.a
-	-DBLD_DCM2NIIXFSLIB:BOOL=${BLD_DCM2NIIXFSLIB}
+        # Build libdcm2niixfs.a
+        -DBUILD_DCM2NIIXFSLIB:BOOL=${BUILD_DCM2NIIXFSLIB}
 )
 
 install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin

@@ -32,8 +32,7 @@
 #include "print.h"
 
 
-#ifndef USING_R
-#ifndef USING_MGH_NIFTI_IO
+#if !defined(USING_R) && !defined(USING_MGH_NIFTI_IO)
 void nifti_swap_8bytes( size_t n , void *ar )    // 4 bytes at a time
 {
     size_t ii ;
@@ -136,7 +135,6 @@ void swap_nifti_header( struct nifti_1_header *h  )
 
    return ;
 }
-#endif
 #endif
 
 bool littleEndianPlatform ()
@@ -269,8 +267,7 @@ mat44 nifti_dicom2mat(float orient[7], float patientPosition[4], float xyzMM[4])
     return Q44;
 }
 
-#ifndef USING_R
-#ifndef USING_MGH_NIFTI_IO
+#if !defined(USING_R) && !defined(USING_MGH_NIFTI_IO)
 float nifti_mat33_determ( mat33 R )   /* determinant of 3x3 matrix */
 {
     double r11,r12,r13,r21,r22,r23,r31,r32,r33 ;
@@ -293,7 +290,6 @@ mat33 nifti_mat33_mul( mat33 A , mat33 B )  /* multiply 2 3x3 matrices */
             + A.m[i][2] * B.m[2][j] ;
     return C ;
 }
-#endif
 #endif
 
 mat44 nifti_mat44_mul( mat44 A , mat44 B )  /* multiply 2 3x3 matrices */
@@ -318,8 +314,7 @@ mat33 nifti_mat33_transpose( mat33 A )  /* transpose 3x3 matrix */
     return B;
 }
 
-#ifndef USING_R
-#ifndef USING_MGH_NIFTI_IO
+#if !defined(USING_R) && !defined(USING_MGH_NIFTI_IO)
 mat33 nifti_mat33_inverse( mat33 R )   /* inverse of 3x3 matrix */
 {
     double r11,r12,r13,r21,r22,r23,r31,r32,r33 , deti ;
@@ -342,7 +337,6 @@ mat33 nifti_mat33_inverse( mat33 R )   /* inverse of 3x3 matrix */
     Q.m[2][2] = deti*( r11*r22-r21*r12) ;
     return Q ;
 }
-
 
 float nifti_mat33_rownorm( mat33 A )  // max row norm of 3x3 matrix
 {
@@ -408,7 +402,6 @@ mat33 nifti_mat33_polar( mat33 A )
     }
     return Z ;
 }
-
 
 void nifti_mat44_to_quatern( mat44 R ,
                             float *qb, float *qc, float *qd,
@@ -578,7 +571,6 @@ mat44 nifti_mat44_inverse( mat44 R )
     Q.m[3][3] = (deti == 0.0l) ? 0.0l : 1.0l ; // failure flag if deti == 0
     return Q ;
 }
-#endif
 #endif
 
 // Eigen decomposition for symmetric 3x3 matrices, port of public domain Java Matrix library JAMA.
@@ -863,10 +855,3 @@ vec3 nifti_mat33_eig3(double bxx, double bxy, double bxz, double byy, double byz
     //printf("bvec = [%g 0 0; 0 %g 0; 0 0 %g]\n", v3.v[0], v3.v[1], v3.v[2]);
     return v3;
 }
-
-
-
-
-
-
-

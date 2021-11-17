@@ -76,7 +76,7 @@ vec4 setVec4(float x, float y, float z);
 #ifndef USING_R
 #ifndef USING_MGH_NIFTI_IO
 // This declaration differs from the equivalent function in the current nifti1_io.h, so avoid the clash
-void  swap_nifti_header ( struct nifti_1_header *h) ;
+void  swap_nifti_header ( struct nifti_1_header *h ) ;
 #else
 void  swap_nifti_header ( struct nifti_1_header *h , int is_nifti ) ;
 #endif

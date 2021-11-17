@@ -112,14 +112,14 @@ MRIFSSTRUCT mrifsStruct;
 // retrieve the struct
 MRIFSSTRUCT* nii_getMrifsStruct()
 {
-  return &mrifsStruct;
+	return &mrifsStruct;
 }
 
 // free the memory used for the image and dti
 void nii_clrMrifsStruct()
 {
-  free(mrifsStruct.imgM);
-  free(mrifsStruct.tdti);
+	free(mrifsStruct.imgM);
+	free(mrifsStruct.tdti);
 }
 #endif
 
@@ -1974,9 +1974,9 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	// one could also auto-detect: hdr->sizeof_hdr==348
 	if (!isNative)
 #ifdef USING_MGH_NIFTI_IO
-	  swap_nifti_header(hdr, 1);
+		swap_nifti_header(hdr, 1);
 #else
-	  swap_nifti_header(hdr);
+		swap_nifti_header(hdr);
 #endif
 	int nVox = 1;
 	for (int i = 1; i < 8; i++)
@@ -1986,9 +1986,9 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	int datatype = hdr->datatype;
 	if (isNative)
 #ifdef USING_MGH_NIFTI_IO
-	  swap_nifti_header(hdr, 1);
+		swap_nifti_header(hdr, 1);
 #else
-	  swap_nifti_header(hdr);
+		swap_nifti_header(hdr);
 #endif
 	if (datatype == DT_RGBA32)
 		return;
@@ -5790,15 +5790,15 @@ void loadOverlay(char *imgname, unsigned char *img, int offset, int x, int y, in
 
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
 #ifdef USING_DCM2NIIXFSWRAPPER
-  double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
-  int segVolEcho = segVol;
-  if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
-    segVolEcho = dcmList[dcmSort[0].indx].echoNum + 1;
-  if (segVolEcho > 0)
-    seriesNum = seriesNum + ((double)segVolEcho - 1.0) / 10.0;
+	double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
+	int segVolEcho = segVol;
+	if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
+		segVolEcho = dcmList[dcmSort[0].indx].echoNum + 1;
+	if (segVolEcho > 0)
+		seriesNum = seriesNum + ((double)segVolEcho - 1.0) / 10.0;
 
-  if (!isSameDouble(opts.seriesNumber[0], seriesNum))
-    return EXIT_SUCCESS;
+	if (!isSameDouble(opts.seriesNumber[0], seriesNum))
+		return EXIT_SUCCESS;
 #endif
 
 	bool iVaries = intensityScaleVaries(nConvert, dcmSort, dcmList);
@@ -5855,7 +5855,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 
 #ifdef USING_DCM2NIIXFSWRAPPER
-        mrifsStruct.tdicomData = dcmList[indx];  // first in sorted list dcmSort
+	mrifsStruct.tdicomData = dcmList[indx];  // first in sorted list dcmSort
 #endif 
 
 	struct nifti_1_header hdr0;
@@ -5875,7 +5875,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	free(img);
 
 #ifdef USING_DCM2NIIXFSWRAPPER
-        printMessage("load Image %s\n", nameList->str[indx]);
+	printMessage("load Image %s\n", nameList->str[indx]);
 #endif
 
 	//printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
@@ -6247,8 +6247,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				free(img);
 
 #ifdef USING_DCM2NIIXFSWRAPPER
-                                if (opts.isVerbose)
-				  printMessage("load Image #%d %s\n", i, nameList->str[indx]);
+				if (opts.isVerbose)
+					printMessage("load Image #%d %s\n", i, nameList->str[indx]);
 #endif
 			}
 		} //skip if we are only creating BIDS
@@ -6356,7 +6356,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	bool isFlipZ = false;
 	if (sliceDir < 0) {
 #ifdef USING_DCM2NIIXFSWRAPPER     // freesurfer fix dcm/261000-10-6?.dcm
-                printMessage("***USING_DCM2NIIXFSWRAPPER***: skip nii_flipZ() when sliceDir < 0 (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
+		printMessage("***USING_DCM2NIIXFSWRAPPER***: skip nii_flipZ() when sliceDir < 0 (%s:%s:%d)\n", __FILE__, __func__, __LINE__);
 #else
 		isFlipZ = true;
 		imgM = nii_flipZ(imgM, &hdr0);
@@ -6573,11 +6573,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 
 #ifdef USING_DCM2NIIXFSWRAPPER
-      hdr0.vox_offset = 352;
+	hdr0.vox_offset = 352;
 
-      mrifsStruct.hdr0 = hdr0;
-      mrifsStruct.imgsz = nii_ImgBytes(hdr0);
-      mrifsStruct.imgM = imgM;
+	mrifsStruct.hdr0 = hdr0;
+	mrifsStruct.imgsz = nii_ImgBytes(hdr0);
+	mrifsStruct.imgM = imgM;
 #else  
 	free(imgM);
 #endif
@@ -6905,7 +6905,7 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		//	*isMultiEcho = true;
 		//}
 #ifdef USING_DCM2NIIXFSWRAPPER
-                printf("isForceStackSameSeries = true, seriesNum %ld, %ld, seriesInstanceUidCrc %d, %d\n", d1.seriesNum, d2.seriesNum, d1.seriesUidCrc, d2.seriesUidCrc);
+		printf("isForceStackSameSeries = true, seriesNum %ld, %ld, seriesInstanceUidCrc %d, %d\n", d1.seriesNum, d2.seriesNum, d1.seriesUidCrc, d2.seriesUidCrc);
 #endif
 		return true; //we will stack these images, even if they differ in the following attributes
 	}
@@ -7376,7 +7376,7 @@ int reportProgress(int progressPct, float frac) {
 
 int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 #ifdef USING_DCM2NIIXFSWRAPPER
-        memset(&mrifsStruct, 0, sizeof(mrifsStruct));
+	memset(&mrifsStruct, 0, sizeof(mrifsStruct));
 #endif
 
 	struct TSearchList nameList;
@@ -7627,9 +7627,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 
 #ifdef USING_DCM2NIIXFSWRAPPER
 		if (opts->numSeries > 0) {
-		  double seriesNum = (double) dcmList[ii].seriesUidCrc;
-		  if (!isSameDouble(opts->seriesNumber[0], seriesNum))
-		    continue;   // we convert one series at a time, skip the ones that we are not interested in 
+			double seriesNum = (double) dcmList[ii].seriesUidCrc;
+			if (!isSameDouble(opts->seriesNumber[0], seriesNum))
+				continue;   // we convert one series at a time, skip the ones that we are not interested in
 		}
 #endif
 
@@ -8017,7 +8017,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	strcpy(opts->pigzname, "");
 #ifndef USING_R
 	if (argv != NULL)
-	  readFindPigz(opts, argv);
+		readFindPigz(opts, argv);
 #endif
 #ifdef myEnableJasper
 	opts->compressFlag = kCompressYes; //JASPER for JPEG2000
