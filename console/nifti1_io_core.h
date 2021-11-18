@@ -22,7 +22,7 @@ extern "C" {
 #include <string.h>
 
 #ifndef USING_R
-typedef struct {                   /** 4x4 matrix struct **/
+typedef struct {                   /** 3x3 matrix struct **/
     float m[3][3] ;
 } mat33 ;
 typedef struct {                   /** 4x4 matrix struct **/
@@ -74,8 +74,12 @@ ivec3 setiVec3(int x, int y, int z);
 vec3 setVec3(float x, float y, float z);
 vec4 setVec4(float x, float y, float z);
 #ifndef USING_R
+#ifndef USING_MGH_NIFTI_IO
 // This declaration differs from the equivalent function in the current nifti1_io.h, so avoid the clash
-void  swap_nifti_header ( struct nifti_1_header *h) ;
+void  swap_nifti_header ( struct nifti_1_header *h ) ;
+#else
+void  swap_nifti_header ( struct nifti_1_header *h , int is_nifti ) ;
+#endif
 #endif
 vec4 nifti_vect44mat44_mul(vec4 v, mat44 m );
 void nifti_swap_2bytes( size_t n , void *ar );    // 2 bytes at a time
@@ -93,4 +97,4 @@ mat44 nifti_quatern_to_mat44( float qb, float qc, float qd,
 }
 #endif
 
-#endif
+#endif /* _NIFTI_IO_CORE_HEADER_ */
