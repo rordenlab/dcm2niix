@@ -138,11 +138,12 @@ The following tools exploit dcm2niix
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
-  - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
   - [bidsify](https://github.com/spinoza-rec/bidsify) is a Python project that uses dcm2niix to convert DICOM and Philips PAR/REC images to the BIDS standard.
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [boutiques-dcm2niix](https://github.com/lalet/boutiques-dcm2niix) is a dockerfile for installing and validating dcm2niix.
+  - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
+  - [clpipe](https://github.com/cohenlabUNC/clpipe) uses dcm2bids for DICOM import.
   - [conversion](https://github.com/pnlbwh/conversion) is a Python library that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
   - [DAC2BIDS](https://github.com/dangom/dac2bids) uses dcm2niibatch to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Here is a [tutorial](https://andysbrainbook.readthedocs.io/en/latest/OpenScience/OS/BIDS_Overview.html) describing usage.

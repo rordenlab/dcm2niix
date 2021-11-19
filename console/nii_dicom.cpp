@@ -6303,7 +6303,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			//  ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
 			//  (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 			//if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-			if ((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+			if ((d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
 				//for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
 				float v[4];
 				//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
