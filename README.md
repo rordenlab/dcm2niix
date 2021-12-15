@@ -151,10 +151,12 @@ The following tools exploit dcm2niix
   - [dcm2niixpy](https://github.com/Svdvoort/dcm2niixpy) Python package of dcm2niix.
   - [dcm2niix_afni](https://afni.nimh.nih.gov/pub/dist/doc/program_help/dcm2niix_afni.html) is a version of dcm2niix included with the [AFNI](https://afni.nimh.nih.gov/) distribution.
   - [dcm2niiXL](https://github.com/neurolabusc/dcm2niiXL) is a shell script and tuned compilation of dcm2niix designed for accelerated conversion of extra large datasets.
+  - [dcmwrangle](https://github.com/jbteves/dcmwrangle) a Python interactive and static tool for organizing dicoms.
+  - [DeepDicomSort](https://github.com/Svdvoort/DeepDicomSort) can recognize different scan types.
   - [DICOM2BIDS](https://github.com/klsea/DICOM2BIDS) is a Python 2 script for creating BIDS files.
   - [dicom2bids](https://github.com/Jolinda/lcnimodules) includes python modules for converting dicom files to nifti in a bids-compatible file structure that use dcm2niix.
-  - [dcmwrangle](https://github.com/jbteves/dcmwrangle) a Python interactive and static tool for organizing dicoms.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
+  - [DICOM-to-NIfTI-GUI](https://github.com/Zunairviqar/DICOM-to-NIfTI-GUI) is a Python script that provides a graphical wrapper for dcm2niix.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a web service for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
@@ -181,6 +183,7 @@ The following tools exploit dcm2niix
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
+  - [Retina_OCT_dcm2nii](https://github.com/Choupan/Retina_OCT_dcm2nii) converts optical coherence tomography (OCT) data to NIfTI.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
   - [shimming-toolbox](https://github.com/shimming-toolbox/shimming-toolbox) enabled static and real-time shimming, using dcm2niix to import DICOM data.
   - The [SlicerDcm2nii extension](https://github.com/Slicer/ExtensionsIndex/blob/master/SlicerDcm2nii.s4ext) is one method to import DICOM data into Slicer.

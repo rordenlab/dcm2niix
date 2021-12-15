@@ -1828,7 +1828,7 @@ tse3d: T2*/
 		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
 		fprintf(fp, "\t\"EstimatedTotalReadoutTime\": %g,\n", totalReadoutTime);
 	}
-	if (d.effectiveEchoSpacingGE > 0.0) {
+	if ((d.effectiveEchoSpacingGE > 0.0) && (reconMatrixPE > 1) && (d.accelFactPE > 0.0)) {
 		//TotalReadoutTime = [ ceil (PE_AcquisitionMatrix / Asset_R_factor) - 1] * ESP
 		float roundFactor = 2.0;
 		if (d.isPartialFourier)
