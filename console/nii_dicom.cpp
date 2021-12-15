@@ -6185,6 +6185,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kMRfMRIStatusIndicationPhilips: {//fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
+			if (volumeNumber > 0) break; //issue567
 			int i = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			if (i > 0) //only if positive value, see Magdeburg_2014 sample data from dcm_qa_philips Philips MR 51.0
 				volumeNumber = i;
