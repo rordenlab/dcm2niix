@@ -777,7 +777,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.zSpacing = 0.0;
 	d.zThick = 0.0;
 	//~ d.numberOfDynamicScans = 0;
-	d.echoNum = 1;
+	d.echoNum = 0;
 	d.echoTrainLength = 0;
 	d.waterFatShift = 0.0;
 	d.groupDelay = 0.0;
@@ -4266,6 +4266,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
+//#define kICE_Dims 0x0021 + (0x1106 << 16) //LO
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
 //#define kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
@@ -5772,6 +5773,14 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			//printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 			acquisitionTimesGE_UIH++;
 			break;
+		/*case kICE_Dims: { //issue568 "X_4_1_1_1_1_160_1_1_1_1_1_277"
+			if (d.manufacturer != kMANUFACTURER_SIEMENS)
+				break;
+			char iceStr[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], iceStr);
+			printf("do something profound with %s\n", iceStr);
+			break;
+		}*/
 		case kPhaseEncodingDirectionPositiveSiemens: {
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;

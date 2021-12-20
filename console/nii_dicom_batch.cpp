@@ -1398,7 +1398,7 @@ tse3d: T2*/
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR);
 	if (d.numberOfAverages > 1.0)
 		json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages);
-	if ((d.echoNum > 1) || (d.isMultiEcho))
+	if ((d.echoNum > 1) || ((d.isMultiEcho) && (d.echoNum > 0)))
 		fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay))
 		fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0);
@@ -3107,11 +3107,14 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	}
 // myMultiEchoFilenameSkipEcho1 https://github.com/rordenlab/dcm2niix/issues/237
 #ifdef myMultiEchoFilenameSkipEcho1
-	if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
+	if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho)) { //multiple echoes saved as same series
 #else
 	if ((isAddNamePostFixes) && (!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
 #endif
-		sprintf(newstr, "_e%d", dcm.echoNum);
+		if ((dcm.echoNum < 1) && (dcm.TE > 0))
+			sprintf(newstr, "_e%g", dcm.TE); //issue568: Siemens XA20 might omit echo number
+		else
+			sprintf(newstr, "_e%d", dcm.echoNum);
 		strcat(outname, newstr);
 		isEchoReported = true;
 	}
@@ -6277,8 +6280,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		nii_scale16bitUnsigned(imgM, &hdr0, opts.isVerbose); //allow UINT16 to use full dynamic range
 	} else if ((opts.isMaximize16BitRange == kMaximize16BitRange_False) && (hdr0.datatype == DT_UINT16) && (!dcmList[dcmSort[0].indx].isSigned))
 		nii_check16bitUnsigned(imgM, &hdr0, opts.isVerbose); //save UINT16 as INT16 if we can do this losslessly
-	if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert < 2))
-		printWarning("Siemens XA DICOM inadequate for robust conversion (issue 236)\n");
+	//if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert < 2)) //20211220: XA30 appears robust
+	//	printWarning("Siemens XA DICOM inadequate for robust conversion (issue 236)\n");
 	if ((dcmList[dcmSort[0].indx].isXA10A) && (nConvert > 1))
 		printWarning("Siemens XA exported as classic not enhanced DICOM (issue 236)\n");
 	printMessage("Convert %d DICOM as %s (%dx%dx%dx%d)\n", nConvert, pathoutname, hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4]);
@@ -6803,8 +6806,12 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	if ((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) {
 		if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
 			printMessage("Slices not stacked: X-Ray Exposure varies (exposure %g, %g; number %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
-		if ((!warnings->echoVaries) && (!d1.isXRay)) //for MRI
-			printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
+		if ((!warnings->echoVaries) && (!d1.isXRay)) {//for MRI
+			if (d1.echoNum == d2.echoNum)
+				printMessage("Slices not stacked: echo varies (TE %g, %g). No echo number (0018,0086; issue 568). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE);
+			else
+				printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
+		}
 		warnings->echoVaries = true;
 		*isMultiEcho = true;
 		return false;
