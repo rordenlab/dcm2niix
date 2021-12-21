@@ -7204,8 +7204,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					stackPositionItem = i;
 		if ((d.manufacturer == kMANUFACTURER_CANON) && (nVariableItems == 1) && (d.xyzDim[4] > 1)) {
 			//WARNING: Canon CANON V6.0SP2001* (0018,9005) = "AX fMRI" strangely sets TemporalPositionIndex(0020,9128) as 1 for all volumes: (0020,9157) and (0020,9128) are INCORRECT!
-			printf("Invalid enhanced DICOM created by Canon: Only single dimension in DimensionIndexValues (0020,9157) varies, for 4D file (e.g. BOTH space and time should vary)\n");
-			printf("%d %d\n", stackPositionItem, maxVariableItem);
+			printMessage("Invalid enhanced DICOM created by Canon: Only single dimension in DimensionIndexValues (0020,9157) varies, for 4D file (e.g. BOTH space and time should vary)\n");
+			printMessage("%d %d\n", stackPositionItem, maxVariableItem);
 			int stackTimeItem = 0;
 			if (stackPositionItem == 0) {
 				maxVariableItem++;
