@@ -1492,6 +1492,8 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
 		h->datatype = DT_RGB24;
 	} else if ((d.bitsAllocated == 8) && (d.samplesPerPixel == 1))
 		h->datatype = DT_UINT8;
+	else if ((d.bitsAllocated == 1) && (d.samplesPerPixel == 1))
+		h->datatype = DT_UINT8;
 	else if ((d.bitsAllocated == 12) && (d.samplesPerPixel == 1))
 		h->datatype = DT_INT16;
 	else if ((d.bitsAllocated == 16) && (d.samplesPerPixel == 1) && (d.isSigned))
@@ -1530,7 +1532,9 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
 	h->magic[2] = '1';
 	h->magic[3] = '\0';
 	h->vox_offset = (float)d.imageStart;
-	if (d.bitsAllocated == 12)
+	if (d.bitsAllocated == 1)
+		h->bitpix = 8 * d.samplesPerPixel;
+	else if (d.bitsAllocated == 12)
 		h->bitpix = 16 * d.samplesPerPixel;
 	else
 		h->bitpix = d.bitsAllocated * d.samplesPerPixel;
@@ -2748,11 +2752,23 @@ unsigned char *nii_flipY(unsigned char *bImg, struct nifti_1_header *h) {
 	return nii_flipImgY(bImg, h);
 } // nii_flipY()
 
+void conv1bit16bit(unsigned char *img, struct nifti_1_header hdr) { //issue572
+	printWarning("Support for images that allocate 1 bits is experimental\n");
+	int nVox = (int)nii_ImgBytes(hdr) / (hdr.bitpix / 8);
+	for (int i = (nVox - 1); i >= 0; i--) {
+		int ibyte = i >> 3; //byte to sample
+		int ibit = (i % 8); //bit 0..7
+		//if (highBit > 0)
+		//	ibit = 7 - ibit;
+		int val = img[ibyte] >> ibit;
+		img[i] = (val & 1);
+	}
+} //conv1bit16bit()
+
 void conv12bit16bit(unsigned char *img, struct nifti_1_header hdr) {
 	//convert 12-bit allocated data to 16-bit
 	// works for MR-MONO2-12-angio-an1 from http://www.barre.nom.fr/medical/samples/
 	// looks wrong: this sample toggles between big and little endian stores
-	printWarning("Support for images that allocate 12 bits is experimental\n");
 	int nVox = (int)nii_ImgBytes(hdr) / (hdr.bitpix / 8);
 	for (int i = (nVox - 1); i >= 0; i--) {
 		int i16 = i * 2;
@@ -2773,6 +2789,8 @@ unsigned char *nii_loadImgCore(char *imgname, struct nifti_1_header hdr, int bit
 	size_t imgsz = nii_ImgBytes(hdr);
 	size_t imgszRead = imgsz;
 	size_t imageStart = imageStart32;
+	if (bitsAllocated == 1)
+		imgszRead = (imgsz + 7) >> 3;
 	if (bitsAllocated == 12)
 		imgszRead = round(imgsz * 0.75);
 	FILE *file = fopen(imgname, "rb");
@@ -2800,6 +2818,8 @@ unsigned char *nii_loadImgCore(char *imgname, struct nifti_1_header hdr, int bit
 		printError("Only loaded %zu of %zu bytes for %s\n", sz, imgszRead, imgname);
 		return NULL;
 	}
+	if (bitsAllocated == 1)
+		conv1bit16bit(bImg, hdr);
 	if (bitsAllocated == 12)
 		conv12bit16bit(bImg, hdr);
 	return bImg;
@@ -4291,6 +4311,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kXYSpacing 0x0028 + (0x0030 << 16) //DS 'PixelSpacing'
 #define kBitsAllocated 0x0028 + (0x0100 << 16)
 #define kBitsStored 0x0028 + (0x0101 << 16) //US 'BitsStored'
+#define kHighBit 0x0028 + (0x0102 << 16) //US 'HighBit'
 #define kIsSigned 0x0028 + (0x0103 << 16) //PixelRepresentation
 #define kPixelPaddingValue 0x0028 + (0x0120 << 16) // https://github.com/rordenlab/dcm2niix/issues/262
 #define kFloatPixelPaddingValue 0x0028 + (0x0122 << 16) // https://github.com/rordenlab/dcm2niix/issues/262
@@ -4436,6 +4457,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//int temporalPositionIdentifier = 0;
 	int locationsInAcquisitionPhilips = 0;
 	int imagesInAcquisition = 0;
+	int highBit = 0;
 	//int sumSliceNumberMrPhilips = 0;
 	int sliceNumberMrPhilips = 0;
 	int volumeNumber = -1;
@@ -4951,8 +4973,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			dcmStr(lLength, &buffer[lPos], mediaUID);
 			//Philips "XX_" files
 			//see https://github.com/rordenlab/dcm2niix/issues/328
-			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL)
-				d.isRawDataStorage = true;
+			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66.4") != NULL) //Segmentation Storage
+				d.isDerived = true;  //Segmentation IOD, issue 572
+			else if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL)
+				d.isRawDataStorage = true; //e.g. Raw Data IOD, https://dicom.nema.org/dicom/2013/output/chtml/part04/sect_i.4.html
 			if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.1") != NULL)
 				d.isRawDataStorage = true; //Private MR Spectrum Storage
 			if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.2") != NULL)
@@ -5899,6 +5923,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		case kBitsStored:
 			d.bitsStored = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kHighBit:
+			highBit = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kIsSigned: //http://dicomiseasy.blogspot.com/2012/08/chapter-12-pixel-data.html
 			d.isSigned = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
@@ -6931,8 +6958,6 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	free(buffer);
 	if (d.bitsStored < 0)
 		d.isValid = false;
-	if (d.bitsStored == 1)
-		printWarning("1-bit binary DICOMs not supported\n"); //maybe not valid - no examples to test
 	//printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	//printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	if (encapsulatedDataFragmentStart > 0) {
@@ -7503,6 +7528,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//printf("%d\t%g\t%g\t%g\t%g\n", d.imageNum, d.rtia_timerGE, d.patientPosition[1],d.patientPosition[2],d.patientPosition[3]);
 	//printf("%g\t\t%g\t%g\t%g\t%s\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3], fname);
 	//printMessage("buffer usage %d %d %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
+	if ((d.bitsStored == 1) && (highBit != 0)) {
+		printWarning("1-bit binary with high bit = %d not supported (issue 572)\n", highBit);
+		d.isValid = false;
+	}
 	return d;
 } // readDICOMx()
 
