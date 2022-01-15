@@ -149,6 +149,10 @@ ExternalProject_Add(console
         -DYAML-CPP_DIR:PATH=${YAML-CPP_DIR}
 )
 
+if(SKBUILD)
+  install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION dcm2niix
+          USE_SOURCE_PERMISSIONS)
+endif()
 install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin
         USE_SOURCE_PERMISSIONS)
 
