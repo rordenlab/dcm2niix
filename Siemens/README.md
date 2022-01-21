@@ -15,6 +15,7 @@ While X-series consoles allow users to export data as enhanced, mosaic or classi
 When creating enhanced DICOMs diffusion information is provided in public tags. Based on a limited sample, it seems that classic DICOMs do not store diffusion data for XA10, and use private tags for [XA11](https://www.nitrc.org/forum/forum.php?thread_id=10013&forum_id=4703).
 
 Public Tags
+
 ```
 (0018,9089) FD -0.20\-0.51\-0.83 #DiffusionGradientOrientation
 (0018,9087) FD 1000 #DiffusionBValue
@@ -22,6 +23,7 @@ Public Tags
 ```
 
 Private Tags
+
 ```
 (0019,100c) IS 1000 #SiemensDiffusionBValue
 (0019,100e) FD -0.20\-0.51\-0.83 #SiemensDiffusionGradientOrientation
@@ -29,6 +31,24 @@ Private Tags
 ```
 
 In theory, the public DICOM tag 'Frame Acquisition Date Time' (0018,9074) and the private tag 'Time After Start' (0021,1104) should each allow one to infer slice timing. The tag 0018,9074 uses the DT (date time) format, for example "20190621095520.330000" providing the YYYYYMMDDHHMMSS. Unfortunately, the Siemens de-identification routines will scramble these values, as time of data could be considered an identifiable attribute. The tag 0021,1104 is saved in DS (decimal string) format, for example "4.635" reporting the number of seconds since acquisition started. Be aware that some [Siemens Vida multi-band sequences](https://github.com/rordenlab/dcm2niix/issues/303) appear to fill these tags with the single-band times rather than the actual acquisition times. Therefore, neither of these two methods is perfectly reliable in determining slice timing.
+
+The private `ICE_Dims` (0021,1106) tag can prove useful for parsing data. The list below is specific to XA scans: [SPM12](https://github.com/spm/spm12/blob/3085dac00ac804adb190a7e82c6ef11866c8af02/spm_dicom_convert.m#L268) suggests that this tag used to contain fewer elements. dcm2niix will use 0021,1106 to deduce echo number for [XA20 sequences that do not generate the public Echo Number (0018,0086)](https://github.com/rordenlab/dcm2niix/issues/568) tag.  For example, consider an image of the 4th echo and 160th slice:
+
+```
+(0021,1106) LO [X_4_1_1_1_1_160_1_1_1_1_1_277] #  ICE_Dims
+```
+
+1. eco = echo number 
+2. phs = phase encode
+3. set = 
+4. rep = repetition
+5. seg = segment 
+6. par = partition 
+7. slc = slice
+8. idA = optional index 
+9. idB = optional index 
+10. idC = optional index 
+11. avg = average number
 
 ## CSA Header
 

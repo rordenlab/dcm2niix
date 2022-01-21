@@ -140,6 +140,7 @@ The following tools exploit dcm2niix
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
   - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
+  - [bidsconvertr](https://github.com/wulms/bidsconvertr) uses R to converts DICOM data to NIfTI and finally to BIDS.
   - [bidsify](https://github.com/spinoza-rec/bidsify) is a Python project that uses dcm2niix to convert DICOM and Philips PAR/REC images to the BIDS standard.
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.

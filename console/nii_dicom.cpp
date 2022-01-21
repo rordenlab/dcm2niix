@@ -916,7 +916,7 @@ void dcmStrDigitsDotOnlyKey(char key, char *lStr) {
 		} else if (!isKey)
 			lStr[i] = ' ';
 	}
-} //dcmStrDigitsOnlyKey()
+} //dcmStrDigitsDotOnlyKey()
 
 void dcmStrDigitsOnlyKey(char key, char *lStr) {
 //e.g. string "p2s3" returns 2 if key=="p" and 3 if key=="s"
@@ -4290,6 +4290,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
+#define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
 //#define kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
@@ -5800,6 +5801,20 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			//printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 			acquisitionTimesGE_UIH++;
 			break;
+		case kICE_dims: { //issue568: LO (0021,1106) [X_4_1_1_1_1_160_1_1_1_1_1_277]
+			if ((d.manufacturer != kMANUFACTURER_SIEMENS) || (d.echoNum > 1))
+				break;
+			char iceStr[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], iceStr);
+			dcmStrDigitsOnly(iceStr);
+			char *end;
+			int echo = (int)strtol(iceStr, &end, 10);
+			//printMessage("%d:%d:'%s'\n", d.echoNum, echo, iceStr);
+			if (iceStr != end)
+				d.echoNum = echo;
+			//printMessage("%d:'%s'\n", echo, iceStr);
+			break;
+		}
 		case kPhaseEncodingDirectionPositiveSiemens: {
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;
