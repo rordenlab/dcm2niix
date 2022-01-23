@@ -1183,15 +1183,16 @@ int dcmStrManufacturer(const int lByteLength, unsigned char lBuffer[]) { //read 
 		ret = kMANUFACTURER_PHILIPS;
 	if ((toupper(cString[0]) == 'T') && (toupper(cString[1]) == 'O'))
 		ret = kMANUFACTURER_TOSHIBA;
-	//CANON_MEC
 	if ((toupper(cString[0]) == 'C') && (toupper(cString[1]) == 'A'))
 		ret = kMANUFACTURER_CANON;
+	if ((toupper(cString[0]) == 'C') && (toupper(cString[1]) == 'P'))
+		ret = kMANUFACTURER_SIEMENS; //CPS is a Siemens venture, issue 568
 	if ((toupper(cString[0]) == 'U') && (toupper(cString[1]) == 'I'))
 		ret = kMANUFACTURER_UIH;
 	if ((toupper(cString[0]) == 'B') && (toupper(cString[1]) == 'R'))
 		ret = kMANUFACTURER_BRUKER;
-	if (ret == kMANUFACTURER_UNKNOWN)
-		printWarning("Unknown manufacturer %s\n", cString);
+	//if (ret == kMANUFACTURER_UNKNOWN) //reduce verbosity: single warning for series : Unable to determine manufacturer (0008,0070)
+	//	printWarning("Unknown manufacturer %s\n", cString);
 	//#ifdef _MSC_VER
 	free(cString);
 	//#endif
@@ -4435,6 +4436,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
 	bool isASL = false;
+	bool has00200013 = false;
 	//double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
@@ -5685,6 +5687,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kImageNum:
 			//Enhanced Philips also uses this in once per file SQ 0008,1111
 			//Enhanced Philips also uses this once per slice in SQ 2005,140f
+			has00200013 = true;
 			if (d.imageNum < 1)
 				d.imageNum = dcmStrInt(lLength, &buffer[lPos]); //Philips renames each image again in 2001,9000, which can lead to duplicates
 			break;
@@ -7370,7 +7373,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	}
 	if ((hasDwiDirectionality) && (d.CSA.numDti < 1))
 		d.CSA.numDti = 1;
-	if ((d.isValid) && (d.imageNum == 0)) { //Philips non-image DICOMs (PS_*, XX_*) are not valid images and do not include instance numbers
+	if ((d.isValid) && (! has00200013)) { //Philips non-image DICOMs (PS_*, XX_*) are not valid images and do not include instance numbers
 		//TYPE 1 for MR image http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0020,0013)
 		// Only type 2 for some other DICOMs! Therefore, generate warning not error
 		printWarning("Instance number (0020,0013) not found: %s\n", fname);
