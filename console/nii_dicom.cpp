@@ -6352,7 +6352,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			//  ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
 			//  (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 			//if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-			if ((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+			if ((d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
 				//for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
 				float v[4];
 				//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
@@ -6366,7 +6366,6 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				//d.CSA.dtiV[1] = v[0];
 				//d.CSA.dtiV[2] = v[1];
 				//d.CSA.dtiV[3] = v[2];
-				//printMessage("><>< 0018,9089: DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 				hasDwiDirectionality = true;
 				d.isBVecWorldCoordinates = true; //e.g. Canon saved image space coordinates in Comments, world space in 0018, 9089
 				set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
@@ -7550,6 +7549,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		printWarning("1-bit binary with high bit = %d not supported (issue 572)\n", highBit);
 		d.isValid = false;
 	}
+	//printf("%g\t%g\t%s\n", d.intenIntercept, d.intenScale, fname);
 	return d;
 } // readDICOMx()
 

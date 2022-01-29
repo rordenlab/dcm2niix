@@ -355,7 +355,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
 	//convert DTI vectors from scanner coordinates to image frame of reference
 	//Uses 6 orient values from ImageOrientationPatient (0020,0037)
 	// requires PatientPosition 0018,5100 is HFS (head first supine)
-	if ((!d->isBVecWorldCoordinates) && (d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS))
+	if ((!d->isBVecWorldCoordinates) && (d->manufacturer != kMANUFACTURER_MEDISO) && (d->manufacturer != kMANUFACTURER_BRUKER) && (d->manufacturer != kMANUFACTURER_TOSHIBA) && (d->manufacturer != kMANUFACTURER_HITACHI) && (d->manufacturer != kMANUFACTURER_UIH) && (d->manufacturer != kMANUFACTURER_SIEMENS) && (d->manufacturer != kMANUFACTURER_PHILIPS))
 		return;
 	if (d->CSA.numDti < 1)
 		return;
@@ -374,7 +374,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
 	if ((toupper(d->patientOrient[0]) == 'H') && (toupper(d->patientOrient[1]) == 'F') && (toupper(d->patientOrient[2]) == 'S'))
 		; //participant was head first supine
 	else {
-		printMessage("Check Siemens/Philips bvecs: expected Patient Position (0018,5100) to be 'HFS' not '%s'\n", d->patientOrient);
+		printMessage("Check bvecs: expected Patient Position (0018,5100) to be 'HFS' not '%s'\n", d->patientOrient);
 		//return; //see https://github.com/rordenlab/dcm2niix/issues/238
 	}
 	vec3 read_vector = setVec3(d->orient[1], d->orient[2], d->orient[3]);
