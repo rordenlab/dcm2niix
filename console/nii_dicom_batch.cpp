@@ -926,7 +926,7 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 	uint8_t flags = pCmp[3];
 	bool isFNAME = ((flags & 0x08) == 0x08);
 	bool isFCOMMENT = ((flags & 0x10) == 0x10);
-	uint32_t hdrSz = 10;
+	int hdrSz = 10;
 	if (isFNAME) { //skip null-terminated string FNAME
 		for (; hdrSz < cmpSz; hdrSz++)
 			if (pCmp[hdrSz] == 0)
@@ -1016,7 +1016,7 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
 	unsigned char sValEsc[2048] = {""};
 	unsigned char *iVal = (unsigned char *)sVal;
 	int o = 0;
-	for (int i = 0; i < strlen(sVal); i++) {
+	for (int i = 0; i < (int)strlen(sVal); i++) {
 		//escape double quote (") and Backslash
 		if ((sVal[i] == '"') || (sVal[i] == '\\')) { //escape double quotes and back slash
 			sValEsc[o] = '\\';
@@ -2655,23 +2655,23 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	int nConvert = d3 * d4;
 	if (d3 < 3)
 		return true; //always consistent
+	/*
 	float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
-	bool isConsistent = !isSameFloatGE(dx, 0.0); //slice distance of zero is not consistent with XYZT order (perhaps XYTZ)
+	//bool isConsistent = !isSameFloatGE(dx, 0.0); //slice distance of zero is not consistent with XYZT order (perhaps XYTZ)
 	bool isAscending1 = (dx > 0);
 	for (int v = 0; v < d4; v++) {
 		int volStart = v * d3;
-		if (!isSameFloatGE(intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[volStart].indx]), 0.0))
-			isConsistent = false; //XYZT requires first slice of each volume is at same position
+		//if (!isSameFloatGE(intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[volStart].indx]), 0.0))
+		//	isConsistent = false; //XYZT requires first slice of each volume is at same position
 		for (int i = 1; i < d3; i++) {
 			dx = intersliceDistanceSigned(dcmList[dcmSort[volStart + i - 1].indx], dcmList[dcmSort[volStart + i].indx]);
 			bool isAscending = (dx > 0);
 			//printf("volume %d slice %d distanceFromSlice1 %g DICOMvolume %d\n", v, i+1, dx, dcmList[dcmSort[volStart + i].indx].rawDataRunNumber);
-			if (isAscending != isAscending1)
-				isConsistent = false; //direction reverses
+			//if (isAscending != isAscending1)
+			//	isConsistent = false; //direction reverses
 		}
 	}
-	//if (isConsistent)
-	//	return true;
+	*/
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
@@ -2716,7 +2716,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		if (isUsePhaseForVol) vol = phase;
 		if (isPhaseIsBValNumber) vol += phase * maxVol;
 		int isAslLabel = dcmList[dcmSort[i].indx].aslFlags == kASL_FLAG_PHILIPS_LABEL;
-		dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
+		float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);
 		if (isASL) {
 			#ifdef myMatchEnhanced00209157 //issue533: make classic DICOMs match enhanced DICOM volume order
 				//disk order: slice < repeat < phase < label/control
@@ -3224,7 +3224,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 #endif
 	cleanISO8859(outname);
 	//re-insert explicit path separators: -f %t/%s_%p will have folder for time, but will not segment a protocol named "fMRI\bold"
-	for (int pos = 0; pos < strlen(outname); pos++) {
+	for (int pos = 0; pos < (int)strlen(outname); pos++) {
 		if (outname[pos] == kTempPathSeparator)
 			outname[pos] = kPathSeparator; //e.g. for Windows, convert "/" to "\"
 		if (outname[pos] < 32) //https://en.wikipedia.org/wiki/ASCII#Control_characters
@@ -3707,7 +3707,6 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 		free(pCmp);
 		return;
 	}
-	unsigned char *pHdr;
 	//add header
 	strm.avail_in = (unsigned int)sizeof(hdr); // size of input
 	strm.next_in = (uint8_t *) &hdr.version;
@@ -3767,7 +3766,7 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
 // FreeeSurfer does not use a permissive license, so we must reverse engineer code
 // https://surfer.nmr.mgh.harvard.edu/fswiki/FsTutorial/MghFormat
-	int n, nDim = hdr.dim[0];
+	int nDim = hdr.dim[0];
 	//printMessage("NRRD writer is experimental\n");
 	if (nDim < 1)
 		return EXIT_FAILURE;
@@ -5259,7 +5258,7 @@ void sliceTimeGE(struct TDICOMdata *d, int mb, int dim3, float TR, bool isInterl
 	if ((mb > 1) && (!is27r3) && ((nExcitations % 2) == 0) ) { //number of slices divided by MB factor should is Even
 			nExcitations ++; //https://osf.io/q4d53/wiki/home/; Figure 3 of https://pubmed.ncbi.nlm.nih.gov/26308571/
 		}
-	int nDiscardedSlices = (nExcitations * mb) - dim3;
+	//int nDiscardedSlices = (nExcitations * mb) - dim3;
 	float secPerSlice = (TR - groupDelaysec) / (nExcitations);
 	if (!isInterleaved) {
 		for (int i = 0; i < nExcitations; i++)
@@ -5333,7 +5332,6 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose, char geVersi
 	char *versionString = (char *)malloc(sizeof(char) * len);
 	versionString[len - 1] = 0;
 	memcpy(versionString, sepStart, len);
-	int ver1, ver2, ver3;
 	char c1, c2, c3, c4;
 	// RX27.0_R02_ or MR29.1_EA_2
 	sscanf(versionString, "%c%c%d.%d_%c%c%d", &c1, &c2, geMajorVersionInt, geMinorVersionInt, &c3, &c4, geReleaseVersionInt);
@@ -5767,13 +5765,15 @@ void loadOverlay(char *imgname, unsigned char *img, int offset, int x, int y, in
 	}
 	fseek(file, 0, SEEK_END);
 	long fileLen = ftell(file);
-	if (fileLen < (imgszRead + offset)) {
+	if (fileLen < (int)(imgszRead + offset)) {
 		printWarning("File not large enough to store overlay: %s\n", imgname);
 		return;
 	}
 	fseek(file, (long)offset, SEEK_SET);
 	unsigned char *bImg = (unsigned char *)malloc(imgszRead);
 	size_t sz = fread(bImg, 1, imgszRead, file);
+	if (sz < imgszRead)
+		printWarning("loadOverlay fread error.");
 	//static unsigned char mask[] = {128, 64, 32, 16, 8, 4, 2, 1};
 	static unsigned char mask[] = {1, 2, 4, 8, 16, 32, 64, 128};
 	for (int i = 0; i < nvox; i++) {
@@ -5803,9 +5803,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	float *sliceMMarray = NULL; //only used if slices are not equidistant
 	uint64_t indx = dcmSort[0].indx;
 	uint64_t indx0 = dcmSort[0].indx;
-	uint64_t indx1 = indx0;
-	if (nConvert > 1)
-		indx1 = dcmSort[1].indx;
+	//uint64_t indx1 = indx0;
+	//if (nConvert > 1)
+	//	indx1 = dcmSort[1].indx;
 	uint64_t indxEnd = dcmSort[nConvert - 1].indx;
 	dti4D->repetitionTimeInversion = 0.0; //only set for Siemens and GE 3D T1 "TR"
 	dti4D->repetitionTimeExcitation = 0.0; //only set for Philips 3D T1 "TR"
@@ -6019,14 +6019,18 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				if ((nVol > 1) && (volumeTimeStartFirstStartLast > 0.0)) {
 					tr = volumeTimeStartFirstStartLast / (nVol - 1.0);
 					if (fabs(tr - hdr0.pixdim[4]) > toleranceSec) {
-						if (hdr0.pixdim[4] > 0.0)
-							printWarning("Discrepancy between reported (%gs) and estimated (%gs) repetition time (issue 560).\n", hdr0.pixdim[4], tr);
-						if ((dcmList[indx0].isIR) && (dcmList[indx0].manufacturer != kMANUFACTURER_PHILIPS))
-							dti4D->repetitionTimeInversion = hdr0.pixdim[4];
-						else
-							dti4D->repetitionTimeExcitation = hdr0.pixdim[4];
-						hdr0.pixdim[4] = tr;
-						dcmList[indx0].TR = tr * 1000.0; //as msec
+						if (dcmList[indx0].numberOfAverages > 1.0) //e.g. Mediso will save averaged data
+							tr = tr / dcmList[indx0].numberOfAverages;
+						if (fabs(tr - hdr0.pixdim[4]) > toleranceSec) {
+							if (hdr0.pixdim[4] > 0.0)
+								printWarning("Discrepancy between reported (%gs) and estimated (%gs) repetition time (issue 560).\n", hdr0.pixdim[4], tr);
+							if ((dcmList[indx0].isIR) && (dcmList[indx0].manufacturer != kMANUFACTURER_PHILIPS))
+								dti4D->repetitionTimeInversion = hdr0.pixdim[4];
+							else
+								dti4D->repetitionTimeExcitation = hdr0.pixdim[4];
+							hdr0.pixdim[4] = tr;
+							dcmList[indx0].TR = tr * 1000.0; //as msec
+						}
 					}
 				}
 				if (dcmList[indx0].aslFlags != kASL_FLAG_NONE) { //issue533
@@ -6082,8 +6086,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				if (!ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose))
 					dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 			indx0 = dcmSort[0].indx;
-			if (nConvert > 1)
-				indx1 = dcmSort[1].indx;
+			//if (nConvert > 1)
+			//	indx1 = dcmSort[1].indx;
 #endif
 			bool dxVaries = false;
 			for (int i = 1; i < nConvert; i++)
@@ -6130,8 +6134,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 						isInconsistenSliceDir = false;
 						//code below duplicates prior code, could be written as modular function(s)
 						indx0 = dcmSort[0].indx;
-						if (nConvert > 1)
-							indx1 = dcmSort[1].indx;
+						//if (nConvert > 1)
+						//	indx1 = dcmSort[1].indx;
 						dxVaries = false;
 						dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 						for (int i = 1; i < nConvert; i++)
@@ -6143,7 +6147,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 						//for (int i = 1; i < nConvert; i++)
 						//	printf("%g ", intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]) );
 						//printf("\n");
-						bool isInconsistenSliceDir = false;
+						isInconsistenSliceDir = false;
 						int slicePositionRepeats = 1; //how many times is first position repeated
 						if (nConvert > 2) {
 							float dxPrev = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);

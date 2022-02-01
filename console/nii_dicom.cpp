@@ -1614,7 +1614,7 @@ void cleanStr(char *lOut) {
 	char *cString = (char *)malloc(sizeof(char) * (lLength + 1));
 	cString[lLength] = 0;
 	memcpy(cString, (char *)&lOut[0], lLength);
-	for (int i = 0; i < lLength; i++)
+	for (int i = 0; i < (int)lLength; i++)
 		//assume specificCharacterSet (0008,0005) is ISO_IR 100 http://en.wikipedia.org/wiki/ISO/IEC_8859-1
 		if (cString[i] < 1) {
 			unsigned char c = (unsigned char)cString[i];
@@ -1663,12 +1663,12 @@ void cleanStr(char *lOut) {
 			if (c == 255)
 				cString[i] = 'y';
 		}
-	for (int i = 0; i < lLength; i++)
+	for (int i = 0; i < (int)lLength; i++)
 		if ((cString[i] < 1) || (cString[i] == ' ') || (cString[i] == ',') || (cString[i] == '/') || (cString[i] == '\\') || (cString[i] == '%') || (cString[i] == '*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13))
 			cString[i] = '_'; //issue398
 	//if ((cString[i]<1) || (cString[i]==' ') || (cString[i]==',') || (cString[i]=='^') || (cString[i]=='/') || (cString[i]=='\\') || (cString[i]=='%') || (cString[i]=='*') || (cString[i] == 9) || (cString[i] == 10) || (cString[i] == 11) || (cString[i] == 13)) cString[i] = '_';
 	int len = 1;
-	for (int i = 1; i < lLength; i++) { //remove repeated "_"
+	for (int i = 1; i < (int)lLength; i++) { //remove repeated "_"
 		if ((cString[i - 1] != '_') || (cString[i] != '_')) {
 			cString[len] = cString[i];
 			len++;
@@ -2799,12 +2799,19 @@ unsigned char *nii_loadImgCore(char *imgname, struct nifti_1_header hdr, int bit
 		printError("Unable to open '%s'\n", imgname);
 		return NULL;
 	}
-	fseek(file, 0, SEEK_END);
-	long fileLen = ftell(file);
+	//fseek(file, 0, SEEK_END);
+	//long fileLen = ftell(file);
+	#ifdef _MSC_VER
+	_fseeki64(file, 0, SEEK_END);
+	size_t fileLen = _ftelli64(file);
+	#else
+	fseeko(file, 0, SEEK_END); //Windows _fseeki64 
+	size_t fileLen = ftello(file); //Windows _ftelli64
+	#endif 
 	if (fileLen < (imgszRead + imageStart)) {
 		//note hdr.vox_offset is a float: issue507
 		//https://www.nitrc.org/forum/message.php?msg_id=27155
-		printMessage("FileSize < (ImageSize+HeaderSize): %ld < (%zu+%zu) \n", fileLen, imgszRead, imageStart);
+		printMessage("FileSize < (ImageSize+HeaderSize): %zu < (%zu+%zu) \n", fileLen, imgszRead, imageStart);
 		printWarning("File not large enough to store image data: %s\n", imgname);
 		return NULL;
 	}
@@ -3380,14 +3387,14 @@ unsigned char *nii_loadImgPMSCT_RLE1(char *imgname, struct nifti_1_header hdr, s
 		free(cImg);
 		return NULL;
 	}
-	if (imgsz == dcm.imageBytes) { // Handle special case that data is not compressed:
+	if ((int)imgsz == dcm.imageBytes) { // Handle special case that data is not compressed:
 		return (unsigned char *)cImg;
 	}
 	unsigned char *bImg = (unsigned char *)malloc(imgsz); //binary output
 	// RLE pass: compressed -> temp (bImg -> tImg)
 	char *tImg = (char *)malloc(imgsz); //temp output
-	int o = 0;
-	for (size_t i = 0; i < dcm.imageBytes; ++i) {
+	size_t o = 0;
+	for (size_t i = 0; (int)i < dcm.imageBytes; ++i) {
 		if (cImg[i] == (char)0xa5) {
 			int repeat = (unsigned char)cImg[i + 1] + 1;
 			char value = cImg[i + 2];
@@ -3403,13 +3410,13 @@ unsigned char *nii_loadImgPMSCT_RLE1(char *imgname, struct nifti_1_header hdr, s
 		}
 	} //for i
 	free(cImg);
-	int tempsize = o;
+	size_t tempsize = o;
 	//Looks like this RLE is pretty ineffective...
 	// printMessage("RLE %d -> %d\n", dcm.imageBytes, o);
 	//Delta encoding pass: temp -> output (tImg -> bImg)
 	unsigned short delta = 0;
 	o = 0;
-	int n16 = (int)imgsz >> 1;
+	size_t n16 = (int)imgsz >> 1;
 	unsigned short *bImg16 = (unsigned short *)bImg;
 	for (size_t i = 0; i < tempsize; ++i) {
 		if (tImg[i] == (unsigned char)0x5a) {
@@ -4091,8 +4098,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		printMessage("Unable to open file %s\n", fname);
 		return d;
 	}
-	fseek(file, 0, SEEK_END);
-	long fileLen = ftell(file); //Get file length
+	#ifdef _MSC_VER
+	_fseeki64(file, 0, SEEK_END);
+	size_t fileLen = _ftelli64(file);
+	#else
+	fseeko(file, 0, SEEK_END); //Windows _fseeki64 
+	size_t fileLen = ftello(file); //Windows _ftelli64
+	#endif 
 	if (fileLen < 256) {
 		printMessage("File too small to be a DICOM image %s\n", fname);
 		return d;
@@ -4115,7 +4127,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	if (MaxBufferSz > (size_t)fileLen)
 		MaxBufferSz = fileLen;
 	//printf("%d -> %d\n", MaxBufferSz, fileLen);
-	long lFileOffset = 0;
+	size_t lFileOffset = 0;
 	fseek(file, 0, SEEK_SET);
 	//Allocate memory
 	unsigned char *buffer = (unsigned char *)malloc(MaxBufferSz + 1);
@@ -4431,11 +4443,11 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	int overlayRows = 0;
 	int overlayCols = 0;
 	bool isNeologica = false;
-	bool isTriggerSynced = false;
-	bool isProspectiveSynced = false;
+	//bool isTriggerSynced = false;
+	//bool isProspectiveSynced = false;
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
-	bool isASL = false;
+	//bool isASL = false;
 	bool has00200013 = false;
 	//double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
@@ -4473,7 +4485,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//int mRSeriesAcquisitionNumber = 0;
 	uint32_t lLength;
 	uint32_t groupElement;
-	long lPos = 0;
+	size_t lPos = 0;
 	bool isPhilipsDerived = false;
 	//bool isPhilipsDiffusion = false;
 	if (isPart10prefix) { //for part 10 files, skip preamble and prefix
@@ -4628,7 +4640,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				sqDepth00189114 = -1; //triggered
 				//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 				// d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
-				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && (d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL)) {
+				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && ((d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL))) {
 					isKludgeIssue533 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
@@ -4669,7 +4681,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					break;
 				}
 				uint32_t dimensionIndexOrder[MAX_NUMBER_OF_DIMENSIONS];
-				for (size_t i = 0; i < nDimIndxVal; i++)
+				for (int i = 0; i < nDimIndxVal; i++)
 					dimensionIndexOrder[i] = i;
 				// Bruker Enhanced MR IOD: reorder dimensions to ensure InStackPositionNumber corresponds to the first one
 				// This will ensure correct ordering of slices in 4D datasets
@@ -4930,7 +4942,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			if (strstr(privateCreator, "Image Private Header") != NULL)
 				privateCreatorRemap = 0x0065 + (0x1000 << 16);
 			//sanity check: group should match
-			if (grp != (privateCreatorRemap & 65535))
+			if (grp != (int)(privateCreatorRemap & 65535))
 				privateCreatorRemap = 0;
 			if (privateCreatorRemap == 0)
 				goto skipRemap; //this is not a known private group
@@ -5248,8 +5260,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			dcmStr(lLength, &buffer[lPos], acqContrast);
 			if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
 				d.isDiffusion = true;
-			if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "PERFUSION") != NULL))
-				isASL = true; //see series 301 of dcm_qa_philips_asl
+			//if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "PERFUSION") != NULL))
+			//	isASL = true; //see series 301 of dcm_qa_philips_asl
 			break;
 		case kAcquisitionTime: {
 			char acquisitionTimeTxt[kDICOMStr];
@@ -5420,10 +5432,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_COMBINATION;
 			break;
 		}
-		case kCardiacSynchronizationTechnique:
+		/*case kCardiacSynchronizationTechnique:
 			if (toupper(buffer[lPos]) == 'P')
 				isProspectiveSynced = true;
-			break;
+			break;*/
 		case kParallelReductionFactorInPlane:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
 				break;
@@ -6306,12 +6318,12 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				break;
 			d.phaseNumber = dcmStrInt(lLength, &buffer[lPos]); //see dcm_qa_philips_asl
 			break;
-		case kCardiacSync: //CS [TRIGGERED],[NO]
+		/*case kCardiacSync: //CS [TRIGGERED],[NO]
 			if (lLength < 2)
 				break;
 			if (toupper(buffer[lPos]) != 'N')
 				isTriggerSynced = true;
-			break;
+			break;*/
 		case kDiffusion_bValue: // 0018,9087
 			if (d.manufacturer == kMANUFACTURER_UNKNOWN) {
 				d.manufacturer = kMANUFACTURER_PHILIPS;
@@ -6465,12 +6477,12 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			if ((toupper(buffer[lPos]) != 'I') && (toupper(buffer[lPos + 1]) != 'N') && (toupper(buffer[lPos + 2]) != 'V'))
 				d.isIR = true;
 			break;
-		case kRespirationSync: //CS [TRIGGERED],[NO]
+		/*case kRespirationSync: //CS [TRIGGERED],[NO]
 			if (lLength < 2)
 				break;
 			if (toupper(buffer[lPos]) != 'N')
 				isTriggerSynced = true;
-			break;
+			break;*/
 		case kNumberOfSlicesMrPhilips:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
@@ -6601,9 +6613,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				printMessage(" GE header overflows buffer\n");
 				break;
 			}
-			uint16_t hdr_offset = dcmInt(2, &buffer[lPos + 24], true);
+			size_t hdr_offset = dcmInt(2, &buffer[lPos + 24], true);
 			if (isVerboseX > 1)
-				printMessage(" header offset: %d\n", hdr_offset);
+				printMessage(" header offset: %zu\n", hdr_offset);
 			if (lLength < (hdr_offset + 916)) { //minimum size is hdr_offset=0, read 0x0394
 				printMessage(" GE header too small to be valid  (B)\n");
 				break;
@@ -6899,19 +6911,27 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			sprintf(str, "%*c%04x,%04x %u@%ld ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
 			bool isStr = false;
 			if (d.isExplicitVR) {
-				sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
+				//sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
+				//if (snprintf(str2, kDICOMStr-1, "%s%c%c", str, vr[0], vr[1]) < 0) exit(EXIT_FAILURE);
+				strncat(str, &vr[0], 1);
+				str[kDICOMStr-1]  = '\0'; //silence warning -Wstringop-truncation
+				strncat(str, &vr[1], 1);
+				str[kDICOMStr-1]  = '\0'; //silence warning -Wstringop-truncation
+				strcat(str, " ");
+				//sprintf(str, "%s%c%c ", str2, vr[0], vr[1]);
+				char str2[kDICOMStr] = "";
 				if ((vr[0] == 'F') && (vr[1] == 'D'))
-					sprintf(str, "%s%g ", str, dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
+					sprintf(str2, "%g ", dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'F') && (vr[1] == 'L'))
-					sprintf(str, "%s%g ", str, dcmFloat(lLength, &buffer[lPos], d.isLittleEndian));
+					sprintf(str2, "%g ", dcmFloat(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'S') && (vr[1] == 'S'))
-					sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					sprintf(str2, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'S') && (vr[1] == 'L'))
-					sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					sprintf(str2, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'U') && (vr[1] == 'S'))
-					sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					sprintf(str2, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'U') && (vr[1] == 'L'))
-					sprintf(str, "%s%d ", str, dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					sprintf(str, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'A') && (vr[1] == 'E'))
 					isStr = true;
 				if ((vr[0] == 'A') && (vr[1] == 'S'))
@@ -6930,10 +6950,6 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					isStr = true;
 				if ((vr[0] == 'L') && (vr[1] == 'T'))
 					isStr = true;
-				//if ((vr[0]=='O') && (vr[1]=='B')) isStr = xxx;
-				//if ((vr[0]=='O') && (vr[1]=='D')) isStr = xxx;
-				//if ((vr[0]=='O') && (vr[1]=='F')) isStr = xxx;
-				//if ((vr[0]=='O') && (vr[1]=='W')) isStr = xxx;
 				if ((vr[0] == 'P') && (vr[1] == 'N'))
 					isStr = true;
 				if ((vr[0] == 'S') && (vr[1] == 'H'))
@@ -6946,11 +6962,12 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					isStr = true;
 				if ((vr[0] == 'U') && (vr[1] == 'T'))
 					isStr = true;
+				strncat(str, str2, kDICOMStr-4);
+				str[kDICOMStr-1]  = '\0';
 			} else
 				isStr = (lLength > 12); //implicit encoding: not always true as binary vectors may exceed 12 bytes, but often true
 			if (lLength > 128) {
-				sprintf(str, "%s<%d bytes> ", str, lLength);
-				printMessage("%s\n", str);
+				printMessage("%s<%d bytes>\n", str, lLength);
 			} else if (isStr) { //if length is greater than 8 bytes (+4 hdr) the MIGHT be a string
 				char tagStr[kDICOMStr];
 				//tagStr[0] = 'X'; //avoid compiler warning: orientStr filled by dcmStr
@@ -7220,9 +7237,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				mx[j] = dcmDim[0].dimIdx[j];
 				mn[j] = mx[j];
 				for (int i = 0; i < numDimensionIndexValues; i++) {
-					if (mx[j] < dcmDim[i].dimIdx[j])
+					if (mx[j] < (int)dcmDim[i].dimIdx[j])
 						mx[j] = dcmDim[i].dimIdx[j];
-					if (mn[j] > dcmDim[i].dimIdx[j])
+					if (mn[j] > (int)dcmDim[i].dimIdx[j])
 						mn[j] = dcmDim[i].dimIdx[j];
 				}
 				if (mx[j] != mn[j]) {
