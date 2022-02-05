@@ -810,6 +810,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.doseCalibrationFactor = 0.0;
 	d.ecat_isotope_halflife = 0.0;
 	d.frameDuration = -1.0;
+	d.frameReferenceTime = -1.0;
+	d.contentTime = 1.0;
 	d.ecat_dosage = 0.0;
 	d.radionuclideTotalDose = 0.0;
 	d.seriesNum = 1;
@@ -1700,6 +1702,8 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	dti4D->volumeOnsetTime[0] = -1;
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
+	dti4D->frameReferenceTime[0] = -1;
+	dti4D->contentTime[0] = -1;
 	//dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	strcpy(d.protocolName, ""); //erase dummy with empty
@@ -4165,7 +4169,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kStudyTime 0x0008 + (0x0030 << 16)
 #define kSeriesTime 0x0008 + (0x0031 << 16)
 #define kAcquisitionTime 0x0008 + (0x0032 << 16) //TM
-//#define kContentTime 0x0008+(0x0033 << 16 ) //TM
+#define kContentTime 0x0008+(0x0033 << 16 ) //TM
 #define kModality 0x0008 + (0x0060 << 16) //CS
 #define kManufacturer 0x0008 + (0x0070 << 16)
 #define kInstitutionName 0x0008 + (0x0080 << 16)
@@ -4360,7 +4364,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kAttenuationCorrectionMethod 0x0054 + (0x1101 << 16) //LO
 #define kDecayCorrection 0x0054 + (0x1102 << 16) //CS
 #define kReconstructionMethod 0x0054 + (0x1103 << 16) //LO
-#define kDecayFactor 0x0054 + (0x1321 << 16) //LO
+#define kFrameReferenceTime 0x0054 + (0x1300 << 16) //DS
+#define kDecayFactor 0x0054 + (0x1321 << 16) //DS
 //ftp://dicom.nema.org/MEDICAL/dicom/2014c/output/chtml/part03/sect_C.8.9.4.html
 //If ImageType is REPROJECTION we slice direction is reversed - need example to test
 // #define kSeriesType 0x0054+(0x1000 << 16 )
@@ -5274,6 +5279,11 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			acquisitionTimesGE_UIH++;
 			break;
 		}
+		case kContentTime: {
+			char contentTimeTxt[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], contentTimeTxt);
+			d.contentTime = atof(contentTimeTxt);
+		}
 		case kSeriesTime:
 			dcmStr(lLength, &buffer[lPos], seriesTimeTxt);
 			break;
@@ -6182,6 +6192,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		case kReconstructionMethod: //LO
 			dcmStr(lLength, &buffer[lPos], d.reconstructionMethod);
+			break;
+		case kFrameReferenceTime:
+			d.frameReferenceTime = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
 		case kDecayFactor:
 			d.decayFactor = dcmStrFloat(lLength, &buffer[lPos]);
