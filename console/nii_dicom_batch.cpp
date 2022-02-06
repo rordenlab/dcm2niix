@@ -2677,23 +2677,6 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	int nConvert = d3 * d4;
 	if (d3 < 3)
 		return true; //always consistent
-	/*
-	float dx = intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
-	//bool isConsistent = !isSameFloatGE(dx, 0.0); //slice distance of zero is not consistent with XYZT order (perhaps XYTZ)
-	bool isAscending1 = (dx > 0);
-	for (int v = 0; v < d4; v++) {
-		int volStart = v * d3;
-		//if (!isSameFloatGE(intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[volStart].indx]), 0.0))
-		//	isConsistent = false; //XYZT requires first slice of each volume is at same position
-		for (int i = 1; i < d3; i++) {
-			dx = intersliceDistanceSigned(dcmList[dcmSort[volStart + i - 1].indx], dcmList[dcmSort[volStart + i].indx]);
-			bool isAscending = (dx > 0);
-			//printf("volume %d slice %d distanceFromSlice1 %g DICOMvolume %d\n", v, i+1, dx, dcmList[dcmSort[volStart + i].indx].rawDataRunNumber);
-			//if (isAscending != isAscending1)
-			//	isConsistent = false; //direction reverses
-		}
-	}
-	*/
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
@@ -2712,8 +2695,11 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		maxInstance = max(maxInstance, instance);
 		maxPhase = max(maxPhase, dcmList[dcmSort[i].indx].phaseNumber);
 	}
+	bool isUseFrameReferenceTimeForVolume = false;
+	if (dcmList[dcmSort[0].indx].frameReferenceTime >= 0.0)
+		isUseFrameReferenceTimeForVolume = true;
 	bool isUseInstanceNumberForVolume = false;
-	if ((d4 > 1) && (maxPhase == 1) && (minVol == maxVolNotADC) && (minInstance < maxInstance)) {
+	if ((!isUseFrameReferenceTimeForVolume) && (d4 > 1) && (maxPhase == 1) && (minVol == maxVolNotADC) && (minInstance < maxInstance)) {
 		printWarning("Volume number does not vary (0019,10A2; 0020,0100; 2005,1063; 2005,1413), assuming meaningful instance number (0020,0013).\n");
 		isUseInstanceNumberForVolume = true;
 	}
@@ -2735,6 +2721,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		int rawvol = vol;
 		int instance = dcmList[dcmSort[i].indx].imageNum;
 		int phase = max(1, dcmList[dcmSort[i].indx].phaseNumber);
+		int refTime = (int)dcmList[dcmSort[i].indx].frameReferenceTime; //issue577: refTime in ms, so int conversion sufficient
 		if (isUsePhaseForVol) vol = phase;
 		if (isPhaseIsBValNumber) vol += phase * maxVol;
 		int isAslLabel = dcmList[dcmSort[i].indx].aslFlags == kASL_FLAG_PHILIPS_LABEL;
@@ -2759,6 +2746,8 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 			printMessage("%d\t%g\t%d\t%d\t%d\t%d\t%g\n", instance, dx, vol, rawvol, isAslLabel, phase, dcmList[dcmSort[i].indx].triggerDelayTime);
 		if (vol > kMaxDTI4D) //issue529 Philips derived Trace/ADC embedded into DWI
 			vol = maxVol + 1;
+		if (isUseFrameReferenceTimeForVolume)
+			vol = refTime;
 		minVolOut = min(minVolOut, vol);
 		maxVolOut = max(maxVolOut, vol);
 		floatSort[i].volume = vol;
@@ -2766,9 +2755,10 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		floatSort[i].index = i;
 	}
 	//n.b. should we change dim[3] and dim[4] if number of volumes = dim[3]?
-	if ((!isPhaseIsBValNumber) && ((maxVolOut-minVolOut+1) != d4))
+	if (isUseFrameReferenceTimeForVolume)
+		printWarning("Reordering volumes based on FrameReferenceTime (0054,1300; issue 577)\n");
+	else if ((!isPhaseIsBValNumber) && ((maxVolOut-minVolOut+1) != d4))
 		printError("Check sorted order: 4D dataset has %d volumes, but volume index ranges from %d..%d\n", d4, minVolOut, maxVolOut);
-	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	TDCMsort *dcmSortIn = (TDCMsort *)malloc(nConvert * sizeof(TDCMsort));
 	for (int i = 0; i < nConvert; i++)
 		dcmSortIn[i] = dcmSort[i];
@@ -2777,10 +2767,8 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		dcmSort[i] = dcmSortIn[floatSort[i].index];
 	free(floatSort);
 	free(dcmSortIn);
-	//printf("dx = %g instance %d %d\n", intersliceDistanceSigned(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]), dcmList[dcmSort[0].indx].imageNum, dcmList[dcmSort[1].indx].imageNum);
 	return false;
 } // ensureSequentialSlicePositions()
-
 
 void swapDim3Dim4(int d3, int d4, struct TDCMsort dcmSort[]) {
 	//swap space and time: input A0,A1...An,B0,B1...Bn output A0,B0,A1,B1,...
@@ -5998,7 +5986,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			//next: detect variable inter-volume time https://github.com/rordenlab/dcm2niix/issues/184
 			//if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT)|| (opts.isForceOnsetTimes))) {
 			if ((nConvert > 1) && ((dcmList[indx0].modality == kMODALITY_PT) || ((opts.isForceOnsetTimes) && (dcmList[indx0].manufacturer != kMANUFACTURER_GE)))) {
-				if (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS) {
+				if (((dcmList[indx0].modality == kMODALITY_PT) && (dcmList[indx0].frameReferenceTime >= 0.0)) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_PHILIPS)) { //PT: issue 577
 					ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose); //issue529
 					indx0 = dcmSort[0].indx;
 				}
