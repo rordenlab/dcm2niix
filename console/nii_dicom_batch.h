@@ -34,6 +34,8 @@ extern "C" {
 #define kSaveFormatNIfTI 0
 #define kSaveFormatNRRD 1
 #define kSaveFormatMGH 2
+#define kSaveFormatJNII 3
+#define kSaveFormatBNII 4
 
 #define MAX_NUM_SERIES 16
 

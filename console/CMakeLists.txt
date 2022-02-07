@@ -74,7 +74,9 @@ set(DCM2NIIX_SRCS
     nifti1_io_core.cpp
     nii_foreign.cpp
     nii_ortho.cpp
-    nii_dicom_batch.cpp)
+    nii_dicom_batch.cpp
+    cJSON.c
+    base64.c)
 
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
 if(USE_JPEGLS)
@@ -157,7 +159,9 @@ if(BATCH_VERSION)
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp)
+        nii_dicom_batch.cpp
+        cJSON.c
+        base64.c)
 
     if(USE_JPEGLS)
         add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS} ${CHARLS_SRCS})
