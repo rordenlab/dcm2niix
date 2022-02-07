@@ -4214,7 +4214,8 @@ void write_ubjsonint(void *dat, int bytelen, int count, FILE *fp){
 }
 
 int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, unsigned char ndim,
-	 size_t totalbytes, const char *dtype, const char *slicetype, const char *intent, const char *lunit, const char *tunit, const char *jdtype, int jdataelemlen) {
+	 size_t totalbytes, const char *dtype, const char *slicetype, const char *intent, const char *lunit, const char *tunit,
+	 const char *jdtype, int jdataelemlen, char jdatamarker) {
 	int markerlen=0, dim[8]={0};
 	const char *output[]={
 	"{",
@@ -4366,12 +4367,34 @@ int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, s
 					case 37: {int val=hdr.vox_offset;write_ubjsonint(&val, sizeof(val), 1,fp);break;}
 					case 38: {unsigned char val=strlen(jdtype);fputc('U',fp);fputc(val,fp); fwrite(jdtype,1,val,fp);break;}
 					case 39: {fputc(ndim,fp);break;}
-					case 40: {write_ubjsonint(dim, sizeof(dim[0]), ndim, fp); break;}
+					case 40: {
+						write_ubjsonint(dim, sizeof(dim[0]), ndim, fp);
+						if(!opts.isGz){
+							const char *datastub="U\x0b_ArrayData_[$";
+							fwrite(datastub,1,strlen(datastub),fp);
+							fputc(jdatamarker,fp);
+							fputc('#',fp);
+
+							size_t totalelem=(totalbytes/(hdr.bitpix>>3));
+							unsigned int clen=totalelem;
+							if((size_t)clen==totalelem){
+								fputc('l',fp);
+								write_ubjsonint(&clen, sizeof(clen), 1,fp);
+							}else{
+								fputc('L',fp);
+								write_ubjsonint(&totalelem, sizeof(totalelem), 1,fp);
+							}
+							fwrite(im,1,totalbytes,fp);
+							fputc('}',fp); // end of NIFTIData
+							fputc('}',fp); // end of the root object
+						}
+						break;
+					}
 #ifdef Z_DEFLATED
-					case 41: {fputc('U',fp);fputc(4,fp);fwrite((opts.isGz ? "gzip" : "zlib"),1,4,fp);break;}
+					case 41: {fputc('U',fp);fputc(4,fp);fwrite("zlib",1,4,fp);break;}
 					case 42: {unsigned int val=(totalbytes/(hdr.bitpix>>3));write_ubjsonint(&val,sizeof(val), 1,fp);break;}
 					case 43:
-						ret=zmat_run(totalbytes, im, &compressedbytes, (unsigned char **)&compressed, (opts.isGz ? zmGzip : zmZlib), &status,-opts.gzLevel);
+						ret=zmat_run(totalbytes, im, &compressedbytes, (unsigned char **)&compressed, zmZlib, &status, -opts.gzLevel);
 						if(!ret){
 							unsigned int clen=compressedbytes;
 							if((size_t)clen==compressedbytes){
@@ -4388,17 +4411,10 @@ int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, s
 						if(compressed)
 							free(compressed);
 						break;
-#else  // if zlib is not available, save raw binary data in _ArrayData_ record instead
-					case 41:
-						unsigned int clen=totalbytes;
-						if((size_t)clen==totalbytes)
-							write_ubjsonint(&clen, sizeof(clen), 1,fp);
-						else
-							write_ubjsonint(&totalbytes, sizeof(totalbytes), 1,fp);
-						fwrite(im,1,totalbytes,fp);
-						break;
 #endif
 				}
+				if(!opts.isGz && slotid==40)
+					break;
 			}
 		}
 	}
@@ -4420,7 +4436,6 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	char *jsonstr=NULL;
 	size_t compressedbytes, totalbytes;
 	unsigned char *compressed=NULL, *buf=NULL;
-	int ret=0, status=0;
 
 	/*jnifti convers code-based header fields to human-readable/standardized strings*/
 	int datatypeidx;
@@ -4429,8 +4444,10 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 				"double128","complex128","complex256","rgba32",""};
 	const char *jdatatypestr[]={"uint8","int16","int32","single","double","double",
 				"uint8" ,"int8","uint16","uint32","int64","uint64",
-				"uint8","double","uint8","uint8",""};
-	unsigned char jdataelemlen[]={1,1,1,1,2,1,3,1,1,1,1,1,16,2,32,4,0};
+				"uint8","double","uint8","uint8","uint8"};
+	const char jdatamarker[]={'U','I','l','d','D','D','U','i','u','m','L','M',
+				'U','D','U','U','U'};
+	unsigned char jdataelemlen[]={1,1,1,1,2,1,3,1,1,1,1,1,16,2,32,4,1};
 	int datatypeid[]={NIFTI_TYPE_UINT8,NIFTI_TYPE_INT16,NIFTI_TYPE_INT32,
 				NIFTI_TYPE_FLOAT32,NIFTI_TYPE_COMPLEX64,NIFTI_TYPE_FLOAT64,
 				NIFTI_TYPE_RGB24,NIFTI_TYPE_INT8,NIFTI_TYPE_UINT16,
@@ -4445,7 +4462,7 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 				NIFTI_UNITS_HZ,NIFTI_UNITS_PPM,NIFTI_UNITS_RADS};
 
 	int slicetypeidx;
-	const char *slicetypestr[]={"","seq+","seq-","alt+","alt-","alt2","alt2+","alt2-",""};
+	const char *slicetypestr[]={"","seq+","seq-","alt+","alt-","alt2+","alt2-",""};
 	int slicetypeid[]={NIFTI_SLICE_UNKNOWN,NIFTI_SLICE_SEQ_INC,
 				NIFTI_SLICE_SEQ_DEC,NIFTI_SLICE_ALT_INC,NIFTI_SLICE_ALT_DEC,
 				NIFTI_SLICE_ALT_INC2,NIFTI_SLICE_ALT_DEC2};
@@ -4471,7 +4488,6 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 				NIFTI_INTENT_QUATERNION,NIFTI_INTENT_DIMLESS,NIFTI_INTENT_TIME_SERIES,
 				NIFTI_INTENT_NODE_INDEX,NIFTI_INTENT_RGB_VECTOR,NIFTI_INTENT_RGBA_VECTOR,
 				NIFTI_INTENT_SHAPE};
-
 	char fname[2048] = {""};
 	strcpy(fname, niiFilename);
 	if (opts.saveFormat == kSaveFormatBNII)
@@ -4501,7 +4517,7 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 		return nii_savebnii(fname, hdr, im, opts, (unsigned char)ndim, totalbytes,
 					datatypestr[datatypeidx], slicetypestr[slicetypeidx],
 					intentstr[intentidx], unitstr[lunitidx], unitstr[tunitidx],
-					jdatatypestr[datatypeidx], jdataelemlen[datatypeidx]);
+					jdatatypestr[datatypeidx], jdataelemlen[datatypeidx], jdatamarker[datatypeidx]);
 
 	root=cJSON_CreateObject();
 
@@ -4510,7 +4526,7 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	cJSON_AddStringToObject(info, "JNIFTIVersion", "0.5");
 	cJSON_AddStringToObject(info, "Comment", "Created by dcm2niix and NeuroJSON (http://neurojson.org)");
 	cJSON_AddStringToObject(info, "AnnotationFormat", "https://github.com/NeuroJSON/jnifti/blob/master/JNIfTI_specification.md");
-	cJSON_AddStringToObject(info, "SerialFormat", "https://github.com/NeuroJSON/bjdata/blob/master/Binary_JData_Specification.md");
+	cJSON_AddStringToObject(info, "SerialFormat", "http://json.org");
 	cJSON_AddItemToObject(info, "Parser", sub = cJSON_CreateObject());
 	cJSON_AddStringToObject(sub, "Python", "https://pypi.org/project/jdata\thttps://pypi.org/project/bjdata");
 	cJSON_AddStringToObject(sub, "MATLAB", "https://github.com/NeuroJSON/jnifty");
@@ -4593,21 +4609,30 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	if(jdataelemlen[datatypeidx]>1)
 		dim[ndim++]=jdataelemlen[datatypeidx];
 	cJSON_AddItemToObject(dat,  "_ArraySize_",cJSON_CreateIntArray(dim,ndim));
+
 #ifdef Z_DEFLATED
-	cJSON_AddStringToObject(dat, "_ArrayZipType_",(opts.isGz ? "gzip" : "zlib"));
-	cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
+	if(opts.isGz){
+		int ret=0, status=0;
+		cJSON_AddStringToObject(dat, "_ArrayZipType_", "zlib");
+		cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
 
-	ret=zmat_run(totalbytes, im, &compressedbytes, (unsigned char **)&compressed, (opts.isGz ? zmGzip : zmZlib), &status,-opts.gzLevel);
+		ret=zmat_run(totalbytes, im, &compressedbytes, (unsigned char **)&compressed, zmZlib, &status, -opts.gzLevel);
 
-	if(!ret){
-		 ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
-		 cJSON_AddStringToObject(dat,  "_ArrayZipData_",(char *)buf);
+		if(!ret){
+			ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
+			cJSON_AddStringToObject(dat,  "_ArrayZipData_",(const char *)buf);
+		}else{
+			printf("ret=%d status=%d\n",ret,status);
+		}
+		if(compressed)
+			free(compressed);
+	}else{
+		buf=base64_encode(im, totalbytes, &compressedbytes);
+		cJSON_AddStringToObject(dat,"_ArrayData_", (const char*)buf);
 	}
-	if(compressed)
-		free(compressed);
 #else
 	buf=base64_encode(im, totalbytes, &compressedbytes)
-	cJSON_AddStringToObject(dat,"_ArrayData_", buf);
+	cJSON_AddStringToObject(dat,"_ArrayData_", (const char*)buf);
 #endif
 	if(buf)
 		free(buf);
