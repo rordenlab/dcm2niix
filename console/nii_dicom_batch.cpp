@@ -4337,7 +4337,7 @@ int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, s
 			"N","","_ArrayZipSize_","l","?42",
 			"N","","_ArrayZipData_","[$U#","","?43",
 #else
-				"N","","_ArrayData_","[$U#","","?41",
+			"N","","_ArrayData_","[$U#","","?41",
 #endif
 		"}",
 	"}"
