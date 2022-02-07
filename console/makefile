@@ -6,7 +6,7 @@ CFLAGS=-s -O3
 
 #Leak tests:
 # https://clang.llvm.org/docs/AddressSanitizer.html
-# clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
+# clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.c -o dcm2niix -DmyDisableOpenJPEG
 
 
 #run "make" for default build
@@ -31,4 +31,4 @@ ifneq ($(OS),Windows_NT)
 	endif
 endif
 all:
-	g++ $(CFLAGS) -I. $(JFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
+	g++ $(CFLAGS) -I. $(JFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.c -o dcm2niix -DmyDisableOpenJPEG

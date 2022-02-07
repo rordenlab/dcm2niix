@@ -88,7 +88,9 @@ set(DCM2NIIX_SRCS
     nifti1_io_core.cpp
     nii_foreign.cpp
     nii_ortho.cpp
-    nii_dicom_batch.cpp)
+    nii_dicom_batch.cpp
+    cJSON.c
+    base64.c)
 
 if(BUILD_DCM2NIIXFSLIB)
     set(DCM2NIIXFSLIB dcm2niixfs)
@@ -187,7 +189,9 @@ if(BATCH_VERSION)
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp)
+        nii_dicom_batch.cpp
+        cJSON.c
+        base64.c)
 
     if(USE_JPEGLS)
         add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS} ${CHARLS_SRCS})
