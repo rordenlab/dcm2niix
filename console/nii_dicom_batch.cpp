@@ -4333,6 +4333,7 @@ int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, s
 		"N","","NIFTIData","{",
 			"N","","_ArrayType_","S","","?38",
 			"N","","_ArraySize_","[$l#U","?39","?40",
+			"N","","_ArrayOrder_","S","","c", // NIfTI array is column-major
 #ifdef Z_DEFLATED
 			"N","","_ArrayZipType_","S","","?41",
 			"N","","_ArrayZipSize_","l","?42",
@@ -4662,6 +4663,7 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	if(jdataelemlen[datatypeidx]>1)
 		dim[ndim++]=jdataelemlen[datatypeidx];
 	cJSON_AddItemToObject(dat,  "_ArraySize_",cJSON_CreateIntArray(dim,ndim));
+	cJSON_AddStringToObject(dat,"_ArrayOrder_","c"); // NIfTI array is column-major
 
 #ifdef Z_DEFLATED
 	if(opts.isGz){
