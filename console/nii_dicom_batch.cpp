@@ -4116,7 +4116,7 @@ int zmat_run(const size_t inputsize, unsigned char *inputstr, size_t *outputsize
 		/** perform compression or encoding */
 		if(zipid==zmBase64){
 			/** base64 encoding  */
-				*outputbuf=base64_encode((const unsigned char*)inputstr, inputsize, outputsize);
+                        *outputbuf=base64_encode((const unsigned char*)inputstr, inputsize, outputsize);
 		}else if(zipid==zmZlib || zipid==zmGzip){
 			/** zlib (.zip) or gzip (.gz) compression  */
 			if(zipid==zmZlib){
@@ -4126,8 +4126,6 @@ int zmat_run(const size_t inputsize, unsigned char *inputstr, size_t *outputsize
 				if(deflateInit2(&zs, (iscompress>0) ? Z_DEFAULT_COMPRESSION : (-iscompress), Z_DEFLATED, 15|16, MAX_MEM_LEVEL, Z_DEFAULT_STRATEGY) != Z_OK)
 					return -2;
 			}
-			if(deflateInit(&zs,  (iscompress>0) ? Z_DEFAULT_COMPRESSION : (-iscompress)) != Z_OK)
-				return -2;
 			buflen[0] =deflateBound(&zs,inputsize);
 			*outputbuf=(unsigned char *)malloc(buflen[0]);
 			zs.avail_in = inputsize; /* size of input, string + terminator*/
