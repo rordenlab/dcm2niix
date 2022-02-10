@@ -194,9 +194,11 @@ if(BATCH_VERSION)
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp
-        cJSON.c
-        base64.c)
+        nii_dicom_batch.cpp)
+
+    if(USE_JNIFTI)
+        set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} cJSON.cpp base64.cpp)
+    endif()
 
     if(USE_JPEGLS)
         add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS} ${CHARLS_SRCS})
