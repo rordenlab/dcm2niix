@@ -4462,6 +4462,7 @@ int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, s
 							}
 							fwrite(compressed,1,compressedbytes,fp);
 						}else{
+							printError("Failed to compress data stream, error code=%d, status code=%d\n", ret, status);
 							return EXIT_FAILURE;
 						}
 						if(compressed)
@@ -4679,17 +4680,22 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 			ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
 			cJSON_AddStringToObject(dat,  "_ArrayZipData_",(const char *)buf);
 		}else{
-			printf("ret=%d status=%d\n",ret,status);
+			printError("Failed to compress data stream, error code=%d, status code=%d\n", ret, status);
+			return EXIT_FAILURE;
 		}
 		if(compressed)
 			free(compressed);
 	}else{
+		cJSON_AddStringToObject(dat, "_ArrayZipType_", "base64");
+		cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
 		buf=base64_encode(im, totalbytes, &compressedbytes);
-		cJSON_AddStringToObject(dat,"_ArrayData_", (const char*)buf);
+		cJSON_AddStringToObject(dat,"_ArrayZipData_", (const char*)buf);
 	}
 #else
-	buf=base64_encode(im, totalbytes, &compressedbytes)
-	cJSON_AddStringToObject(dat,"_ArrayData_", (const char*)buf);
+	cJSON_AddStringToObject(dat, "_ArrayZipType_", "base64");
+	cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
+	buf=base64_encode(im, totalbytes, &compressedbytes);
+	cJSON_AddStringToObject(dat,"_ArrayZipData_", (const char*)buf);
 #endif
 	if(buf)
 		free(buf);
