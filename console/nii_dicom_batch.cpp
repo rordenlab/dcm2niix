@@ -38,6 +38,10 @@
 #endif
 #include "nii_dicom.h"
 #include "nii_ortho.h"
+#ifdef myEnableJNIfTI
+ #include "base64.h"
+ #include "cJSON.h"
+#endif
 #include <ctype.h> //toupper
 #include <float.h>
 #include <math.h>
@@ -3340,11 +3344,22 @@ void nii_createDummyFilename(char *niiFilename, struct TDCMopts opts) {
 	nii_createFilename(d, niiFilenameBase, opts);
 	strcpy(niiFilename, "Example output filename: '");
 	strcat(niiFilename, niiFilenameBase);
-	if (opts.saveFormat != kSaveFormatNIfTI) {
+	if (opts.saveFormat == kSaveFormatMGH) {
+		if (opts.isGz)
+			strcat(niiFilename, ".mgz'");
+		else
+			strcat(niiFilename, ".mgh'");
+	} else if (opts.saveFormat == kSaveFormatNRRD) {
 		if (opts.isGz)
 			strcat(niiFilename, ".nhdr'");
 		else
 			strcat(niiFilename, ".nrrd'");
+	#ifdef myEnableJNIfTI
+	} else if (opts.saveFormat == kSaveFormatJNII) {
+		strcat(niiFilename, ".jnii'");
+	} else if (opts.saveFormat == kSaveFormatBNII) {
+		strcat(niiFilename, ".bnii'");
+	#endif
 	} else {
 		if (opts.isGz)
 			strcat(niiFilename, ".nii.gz'");
@@ -4138,9 +4153,583 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
+enum TZipMethod {zmZlib, zmGzip, zmBase64};
+
+#ifdef myEnableJNIfTI
+#ifdef Z_DEFLATED
+
+int zmat_run(const size_t inputsize, unsigned char *inputstr, size_t *outputsize, unsigned char **outputbuf, const int zipid, int *ret, const int iscompress){
+	z_stream zs;
+	size_t buflen[2]={0};
+	*outputbuf=NULL;
+
+	zs.zalloc = Z_NULL;
+	zs.zfree  = Z_NULL;
+	zs.opaque = Z_NULL;
+
+	if(inputsize==0)
+		return -1;
+
+	if(iscompress){
+		/** perform compression or encoding */
+		if(zipid==zmBase64){
+			/** base64 encoding  */
+                        *outputbuf=base64_encode((const unsigned char*)inputstr, inputsize, outputsize);
+		}else if(zipid==zmZlib || zipid==zmGzip){
+			/** zlib (.zip) or gzip (.gz) compression  */
+			if(zipid==zmZlib){
+				if(deflateInit(&zs,  (iscompress>0) ? Z_DEFAULT_COMPRESSION : (-iscompress)) != Z_OK)
+					return -2;
+			}else{
+				if(deflateInit2(&zs, (iscompress>0) ? Z_DEFAULT_COMPRESSION : (-iscompress), Z_DEFLATED, 15|16, MAX_MEM_LEVEL, Z_DEFAULT_STRATEGY) != Z_OK)
+					return -2;
+			}
+			buflen[0] =deflateBound(&zs,inputsize);
+			*outputbuf=(unsigned char *)malloc(buflen[0]);
+			zs.avail_in = inputsize; /* size of input, string + terminator*/
+			zs.next_in = (Bytef *)inputstr; /* input char array*/
+			zs.avail_out = buflen[0]; /* size of output*/
+
+			zs.next_out =  (Bytef *)(*outputbuf); /*(Bytef *)(); // output char array*/
+
+			*ret=deflate(&zs, Z_FINISH);
+			*outputsize=zs.total_out;
+			if(*ret!=Z_STREAM_END && *ret!=Z_OK)
+				return -3;
+			deflateEnd(&zs);
+		}else{
+			return -7;
+		}
+	}else{
+		/** perform decompression or decoding */
+		if(zipid==zmBase64){
+			/** base64 decoding  */
+			*outputbuf=base64_decode((const unsigned char*)inputstr, inputsize, outputsize);
+		}else if(zipid==zmZlib || zipid==zmGzip){
+			/** zlib (.zip) or gzip (.gz) decompression */
+			int count=1;
+			if(zipid==zmZlib){
+				if(inflateInit(&zs) != Z_OK)
+					return -2;
+			}else{
+				if(inflateInit2(&zs, 15|32) != Z_OK)
+					return -2;
+			}
+
+			buflen[0] =inputsize*20;
+			*outputbuf=(unsigned char *)malloc(buflen[0]);
+
+			zs.avail_in = inputsize; /* size of input, string + terminator*/
+			zs.next_in =inputstr; /* input char array*/
+			zs.avail_out = buflen[0]; /* size of output*/
+
+			zs.next_out =  (Bytef *)(*outputbuf); /*(Bytef *)(); // output char array*/
+
+			while((*ret=inflate(&zs, Z_SYNC_FLUSH))!=Z_STREAM_END && count<=10){
+				*outputbuf=(unsigned char *)realloc(*outputbuf, (buflen[0]<<count));
+				zs.next_out =  (Bytef *)(*outputbuf+(buflen[0]<<(count-1)));
+				zs.avail_out = (buflen[0]<<(count-1)); /* size of output*/
+				count++;
+			}
+			*outputsize=zs.total_out;
+			if(*ret!=Z_STREAM_END && *ret!=Z_OK)
+				return -3;
+			inflateEnd(&zs);
+		}else{
+			return -7;
+		}
+	}
+	return 0;
+}
+
+#endif //Z_DEFLATED 
+
+int jnifti_lookup(int *keyid, int keylen, int val){
+	for(int i=0;i<keylen;i++){
+		if(val==keyid[i]){
+			return i;
+		}
+	}
+	return keylen; /*last element is unknown type ""*/
+}
+
+void write_ubjsonint(void *dat, int bytelen, int count, FILE *fp){
+	void *tmp=malloc(count*bytelen);
+	memcpy(tmp,dat,count*bytelen);
+	if (!&littleEndianPlatform){
+		if(bytelen==2)
+			nifti_swap_2bytes(count, tmp);
+		else if(bytelen==4)
+			nifti_swap_4bytes(count, tmp);
+		else if(bytelen==8)
+			nifti_swap_8bytes(count, tmp);
+	}
+	fwrite(tmp,count,bytelen,fp);
+	free(tmp);
+}
+
+int nii_savebnii(char *bniifile, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, unsigned char ndim,
+	 size_t totalbytes, const char *dtype, const char *slicetype, const char *intent, const char *lunit, const char *tunit,
+	 const char *jdtype, int jdataelemlen, char jdatamarker) {
+	int markerlen=0, dim[8]={0};
+	const char *output[]={
+	"{",
+		"N","","_DataInfo_","{",
+			"N","","JNIFTIVersion","S","","0.5",
+			"N","","Comment","S","","Created by dcm2niix and NeuroJSON (http://neurojson.org)",
+			"N","","AnnotationFormat","S","","https://github.com/NeuroJSON/jnifti/blob/master/JNIfTI_specification.md",
+				"N","","SerialFormat","S","","https://github.com/NeuroJSON/bjdata/blob/master/Binary_JData_Specification.md",
+				"N","","Parser","{",
+					"N","","Python","S","","https://pypi.org/project/jdata\thttps://pypi.org/project/bjdata",
+					"N","","MATLAB","S","","https://github.com/NeuroJSON/jnifty",
+					"N","","JavaScript","S","","https://github.com/NeuroJSON/jsdata",
+				"}",
+		"}",
+		"N","","NIFTIHeader","{",
+			"N","","NIIHeaderSize","l","?1",
+			"N","","Dim","[$I#U","?2","?3",
+			"N","","Param1","d","?4",
+			"N","","Param2","d","?5",
+			"N","","Param3","d","?6",
+			"N","","Intent","S","","?7",
+			"N","","DataType","S","","?8",
+				"N","","BitDepth","U","?9",
+				"N","","FirstSliceID","I","?10",
+				"N","","VoxelSize","[$d#U","?11","?12",
+				"N","","Orientation","{",
+					"N","","x","S","U\x01","?13",
+					"N","","y","S","","a",
+					"N","","z","S","","s",
+				"}",
+				"N","","ScaleSlope","d","?14",
+				"N","","ScaleOffset","d","?15",
+				"N","","LastSliceID","I","?16",
+				"N","","SliceType","S","","?17",
+				"N","","Unit","{",
+					"N","","L","S","","?18",
+					"N","","T","S","","?19",
+				"}",
+				"N","","MaxIntensity","d","?20",
+				"N","","MinIntensity","d","?21",
+				"N","","SliceTime","d","?22",
+				"N","","TimeOffset","d","?23",
+				"N","","Description","S","","?24",
+				"N","","AuxFile","S","","?25",
+				"N","","QForm","I","?26",
+				"N","","SForm","I","?27",
+				"N","","Quatern","{",
+					"N","","b","d","?28",
+					"N","","c","d","?29",
+					"N","","d","d","?30",
+				"}",
+				"N","","QuaternOffset","{",
+					"N","","x","d","?31",
+					"N","","y","d","?32",
+					"N","","z","d","?33",
+				"}",
+				"N","","Affine","[$d#[$U#U\x02\x03\x04","?34", // Affine is a 2D (\x02) 3x4 (\x03\x04) float [d] matrix
+				"N","","Name","S","","?35",
+				"N","","NIIFormat","S","","?36",
+				"N","","NIIByteOffset","l","?37",
+		"}",
+		"N","","NIFTIData","{",
+			"N","","_ArrayType_","S","","?38",
+			"N","","_ArraySize_","[$l#U","?39","?40",
+			"N","","_ArrayOrder_","S","","c", // NIfTI array is column-major
+#ifdef Z_DEFLATED
+			"N","","_ArrayZipType_","S","","?41",
+			"N","","_ArrayZipSize_","l","?42",
+			"N","","_ArrayZipData_","[$U#","","?43",
+#else
+			"N","","_ArrayData_","[$U#","","?41",
+#endif
+		"}",
+	"}"
+	};
+	FILE *fp = fopen(bniifile,"wb");
+	if (fp == NULL)
+		return EXIT_FAILURE;
+
+	markerlen=sizeof(output)/sizeof(char*);
+	for(int i=1;i<8;i++)
+		dim[i-1]=hdr.dim[i];
+	if(jdataelemlen>1)
+		dim[ndim++]=jdataelemlen;
+
+	for(int i=0;i<markerlen;i++){
+		int slen=strlen(output[i]);
+		if(slen>0 && output[i][0]!='?'){ // take care all name-tags and constant string values
+			if(!(slen==1 && output[i][0]=='N'))
+				fwrite(output[i],1,slen,fp);
+			if(slen==1 && (output[i][0]=='N' || output[i][0]=='S') && i+2<markerlen && output[i+1][0]=='\0' && output[i+2][0]!='?'){
+				unsigned int keylen=strlen(output[i+2]);
+				if(keylen<256){
+					unsigned char keylenbyte=keylen;
+					fputc('U',fp);
+					fwrite(&keylenbyte,1,sizeof(keylenbyte),fp);
+				}else{
+					fputc('l',fp);
+					write_ubjsonint(&keylen,sizeof(keylen),1,fp);
+				}
+			}
+		}else if(slen>0){
+			int slotid=0;
+			if(sscanf(output[i],"\?%d",&slotid)==1 && slotid>0){
+				unsigned char *compressed=NULL;
+				size_t compressedbytes;
+				int ret=0, status=0;
+				switch(slotid){ // mapping data to the pre-defined slots in the form of "?number" in the template
+					case  1: {write_ubjsonint(&hdr.sizeof_hdr,sizeof(hdr.sizeof_hdr),1,fp);break;}
+					case  2: {fputc(ndim,fp);break;}
+					case  3: {write_ubjsonint(hdr.dim+1, sizeof(hdr.dim[0]), ndim,fp);break;}
+					case  4: {write_ubjsonint(&hdr.intent_p1,1,sizeof(hdr.intent_p1),fp);break;}
+					case  5: {write_ubjsonint(&hdr.intent_p2,1,sizeof(hdr.intent_p2),fp);break;}
+					case  6: {write_ubjsonint(&hdr.intent_p3,1,sizeof(hdr.intent_p3),fp);break;}
+					case  7: {unsigned char val=strlen(intent);fputc('U',fp);fputc(val,fp); fwrite(intent,1,val,fp);break;}
+					case  8: {unsigned char val=strlen(dtype); fputc('U',fp);fputc(val,fp); fwrite(dtype,1,val,fp);break;}
+					case  9: {fputc(hdr.bitpix,fp);break;}
+					case 10: {write_ubjsonint(&hdr.slice_start, sizeof(hdr.slice_start),1,fp);break;}
+					case 11: {fputc(ndim,fp);break;}
+					case 12: {write_ubjsonint(&hdr.pixdim[1],ndim,sizeof(hdr.pixdim[1]),fp);break;}
+					case 13: {fputc((int)hdr.pixdim[0] ? 'l' : 'r',fp);break;}
+					case 14: {write_ubjsonint(&hdr.scl_slope,1,sizeof(hdr.scl_slope),fp);break;}
+					case 15: {write_ubjsonint(&hdr.scl_inter,1,sizeof(hdr.scl_inter),fp);break;}
+					case 16: {write_ubjsonint(&hdr.slice_end,sizeof(hdr.slice_end),1,fp);break;}
+					case 17: {unsigned char val=strlen(slicetype);fputc('U',fp);fputc(val,fp); fwrite(slicetype,1,val,fp);break;}
+					case 18: {unsigned char val=strlen(lunit);fputc('U',fp);fputc(val,fp); fwrite(lunit,1,val,fp);break;}
+					case 19: {unsigned char val=strlen(tunit);fputc('U',fp);fputc(val,fp); fwrite(tunit,1,val,fp);break;}
+					case 20: {write_ubjsonint(&hdr.cal_max,1,sizeof(hdr.cal_max),fp);break;}
+					case 21: {write_ubjsonint(&hdr.cal_min,1,sizeof(hdr.cal_min),fp);break;}
+					case 22: {write_ubjsonint(&hdr.slice_duration,1,sizeof(hdr.slice_duration),fp);break;}
+					case 23: {write_ubjsonint(&hdr.toffset,1,sizeof(hdr.toffset),fp);break;}
+					case 24: {unsigned char val=strlen(hdr.descrip);fputc('U',fp);fputc(val,fp); fwrite(hdr.descrip,1,val,fp);break;}
+					case 25: {unsigned char val=strlen(hdr.aux_file);fputc('U',fp);fputc(val,fp); fwrite(hdr.aux_file,1,val,fp);break;}
+					case 26: {write_ubjsonint(&hdr.qform_code,sizeof(hdr.qform_code),1,fp);break;}
+					case 27: {write_ubjsonint(&hdr.sform_code,sizeof(hdr.sform_code),1,fp);break;}
+					case 28: {write_ubjsonint(&hdr.quatern_b,1,sizeof(hdr.quatern_b),fp);break;}
+					case 29: {write_ubjsonint(&hdr.quatern_c,1,sizeof(hdr.quatern_c),fp);break;}
+					case 30: {write_ubjsonint(&hdr.quatern_d,1,sizeof(hdr.quatern_d),fp);break;}
+					case 31: {write_ubjsonint(&hdr.qoffset_x,1,sizeof(hdr.qoffset_x),fp);break;}
+					case 32: {write_ubjsonint(&hdr.qoffset_y,1,sizeof(hdr.qoffset_y),fp);break;}
+					case 33: {write_ubjsonint(&hdr.qoffset_z,1,sizeof(hdr.qoffset_z),fp);break;}
+					case 34: {
+						write_ubjsonint(&hdr.srow_x[0],4,sizeof(hdr.srow_x[0]),fp);
+						write_ubjsonint(&hdr.srow_y[0],4,sizeof(hdr.srow_y[0]),fp);
+						write_ubjsonint(&hdr.srow_z[0],4,sizeof(hdr.srow_z[0]),fp);
+						break;
+					}
+					case 35: {unsigned char val=strlen(hdr.intent_name);fputc('U',fp);fputc(val,fp); fwrite(hdr.intent_name,1,val,fp);break;}
+					case 36: {unsigned char val=strlen(hdr.magic);fputc('U',fp);fputc(val,fp); fwrite(hdr.magic,1,val,fp);break;}
+					case 37: {int val=hdr.vox_offset;write_ubjsonint(&val, sizeof(val), 1,fp);break;}
+					case 38: {unsigned char val=strlen(jdtype);fputc('U',fp);fputc(val,fp); fwrite(jdtype,1,val,fp);break;}
+					case 39: {fputc(ndim,fp);break;}
+					case 40: {
+						write_ubjsonint(dim, sizeof(dim[0]), ndim, fp);
+						if(!opts.isGz){
+							const char *datastub="U\x0b_ArrayData_[$";
+							fwrite(datastub,1,strlen(datastub),fp);
+							fputc(jdatamarker,fp);
+							fputc('#',fp);
+
+							size_t totalelem=(totalbytes/(hdr.bitpix>>3));
+							unsigned int clen=totalelem;
+							if((size_t)clen==totalelem){
+								fputc('l',fp);
+								write_ubjsonint(&clen, sizeof(clen), 1,fp);
+							}else{
+								fputc('L',fp);
+								write_ubjsonint(&totalelem, sizeof(totalelem), 1,fp);
+							}
+							fwrite(im,1,totalbytes,fp);
+							fputc('}',fp); // end of NIFTIData
+							fputc('}',fp); // end of the root object
+						}
+						break;
+					}
+#ifdef Z_DEFLATED
+					case 41: {fputc('U',fp);fputc(4,fp);fwrite("zlib",1,4,fp);break;}
+					case 42: {unsigned int val=(totalbytes/(hdr.bitpix>>3));write_ubjsonint(&val,sizeof(val), 1,fp);break;}
+					case 43:
+						ret=zmat_run(totalbytes, im, &compressedbytes, (unsigned char **)&compressed, zmZlib, &status, -opts.gzLevel);
+						if(!ret){
+							unsigned int clen=compressedbytes;
+							if((size_t)clen==compressedbytes){
+								fputc('l',fp);
+								write_ubjsonint(&clen, sizeof(clen), 1,fp);
+							}else{
+								fputc('L',fp);
+								write_ubjsonint(&compressedbytes, sizeof(compressedbytes), 1,fp);
+							}
+							fwrite(compressed,1,compressedbytes,fp);
+						}else{
+							printError("Failed to compress data stream, error code=%d, status code=%d\n", ret, status);
+							return EXIT_FAILURE;
+						}
+						if(compressed)
+							free(compressed);
+						break;
+#endif
+				}
+				if(!opts.isGz && slotid==40)
+					break;
+			}
+		}
+	}
+	fclose(fp);
+	return EXIT_SUCCESS;
+}
+
+int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
+// JNIfTI is a JSON wrapper to the NIfTI-1/2 format, supports both plain-text (.jnii) and binary (.bnii) formats
+// Specification:  https://github.com/NeuroJSON/jnifti/blob/master/JNIfTI_specification.md
+// jnii is a plain JSON file and can be parsed in nearly all JSON parsers; to decode the
+// embedded binary data as strings, the NIFTIData section can be be parsed in MATLAB using
+// jnifty (https://github.com/NeuroJSON/jnifty) and Python using jdata (https://github.com/NeuroJSON/pyjdata)
+
+	FILE *fp;
+	int dim[8]={0}, ndim=0;  /* extra dimension in dim to hold the split data from complex voxel types, such as complex64 */
+
+	cJSON *root=NULL, *info=NULL, *jhdr=NULL, *dat=NULL, *sub=NULL;
+	char *jsonstr=NULL;
+	size_t compressedbytes, totalbytes;
+	unsigned char *compressed=NULL, *buf=NULL;
+
+	/*jnifti convers code-based header fields to human-readable/standardized strings*/
+	int datatypeidx;
+	const char *datatypestr[]={"uint8","int16","int32","single","complex64","double",
+				"rgb24" ,"int8","uint16","uint32","int64","uint64",
+				"double128","complex128","complex256","rgba32",""};
+	const char *jdatatypestr[]={"uint8","int16","int32","single","double","double",
+				"uint8" ,"int8","uint16","uint32","int64","uint64",
+				"uint8","double","uint8","uint8","uint8"};
+	const char jdatamarker[]={'U','I','l','d','D','D','U','i','u','m','L','M',
+				'U','D','U','U','U'};
+	unsigned char jdataelemlen[]={1,1,1,1,2,1,3,1,1,1,1,1,16,2,32,4,1};
+	int datatypeid[]={NIFTI_TYPE_UINT8,NIFTI_TYPE_INT16,NIFTI_TYPE_INT32,
+				NIFTI_TYPE_FLOAT32,NIFTI_TYPE_COMPLEX64,NIFTI_TYPE_FLOAT64,
+				NIFTI_TYPE_RGB24,NIFTI_TYPE_INT8,NIFTI_TYPE_UINT16,
+				NIFTI_TYPE_UINT32,NIFTI_TYPE_INT64,NIFTI_TYPE_UINT64,
+				NIFTI_TYPE_FLOAT128,NIFTI_TYPE_COMPLEX128,
+				NIFTI_TYPE_COMPLEX256,NIFTI_TYPE_RGBA32};
+
+	int lunitidx, tunitidx;
+	const char *unitstr[]={"m","mm","um","s","ms","us","hz","ppm","rad",""};
+	int unitid[]={NIFTI_UNITS_METER,NIFTI_UNITS_MM,NIFTI_UNITS_MICRON,
+				NIFTI_UNITS_SEC,NIFTI_UNITS_MSEC,NIFTI_UNITS_USEC,
+				NIFTI_UNITS_HZ,NIFTI_UNITS_PPM,NIFTI_UNITS_RADS};
+
+	int slicetypeidx;
+	const char *slicetypestr[]={"","seq+","seq-","alt+","alt-","alt2+","alt2-",""};
+	int slicetypeid[]={NIFTI_SLICE_UNKNOWN,NIFTI_SLICE_SEQ_INC,
+				NIFTI_SLICE_SEQ_DEC,NIFTI_SLICE_ALT_INC,NIFTI_SLICE_ALT_DEC,
+				NIFTI_SLICE_ALT_INC2,NIFTI_SLICE_ALT_DEC2};
+
+	int intentidx;
+	const char *intentstr[]={"","corr","ttest","ftest","zscore","chi2","beta","binomial",
+				"gamma","poisson","normal","ncftest","ncchi2","logistic","laplace",
+				"uniform","ncttest","weibull","chi","invgauss","extval","pvalue",
+				"logpvalue","log10pvalue","estimate","label","neuronames","matrix",
+				"symmatrix","dispvec","vector","point","triangle","quaternion",
+				"unitless","tseries","elem","rgb","rgba","shape",""};
+	int intentid[]={NIFTI_INTENT_NONE,NIFTI_INTENT_CORREL,NIFTI_INTENT_TTEST,
+				NIFTI_INTENT_FTEST,NIFTI_INTENT_ZSCORE,NIFTI_INTENT_CHISQ,
+				NIFTI_INTENT_BETA,NIFTI_INTENT_BINOM,NIFTI_INTENT_GAMMA,
+				NIFTI_INTENT_POISSON,NIFTI_INTENT_NORMAL,NIFTI_INTENT_FTEST_NONC,
+				NIFTI_INTENT_CHISQ_NONC,NIFTI_INTENT_LOGISTIC,NIFTI_INTENT_LAPLACE,
+				NIFTI_INTENT_UNIFORM,NIFTI_INTENT_TTEST_NONC,NIFTI_INTENT_WEIBULL,
+				NIFTI_INTENT_CHI,NIFTI_INTENT_INVGAUSS,NIFTI_INTENT_EXTVAL,
+				NIFTI_INTENT_PVAL,NIFTI_INTENT_LOGPVAL,NIFTI_INTENT_LOG10PVAL,
+				NIFTI_INTENT_ESTIMATE,NIFTI_INTENT_LABEL,NIFTI_INTENT_NEURONAME,
+				NIFTI_INTENT_GENMATRIX,NIFTI_INTENT_SYMMATRIX,NIFTI_INTENT_DISPVECT,
+				NIFTI_INTENT_VECTOR,NIFTI_INTENT_POINTSET,NIFTI_INTENT_TRIANGLE,
+				NIFTI_INTENT_QUATERNION,NIFTI_INTENT_DIMLESS,NIFTI_INTENT_TIME_SERIES,
+				NIFTI_INTENT_NODE_INDEX,NIFTI_INTENT_RGB_VECTOR,NIFTI_INTENT_RGBA_VECTOR,
+				NIFTI_INTENT_SHAPE};
+	char fname[2048] = {""};
+	strcpy(fname, niiFilename);
+	if (opts.saveFormat == kSaveFormatBNII)
+		strcat(fname, ".bnii");
+	else
+		strcat(fname, ".jnii");
+
+	/* preprocess nifti header to convert to human-readable jnifti fields */
+	totalbytes=nii_ImgBytes(hdr);
+	ndim=hdr.dim[0];
+	for(int i=1;i<8;i++)
+		dim[i-1]=hdr.dim[i];
+
+	datatypeidx=jnifti_lookup(datatypeid, sizeof(datatypeid)/sizeof(int), hdr.datatype);
+	slicetypeidx=jnifti_lookup(slicetypeid, sizeof(slicetypeid)/sizeof(int), hdr.slice_code);
+	intentidx=jnifti_lookup(intentid, sizeof(intentid)/sizeof(int), hdr.intent_code);
+	lunitidx=sizeof(unitid)/sizeof(unitid[0]);
+	tunitidx=sizeof(unitid)/sizeof(unitid[0]);
+	for(int i=0;i<sizeof(unitid)/sizeof(unitid[0]);i++){
+		if(XYZT_TO_SPACE(hdr.xyzt_units)==unitid[i])
+			lunitidx=i;
+		else if(XYZT_TO_TIME(hdr.xyzt_units)==unitid[i])
+			tunitidx=i;
+	}
+
+	if (opts.saveFormat == kSaveFormatBNII)
+		return nii_savebnii(fname, hdr, im, opts, (unsigned char)ndim, totalbytes,
+					datatypestr[datatypeidx], slicetypestr[slicetypeidx],
+					intentstr[intentidx], unitstr[lunitidx], unitstr[tunitidx],
+					jdatatypestr[datatypeidx], jdataelemlen[datatypeidx], jdatamarker[datatypeidx]);
+
+	root=cJSON_CreateObject();
+
+	/* write the "NIFTIHeader" section */
+	cJSON_AddItemToObject(root, "_DataInfo_", info = cJSON_CreateObject());
+	cJSON_AddStringToObject(info, "JNIFTIVersion", "0.5");
+	cJSON_AddStringToObject(info, "Comment", "Created by dcm2niix and NeuroJSON (http://neurojson.org)");
+	cJSON_AddStringToObject(info, "AnnotationFormat", "https://github.com/NeuroJSON/jnifti/blob/master/JNIfTI_specification.md");
+	cJSON_AddStringToObject(info, "SerialFormat", "http://json.org");
+	cJSON_AddItemToObject(info, "Parser", sub = cJSON_CreateObject());
+	cJSON_AddStringToObject(sub, "Python", "https://pypi.org/project/jdata\thttps://pypi.org/project/bjdata");
+	cJSON_AddStringToObject(sub, "MATLAB", "https://github.com/NeuroJSON/jnifty");
+	cJSON_AddStringToObject(sub, "JavaScript", "https://github.com/NeuroJSON/jsdata");
+
+	cJSON_AddItemToObject(root, "NIFTIHeader", jhdr = cJSON_CreateObject());
+	cJSON_AddNumberToObject(jhdr, "NIIHeaderSize", hdr.sizeof_hdr);
+	cJSON_AddItemToObject(jhdr, "Dim", cJSON_CreateIntArray(dim,ndim));
+	cJSON_AddNumberToObject(jhdr, "Param1", hdr.intent_p1);
+	cJSON_AddNumberToObject(jhdr, "Param2", hdr.intent_p2);
+	cJSON_AddNumberToObject(jhdr, "Param3", hdr.intent_p3);
+	cJSON_AddStringToObject(jhdr, "Intent", intentstr[intentidx]);
+	cJSON_AddStringToObject(jhdr, "DataType", datatypestr[datatypeidx]);
+	cJSON_AddNumberToObject(jhdr, "BitDepth", hdr.bitpix);
+	cJSON_AddNumberToObject(jhdr, "FirstSliceID", hdr.slice_start);
+	cJSON_AddItemToObject(jhdr, "VoxelSize", cJSON_CreateFloatArray(hdr.pixdim+1,ndim));
+	cJSON_AddItemToObject(jhdr, "Orientation", sub=cJSON_CreateObject());
+	if((int)hdr.pixdim[0])
+		cJSON_AddStringToObject(sub, "x", "l");
+	else
+		cJSON_AddStringToObject(sub, "x", "r");
+	cJSON_AddStringToObject(sub, "y", "a");
+	cJSON_AddStringToObject(sub, "z", "s");
+	cJSON_AddNumberToObject(jhdr, "ScaleSlope", hdr.scl_slope);
+	cJSON_AddNumberToObject(jhdr, "ScaleOffset", hdr.scl_inter);
+	cJSON_AddNumberToObject(jhdr, "LastSliceID", hdr.slice_end);
+
+	cJSON_AddStringToObject(jhdr, "SliceType", slicetypestr[slicetypeidx]);
+	cJSON_AddItemToObject(jhdr, "Unit", sub=cJSON_CreateObject());
+	cJSON_AddStringToObject(sub, "L", unitstr[lunitidx]);
+	cJSON_AddStringToObject(sub, "T", unitstr[tunitidx]);
+	for(int i=0;i<sizeof(unitid)/sizeof(unitid[0]);i++){
+		if(hdr.xyzt_units>=NIFTI_UNITS_HZ && hdr.xyzt_units==unitid[i])
+			cJSON_AddStringToObject(sub, "Special", unitstr[i]);
+	}
+	cJSON_AddNumberToObject(jhdr, "MaxIntensity", hdr.cal_max);
+	cJSON_AddNumberToObject(jhdr, "MinIntensity", hdr.cal_min);
+	cJSON_AddNumberToObject(jhdr, "SliceTime", hdr.slice_duration);
+	cJSON_AddNumberToObject(jhdr, "TimeOffset", hdr.toffset);
+	cJSON_AddStringToObject(jhdr, "Description", hdr.descrip);
+	cJSON_AddStringToObject(jhdr, "AuxFile", hdr.aux_file);
+	cJSON_AddNumberToObject(jhdr, "QForm", hdr.qform_code);
+	cJSON_AddNumberToObject(jhdr, "SForm", hdr.sform_code);
+	cJSON_AddItemToObject(jhdr, "Quatern", sub=cJSON_CreateObject());
+	cJSON_AddNumberToObject(sub, "b", hdr.quatern_b);
+	cJSON_AddNumberToObject(sub, "c", hdr.quatern_c);
+	cJSON_AddNumberToObject(sub, "d", hdr.quatern_d);
+	cJSON_AddItemToObject(jhdr, "QuaternOffset", sub=cJSON_CreateObject());
+	cJSON_AddNumberToObject(sub, "x", hdr.qoffset_x);
+	cJSON_AddNumberToObject(sub, "y", hdr.qoffset_y);
+	cJSON_AddNumberToObject(sub, "z", hdr.qoffset_z);
+	cJSON_AddItemToObject(jhdr, "Affine", sub=cJSON_CreateArray());
+	cJSON_AddItemToArray(sub, cJSON_CreateFloatArray(hdr.srow_x,4));
+	cJSON_AddItemToArray(sub, cJSON_CreateFloatArray(hdr.srow_y,4));
+	cJSON_AddItemToArray(sub, cJSON_CreateFloatArray(hdr.srow_z,4));
+	cJSON_AddStringToObject(jhdr, "Name", hdr.intent_name);
+	cJSON_AddStringToObject(jhdr, "NIIFormat", hdr.magic);
+
+	/* save depreciated header flags if non-trival values are provided */
+	if(hdr.vox_offset)
+		cJSON_AddNumberToObject(jhdr, "NIIByteOffset", hdr.vox_offset);
+	if(strlen(hdr.data_type))
+		cJSON_AddStringToObject(jhdr, "A75DataTypeName", hdr.data_type);
+	if(strlen(hdr.db_name))
+		cJSON_AddStringToObject(jhdr, "A75DBName", hdr.db_name);
+	if(hdr.extents)
+		cJSON_AddNumberToObject(jhdr, "A75Extends", hdr.extents);
+	if(hdr.session_error)
+		cJSON_AddNumberToObject(jhdr, "A75SessionError", hdr.session_error);
+	if(hdr.regular)
+		cJSON_AddNumberToObject(jhdr, "A75DataTypeName", hdr.regular);
+	if(hdr.glmax)
+		cJSON_AddNumberToObject(jhdr, "A75GlobalMax", hdr.glmax);
+	if(hdr.glmin)
+		cJSON_AddNumberToObject(jhdr, "A75GlobalMin", hdr.glmin);
+
+	/* the "NIFTIData" section stores volumetric data */
+	cJSON_AddItemToObject(root, "NIFTIData",dat = cJSON_CreateObject());
+	cJSON_AddStringToObject(dat,"_ArrayType_",jdatatypestr[datatypeidx]);
+	if(jdataelemlen[datatypeidx]>1)
+		dim[ndim++]=jdataelemlen[datatypeidx];
+	cJSON_AddItemToObject(dat,  "_ArraySize_",cJSON_CreateIntArray(dim,ndim));
+	cJSON_AddStringToObject(dat,"_ArrayOrder_","c"); // NIfTI array is column-major
+
+#ifdef Z_DEFLATED
+	if(opts.isGz){
+		int ret=0, status=0;
+		cJSON_AddStringToObject(dat, "_ArrayZipType_", "zlib");
+		cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
+
+		ret=zmat_run(totalbytes, im, &compressedbytes, (unsigned char **)&compressed, zmZlib, &status, -opts.gzLevel);
+
+		if(!ret){
+			ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
+			cJSON_AddStringToObject(dat,  "_ArrayZipData_",(const char *)buf);
+		}else{
+			printError("Failed to compress data stream, error code=%d, status code=%d\n", ret, status);
+			return EXIT_FAILURE;
+		}
+		if(compressed)
+			free(compressed);
+	}else{
+		cJSON_AddStringToObject(dat, "_ArrayZipType_", "base64");
+		cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
+		buf=base64_encode(im, totalbytes, &compressedbytes);
+		cJSON_AddStringToObject(dat,"_ArrayZipData_", (const char*)buf);
+	}
+#else
+	cJSON_AddStringToObject(dat, "_ArrayZipType_", "base64");
+	cJSON_AddNumberToObject(dat, "_ArrayZipSize_",totalbytes/(hdr.bitpix>>3));
+	buf=base64_encode(im, totalbytes, &compressedbytes);
+	cJSON_AddStringToObject(dat,"_ArrayZipData_", (const char*)buf);
+#endif
+	if(buf)
+		free(buf);
+
+	/* now save JSON to file */
+	jsonstr=cJSON_Print(root);
+	if(jsonstr==NULL){
+		printMessage("Error: error when converting to JNIfTI\n");
+		return EXIT_FAILURE;
+	}
+
+	fp=fopen(fname,"wt");
+	if(fp==NULL){
+		printMessage("Error: error when writing to JNIfTI file\n");
+		return EXIT_FAILURE;
+	}
+	fprintf(fp,"%s\n",jsonstr);
+	fclose(fp);
+
+	if(jsonstr)
+		free(jsonstr);
+	if(root)
+		cJSON_Delete(root);
+	return EXIT_SUCCESS;
+} // nii_savejnii()
+#endif //#ifdef myEnableJNIfTI
+
 int nii_saveForeign(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
 	if (opts.saveFormat == kSaveFormatMGH)
 		return nii_saveMGH(niiFilename, hdr, im, opts, d, dti4D, numDTI);
+	#ifdef myEnableJNIfTI
+	else if (opts.saveFormat == kSaveFormatJNII || opts.saveFormat == kSaveFormatBNII)
+		return nii_savejnii(niiFilename, hdr, im, opts, d, dti4D, numDTI);
+	#endif
 	return nii_saveNRRD(niiFilename, hdr, im, opts, d, dti4D, numDTI);
 }// nii_saveForeign()
 

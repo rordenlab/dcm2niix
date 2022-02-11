@@ -90,6 +90,13 @@ set(DCM2NIIX_SRCS
     nii_ortho.cpp
     nii_dicom_batch.cpp)
 
+
+option(USE_JNIfTI "Build with JNIfTI support" ON)
+if(USE_JNIFTI)
+    add_definitions(-DmyEnableJNIfTI)
+    set(DCM2NIIX_SRCS ${DCM2NIIX_SRCS} cJSON.cpp base64.cpp)
+endif()
+
 if(BUILD_DCM2NIIXFSLIB)
     set(DCM2NIIXFSLIB dcm2niixfs)
     set(DCM2NIIXFSLIB_SRCS
@@ -188,6 +195,10 @@ if(BATCH_VERSION)
         nii_foreign.cpp
         nii_ortho.cpp
         nii_dicom_batch.cpp)
+
+    if(USE_JNIFTI)
+        set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} cJSON.cpp base64.cpp)
+    endif()
 
     if(USE_JPEGLS)
         add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS} ${CHARLS_SRCS})

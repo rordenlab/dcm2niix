@@ -40,6 +40,7 @@ option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
+option(USE_JNIFTI "Build with JNIFTI support" ON)
 
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
 
@@ -150,6 +151,7 @@ ExternalProject_Add(console
         -DUSE_TURBOJPEG:BOOL=${USE_TURBOJPEG}
         -DUSE_JASPER:BOOL=${USE_JASPER}
         -DUSE_JPEGLS:BOOL=${USE_JPEGLS}
+        -DUSE_JNIFTI:BOOL=${USE_JNIFTI}
         -DZLIB_IMPLEMENTATION:STRING=${ZLIB_IMPLEMENTATION}
         -DZLIB_ROOT:PATH=${ZLIB_ROOT}
          # OpenJPEG
