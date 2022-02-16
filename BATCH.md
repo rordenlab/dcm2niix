@@ -10,9 +10,9 @@ The configuration file should be in yaml format as shown in example `batch_confi
 ```yaml
 Options:
   isGz:             false
-  isFlipY:          false
+  isFlipY:          true
   isVerbose:        false
-  isCreateBIDS:     false
+  isCreateBIDS:     true
   isOnlySingleFile: false
 Files:
     -
