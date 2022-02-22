@@ -2902,7 +2902,7 @@ unsigned char *nii_iVaries(unsigned char *img, struct nifti_1_header *hdr, struc
 	free(img); //release previous image
 	if ((dti4D != NULL) && (dti4D->intenScale[0] != 0.0)) { //enhanced dataset, intensity varies across slices of a single file
 		if (dti4D->RWVScale[0] != 0.0)
-			printWarning("Intensity scale/slope using 0028,1053 and 0028,1052"); //to do: real-world values and precise values
+			printWarning("Intensity scale/slope using 0028,1053 and 0028,1052\n"); //to do: real-world values and precise values
 		int dim1to2 = hdr->dim[1] * hdr->dim[2];
 		int slice = -1;
 		//(0028,1052) SS = scale slope (2005,100E) RealWorldIntercept = (0040,9224) Real World Slope = (0040,9225)
