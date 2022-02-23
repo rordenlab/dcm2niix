@@ -1441,7 +1441,7 @@ tse3d: T2*/
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR);
 	if (d.numberOfAverages > 1.0)
 		json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages);
-	if ((d.echoNum > 1) || (d.isMultiEcho))
+	if ((d.echoNum > 1) || ((d.isMultiEcho) && (d.echoNum > 0)))
 		fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
 	if ((d.TE > 0.0) && (!d.isXRay))
 		fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0);
@@ -1871,7 +1871,7 @@ tse3d: T2*/
 		json_Float(fp, "\t\"EstimatedEffectiveEchoSpacing\": %g,\n", effectiveEchoSpacingPhil);
 		fprintf(fp, "\t\"EstimatedTotalReadoutTime\": %g,\n", totalReadoutTime);
 	}
-	if (d.effectiveEchoSpacingGE > 0.0) {
+	if ((d.effectiveEchoSpacingGE > 0.0) && (reconMatrixPE > 1) && (d.accelFactPE > 0.0)) {
 		//TotalReadoutTime = [ ceil (PE_AcquisitionMatrix / Asset_R_factor) - 1] * ESP
 		float roundFactor = 2.0;
 		if (d.isPartialFourier)
@@ -3168,11 +3168,14 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	}
 // myMultiEchoFilenameSkipEcho1 https://github.com/rordenlab/dcm2niix/issues/237
 #ifdef myMultiEchoFilenameSkipEcho1
-	if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho) && (dcm.echoNum >= 1)) { //multiple echoes saved as same series
+	if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho)) { //multiple echoes saved as same series
 #else
 	if ((isAddNamePostFixes) && (!isEchoReported) && ((dcm.isMultiEcho) || (dcm.echoNum > 1))) { //multiple echoes saved as same series
 #endif
-		sprintf(newstr, "_e%d", dcm.echoNum);
+		if ((dcm.echoNum < 1) && (dcm.TE > 0))
+			sprintf(newstr, "_e%g", dcm.TE); //issue568: Siemens XA20 might omit echo number
+		else
+			sprintf(newstr, "_e%d", dcm.echoNum);
 		strcat(outname, newstr);
 		isEchoReported = true;
 	}
@@ -7522,8 +7525,12 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	if ((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) {
 		if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
 			printMessage("Slices not stacked: X-Ray Exposure varies (exposure %g, %g; number %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
-		if ((!warnings->echoVaries) && (!d1.isXRay)) //for MRI
-			printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
+		if ((!warnings->echoVaries) && (!d1.isXRay)) {//for MRI
+			if (d1.echoNum == d2.echoNum)
+				printMessage("Slices not stacked: echo varies (TE %g, %g). No echo number (0018,0086; issue 568). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE);
+			else
+				printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
+		}
 		warnings->echoVaries = true;
 		*isMultiEcho = true;
 		return false;

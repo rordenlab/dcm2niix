@@ -781,7 +781,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.zSpacing = 0.0;
 	d.zThick = 0.0;
 	//~ d.numberOfDynamicScans = 0;
-	d.echoNum = 1;
+	d.echoNum = 0;
 	d.echoTrainLength = 0;
 	d.waterFatShift = 0.0;
 	d.groupDelay = 0.0;
@@ -2938,7 +2938,7 @@ unsigned char *nii_iVaries(unsigned char *img, struct nifti_1_header *hdr, struc
 	free(img); //release previous image
 	if ((dti4D != NULL) && (dti4D->intenScale[0] != 0.0)) { //enhanced dataset, intensity varies across slices of a single file
 		if (dti4D->RWVScale[0] != 0.0)
-			printWarning("Intensity scale/slope using 0028,1053 and 0028,1052"); //to do: real-world values and precise values
+			printWarning("Intensity scale/slope using 0028,1053 and 0028,1052\n"); //to do: real-world values and precise values
 		int dim1to2 = hdr->dim[1] * hdr->dim[2];
 		int slice = -1;
 		//(0028,1052) SS = scale slope (2005,100E) RealWorldIntercept = (0040,9224) Real World Slope = (0040,9225)
@@ -6259,6 +6259,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kMRfMRIStatusIndicationPhilips: {//fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
+			if (volumeNumber > 0) break; //issue567
 			int i = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			if (i > 0) //only if positive value, see Magdeburg_2014 sample data from dcm_qa_philips Philips MR 51.0
 				volumeNumber = i;
