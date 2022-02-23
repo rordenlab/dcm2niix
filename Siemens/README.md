@@ -78,6 +78,8 @@ For Siemens V-series systems from the B-generation onward (around 2005), the mos
 
 Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BASIL) can help process arterial spin labeling data. These tools require sequence details. These details differ between different sequences. If you create a BIDS JSON file with dcm2niix, the following tags will be created, using the same names used in the Siemens sequence PDFs. Note different sequences provide different values. The  [dcm_qa_asl](https://github.com/neurolabusc/dcm_qa_asl) repository provides example DICOM ASL datasets. See the [BIDS page for details](../BIDS/README.md).
 
+The Siemens CSA header also stores some ASL details as a base64 stream. These can be read using [gdcmdump](http://gdcm.sourceforge.net/wiki/index.php/Gdcmdump), e.g. `gdcmdump -i i001.dcm --csa-asl --print`
+
 ## Sample Datasets
 
  - [Slice timing dataset](httphttps://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Slice_timing_corrections://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage).

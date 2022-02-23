@@ -1405,27 +1405,22 @@ tse3d: T2*/
 		}
 		fprintf(fp, "\t],\n");
 	}
-	if (dti4D->frameReferenceTime[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
-		fprintf(fp, "\t\"FrameReferenceTime\": [\n");
-		for (int i = 0; i < h->dim[4]; i++) {
-			if (i != 0)
-				fprintf(fp, ",\n");
-			if (dti4D->frameReferenceTime[i] < 0)
-				break;
-			fprintf(fp, "\t\t%g", dti4D->frameReferenceTime[i] / 1000.0); // from 0018,1242 ms -> sec
+	if ((dti4D->frameReferenceTime[0] >= 0.0) && (h->dim[4] > 1)) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+		bool varies = false;
+		for (int i = 0; i < h->dim[4]; i++)
+			if (dti4D->frameReferenceTime[i] != dti4D->frameReferenceTime[0])
+				varies = true;
+		if (varies) {
+			fprintf(fp, "\t\"FrameReferenceTime\": [\n");
+			for (int i = 0; i < h->dim[4]; i++) {
+				if (i != 0)
+					fprintf(fp, ",\n");
+				if (dti4D->frameReferenceTime[i] < 0)
+					break;
+				fprintf(fp, "\t\t%g", dti4D->frameReferenceTime[i] / 1000.0); // from 0018,1242 ms -> sec
+			}
+			fprintf(fp, "\t],\n");
 		}
-		fprintf(fp, "\t],\n");
-	}
-	if (dti4D->contentTime[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
-		fprintf(fp, "\t\"ContentTimeHHMMSS\": [\n");
-		for (int i = 0; i < h->dim[4]; i++) {
-			if (i != 0)
-				fprintf(fp, ",\n");
-			if (dti4D->contentTime[i] < 0)
-				break;
-			fprintf(fp, "\t\t%09.2f", dti4D->contentTime[i]); // from 0018,1242 ms -> sec
-		}
-		fprintf(fp, "\t],\n");
 	}
 	//CT parameters
 	json_Float(fp, "\t\"ExposureTime\": %g,\n", d.exposureTimeMs / 1000.0);
@@ -6590,7 +6585,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 					if (isSamePosition(dcmList[indx0], dcmList[dcmSort[i].indx])) {
 						dti4D->frameDuration[nTR] = dcmList[dcmSort[i].indx].frameDuration;
 						dti4D->frameReferenceTime[nTR] = dcmList[dcmSort[i].indx].frameReferenceTime;
-						dti4D->contentTime[nTR] = dcmList[dcmSort[i].indx].contentTime;
 						nTR += 1;
 						if (nTR >= kMaxDTI4D)
 							break;
@@ -7525,12 +7519,8 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	if ((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) {
 		if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
 			printMessage("Slices not stacked: X-Ray Exposure varies (exposure %g, %g; number %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
-		if ((!warnings->echoVaries) && (!d1.isXRay)) {//for MRI
-			if (d1.echoNum == d2.echoNum)
-				printMessage("Slices not stacked: echo varies (TE %g, %g). No echo number (0018,0086; issue 568). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE);
-			else
-				printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
-		}
+		if ((!warnings->echoVaries) && (!d1.isXRay)) //for MRI
+			printMessage("Slices not stacked: echo varies (TE %g, %g; echo %d, %d). Use 'merge 2D slices' option to force stacking\n", d1.TE, d2.TE, d1.echoNum, d2.echoNum);
 		warnings->echoVaries = true;
 		*isMultiEcho = true;
 		return false;

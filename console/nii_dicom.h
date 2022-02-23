@@ -50,7 +50,7 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20220123"
+#define kDCMdate "v1.0.20220223"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -177,7 +177,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         int sliceOrder[kMaxSlice2D]; // [7,3,2] means the first slice on disk should be moved to 7th position
         int gradDynVol[kMaxDTI4D]; //used to parse dimensions of Philips data, e.g. file with multiple dynamics, echoes, phase+magnitude
         //int fragmentOffset[kMaxDTI4D], fragmentLength[kMaxDTI4D]; //for images with multiple compressed fragments
-        float contentTime[kMaxDTI4D], frameReferenceTime[kMaxDTI4D], frameDuration[kMaxDTI4D], decayFactor[kMaxDTI4D], volumeOnsetTime[kMaxDTI4D], triggerDelayTime[kMaxDTI4D], TE[kMaxDTI4D], RWVScale[kMaxDTI4D], RWVIntercept[kMaxDTI4D], intenScale[kMaxDTI4D], intenIntercept[kMaxDTI4D], intenScalePhilips[kMaxDTI4D];
+        float frameReferenceTime[kMaxDTI4D], frameDuration[kMaxDTI4D], decayFactor[kMaxDTI4D], volumeOnsetTime[kMaxDTI4D], triggerDelayTime[kMaxDTI4D], TE[kMaxDTI4D], RWVScale[kMaxDTI4D], RWVIntercept[kMaxDTI4D], intenScale[kMaxDTI4D], intenIntercept[kMaxDTI4D], intenScalePhilips[kMaxDTI4D];
         bool isReal[kMaxDTI4D];
         bool isImaginary[kMaxDTI4D];
         bool isPhase[kMaxDTI4D];
@@ -226,7 +226,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         float  xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4];
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
-        float contentTime, frameReferenceTime, frameDuration, ecat_isotope_halflife, ecat_dosage;
+        float frameReferenceTime, frameDuration, ecat_isotope_halflife, ecat_dosage;
         float pixelPaddingValue;  // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
         double acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, acquisitionDate, bandwidthPerPixelPhaseEncode;
         char parallelAcquisitionTechnique[kDICOMStr], radiopharmaceutical[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr],reconstructionMethod[kDICOMStr];

@@ -181,6 +181,7 @@ The following tools exploit dcm2niix
   - [Neuroinformatics Database (NiDB)](https://github.com/gbook/nidb) is designed to store, retrieve, analyze, and share neuroimaging data. It uses dcm2niix for image QA and handling some formats. 
   - [NiftyPET](https://niftypet.readthedocs.io/en/latest/install.html) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
+  - [PET2BIDS](https://github.com/openneuropet/PET2BIDS) uses dcm2niix for DICOM images.
   - [py2bids](https://github.com/Jolinda/py2bids) dcm2niix dicom to bids conversion wrapper.
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
