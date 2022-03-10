@@ -740,6 +740,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.bodyPartExamined, "");
 	strcpy(d.coilName, "");
 	strcpy(d.coilElements, "");
+	strcpy(d.pulseSequenceNameGE, "");
 	strcpy(d.radiopharmaceutical, "");
 	strcpy(d.convolutionKernel, "");
 	strcpy(d.parallelAcquisitionTechnique, "");
@@ -4303,7 +4304,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kTemporalPositionIndex 0x0020 + uint32_t(0x9128 << 16) // UL
 #define kDimensionIndexPointer 0x0020 + uint32_t(0x9165 << 16)
 //Private Group 21 as Used by Siemens:
-#define kSequenceVariant21 0x0021 + (0x105B << 16) //CS
+#define kSequenceVariant21 0x0021 + (0x105B << 16) //CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
 #define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
@@ -5596,18 +5597,17 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kPulseSequenceNameGE: { //LO 'epi'/'epiRT'
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
-			char epiStr[kDICOMStr];
-			dcmStr(lLength, &buffer[lPos], epiStr);
-			if (strstr(epiStr, "epi_pepolar") != NULL) {
+			dcmStr(lLength, &buffer[lPos], d.pulseSequenceNameGE);
+			if (strstr( d.pulseSequenceNameGE, "epi_pepolar") != NULL) {
 				d.epiVersionGE = kGE_EPI_PEPOLAR_FWD; //n.b. combine with 0019,10B3
-			} else if (strstr(epiStr, "epi2") != NULL) {
+			} else if (strstr( d.pulseSequenceNameGE, "epi2") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
-			} else if (strstr(epiStr, "epiRT") != NULL) {
+			} else if (strstr( d.pulseSequenceNameGE, "epiRT") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPIRT; //-1 = not epi, 0 = epi, 1 = epiRT
-			} else if (strstr(epiStr, "epi") != NULL) {
+			} else if (strstr( d.pulseSequenceNameGE, "epi") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI; //-1 = not epi, 0 = epi, 1 = epiRT
 			}
-			if (strcmp(epiStr, "3db0map") == 0) {
+			if (strcmp( d.pulseSequenceNameGE, "3db0map") == 0) {
 				isGEfieldMap = true; //issue501
 			}
 			break;
@@ -6240,7 +6240,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		}
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
-				break; //see GE dataset in dcm_qa_nih
+				break; //n.b. for GE 0021,105B' TaggingFlipAngle
 			//fall through...
 		case kSequenceVariant: {
 			dcmStr(lLength, &buffer[lPos], d.sequenceVariant);

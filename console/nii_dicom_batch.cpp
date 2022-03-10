@@ -1229,10 +1229,11 @@ tse3d: T2*/
 		fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n");
 		break;
 	};
-	if (d.epiVersionGE == 0)
-		fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
-	if (d.epiVersionGE == 1)
-		fprintf(fp, "\t\"PulseSequenceName\": \"epiRT\",\n");
+	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceNameGE);
+	//if (d.epiVersionGE == 0)
+	//	fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
+	//if (d.epiVersionGE == 1)
+	//	fprintf(fp, "\t\"PulseSequenceName\": \"epiRT\",\n");
 	if (d.internalepiVersionGE == 1)
 		fprintf(fp, "\t\"InternalPulseSequenceName\": \"EPI\",\n");
 	if (d.internalepiVersionGE == 2)

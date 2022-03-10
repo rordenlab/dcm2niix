@@ -86,7 +86,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -e : export as NRRD (y) or MGH (o) instead of NIfTI (y/n/o/j/b, default n)\n");
 #endif
 #ifdef mySegmentByAcq
-#define kQstr " %%q=sequence number,"
+#define kQstr " %q=sequence number,"
 #else
 #define kQstr ""
 #endif
