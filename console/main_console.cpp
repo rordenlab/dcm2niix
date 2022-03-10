@@ -82,7 +82,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
 	printf("  -e : export as NRRD (y) or MGH (o) instead of NIfTI (y/n/o, default n)\n");
 #ifdef mySegmentByAcq
-#define kQstr " %%q=sequence number,"
+#define kQstr " %q=sequence number,"
 #else
 #define kQstr ""
 #endif
