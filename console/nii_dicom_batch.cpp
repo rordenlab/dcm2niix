@@ -7197,6 +7197,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		printError("Unexpected error for image with varying echo time or intensity scaling\n");
 		return EXIT_FAILURE;
 	}
+	if ((nConvert == 1) && (dcmList[indx].manufacturer == kMANUFACTURER_PHILIPS))
+		printWarning("Philips enhanced DICOMs (hint: export as classic DICOM)\n");
 	int ret = EXIT_SUCCESS;
 	//check for repeated echoes - count unique number of echoes
 	//code below checks for multi-echoes - not required if maxNumberOfEchoes reported in PARREC
@@ -7221,10 +7223,14 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
 		dti4D->gradDynVol[i] = 0;
 	dti4D->gradDynVol[0] = 1;
+	int dim3 = dcmList[indx].xyzDim[3];//vol2slice(int vol, int dim3)
 	for (int i = 1; i < dcmList[indx].xyzDim[4]; i++) {
-		for (int j = 0; j < i; j++)
-			if (( (dcmList[indx].aslFlags != kASL_FLAG_NONE)  || isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j])) && (dti4D->intenIntercept[i] == dti4D->intenIntercept[j]) && (dti4D->intenScale[i] == dti4D->intenScale[j]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
+		int iv = (i * dim3); //intenIntercept and intenScale can vary within a volume
+		for (int j = 0; j < i; j++) {
+			int jv = (j * dim3);
+			if (( (dcmList[indx].aslFlags != kASL_FLAG_NONE)  || isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j])) && (dti4D->intenIntercept[iv] == dti4D->intenIntercept[jv]) && (dti4D->intenScale[iv] == dti4D->intenScale[jv]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
 				dti4D->gradDynVol[i] = dti4D->gradDynVol[j];
+		}
 		if (dti4D->gradDynVol[i] == 0) {
 			series++;
 			dti4D->gradDynVol[i] = series;
