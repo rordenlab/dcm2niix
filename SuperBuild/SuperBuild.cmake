@@ -5,7 +5,7 @@ if(NOT GIT_FOUND)
 endif()
 
 # Use git protocol or not
-option(USE_GIT_PROTOCOL "If behind a firewall turn this off to use http instead." ON)
+option(USE_GIT_PROTOCOL "If behind a firewall turn this off to use http instead." OFF)
 if(USE_GIT_PROTOCOL)
     set(git_protocol "git")
 else()
