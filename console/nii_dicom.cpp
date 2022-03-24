@@ -4864,7 +4864,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			d.imageBytes = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			lPos = lPos + 4;
 			lLength = d.imageBytes;
-			if (d.imageBytes > 128) {
+			if (d.imageBytes <= 0) goto skipRemap;
+			if (d.imageBytes > 24) {
 				/*if (encapsulatedDataFragments < kMaxDTI4D) {
 					dti4D->fragmentOffset[encapsulatedDataFragments] = (int)lPos + (int)lFileOffset;
 					dti4D->fragmentLength[encapsulatedDataFragments] = lLength;
@@ -4979,8 +4980,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				printMessage("remapping %04x,%04x -> %04x,%04x\n", groupElement & 65535, groupElement >> 16, remappedGroupElement & 65535, remappedGroupElement >> 16);
 			groupElement = remappedGroupElement;
 		}
-	skipRemap:
 #endif // salvageAgfa
+	skipRemap:
 		if ((lLength % 2) != 0) { //https://www.nitrc.org/forum/forum.php?thread_id=11827&forum_id=4703
 			printMessage("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535, groupElement >> 16, lLength, fname);
 			//proper to return here, but we can carry on as a hail mary
