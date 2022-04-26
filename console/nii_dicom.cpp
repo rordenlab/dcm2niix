@@ -3808,7 +3808,8 @@ void set_directionality0018_9075(struct TVolumeDiffusion *ptvd, unsigned char *i
 int set_bValGE(struct TVolumeDiffusion *ptvd, int lLength, unsigned char *inbuf) {
 	//see Series 16 https://github.com/nikadon/cc-dcm2bids-wrapper/tree/master/dicom-qa-examples/ge-mr750-dwi-b-vals#table b750 = 1000000750\8\0\0 b1500 = 1000001500\8\0\0
 	int bVal = dcmStrInt(lLength, inbuf);
-	bVal = (bVal % 10000);
+	// GE bias value for b-value https://github.com/rordenlab/dcm2niix/issues/602
+	bVal = (bVal % 1000000000);
 	ptvd->_dtiV[0] = bVal;
 	//printf("(0043,1039) '%s' Slop_int_6 -->%d \n", inbuf, bVal);
 	//dd.CSA.numDti = 1; // Always true for GE.
