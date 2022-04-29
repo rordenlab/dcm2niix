@@ -5242,7 +5242,6 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
 			break;
 		case kReferencedImageEvidenceSQ:
-			printf(">>>\n");
 			is00089092SQ = true;
 			break;
 		case kComplexImageComponent:
