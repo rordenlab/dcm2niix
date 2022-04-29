@@ -4418,6 +4418,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define kMRImageLabelType 0x2005 + (0x1429 << 16) //CS ASL LBL_CTL https://github.com/physimals/dcm_convert_phillips/
 #define kMRImageDiffVolumeNumber 0x2005+(0x1596 << 16) //IS 
+#define kOriginalAttributesSq 0x0400 + (0x0561 << 16)
 #define kSharedFunctionalGroupsSequence 0x5200 + uint32_t(0x9229 << 16) // SQ
 #define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
 #define kWaveformSq 0x5400 + (0x0100 << 16)
@@ -4444,6 +4445,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	float temporalResolutionMS = 0.0;
 	float MRImageDynamicScanBeginTime = 0.0;
 	bool is2005140FSQ = false;
+	bool is4000561SQ = false; //Original Attributes Sequence Attribute
 	bool overlayOK = true;
 	int userData12GE = 0;
 	int overlayRows = 0;
@@ -4639,6 +4641,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		}
 		if (unNest) {
 			is2005140FSQ = false;
+			is4000561SQ = false;
 			if (sqDepth < 0)
 				sqDepth = 0; //should not happen, but protect for faulty anonymization
 			//if we leave the folder MREchoSequence 0018,9114
@@ -4876,6 +4879,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
 			}
 		}
+		if (is4000561SQ)
+			groupElement = kUnused; //ignore Original Attributes
 		if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028))
 			groupElement = kUnused; //ignore icon dimensions
 #ifdef salvageAgfa					//issue435
@@ -6564,6 +6569,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
 			philMRImageDiffVolumeNumber = dcmStrInt(lLength, &buffer[lPos]);
+			break;
+		case kOriginalAttributesSq:
+			is4000561SQ = true;
 			break;
 		case kWaveformSq:
 			d.imageStart = 1; //abort!!!
