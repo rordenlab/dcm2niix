@@ -4181,6 +4181,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kInstitutionalDepartmentName 0x0008 + (0x1040 << 16)
 #define kManufacturersModelName 0x0008 + (0x1090 << 16)
 #define kDerivationDescription 0x0008 + (0x2111 << 16)
+#define kReferencedImageEvidenceSQ (uint32_t)0x0008 + (0x9092 << 16)
 #define kComplexImageComponent (uint32_t)0x0008 + (0x9208 << 16) //'0008' '9208' 'CS' 'ComplexImageComponent'
 #define kAcquisitionContrast (uint32_t)0x0008 + (0x9209 << 16) //'0008' '9209' 'CS' 'AcquisitionContrast'
 #define kPatientName 0x0010 + (0x0010 << 16)
@@ -4445,7 +4446,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	float temporalResolutionMS = 0.0;
 	float MRImageDynamicScanBeginTime = 0.0;
 	bool is2005140FSQ = false;
-	bool is4000561SQ = false; //Original Attributes Sequence Attribute
+	bool is4000561SQ = false; //Original Attributes SQ
+	bool is00089092SQ = false; //Referenced Image Evidence SQ
 	bool overlayOK = true;
 	int userData12GE = 0;
 	int overlayRows = 0;
@@ -4642,6 +4644,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		if (unNest) {
 			is2005140FSQ = false;
 			is4000561SQ = false;
+			is00089092SQ = false;
 			if (sqDepth < 0)
 				sqDepth = 0; //should not happen, but protect for faulty anonymization
 			//if we leave the folder MREchoSequence 0018,9114
@@ -4879,7 +4882,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
 			}
 		}
-		if (is4000561SQ)
+		if ((is4000561SQ) || (is00089092SQ))
 			groupElement = kUnused; //ignore Original Attributes
 		if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028))
 			groupElement = kUnused; //ignore icon dimensions
@@ -5237,6 +5240,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		case kReferringPhysicianName:
 			dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
+			break;
+		case kReferencedImageEvidenceSQ:
+			printf(">>>\n");
+			is00089092SQ = true;
 			break;
 		case kComplexImageComponent:
 			if (is2005140FSQ)
