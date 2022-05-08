@@ -4306,8 +4306,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kTemporalPositionIndex 0x0020 + uint32_t(0x9128 << 16) // UL
 #define kDimensionIndexPointer 0x0020 + uint32_t(0x9165 << 16)
 //Private Group 21 as Used by Siemens:
+#define kScanningSequenceSiemens 0x0021 + (0x105A << 16) //CS
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
+#define kCSASeriesHeaderInfoXA 0x0021 + (0x1019 << 16)
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
 #define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
@@ -4518,6 +4520,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	//float intenScalePhilips = 0.0;
 	char seriesTimeTxt[kDICOMStr] = "";
 	char acquisitionDateTimeTxt[kDICOMStr] = "";
+	char scanningSequenceSiemens[kDICOMStr] = "";
 	char imageType1st[kDICOMStr] = "";
 	bool isEncapsulatedData = false;
 	int multiBandFactor = 0;
@@ -5825,6 +5828,14 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			//printMessage("p%gs%d\n", d.accelFactPE, multiBandFactor);
 			break;
 		}
+		case kCSASeriesHeaderInfoXA:
+			if (d.manufacturer != kMANUFACTURER_SIEMENS)
+				break;
+			if ((lPos + lLength) > fileLen)
+				break;
+			d.CSA.SeriesHeader_offset = (int)lPos;
+			d.CSA.SeriesHeader_length = lLength;
+			break;
 		case kTimeAfterStart:
 			//0021,1104 see https://github.com/rordenlab/dcm2niix/issues/303
 			// 0021,1104 6@159630 DS 4.635
@@ -6251,6 +6262,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				d.isEPI = true;
 			break; //warp
 		}
+		case kScanningSequenceSiemens:
+			dcmStr(lLength, &buffer[lPos], scanningSequenceSiemens);
+			break;
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break; //n.b. for GE 0021,105B' TaggingFlipAngle
@@ -7162,6 +7176,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		printWarning("0008,0008=MOSAIC but number of slices not specified: %s\n", fname);
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.dtiV[1] < -1.0) && (d.CSA.dtiV[2] < -1.0) && (d.CSA.dtiV[3] < -1.0))
 		d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
+	if ((strlen(d.scanningSequence) < 1) && (strlen(scanningSequenceSiemens) > 1))
+		strcpy(d.scanningSequence, scanningSequenceSiemens);
 	if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
 	if ((strlen(d.protocolName) > 1) && (isMoCo))
