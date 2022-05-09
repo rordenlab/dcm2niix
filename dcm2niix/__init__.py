@@ -1,5 +1,5 @@
 """Thin wrapper around dcm2niix binary"""
-__author__ = "Casper da Costa-Luis"
+__author__ = "Casper da Costa-Luis <https://github.com/casperdcl>"
 __date__ = "2022"
 # version detector. Precedence: installed dist, git, 'UNKNOWN'
 try:
