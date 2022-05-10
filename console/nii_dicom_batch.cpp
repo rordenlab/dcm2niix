@@ -1229,7 +1229,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n");
 		break;
 	};
-	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceNameGE);
+	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
 	//if (d.epiVersionGE == 0)
 	//	fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
 	//if (d.epiVersionGE == 1)
@@ -1900,9 +1900,11 @@ tse3d: T2*/
 	// FSL definition is start of first line until start of last line.
 	// Other than the use of (n-1), the value is basically just 1.0/bandwidthPerPixelPhaseEncode.
 	// https://github.com/rordenlab/dcm2niix/issues/130
-    if ((d.manufacturer == kMANUFACTURER_UIH) && (effectiveEchoSpacing <= 0.0)) //issue225, issue531
-    	json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
-    else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0) )
+	if (d.manufacturer != kMANUFACTURER_UIH) //issue606
+		json_Float(fp, "\t\"AcquisitionDuration\": %g,\n", d.acquisitionDuration);
+	if ((d.manufacturer == kMANUFACTURER_UIH) && (effectiveEchoSpacing <= 0.0)) //issue225, issue531
+		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
+	else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0) )
 	  fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
 	json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth);
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))

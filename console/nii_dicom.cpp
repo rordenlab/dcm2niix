@@ -740,7 +740,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.bodyPartExamined, "");
 	strcpy(d.coilName, "");
 	strcpy(d.coilElements, "");
-	strcpy(d.pulseSequenceNameGE, "");
+	strcpy(d.pulseSequenceName, "");
 	strcpy(d.radiopharmaceutical, "");
 	strcpy(d.convolutionKernel, "");
 	strcpy(d.parallelAcquisitionTechnique, "");
@@ -4236,6 +4236,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kInPlanePhaseEncodingDirection 0x0018 + (0x1312 << 16) //CS
 #define kSAR 0x0018 + (0x1316 << 16) //'DS' 'SAR'
 #define kPatientOrient 0x0018 + (0x5100 << 16) //0018,5100. patient orientation - 'HFS'
+#define kPulseSequenceName 0x0018 + uint32_t(0x9005 << 16) //'SH' 'YES'/'NO'
 #define kInversionRecovery 0x0018 + uint32_t(0x9009 << 16) //'CS' 'YES'/'NO'
 #define kSpoiling 0x0018 + uint32_t(0x9016 << 16) //'CS'
 #define kEchoPlanarPulseSequence 0x0018 + uint32_t(0x9018 << 16) //'CS' 'YES'/'NO'
@@ -4308,6 +4309,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 //Private Group 21 as Used by Siemens:
 #define kScanningSequenceSiemens 0x0021 + (0x105A << 16) //CS
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS Siemens ONLY: For GE this is TaggingFlipAngle
+#define kScanOptionsSiemens 0x0021 + (0x105C << 16) //CS Siemens ONLY
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
 #define kCSASeriesHeaderInfoXA 0x0021 + (0x1019 << 16)
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
@@ -4518,6 +4520,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	}
 	char vr[2];
 	//float intenScalePhilips = 0.0;
+	char scanOptionsSiemens[kDICOMStr] = "";
 	char seriesTimeTxt[kDICOMStr] = "";
 	char acquisitionDateTimeTxt[kDICOMStr] = "";
 	char scanningSequenceSiemens[kDICOMStr] = "";
@@ -5398,6 +5401,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kPatientOrient:
 			dcmStr(lLength, &buffer[lPos], d.patientOrient);
 			break;
+		case kPulseSequenceName:
+			dcmStr(lLength, &buffer[lPos], d.pulseSequenceName);
+			break;
 		case kInversionRecovery: // CS [YES],[NO]
 			if (lLength < 2)
 				break;
@@ -5613,17 +5619,17 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kPulseSequenceNameGE: { //LO 'epi'/'epiRT'
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
-			dcmStr(lLength, &buffer[lPos], d.pulseSequenceNameGE);
-			if (strstr( d.pulseSequenceNameGE, "epi_pepolar") != NULL) {
+			dcmStr(lLength, &buffer[lPos], d.pulseSequenceName);
+			if (strstr( d.pulseSequenceName, "epi_pepolar") != NULL) {
 				d.epiVersionGE = kGE_EPI_PEPOLAR_FWD; //n.b. combine with 0019,10B3
-			} else if (strstr( d.pulseSequenceNameGE, "epi2") != NULL) {
+			} else if (strstr( d.pulseSequenceName, "epi2") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
-			} else if (strstr( d.pulseSequenceNameGE, "epiRT") != NULL) {
+			} else if (strstr( d.pulseSequenceName, "epiRT") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPIRT; //-1 = not epi, 0 = epi, 1 = epiRT
-			} else if (strstr( d.pulseSequenceNameGE, "epi") != NULL) {
+			} else if (strstr( d.pulseSequenceName, "epi") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI; //-1 = not epi, 0 = epi, 1 = epiRT
 			}
-			if (strcmp( d.pulseSequenceNameGE, "3db0map") == 0) {
+			if (strcmp( d.pulseSequenceName, "3db0map") == 0) {
 				isGEfieldMap = true; //issue501
 			}
 			break;
@@ -5810,7 +5816,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			dcmStr(lLength, &buffer[lPos], d.imageComments, true);
 			break;
 		//group 21: siemens
-		//g21
+		case kScanOptionsSiemens:
+			dcmStr(lLength, &buffer[lPos], scanOptionsSiemens);
+			break;
 		case kPATModeText: { //e.g. Siemens iPAT x2 listed as "p2"
 			char accelStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], accelStr);
@@ -7178,6 +7186,8 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		d.CSA.dtiV[0] = 0; //SiemensTrio-Syngo2004A reports B=0 images as having impossible b-vectors.
 	if ((strlen(d.scanningSequence) < 1) && (strlen(scanningSequenceSiemens) > 1))
 		strcpy(d.scanningSequence, scanningSequenceSiemens);
+	if ((strlen(d.scanOptions) < 1) && (strlen(scanOptionsSiemens) > 1))
+		strcpy(d.scanOptions, scanOptionsSiemens);
 	if ((strlen(d.protocolName) < 1) && (strlen(d.seriesDescription) > 1))
 		strcpy(d.protocolName, d.seriesDescription);
 	if ((strlen(d.protocolName) > 1) && (isMoCo))
