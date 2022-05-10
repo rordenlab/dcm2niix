@@ -4313,7 +4313,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
 #define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
-//#define kRealDwellTime 0x0021+(0x1142<< 16 )//IS
+#define kRealDwellTime 0x0021+(0x1142<< 16 )//IS
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
 #define kCoilElements 0x0021 + (0x114F << 16) //LO
 #define kAcquisitionMatrixText21 0x0021 + (0x1158 << 16) //SH
@@ -5873,10 +5873,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
 			break;
 		}
-		//case kRealDwellTime : //https://github.com/rordenlab/dcm2niix/issues/240
-		//	if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
-		//	d.dwellTime = dcmStrInt(lLength, &buffer[lPos]);
-		//	break;
+		case kRealDwellTime : //https://github.com/rordenlab/dcm2niix/issues/240
+			if (d.manufacturer != kMANUFACTURER_SIEMENS) break;
+			d.dwellTime = dcmStrInt(lLength, &buffer[lPos]);
+			break;
 		case kBandwidthPerPixelPhaseEncode21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;
