@@ -2396,9 +2396,15 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		return NULL;
 	}
 	if (!opts.isFlipY) { //!FLIP_Y&& (dcmList[indx0].CSA.mosaicSlices < 2) mosaics are always flipped in the Y direction
+		//the order of rows is flipped: flip the y-polarity
 		for (int i = 0; i < (numDti); i++) {
 			if (fabs(vx[i].V[2]) > FLT_EPSILON)
 				vx[i].V[2] = -vx[i].V[2];
+		} //for each direction
+		//less intuitively: we have now flipped the determinant, so we must swap the x-polarity
+		for (int i = 0; i < (numDti); i++) {
+			if (fabs(vx[i].V[1]) > FLT_EPSILON)
+				vx[i].V[1] = -vx[i].V[1];
 		} //for each direction
 	} //if not a mosaic
 	if (opts.isVerbose) {
