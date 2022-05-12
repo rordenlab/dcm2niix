@@ -6607,6 +6607,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		case kSpectroscopyData: //kSpectroscopyDataPointColumns
 			printMessage("Skipping Spectroscopy DICOM '%s'\n", fname);
+			d.xyzDim[1] = 0; //issue606
 			d.imageStart = (int)lPos + (int)lFileOffset;
 			break;
 		case kCSAImageHeaderInfo:

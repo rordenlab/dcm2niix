@@ -1229,7 +1229,6 @@ tse3d: T2*/
 		fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n");
 		break;
 	};
-	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
 	//if (d.epiVersionGE == 0)
 	//	fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
 	//if (d.epiVersionGE == 1)
@@ -1284,6 +1283,7 @@ tse3d: T2*/
 	json_Str(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant);
 	json_Str(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions);
 	json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName);
+	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
@@ -2125,6 +2125,8 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	if (opts.isOnlyBIDS)
 		return NULL;
 	uint64_t indx0 = dcmSort[0].indx; //first volume
+	if (isnan(dcmList[indx0].patientPosition[0]))
+		return NULL; //issue606 do not save bvec for non-spatial data (e.g. physio)
 	int numDti = dcmList[indx0].CSA.numDti;
 #ifdef USING_R
 	ImageList *images = (ImageList *)opts.imageList;
@@ -6999,8 +7001,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		//~ if (!dcmList[dcmSort[0].indx].isSlicesSpatiallySequentialPhilips)
 	//~ 	nii_reorderSlices(imgM, &hdr0, dti4D);
 	//hdr0.pixdim[3] = dxNoTilt;
-	if (hdr0.dim[3] < 2)
-		printWarning("Check that 2D images are not mirrored.\n");
+	if ((hdr0.dim[3] < 2) && (!isnan(dcmList[dcmSort[0].indx].patientPosition[0])))
+		printWarning("Check that 2D images are not mirrored.\n"); // isnan does not warn for non-spatial images (physio)
 #ifndef USING_R
 	else
 		fflush(stdout); //GUI buffers printf, display all results
