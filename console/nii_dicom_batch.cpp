@@ -2125,7 +2125,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	if (opts.isOnlyBIDS)
 		return NULL;
 	uint64_t indx0 = dcmSort[0].indx; //first volume
-	if (isnan(dcmList[indx0].patientPosition[0]))
+	if (isnan(dcmList[indx0].patientPosition[1]))
 		return NULL; //issue606 do not save bvec for non-spatial data (e.g. physio)
 	int numDti = dcmList[indx0].CSA.numDti;
 #ifdef USING_R

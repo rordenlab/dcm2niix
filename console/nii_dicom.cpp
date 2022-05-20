@@ -5242,7 +5242,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			dcmStr(lLength, &buffer[lPos], d.institutionName);
 			break;
 		case kInstitutionAddress: //VR is "ST": 1024 chars maximum
-			dcmStr(lLength, &buffer[lPos], d.institutionAddress);
+			dcmStr(lLength, &buffer[lPos], d.institutionAddress, true);
 			break;
 		case kReferringPhysicianName:
 			dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
@@ -5817,7 +5817,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		//group 21: siemens
 		case kScanOptionsSiemens:
-			dcmStr(lLength, &buffer[lPos], scanOptionsSiemens);
+			dcmStr(lLength, &buffer[lPos], scanOptionsSiemens, true);
 			break;
 		case kPATModeText: { //e.g. Siemens iPAT x2 listed as "p2"
 			char accelStr[kDICOMStr];
