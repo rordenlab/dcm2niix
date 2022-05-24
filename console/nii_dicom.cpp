@@ -4520,7 +4520,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	}
 	char vr[2];
 	//float intenScalePhilips = 0.0;
-	char scanOptionsSiemens[kDICOMStr] = "";
+	char scanOptionsSiemens[kDICOMStrLarge] = "";
 	char seriesTimeTxt[kDICOMStr] = "";
 	char acquisitionDateTimeTxt[kDICOMStr] = "";
 	char scanningSequenceSiemens[kDICOMStr] = "";
@@ -6282,7 +6282,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			break;
 		}
 		case kScanOptions:
-			dcmStr(lLength, &buffer[lPos], d.scanOptions);
+			dcmStr(lLength, &buffer[lPos], d.scanOptions, true);
 			if ((lLength > 1) && (strstr(d.scanOptions, "PFF") != NULL))
 				d.isPartialFourier = true; //e.g. GE does not populate (0018,9081)
 			break;
