@@ -214,15 +214,19 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | PulseSequenceName              |      | `epi` or `epiRT`         | D          |
 | InternalPulseSequenceName      |      | `EPI` or `EPI2`          | D          |
 | PhaseEncodingPolarityGE        |      | `Unflipped` or `Flipped` | D          |
-| ASLContrastTechnique           |      | DICOM tag 0043,10A3      | D          |
-| ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
-| LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
-| MultibandAccelerationFactor    |      | DICOM tag 0043,1083      | B          |
+| PostLabelingDelay              | s    | DICOM tag 0018,0082 (TI) | B          |
 | NumberOfPointsPerArm           |      | DICOM tag 0027,1060      | D          |
 | NumberOfArms                   |      | DICOM tag 0027,1061      | D          |
 | NumberOfExcitations            |      | DICOM tag 0027,1062      | D          |
+| ShimGradientX                  |      | DICOM tag 0043,1002      | D          |
+| ShimGradientY                  |      | DICOM tag 0043,1003      | D          |
+| ShimGradientZ                  |      | DICOM tag 0043,1004      | D          |
 | ParallelReductionFactorInPlane |      | DICOM tag 0043,1083      | B          |
-| PostLabelingDelay              | s    | DICOM tag 0018,0082 (TI) | B          |
+| PrescanReuseString             |      | DICOM tag 0043,1095      | D          |
+| MultibandAccelerationFactor    |      | DICOM tag 0043,1083      | B          |
+| ASLContrastTechnique           |      | DICOM tag 0043,10A3      | D          |
+| ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
+| LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
 
 ### Manufacturer Philips
 
@@ -321,7 +325,7 @@ Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 |------------------------------|------|---------------------|------------|
 | ReceiveCoilActiveElements    |      | DICOM tag 0021,114F | B          |
 | BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153 | D          |
-| Scanning Sequence            |      | DICOM tag 0021,105a | D          |
+| ScanningSequence             |      | DICOM tag 0021,105a | D          |
 
 ### Manufacturer UIH
 

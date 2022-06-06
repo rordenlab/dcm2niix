@@ -1471,6 +1471,11 @@ tse3d: T2*/
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
 			fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Flipped\",\n");
 	}
+	//GE specific fields
+	if (d.shimGradientX > -33333) fprintf(fp, "\t\"ShimGradientX\": %d,\n", d.shimGradientX);
+	if (d.shimGradientY > -33333) fprintf(fp, "\t\"ShimGradientY\": %d,\n", d.shimGradientY);
+	if (d.shimGradientZ > -33333) fprintf(fp, "\t\"ShimGradientZ\": %d,\n", d.shimGradientZ);
+	json_Str(fp, "\t\"PrescanReuseString\": \"%s\",\n", d.prescanReuseString);
 	float delayTimeInTR = -0.01;
 	float repetitionTimePreparation = 0.0;
 #ifdef myReadAsciiCsa

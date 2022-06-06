@@ -786,6 +786,10 @@ struct TDICOMdata clear_dicom_data() {
 	d.echoTrainLength = 0;
 	d.waterFatShift = 0.0;
 	d.groupDelay = 0.0;
+	d.shimGradientX = -33333;//impossible value for UINT16
+	d.shimGradientY = -33333;//impossible value for UINT16
+	d.shimGradientZ = -33333;//impossible value for UINT16
+	strcpy(d.prescanReuseString, "");
 	d.decayFactor = 0.0;
 	d.percentSampling = 0.0;
 	d.phaseFieldofView = 0.0;
@@ -4351,6 +4355,10 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kProcedureStepDescription 0x0040 + (0x0254 << 16)
 #define kRealWorldIntercept 0x0040 + uint32_t(0x9224 << 16) //IS dicm2nii's SlopInt_6_9
 #define kRealWorldSlope 0x0040 + uint32_t(0x9225 << 16) //IS dicm2nii's SlopInt_6_9
+#define kShimGradientX 0x0043 + (0x1002 << 16) //SS
+#define kShimGradientY 0x0043 + (0x1003 << 16) //SS
+#define kShimGradientZ 0x0043 + (0x1004 << 16) //SS
+#define kPrescanReuseString 0x0043 + (0x1095 << 16) //LO
 #define kUserDefineDataGE 0x0043 + (0x102A << 16) //OB
 #define kEffectiveEchoSpacingGE 0x0043 + (0x102C << 16) //SS
 #define kImageTypeGE 0x0043 + (0x102F << 16) //SS 0/1/2/3 for magnitude/phase/real/imaginary
@@ -6639,6 +6647,26 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			else if (isSameFloat(1.0, d.intenScale)) //give precedence to standard value
 				d.intenScale = d.RWVScale;
 			break;
+		case kShimGradientX: 
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.shimGradientX = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kShimGradientY: 
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.shimGradientY = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kShimGradientZ: 
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.shimGradientZ = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kPrescanReuseString: //LO
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			dcmStr(lLength, &buffer[lPos], d.prescanReuseString);
+			break;	
 		case kUserDefineDataGE: { //0043,102A
 			if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 128))
 				break;
