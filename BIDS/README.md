@@ -218,9 +218,9 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | NumberOfPointsPerArm           |      | DICOM tag 0027,1060      | D          |
 | NumberOfArms                   |      | DICOM tag 0027,1061      | D          |
 | NumberOfExcitations            |      | DICOM tag 0027,1062      | D          |
-| ShimGradientX                  |      | DICOM tag 0043,1002      | D          |
-| ShimGradientY                  |      | DICOM tag 0043,1003      | D          |
-| ShimGradientZ                  |      | DICOM tag 0043,1004      | D          |
+| ShimSetting[0]                 |      | DICOM tag 0043,1002      | D          |
+| ShimSetting[1]                 |      | DICOM tag 0043,1003      | D          |
+| ShimSetting[2]                 |      | DICOM tag 0043,1004      | D          |
 | ParallelReductionFactorInPlane |      | DICOM tag 0043,1083      | B          |
 | PrescanReuseString             |      | DICOM tag 0043,1095      | D          |
 | MultibandAccelerationFactor    |      | DICOM tag 0043,1083      | B          |
