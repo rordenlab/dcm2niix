@@ -1653,7 +1653,7 @@ tse3d: T2*/
 			fprintf(fp, "\t\"ArterialSpinLabelingType\": \"PASL\",\n");
 		//AcquisitionVoxelSize uses slice thickness (without gap)
 		// https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#common-metadata-fields-applicable-to-both-pcasl-and-pasl
-		if ((isPASL) || (isPCASL))
+		if (((isPASL) || (isPCASL)) && (csaAscii.interp <= 0))
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.xyzMM[1], d.xyzMM[2], d.zThick);
 		//general properties
 		if ((csaAscii.partialFourier > 0) && ((d.modality == kMODALITY_MR))) { //check MR, e.g. do not report for Siemens PET
