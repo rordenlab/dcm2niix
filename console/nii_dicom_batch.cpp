@@ -5705,6 +5705,8 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 	//modified 20190704: this function now ensures all slice times are in msec
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0))
 		return; //no slice timing
+	if (d->manufacturer == kMANUFACTURER_PHILIPS)
+		return; //Philips does not provide slice timing details in DICOM
 	if (d->manufacturer == kMANUFACTURER_GE)
 		return; //compute directly from Protocol Block
 	if (d->modality == kMODALITY_PT)

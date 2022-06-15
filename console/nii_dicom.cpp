@@ -1138,6 +1138,14 @@ double dcmFloatDouble(const size_t lByteLength, const unsigned char lBuffer[], c
 } //dcmFloatDouble()
 #endif
 
+// SS/IS datatype
+int16_t dcmIntSS(int lByteLength, unsigned char lBuffer[], bool littleEndian) { //read binary 16 or 32 bit integer
+	if (littleEndian)
+		return (uint16_t)lBuffer[0] | ((uint16_t)lBuffer[1] << 8); //shortint vs word?
+	return (uint16_t)lBuffer[1] | ((uint16_t)lBuffer[1] << 0); //shortint vs word?
+} //dcmInt()
+
+//UL/US unsigned integer
 int dcmInt(int lByteLength, unsigned char lBuffer[], bool littleEndian) { //read binary 16 or 32 bit integer
 	if (littleEndian) {
 		if (lByteLength <= 3)
@@ -4166,7 +4174,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kDirectoryRecordSequence 0x0004 + (0x1220 << 16)
 //#define kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define kImageTypeTag 0x0008 + (0x0008 << 16)
-//#define kSOPInstanceUID 0x0008+(0x0018 << 16 ) //Philips inserts time as last item, e.g. ?.?.?.YYYYMMDDHHmmSS.SSSS
+#define kSOPInstanceUID 0x0008+(0x0018 << 16 ) //Philips inserts time as last item, e.g. ?.?.?.YYYYMMDDHHmmSS.SSSS
 // not reliable https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/21
 #define kStudyDate 0x0008 + (0x0020 << 16)
 #define kAcquisitionDate 0x0008 + (0x0022 << 16)
@@ -4557,6 +4565,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	float vRLPhilips = 0.0;
 	float vAPPhilips = 0.0;
 	float vFHPhilips = 0.0;
+	double acquisitionTimePhilips = -1.0;
 	bool isPhase = false;
 	bool isReal = false;
 	bool isImaginary = false;
@@ -4667,6 +4676,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 				//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 				// d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
 				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && ((d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL))) {
+
 					isKludgeIssue533 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
@@ -4678,6 +4688,11 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 					d.dimensionIndexValues[3] = volumeNumber; //dim[6] Repeat changes slowest
 					nDimIndxVal = 4; //slice < phase < control/label < volume
 					//printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
+				}
+				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
+					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
+					printf("%d\t%f\n", inStackPositionNumber, acquisitionTimePhilips);
+					acquisitionTimePhilips = - 1.0;
 				}
 				int ndim = nDimIndxVal;
 				if (inStackPositionNumber > 0) {
@@ -5222,6 +5237,32 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 			dcmStr(lLength, &buffer[lPos], acquisitionDateTimeTxt);
 			//printMessage("%s\n",acquisitionDateTimeTxt);
 			break;
+/* Failed attempt to infer slice timing for Philips MRI
+https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
+
+		case kSOPInstanceUID: {
+			if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+			char uid[kDICOMStrLarge];
+			dcmStr(lLength, &buffer[lPos], uid, true);
+			char *timeStr = strrchr(uid, '.');
+			//nb Manufactuer (0008,0070) comes AFTER (0008,0018) SOPInstanceUID.
+			//format of (0008,0018) UI 
+			//[1.23.4.2019051416101221842
+			//       .YYYYMMDDHHmmssxxxxx
+			timeStr++; //skip "."
+			if ((strlen(timeStr) != 19) || (strlen(d.studyDate) < 8)) break;
+			bool sameDay = true;
+			for (int z = 0; z < 8; z++)
+				if (timeStr[z] != d.studyDate[z]) sameDay = false;
+			if (!sameDay)
+				printf("SOPInstanceUID does not match StudyDate: assuming study cross midnight\n");
+			char *hourStr = timeStr + 8; //Skip 8 charactersYear,Month,Day YYYYMMDD
+			acquisitionTimePhilips = (double) atof(hourStr) * (double) 0.00001;
+			//printf("   %s  %s  %f\n", timeStr, hourStr, acquisitionTimePhilips);
+
+			break;
+		}
+*/
 		case kStudyDate:
 			dcmStr(lLength, &buffer[lPos], d.studyDate);
 			if (((int)strlen(d.studyDate) > 7) && (strstr(d.studyDate, "19000101") != NULL))
@@ -6650,17 +6691,17 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 		case kShimGradientX: 
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
-			d.shimGradientX = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			d.shimGradientX = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kShimGradientY: 
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
-			d.shimGradientY = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			d.shimGradientY = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kShimGradientZ: 
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
-			d.shimGradientZ = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			d.shimGradientZ = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kPrescanReuseString: //LO
 			if (d.manufacturer != kMANUFACTURER_GE)
