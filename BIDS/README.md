@@ -326,6 +326,7 @@ Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 | ReceiveCoilActiveElements    |      | DICOM tag 0021,114F | B          |
 | BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153 | D          |
 | ScanningSequence             |      | DICOM tag 0021,105a | D          |
+| PostLabelDelay               | s    | DICOM tag 0018,9258 | D          |
 
 ### Manufacturer UIH
 

@@ -1392,7 +1392,7 @@ tse3d: T2*/
 		}
 		fprintf(fp, "\t],\n");
 	}
-	if (dti4D->frameDuration[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+	if ((h->dim[4] > 1) && (dti4D->frameDuration[0] >= 0.0)) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"FrameDuration\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
 			if (i != 0)
@@ -1778,6 +1778,9 @@ tse3d: T2*/
 			json_Float(fp, "\t\"InitialPostLabelDelay\": %g,\n", dti4D->triggerDelayTime[0] / 1000.0);
 	}
 	*/
+	//generic public ASL tags
+	if (d.postLabelDelay > 0)
+		json_Float(fp, "\t\"PostLabelDelay\": %g,\n", float(d.postLabelDelay) / 1000.0);
 	//GE ASL specific tags
 	if (d.aslFlags & kASL_FLAG_GE_CONTINUOUS)
 		fprintf(fp, "\t\"ASLContrastTechnique\": \"CONTINUOUS\",\n");
@@ -1789,7 +1792,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D continuous ASL technique\",\n");
 	if (d.durationLabelPulseGE > 0) {
 		json_Float(fp, "\t\"LabelingDuration\": %g,\n", d.durationLabelPulseGE / 1000.0);
-		json_Float(fp, "\t\"PostLabelingDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime -> Post-label delay
+		json_Float(fp, "\t\"PostLabelDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime -> Post-label delay
 		json_Float(fp, "\t\"NumberOfPointsPerArm\": %g,\n", d.numberOfPointsPerArm);
 		json_Float(fp, "\t\"NumberOfArms\": %g,\n", d.numberOfArms);
 	}

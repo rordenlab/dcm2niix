@@ -786,6 +786,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.echoTrainLength = 0;
 	d.waterFatShift = 0.0;
 	d.groupDelay = 0.0;
+	d.postLabelDelay = 0;
 	d.shimGradientX = -33333;//impossible value for UINT16
 	d.shimGradientY = -33333;//impossible value for UINT16
 	d.shimGradientZ = -33333;//impossible value for UINT16
@@ -4270,6 +4271,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kImagingFrequency2 0x0018 + uint32_t(0x9098 << 16) //FD
 #define kParallelReductionFactorOutOfPlane 0x0018 + uint32_t(0x9155 << 16) //FD
 //#define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
+#define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16) //UL
 #define kDiffusionBValueXX 0x0018 + uint32_t(0x9602 << 16) //FD
 #define kDiffusionBValueXY 0x0018 + uint32_t(0x9603 << 16) //FD
 #define kDiffusionBValueXZ 0x0018 + uint32_t(0x9604 << 16) //FD
@@ -6491,6 +6493,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//case kFrameAcquisitionDuration :
 		//	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
 		//	break;
+		case kASLPulseTrainDuration: {
+			d.postLabelDelay = dcmInt(4, &buffer[lPos], d.isLittleEndian);
+			break;
+		}
 		case kDiffusionBValueXX: {
 			if (!(d.manufacturer == kMANUFACTURER_BRUKER))
 				break; //other manufacturers provide bvec directly, rather than bmatrix
