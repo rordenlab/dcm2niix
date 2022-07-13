@@ -1381,7 +1381,7 @@ tse3d: T2*/
 		}
 		fprintf(fp, "\t],\n");
 	}
-	if (dti4D->volumeOnsetTime[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+	if ((h->dim[4] > 1) && (dti4D->volumeOnsetTime[0] >= 0.0)) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"FrameTimesStart\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
 			if (i != 0)
@@ -6430,6 +6430,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	uint64_t indxEnd = dcmSort[nConvert - 1].indx;
 	dti4D->repetitionTimeInversion = 0.0; //only set for Siemens and GE 3D T1 "TR"
 	dti4D->repetitionTimeExcitation = 0.0; //only set for Philips 3D T1 "TR"
+	if (nConvert > 0) { //issue 616: not enhanced DICOMs: infer these arrays from multiple volumes
+		dti4D->volumeOnsetTime[0] = -1;
+		dti4D->decayFactor[0] = -1;
+		dti4D->frameDuration[0] = -1;
+		dti4D->frameReferenceTime[0] = -1;
+	}
 #ifdef newTilt //see issue 254
 	if (((nConvert > 1) || (dcmList[indx0].xyzDim[3] > 1)) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) { //issue372: enhanced DICOMs can also have gantry tilt
 		dcmList[indx0].gantryTilt = computeGantryTiltPrecise(dcmList[indx0], dcmList[indxEnd], opts.isVerbose);
