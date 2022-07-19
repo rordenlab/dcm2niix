@@ -652,12 +652,14 @@ typedef struct {
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
 	float alTI[kMaxWipFree];
-	float dAveragesDouble, dThickness, ulShape, sPositionDTra, sNormalDTra;
+	float sPostLabelingDelay, ulLabelingDuration, dAveragesDouble, dThickness, ulShape, sPositionDTra, sNormalDTra;
 } TCsaAscii;
 
 void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, int csaLength, float *shimSetting, char *coilID, char *consistencyInfo, char *coilElements, char *pulseSequenceDetails, char *fmriExternalInfo, char *protocolName, char *wipMemBlock) {
 	//reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
 	// returns 0 if no value found
+	csaAscii->sPostLabelingDelay = 0.0;
+	csaAscii->ulLabelingDuration = 0.0;
 	csaAscii->TE0 = 0.0;
 	csaAscii->TE1 = 0.0;
 	csaAscii->delayTimeInTR = -0.001;
@@ -786,6 +788,10 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->TE0 = readKeyFloatNan(keyStrTE0, keyPos, csaLengthTrim);
 		char keyStrTE1[] = "alTE[1]";
 		csaAscii->TE1 = readKeyFloatNan(keyStrTE1, keyPos, csaLengthTrim);
+		char keyStrPLD[] = "sAsl.sPostLabelingDelay[0]";
+		csaAscii->sPostLabelingDelay = readKeyFloatNan(keyStrPLD, keyPos, csaLengthTrim);
+		char keyStrLD[] = "sAsl.ulLabelingDuration";
+		csaAscii->ulLabelingDuration = readKeyFloatNan(keyStrLD, keyPos, csaLengthTrim);
 		//read ALL alTI[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
 			csaAscii->alTI[k] = NAN;
@@ -1306,6 +1312,20 @@ tse3d: T2*/
 			fprintf(fp, "\", \"FIELDMAPHZ");
 		fprintf(fp, "\"],\n");
 	}
+	if (strlen(d.imageTypeText) > 0) {
+		fprintf(fp, "\t\"ImageTypeText\": [\"");
+		bool isSep = false;
+		for (size_t i = 0; i < strlen(d.imageTypeText); i++) {
+			if (d.imageTypeText[i] != '_') {
+				if (isSep)
+					fprintf(fp, "\", \"");
+				isSep = false;
+				fprintf(fp, "%c", d.imageTypeText[i]);
+			} else
+				isSep = true;
+		}
+		fprintf(fp, "\"],\n");
+	}
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	if (d.seriesNum > 0)
@@ -1518,6 +1538,11 @@ tse3d: T2*/
 		bool isPCASL = false;
 		bool isPASL = false;
 		//ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
+		//ASL specific tags - 2D PASL Siemens Product XA30, n.b pasl/casl/pcasl set using 0018,9250
+		if (strstr(pulseSequenceDetails, "ep2d_asl")) {
+			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", csaAscii.ulLabelingDuration * (1.0 / 1000000.0)); //usec->sec
+			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.sPostLabelingDelay * (1.0 / 1000000.0)); //usec -> sec
+		}
 		if ((strstr(pulseSequenceDetails, "ep2d_pcasl")) || (strstr(pulseSequenceDetails, "ep2d_pcasl_UI_PHC"))) {
 			isPCASL = true;
 			repetitionTimePreparation = d.TR;
@@ -1781,15 +1806,13 @@ tse3d: T2*/
 	//generic public ASL tags
 	if (d.postLabelDelay > 0)
 		json_Float(fp, "\t\"PostLabelDelay\": %g,\n", float(d.postLabelDelay) / 1000.0);
-	//GE ASL specific tags
-	if (d.aslFlags & kASL_FLAG_GE_CONTINUOUS)
-		fprintf(fp, "\t\"ASLContrastTechnique\": \"CONTINUOUS\",\n");
-	if (d.aslFlags & kASL_FLAG_GE_PSEUDOCONTINUOUS)
-		fprintf(fp, "\t\"ASLContrastTechnique\": \"PSEUDOCONTINUOUS\",\n");
-	if (d.aslFlags & kASL_FLAG_GE_3DPCASL)
-		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D pulsed continuous ASL technique\",\n");
-	if (d.aslFlags & kASL_FLAG_GE_3DCASL)
-		fprintf(fp, "\t\"ASLLabelingTechnique\": \"3D continuous ASL technique\",\n");
+	//ASL BIDS tags
+	if ((d.aslFlags & kASL_FLAG_GE_CONTINUOUS) || (d.aslFlags & kASL_FLAG_GE_3DCASL))
+		fprintf(fp, "\t\"ArterialSpinLabelingType\": \"CASL\",\n");
+	if ((d.aslFlags & kASL_FLAG_GE_PSEUDOCONTINUOUS) || (d.aslFlags &  kASL_FLAG_GE_3DPCASL))
+		fprintf(fp, "\t\"ArterialSpinLabelingType\": \"PCASL\",\n");
+	if (d.aslFlags & kASL_FLAG_GE_PULSED)
+		fprintf(fp, "\t\"ArterialSpinLabelingType\": \"PASL\",\n");
 	if (d.durationLabelPulseGE > 0) {
 		json_Float(fp, "\t\"LabelingDuration\": %g,\n", d.durationLabelPulseGE / 1000.0);
 		json_Float(fp, "\t\"PostLabelDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime -> Post-label delay

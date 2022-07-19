@@ -712,6 +712,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.patientID, "");
 	strcpy(d.accessionNumber, "");
 	strcpy(d.imageType, "");
+	strcpy(d.imageTypeText, "");
 	strcpy(d.imageComments, "");
 	strcpy(d.imageBaseName, "");
 	strcpy(d.phaseEncodingDirectionDisplayedUIH, "");
@@ -4271,6 +4272,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kImagingFrequency2 0x0018 + uint32_t(0x9098 << 16) //FD
 #define kParallelReductionFactorOutOfPlane 0x0018 + uint32_t(0x9155 << 16) //FD
 //#define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
+#define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) //CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16) //UL
 #define kDiffusionBValueXX 0x0018 + uint32_t(0x9602 << 16) //FD
 #define kDiffusionBValueXY 0x0018 + uint32_t(0x9603 << 16) //FD
@@ -4333,6 +4335,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
 #define kCoilElements 0x0021 + (0x114F << 16) //LO
 #define kAcquisitionMatrixText21 0x0021 + (0x1158 << 16) //SH
+#define kImageTypeText 0x0021 + (0x1175 << 16) //CS
 //Private Group 21 as used by GE:
 #define kLocationsInAcquisitionGE 0x0021 + (0x104F << 16) //SS 'LocationsInAcquisitionGE'
 #define kRTIA_timer 0x0021 + (0x105E << 16) //DS
@@ -6206,6 +6209,18 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.xyzMM[3] = dcmStrFloat(lLength, &buffer[lPos]);
 			d.zThick = d.xyzMM[3];
 			break;
+		case kImageTypeText: {
+			if (d.manufacturer != kMANUFACTURER_SIEMENS)
+				break;
+			dcmStr(lLength, &buffer[lPos], d.imageTypeText);
+			int slen = (int)strlen(d.imageTypeText);
+			if (slen > 1) {
+				for (int i = 0; i < slen; i++)
+					if (d.imageTypeText[i] == '\\')
+						d.imageTypeText[i] = '_';
+			}
+			break;
+		}
 		case kAcquisitionMatrixText21:
 			//fall through to kAcquisitionMatrixText
 		case kAcquisitionMatrixText: {
@@ -6493,6 +6508,18 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//case kFrameAcquisitionDuration :
 		//	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
 		//	break;
+		case kArterialSpinLabelingContrast: { //CS
+			char st[kDICOMStr];
+			//aslFlags
+			dcmStr(lLength, &buffer[lPos], st);
+			if (strstr(st, "PSEUDOCONTINUOUS") != NULL)
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_PSEUDOCONTINUOUS);
+			else if (strstr(st, "CONTINUOUS") != NULL)
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_CONTINUOUS);
+			else if (strstr(st, "PULSED") != NULL)
+				d.aslFlags = (d.aslFlags | kASL_FLAG_GE_PULSED);
+			break;
+		}
 		case kASLPulseTrainDuration: {
 			d.postLabelDelay = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			break;
