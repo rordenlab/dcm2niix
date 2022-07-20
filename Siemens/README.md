@@ -80,6 +80,10 @@ Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL
 
 The Siemens CSA header also stores some ASL details as a base64 stream. These can be read using [gdcmdump](http://gdcm.sourceforge.net/wiki/index.php/Gdcmdump), e.g. `gdcmdump -i i001.dcm --csa-asl --print`
 
+## Nonlinear Gradient Correction
+
+dcm2niix does not populate the recommended [NonlinearGradientCorrection](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#sequence-specifics) BIDS tag. dcm2niix does save the DICOM  [Image Type (0008,0008)](https://dicom.innolitics.com/ciods/rt-dose/general-image/00080008) tag as `ImageType`, and recent versions will also export a private tag (0021,1175) as `ImageTypeText`. The inclusion of `DIS2D` or `DIS3D` in these one of these fields (the former prior to XA30, the latter with XA30 and later) is consistent with `NonlinearGradientCorrection` being `True`. See [issue 597](https://github.com/rordenlab/dcm2niix/issues/597) for further details.
+
 ## Sample Datasets
 
  - [Slice timing dataset](httphttps://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Slice_timing_corrections://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage).
