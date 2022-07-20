@@ -35,6 +35,7 @@ The Defined By column uses:
 
 The Unit column uses:
 
+- b : boolean
 - deg : degrees
 - f : fraction
 - kg : Kilogram
@@ -316,17 +317,19 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | DwellTime                      |                                                 | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | BandwidthPerPixelPhaseEncode   | Hz                                              | DICOM tag 0019,1028                                                                                                                                                                                                                                                                                                                                                                                    | D          |
 | ImageOrientationText           |                                                 | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
+| NonlinearGradientCorrection    | b                                               | DICOM tag 0008,0008                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 
 ### Manufacturer Siemens Magnetic Resonance Imaging (XA)
 
 Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 
-| Field                        | Unit | Comments            | Defined By |
-|------------------------------|------|---------------------|------------|
-| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F | B          |
-| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153 | D          |
-| ScanningSequence             |      | DICOM tag 0021,105a | D          |
-| PostLabelDelay               | s    | DICOM tag 0018,9258 | D          |
+| Field                        | Unit | Comments               | Defined By |
+|------------------------------|------|------------------------|------------|
+| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F    | B          |
+| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153    | D          |
+| ScanningSequence             |      | DICOM tag 0021,105a    | D          |
+| PostLabelDelay               | s    | DICOM tag 0018,9258    | D          |
+| NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175 | B          |
 
 ### Manufacturer UIH
 

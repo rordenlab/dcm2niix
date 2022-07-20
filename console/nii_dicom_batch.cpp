@@ -1326,6 +1326,13 @@ tse3d: T2*/
 		}
 		fprintf(fp, "\"],\n");
 	}
+	if ((strstr(d.imageTypeText, "_DIS2D") != NULL) || (strstr(d.imageType, "_DIS2D") != NULL) ||
+		(strstr(d.imageTypeText, "_DIS3D") != NULL) || (strstr(d.imageType, "_DIS3D") != NULL))
+			fprintf(fp, "\t\"NonlinearGradientCorrection\": true,\n");
+	if ((strstr(d.imageTypeText, "_ND") != NULL) || (strstr(d.imageType, "_ND") != NULL) ||
+		(strstr(d.imageTypeText, "_ND") != NULL) || (strstr(d.imageType, "_ND") != NULL))
+			fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
+
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	if (d.seriesNum > 0)
