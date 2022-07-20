@@ -1469,7 +1469,7 @@ tse3d: T2*/
 	if ((d.TE > 0.0) && (!d.isXRay)) {
 		if ((d.manufacturer == kMANUFACTURER_GE) && (d.isRealIsPhaseMapHz) && (d.velocityEncodeScaleGE < 0))  { //issue617, only set for GE fieldmaphz
 			json_Float(fp, "\t\"EchoTime1\": %g,\n", d.TE / 1000.0 );
-			json_Float(fp, "\t\"EchoTime2\": %g,\n", d.TE / 1000.0 - 1/(2 * M_PI * d.velocityEncodeScaleGE));
+			json_Float(fp, "\t\"EchoTime2\": %g,\n", d.TE / 1000.0 - 1.0/(2.0 * M_PI * d.velocityEncodeScaleGE));
 			// delta TE = -1/(2 * pi * velocityEncodeScaleGE)
 		}
 		else
