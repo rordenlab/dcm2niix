@@ -1466,8 +1466,15 @@ tse3d: T2*/
 		json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages);
 	if ((d.echoNum > 1) || ((d.isMultiEcho) && (d.echoNum > 0)))
 		fprintf(fp, "\t\"EchoNumber\": %d,\n", d.echoNum);
-	if ((d.TE > 0.0) && (!d.isXRay))
-		fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0);
+	if ((d.TE > 0.0) && (!d.isXRay)) {
+		if ((d.manufacturer == kMANUFACTURER_GE) && (d.isRealIsPhaseMapHz) && (d.velocityEncodeScaleGE < 0))  { //issue617, only set for GE fieldmaphz
+			json_Float(fp, "\t\"EchoTime1\": %g,\n", d.TE / 1000.0 );
+			json_Float(fp, "\t\"EchoTime2\": %g,\n", d.TE / 1000.0 - 1.0/(2.0 * M_PI * d.velocityEncodeScaleGE));
+			// delta TE = -1/(2 * pi * velocityEncodeScaleGE)
+		}
+		else
+			fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0);
+	}	
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	if (dti4D->frameDuration[0] < 0.0) //e.g. PET scans can have variable TR
 		json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0);

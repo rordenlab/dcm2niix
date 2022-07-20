@@ -861,6 +861,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isLittleEndian = true; //DICOM initially always little endian
 	d.converted2NII = 0;
 	d.numberOfDiffusionDirectionGE = -1;
+	d.velocityEncodeScaleGE = 1.0;
 	d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNKNOWN;
 	d.rtia_timerGE = -1.0;
 	d.rawDataRunNumber = -1;
@@ -4301,6 +4302,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kDiffusionDirectionGEY 0x0019 + (0x10BC << 16) //DS frequency diffusion direction
 #define kDiffusionDirectionGEZ 0x0019 + (0x10BD << 16) //DS slice diffusion direction
 #define kNumberOfDiffusionDirectionGE 0x0019 + (0x10E0 << 16) ///DS NumberOfDiffusionDirection:UserData24
+#define kVelocityEncodeScaleGE 0x0019 + (0x10E2 << 16) ///DS Velocity Encode Scale
 #define kStudyID 0x0020 + (0x0010 << 16)
 #define kSeriesNum 0x0020 + (0x0011 << 16)
 #define kAcquNum 0x0020 + (0x0012 << 16)
@@ -5631,6 +5633,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			float f = dcmStrFloat(lLength, &buffer[lPos]);
 			d.numberOfDiffusionDirectionGE = round(f);
+			break;
+		}
+		case kVelocityEncodeScaleGE: {
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.velocityEncodeScaleGE = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
 		}
 		case kLastScanLoc:
