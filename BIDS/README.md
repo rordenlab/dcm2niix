@@ -35,6 +35,7 @@ The Defined By column uses:
 
 The Unit column uses:
 
+- b : boolean
 - deg : degrees
 - f : fraction
 - kg : Kilogram
@@ -214,15 +215,19 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | PulseSequenceName              |      | `epi` or `epiRT`         | D          |
 | InternalPulseSequenceName      |      | `EPI` or `EPI2`          | D          |
 | PhaseEncodingPolarityGE        |      | `Unflipped` or `Flipped` | D          |
-| ASLContrastTechnique           |      | DICOM tag 0043,10A3      | D          |
-| ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
-| LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
-| MultibandAccelerationFactor    |      | DICOM tag 0043,1083      | B          |
+| PostLabelingDelay              | s    | DICOM tag 0018,0082 (TI) | B          |
 | NumberOfPointsPerArm           |      | DICOM tag 0027,1060      | D          |
 | NumberOfArms                   |      | DICOM tag 0027,1061      | D          |
 | NumberOfExcitations            |      | DICOM tag 0027,1062      | D          |
+| ShimSetting[0]                 |      | DICOM tag 0043,1002      | D          |
+| ShimSetting[1]                 |      | DICOM tag 0043,1003      | D          |
+| ShimSetting[2]                 |      | DICOM tag 0043,1004      | D          |
 | ParallelReductionFactorInPlane |      | DICOM tag 0043,1083      | B          |
-| PostLabelingDelay              | s    | DICOM tag 0018,0082 (TI) | B          |
+| PrescanReuseString             |      | DICOM tag 0043,1095      | D          |
+| MultibandAccelerationFactor    |      | DICOM tag 0043,1083      | B          |
+| ASLContrastTechnique           |      | DICOM tag 0043,10A3      | D          |
+| ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
+| LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
 
 ### Manufacturer Philips
 
@@ -312,15 +317,19 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | DwellTime                      |                                                 | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | BandwidthPerPixelPhaseEncode   | Hz                                              | DICOM tag 0019,1028                                                                                                                                                                                                                                                                                                                                                                                    | D          |
 | ImageOrientationText           |                                                 | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
+| NonlinearGradientCorrection    | b                                               | DICOM tag 0008,0008                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 
 ### Manufacturer Siemens Magnetic Resonance Imaging (XA)
 
 Fields specific to Siemens XA-series MRI systems (Sola, Vida).
 
-| Field                        | Unit | Comments            | Defined By |
-|------------------------------|------|---------------------|------------|
-| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F | B          |
-| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153 | D          |
+| Field                        | Unit | Comments               | Defined By |
+|------------------------------|------|------------------------|------------|
+| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F    | B          |
+| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153    | D          |
+| ScanningSequence             |      | DICOM tag 0021,105a    | D          |
+| PostLabelDelay               | s    | DICOM tag 0018,9258    | D          |
+| NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175 | B          |
 
 ### Manufacturer UIH
 

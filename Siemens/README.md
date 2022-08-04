@@ -10,11 +10,12 @@ The DICOM images exported by the X-series is radically different than the V-seri
 
 X-series users are strongly encouraged to export data using the "Enhanced" format and to not use any of the "Anonymize" features on the console. The consequences of these options is discussed in detail in [issue 236](https://github.com/rordenlab/dcm2niix/issues/236). Siemens notes `We highly recommend that the Enhanced DICOM format be used. This is because this format retains far more information in the header`. Failure to export data in this format has led to catastrophic data loss for numerous users (for publicly reported details see issues [203](https://github.com/rordenlab/dcm2niix/issues/203), [236](https://github.com/rordenlab/dcm2niix/issues/236), [240](https://github.com/rordenlab/dcm2niix/issues/240), [274](https://github.com/rordenlab/dcm2niix/issues/274), [303](https://github.com/rordenlab/dcm2niix/issues/303), [370](https://github.com/rordenlab/dcm2niix/issues/370), [394](https://github.com/rordenlab/dcm2niix/issues/394)). This reflects limitations of the DICOM data, not dcm2niix.
 
-While X-series consoles allow users to export data as enhanced, mosaic or classic 2D formats, choosing an option other than enhanced dramatically degrades the meta data. Note that the Siemens considers mosaic images `secondary capture` data intended for quality assurance only. The mosaic scans lack several "Type 1" DICOM properties, necessarily limiting conversion. The non-mosaic 2D enhanced DICOMs are compact and efficient, but appear to have limited details relative to the enhanced output. This is unfortunate, as for the V-series the mosaic format has major benefits, so users may be in the habit of preferring mosaic export. Finally, each of the formats (enhanced, mosaic, classic) can be exported as anonymized. The Siemens console anonymization of current XA10A (Fall 2018) strips many useful tags. Siemens suggests `the use an offline/in-house anonymization software instead`. Another limitation of the current X-series format is that it retains no versioning details beyond the minor version for software and hardware stepping (e.g. versions are merely XA10 or XA11 with no details for service packs). If you use a X-series, you are strongly encouraged to manually log every hardware or software upgrade to allow future analyses to identify and regress out any effects of these modifications.  Since the X-series format does not have a CSA header, dcm2niix will attempt to use the new private DICOM tags to populate the BIDS file. These tags are described in [issue 240](https://github.com/rordenlab/dcm2niix/issues/240).
+While X-series consoles allow users to export data as enhanced, mosaic or classic 2D formats, choosing an option other than enhanced dramatically degrades the meta data. Note that the Siemens considers mosaic images `secondary capture` data intended for quality assurance only. The mosaic scans lack several "Type 1" DICOM properties, necessarily limiting conversion. This is unfortunate, as for the V-series the mosaic format has major benefits, so users may be in the habit of preferring mosaic export. The non-mosaic 2D enhanced DICOMs are compact and efficient, but appear to have limited details relative to the previous generation V-series with its rich CSA header. Finally, each of the formats (enhanced, mosaic, classic) can be exported as anonymized. The Siemens console anonymization of current XA10A (Fall 2018) strips many useful tags. Siemens suggests `the use an offline/in-house anonymization software instead`. Another limitation of the current X-series format is that it retains no versioning details beyond the minor version for software and hardware stepping (e.g. versions are merely XA10 or XA11 with no details for service packs). If you use a X-series, you are strongly encouraged to manually log every hardware or software upgrade to allow future analyses to identify and regress out any effects of these modifications.  Since the X-series format does not have a CSA header, dcm2niix will attempt to use the new private DICOM tags to populate the BIDS file. These tags are described in [issue 240](https://github.com/rordenlab/dcm2niix/issues/240).
 
 When creating enhanced DICOMs diffusion information is provided in public tags. Based on a limited sample, it seems that classic DICOMs do not store diffusion data for XA10, and use private tags for [XA11](https://www.nitrc.org/forum/forum.php?thread_id=10013&forum_id=4703).
 
 Public Tags
+
 ```
 (0018,9089) FD -0.20\-0.51\-0.83 #DiffusionGradientOrientation
 (0018,9087) FD 1000 #DiffusionBValue
@@ -22,6 +23,7 @@ Public Tags
 ```
 
 Private Tags
+
 ```
 (0019,100c) IS 1000 #SiemensDiffusionBValue
 (0019,100e) FD -0.20\-0.51\-0.83 #SiemensDiffusionGradientOrientation
@@ -29,6 +31,24 @@ Private Tags
 ```
 
 In theory, the public DICOM tag 'Frame Acquisition Date Time' (0018,9074) and the private tag 'Time After Start' (0021,1104) should each allow one to infer slice timing. The tag 0018,9074 uses the DT (date time) format, for example "20190621095520.330000" providing the YYYYYMMDDHHMMSS. Unfortunately, the Siemens de-identification routines will scramble these values, as time of data could be considered an identifiable attribute. The tag 0021,1104 is saved in DS (decimal string) format, for example "4.635" reporting the number of seconds since acquisition started. Be aware that some [Siemens Vida multi-band sequences](https://github.com/rordenlab/dcm2niix/issues/303) appear to fill these tags with the single-band times rather than the actual acquisition times. Therefore, neither of these two methods is perfectly reliable in determining slice timing.
+
+The private `ICE_Dims` (0021,1106) tag can prove useful for parsing data. The list below is specific to XA scans: [SPM12](https://github.com/spm/spm12/blob/3085dac00ac804adb190a7e82c6ef11866c8af02/spm_dicom_convert.m#L268) suggests that this tag used to contain fewer elements. dcm2niix will use 0021,1106 to deduce echo number for [XA20 sequences that do not generate the public Echo Number (0018,0086)](https://github.com/rordenlab/dcm2niix/issues/568) tag.  For example, consider an image of the 4th echo and 160th slice:
+
+```
+(0021,1106) LO [X_4_1_1_1_1_160_1_1_1_1_1_277] #  ICE_Dims
+```
+
+1. eco = echo number 
+2. phs = phase encode
+3. set = 
+4. rep = repetition
+5. seg = segment 
+6. par = partition 
+7. slc = slice
+8. idA = optional index 
+9. idB = optional index 
+10. idC = optional index 
+11. avg = average number
 
 ## CSA Header
 
@@ -57,6 +77,12 @@ For Siemens V-series systems from the B-generation onward (around 2005), the mos
 ## Arterial Spin Labeling
 
 Tools like [ExploreASL](https://sites.google.com/view/exploreasl) and [FSL BASIL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BASIL) can help process arterial spin labeling data. These tools require sequence details. These details differ between different sequences. If you create a BIDS JSON file with dcm2niix, the following tags will be created, using the same names used in the Siemens sequence PDFs. Note different sequences provide different values. The  [dcm_qa_asl](https://github.com/neurolabusc/dcm_qa_asl) repository provides example DICOM ASL datasets. See the [BIDS page for details](../BIDS/README.md).
+
+The Siemens CSA header also stores some ASL details as a base64 stream. These can be read using [gdcmdump](http://gdcm.sourceforge.net/wiki/index.php/Gdcmdump), e.g. `gdcmdump -i i001.dcm --csa-asl --print`
+
+## Nonlinear Gradient Correction
+
+dcm2niix does not populate the recommended [NonlinearGradientCorrection](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#sequence-specifics) BIDS tag. dcm2niix does save the DICOM  [Image Type (0008,0008)](https://dicom.innolitics.com/ciods/rt-dose/general-image/00080008) tag as `ImageType`, and recent versions will also export a private tag (0021,1175) as `ImageTypeText`. The inclusion of `DIS2D` or `DIS3D` in these one of these fields (the former prior to XA30, the latter with XA30 and later) is consistent with `NonlinearGradientCorrection` being `true` while `ND` suggests `false`. See [issue 597](https://github.com/rordenlab/dcm2niix/issues/597) for further details.
 
 ## Sample Datasets
 

@@ -41,9 +41,9 @@ The configuration file should be in yaml format as shown in example *batch_confi
 
     Options:
       isGz:             false
-      isFlipY:          true
+      isFlipY:          false
       isVerbose:        false
-      isCreateBIDS:     true
+      isCreateBIDS:     false
       isOnlySingleFile: false
     Files:
         -

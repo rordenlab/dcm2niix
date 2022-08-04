@@ -49,9 +49,9 @@ void showHelp(const char * argv[]) {
 	printf("### START YAML FILE ###\n");
 	printf("Options:\n");
 	printf("   isGz:             false\n");
-	printf("   isFlipY:          true\n");
+	printf("   isFlipY:          false\n");
 	printf("   isVerbose:        false\n");
-	printf("   isCreateBIDS:     true\n");
+	printf("   isCreateBIDS:     false\n");
 	printf("   isOnlySingleFile: false\n");
 	printf("Files:\n");
 	printf("   -\n");

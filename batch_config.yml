@@ -1,8 +1,8 @@
 Options:
   isGz:             false
-  isFlipY:          true
+  isFlipY:          false
   isVerbose:        false
-  isCreateBIDS:     true
+  isCreateBIDS:     false
   isOnlySingleFile: false
 
 Files:

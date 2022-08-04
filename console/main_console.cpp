@@ -80,9 +80,13 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
 	printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters e.g. '-c first_visit')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
-	printf("  -e : export as NRRD (y) or MGH (o) instead of NIfTI (y/n/o, default n)\n");
+#ifdef myEnableJNIfTI
+	printf("  -e : export as NRRD (y) or MGH (o) or JSON/JNIfTI (j) or BJNIfTI (b) instead of NIfTI (y/n/o/j/b, default n)\n");
+#else
+	printf("  -e : export as NRRD (y) or MGH (o) instead of NIfTI (y/n/o/j/b, default n)\n");
+#endif
 #ifdef mySegmentByAcq
-#define kQstr " %%q=sequence number,"
+#define kQstr " %q=sequence number,"
 #else
 #define kQstr ""
 #endif
@@ -174,7 +178,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 } //showHelp()
 
 int invalidParam(int i, const char *argv[]) {
-	if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == 'o') || (argv[i][0] == 'O') || (argv[i][0] == 'h') || (argv[i][0] == 'H') || (argv[i][0] == 'i') || (argv[i][0] == 'I') || (argv[i][0] == '0') || (argv[i][0] == '1') || (argv[i][0] == '2') || (argv[i][0] == '3'))
+	if (strchr("yYnNoOhHiIjJBb01234",argv[i][0]))
 		return 0;
 
 	//if (argv[i][0] != '-') return 0;
@@ -359,6 +363,16 @@ int main(int argc, const char *argv[]) {
 					opts.saveFormat = kSaveFormatNRRD;
 				if ((argv[i][0] == 'o') || (argv[i][0] == 'O') || (argv[i][0] == '2'))
 					opts.saveFormat = kSaveFormatMGH;
+				if ((argv[i][0] == 'j') || (argv[i][0] == 'J') || (argv[i][0] == '3'))
+					opts.saveFormat = kSaveFormatJNII;
+				if ((argv[i][0] == 'b') || (argv[i][0] == 'B') || (argv[i][0] == '4'))
+					opts.saveFormat = kSaveFormatBNII;
+				#ifndef myEnableJNIfTI
+				if ((opts.saveFormat == kSaveFormatJNII) || (opts.saveFormat == kSaveFormatBNII)) {
+					printf("Recompile for JNIfTI support.\n");
+					return EXIT_SUCCESS;
+				}
+				#endif
 			} else if ((argv[i][1] == 'g') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))

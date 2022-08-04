@@ -5,7 +5,7 @@ if(NOT GIT_FOUND)
 endif()
 
 # Use git protocol or not
-option(USE_GIT_PROTOCOL "If behind a firewall turn this off to use http instead." ON)
+option(USE_GIT_PROTOCOL "If behind a firewall turn this off to use http instead." OFF)
 if(USE_GIT_PROTOCOL)
     set(git_protocol "git")
 else()
@@ -40,8 +40,20 @@ option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
+option(USE_JNIFTI "Build with JNIFTI support" ON)
 
 option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
+
+option(BUILD_DCM2NIIXFSLIB "Build libdcm2niixfs.a" OFF)
+
+if(BUILD_DCM2NIIXFSLIB)
+    if(USE_OPENJPEG OR USE_TURBOJPEG OR USE_JASPER)
+        message("-- Set BUILD_DCM2NIIXFSLIB to OFF since USE_TURBOJPEG/USE_JASPER/USE_OPENJPEG is ON.")
+        set(BUILD_DCM2NIIXFSLIB OFF CACHE BOOL "Build libdcm2niixfs.a" FORCE)
+    else()
+        message("-- Build libdcm2niixfs.a: ${BUILD_DCM2NIIXFSLIB}")
+    endif()
+endif()
 
 include(ExternalProject)
 
@@ -139,6 +151,7 @@ ExternalProject_Add(console
         -DUSE_TURBOJPEG:BOOL=${USE_TURBOJPEG}
         -DUSE_JASPER:BOOL=${USE_JASPER}
         -DUSE_JPEGLS:BOOL=${USE_JPEGLS}
+        -DUSE_JNIFTI:BOOL=${USE_JNIFTI}
         -DZLIB_IMPLEMENTATION:STRING=${ZLIB_IMPLEMENTATION}
         -DZLIB_ROOT:PATH=${ZLIB_ROOT}
          # OpenJPEG
@@ -147,6 +160,8 @@ ExternalProject_Add(console
         # yaml-cpp
         -DBATCH_VERSION:BOOL=${BATCH_VERSION}
         -DYAML-CPP_DIR:PATH=${YAML-CPP_DIR}
+        # Build libdcm2niixfs.a
+        -DBUILD_DCM2NIIXFSLIB:BOOL=${BUILD_DCM2NIIXFSLIB}
 )
 
 install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin

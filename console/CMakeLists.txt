@@ -66,6 +66,20 @@ endif()
 
 set(PROGRAMS dcm2niix)
 
+option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
+option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
+option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
+option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
+
+option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
+
+option(BUILD_DCM2NIIXFSLIB "Build libdcm2niixfs.a" OFF)
+
+if(USE_OPENJPEG OR USE_TURBOJPEG OR USE_JASPER)
+    message("-- Set BUILD_DCM2NIIXFSLIB to OFF since USE_TURBOJPEG/USE_JASPER/USE_OPENJPEG is ON.")
+    set(BUILD_DCM2NIIXFSLIB OFF CACHE BOOL "Build libdcm2niixfs.a" FORCE)
+endif()
+
 set(DCM2NIIX_SRCS
     main_console.cpp
     nii_dicom.cpp
@@ -76,7 +90,26 @@ set(DCM2NIIX_SRCS
     nii_ortho.cpp
     nii_dicom_batch.cpp)
 
-option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
+
+option(USE_JNIfTI "Build with JNIfTI support" ON)
+if(USE_JNIFTI)
+    add_definitions(-DmyEnableJNIfTI)
+    set(DCM2NIIX_SRCS ${DCM2NIIX_SRCS} cJSON.cpp base64.cpp)
+endif()
+
+if(BUILD_DCM2NIIXFSLIB)
+    set(DCM2NIIXFSLIB dcm2niixfs)
+    set(DCM2NIIXFSLIB_SRCS
+        dcm2niix_fswrapper.cpp
+        nii_dicom.cpp
+        jpg_0XC3.cpp
+        ujpeg.cpp
+        nifti1_io_core.cpp
+        nii_foreign.cpp
+        nii_ortho.cpp
+        nii_dicom_batch.cpp)
+endif()
+
 if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
     if(MSVC)
@@ -91,8 +124,16 @@ if(USE_JPEGLS)
         charls/jpegstreamwriter.cpp
         charls/jpegstreamreader.cpp)
     add_executable(dcm2niix ${DCM2NIIX_SRCS} ${CHARLS_SRCS})
+
+    if(BUILD_DCM2NIIXFSLIB)
+        add_library(${DCM2NIIXFSLIB} STATIC ${DCM2NIIXFSLIB_SRCS} ${CHARLS_SRCS})
+    endif()
 else()
     add_executable(dcm2niix ${DCM2NIIX_SRCS})
+
+    if(BUILD_DCM2NIIXFSLIB)
+        add_library(${DCM2NIIXFSLIB} STATIC ${DCM2NIIXFSLIB_SRCS})
+    endif()
 endif()
 
 set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
@@ -110,7 +151,6 @@ if(NOT ${ZLIB_IMPLEMENTATION} STREQUAL "Miniz")
     target_link_libraries(dcm2niix ${ZLIB_LIBRARIES})
 endif()
 
-option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 if(USE_TURBOJPEG)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(TURBOJPEG REQUIRED libturbojpeg)
@@ -119,7 +159,6 @@ if(USE_TURBOJPEG)
     target_link_libraries(dcm2niix ${TURBOJPEG_LIBRARIES})
 endif()
 
-option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 if(USE_JASPER)
     find_package(Jasper REQUIRED)
     add_definitions(-DmyEnableJasper)
@@ -127,7 +166,6 @@ if(USE_JASPER)
     target_link_libraries(dcm2niix ${JASPER_LIBRARIES})
 endif()
 
-option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
 if(USE_OPENJPEG)
     set(OpenJPEG_DIR "${OpenJPEG_DIR}" CACHE PATH "Path to OpenJPEG configuration file" FORCE)
 
@@ -147,7 +185,6 @@ else ()
     add_definitions(-DmyDisableOpenJPEG)
 endif()
 
-option(BATCH_VERSION "Build dcm2niibatch for multiple conversions" OFF)
 if(BATCH_VERSION)
     set(DCM2NIIBATCH_SRCS
         main_console_batch.cpp
@@ -158,6 +195,10 @@ if(BATCH_VERSION)
         nii_foreign.cpp
         nii_ortho.cpp
         nii_dicom_batch.cpp)
+
+    if(USE_JNIFTI)
+        set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} cJSON.cpp base64.cpp)
+    endif()
 
     if(USE_JPEGLS)
         add_executable(dcm2niibatch ${DCM2NIIBATCH_SRCS} ${CHARLS_SRCS})
@@ -195,6 +236,9 @@ if(BATCH_VERSION)
     list(APPEND PROGRAMS dcm2niibatch)
 endif()
 
+if(BUILD_DCM2NIIXFSLIB)
+    target_compile_definitions(${DCM2NIIXFSLIB} PRIVATE -DUSING_DCM2NIIXFSWRAPPER -DUSING_MGH_NIFTI_IO)
+endif()
 
 if(APPLE)
     message("--   Adding Apple plist")
@@ -207,3 +251,7 @@ if(APPLE)
 endif()
 
 install(TARGETS ${PROGRAMS} DESTINATION bin)
+
+if(BUILD_DCM2NIIXFSLIB)
+    install(TARGETS ${DCM2NIIXFSLIB} DESTINATION lib)
+endif()
