@@ -38,6 +38,7 @@ The private `ICE_Dims` (0021,1106) tag can prove useful for parsing data. The li
 (0021,1106) LO [X_4_1_1_1_1_160_1_1_1_1_1_277] #  ICE_Dims
 ```
 
+0. coi = [coil number](https://github.com/rordenlab/dcm2niix/issues/631) (X: combined from multiple coils)
 1. eco = echo number 
 2. phs = phase encode
 3. set = 

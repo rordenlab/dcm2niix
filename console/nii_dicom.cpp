@@ -903,6 +903,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.CSA.multiBandFactor = 1;
 	d.CSA.SeriesHeader_offset = 0;
 	d.CSA.SeriesHeader_length = 0;
+	d.CSA.coilNumber = -1;
 	return d;
 } //clear_dicom_data()
 
@@ -1244,6 +1245,30 @@ float csaMultiFloat(unsigned char buff[], int nItems, float Floats[], int *Items
 	return Floats[1];
 } //csaMultiFloat()
 
+int csaICEdims(unsigned char buff[]) {
+	//determine coil number from CSA header
+	//Combined images start with a letter: X_1_1_1_1_1_1_1_1_1_1_1_106
+	//Coil data starts with coil number: 29_1_1_1_1_1_7_1_1_1_1_1_3000012
+	TCSAitem itemCSA;
+	int lPos = 0;
+	memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+	int coilNumber = -1;
+	if (itemCSA.xx2_Len > 0) {
+		lPos += sizeof(itemCSA);
+		char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
+		memcpy(cString, &buff[lPos], itemCSA.xx2_Len); //TPX memcpy(&cString, &buff[lPos], sizeof(cString));
+		lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
+		char c = cString[0];
+		if( c >= '0' && c <= '9' ){
+			dcmStrDigitsOnly(cString);
+			char *end;
+			coilNumber = (int)strtol(cString, &end, 10);
+		}
+		free(cString);
+	}
+	return coilNumber;
+} //csaICEdims()
+
 bool csaIsPhaseMap(unsigned char buff[], int nItems) {
 	//returns true if the tag "ImageHistory" has an item named "CC:ComplexAdd"
 	TCSAitem itemCSA;
@@ -1378,6 +1403,8 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 		if (tagCSA.nitems > 0) {
 			if (strcmp(tagCSA.name, "ImageHistory") == 0)
 				CSA->isPhaseMap = csaIsPhaseMap(&buff[lPos], tagCSA.nitems);
+			else if (strcmp(tagCSA.name, "ICE_Dims") == 0)
+				CSA->coilNumber = csaICEdims(&buff[lPos]);
 			else if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
 				CSA->mosaicSlices = (int)round(csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK));
 			else if (strcmp(tagCSA.name, "B_value") == 0) {
@@ -6706,6 +6733,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq); //, dti4D);
 			if (!d.isHasPhase)
 				d.isHasPhase = d.CSA.isPhaseMap;
+			if ((d.CSA.coilNumber > 0) && (strlen(d.coilName) < 1)) {
+				sprintf(d.coilName, "%d", d.CSA.coilNumber);
+				//printf("issue631 coil name '%s'\n", d.coilName);
+				d.coilCrc = mz_crc32X((unsigned char *)&d.coilName, strlen(d.coilName));
+			}
+			//okra
 			break;
 		case kCSASeriesHeaderInfo:
 			if ((lPos + lLength) > fileLen)
