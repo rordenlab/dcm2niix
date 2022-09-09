@@ -1398,6 +1398,10 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 		// Storage order is always little-endian, so byte-swap required values if necessary
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
+		if (tagCSA.nitems > 128) {
+			printError("%d n_tags CSA Image Header corrupted (0029,1010) see issue 633.\n", tagCSA.nitems);
+			return EXIT_FAILURE;
+		}
 		if (isVerbose > 1) //extreme verbosity: show every CSA tag
 			printMessage("   %d CSA of %s %d\n", lPos, tagCSA.name, tagCSA.nitems);
 		if (tagCSA.nitems > 0) {
@@ -5952,12 +5956,25 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			char iceStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], iceStr);
 			dcmStrDigitsOnly(iceStr);
-			char *end;
-			int echo = (int)strtol(iceStr, &end, 10);
+			char *end, *echoStr;
+			//read the first item ('X' or numeric if uncombined)
+			char c = iceStr[0];
+			if( c >= '0' && c <= '9' ){
+				int coilNumber = (int)strtol(iceStr, &end, 10);
+				//if ((iceStr != end) && (coilNumber > 0) && (strlen(d.coilName) < 1)) { //nb with uncombined coil will still have a name, e.g. 'HeadNeck_64'
+				if ((iceStr != end) && (coilNumber > 0)) {
+					sprintf(d.coilName, "%d", coilNumber);
+					//printf("issue631 coil name '%s'\n", d.coilName);
+					d.coilCrc = mz_crc32X((unsigned char *)&d.coilName, strlen(d.coilName));
+				}
+			}
+			//read the second item: the echo number ('4')
+			echoStr = strchr(iceStr, ' ');
+			int echo = (int)strtol(echoStr, &end, 10);
 			//printMessage("%d:%d:'%s'\n", d.echoNum, echo, iceStr);
 			if (iceStr != end)
 				d.echoNum = echo;
-			//printMessage("%d:'%s'\n", echo, iceStr);
+			//printMessage("%d:'%s'\n", echo, echoStr);
 			break;
 		}
 		case kPhaseEncodingDirectionPositiveSiemens: {
@@ -6730,7 +6747,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kCSAImageHeaderInfo:
 			if ((lPos + lLength) > fileLen)
 				break;
-			readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq); //, dti4D);
+			readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq);
 			if (!d.isHasPhase)
 				d.isHasPhase = d.CSA.isPhaseMap;
 			if ((d.CSA.coilNumber > 0) && (strlen(d.coilName) < 1)) {
@@ -6738,7 +6755,6 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				//printf("issue631 coil name '%s'\n", d.coilName);
 				d.coilCrc = mz_crc32X((unsigned char *)&d.coilName, strlen(d.coilName));
 			}
-			//okra
 			break;
 		case kCSASeriesHeaderInfo:
 			if ((lPos + lLength) > fileLen)

@@ -629,6 +629,10 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 		memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); //read tag
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
+		if (tagCSA.nitems > 128) {
+			printError("%d n_tags CSA Series Header corrupted (0029,1020 ) see issue 633.\n", tagCSA.nitems);
+			return EXIT_FAILURE;
+		}
 		//printf("%d CSA of %s %d\n",lPos, tagCSA.name, tagCSA.nitems);
 		lPos += sizeof(tagCSA);
 		if (strcmp(tagCSA.name, "MrPhoenixProtocol") == 0)
@@ -707,8 +711,14 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	size_t result = fread(buffer, 1, csaLength, pFile);
 	if ((int)result != csaLength)
 		return;
+	fclose(pFile);
+	
 	//next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
 	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
+	if (startAscii == EXIT_FAILURE) {
+		free(buffer);
+		return;
+	}
 	int csaLengthTrim = csaLength;
 	char *bufferTrim = buffer;
 	if ((startAscii > 0) && (startAscii < csaLengthTrim)) { //ignore binary data at start
@@ -889,7 +899,6 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		char keyStrSh7[] = "sGRADSPEC.alShimCurrent[4]";
 		shimSetting[7] = readKeyFloat(keyStrSh7, keyPos, csaLengthTrim);
 	}
-	fclose(pFile);
 	free(buffer);
 	return;
 } // siemensCsaAscii()
@@ -1332,7 +1341,6 @@ tse3d: T2*/
 	if ((strstr(d.imageTypeText, "_ND") != NULL) || (strstr(d.imageType, "_ND") != NULL) ||
 		(strstr(d.imageTypeText, "_ND") != NULL) || (strstr(d.imageType, "_ND") != NULL))
 			fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
-
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	if (d.seriesNum > 0)
