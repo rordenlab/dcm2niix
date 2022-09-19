@@ -868,6 +868,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.maxEchoNumGE = -1;
 	d.epiVersionGE = -1;
 	d.internalepiVersionGE = -1;
+	d.diffCyclingModeGE = kGE_DIFF_CYCLING_UNKNOWN;
+	d.tensorFileGE = 0;
 	d.durationLabelPulseGE = -1;
 	d.aslFlags = kASL_FLAG_NONE;
 	d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_UNKNOWN;
@@ -4328,11 +4330,14 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
 #define kRawDataRunNumberGE 0x0019 + (0x10A2 << 16)//SL
 #define kMaxEchoNumGE 0x0019 + (0x10A9 << 16) //DS
-#define kUserData12GE 0x0019 + (0x10B3 << 16) //DS phase diffusion direction
+#define kUserData11GE 0x0019 + (0x10B2 << 16) //DS Diffusion tensor filename
+#define kUserData12GE 0x0019 + (0x10B3 << 16) //DS phase diffusion direction; diffusion gradient cycling mode
+#define kUserData15GE 0x0019 + (0x10B6 << 16) //DS Diffusion Gradient Derating; cycling special OFF
 #define kDiffusionDirectionGEX 0x0019 + (0x10BB << 16) //DS phase diffusion direction
 #define kDiffusionDirectionGEY 0x0019 + (0x10BC << 16) //DS frequency diffusion direction
 #define kDiffusionDirectionGEZ 0x0019 + (0x10BD << 16) //DS slice diffusion direction
-#define kNumberOfDiffusionDirectionGE 0x0019 + (0x10E0 << 16) ///DS NumberOfDiffusionDirection:UserData24
+#define kNumberOfDiffusionT2GE 0x0019 + (0x10DF << 16) ///DS NumberOfDiffusionT2:UserData23 (release 10+)
+#define kNumberOfDiffusionDirectionGE 0x0019 + (0x10E0 << 16) ///DS NumberOfDiffusionDirection:UserData24 (release 10+)
 #define kVelocityEncodeScaleGE 0x0019 + (0x10E2 << 16) ///DS Velocity Encode Scale
 #define kStudyID 0x0020 + (0x0010 << 16)
 #define kSeriesNum 0x0020 + (0x0011 << 16)
@@ -4507,7 +4512,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	bool is4000561SQ = false; //Original Attributes SQ
 	bool is00089092SQ = false; //Referenced Image Evidence SQ
 	bool overlayOK = true;
+	int userData11GE = 0;
 	int userData12GE = 0;
+	float userData15GE = 0;	
 	int overlayRows = 0;
 	int overlayCols = 0;
 	bool isNeologica = false;
@@ -5659,6 +5666,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.CSA.dtiV[3] = v[2];
 			break;
 		}
+		case kNumberOfDiffusionT2GE: {
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			float f = dcmStrFloat(lLength, &buffer[lPos]);
+			d.numberOfDiffusionT2GE = round(f);
+			break;
+		}
 		case kNumberOfDiffusionDirectionGE: {
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
@@ -5691,11 +5705,21 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			d.maxEchoNumGE = round(dcmStrFloat(lLength, &buffer[lPos]));
 			break;
+		case kUserData11GE: {
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			userData11GE = round(dcmStrFloat(lLength, &buffer[lPos]));
+			break; }
 		case kUserData12GE: {
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			userData12GE = round(dcmStrFloat(lLength, &buffer[lPos]));
 			//printf("%d<<<<\n", userData12GE);
+			break; }
+		case kUserData15GE: {
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			userData15GE = dcmStrFloat(lLength, &buffer[lPos]);
 			break; }
 		case kDiffusionDirectionGEX:
 			if (d.manufacturer == kMANUFACTURER_GE)
@@ -7692,6 +7716,37 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	}
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
 		d.isLocalizer = true;
+	}
+	// detect GE diffusion gradient cycling mode (see issue 635)
+	// GE diffusion epi
+	if ((d.epiVersionGE == kGE_EPI_EPI2) || (d.internalepiVersionGE == 2)) {
+		// Diffusion tensor file number
+		d.tensorFileGE = userData11GE;
+		// cycling sytems: Premier, UHP, 7.0T
+		if ((strstr(d.manufacturersModelName, "Premier") != NULL) || (strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) {
+			// cycling special OFF mode
+			if (isSameFloatGE(userData15GE, 0.72))
+				d.diffCyclingModeGE = kGE_DIFF_CYCLING_SPOFF;
+			// 2TR cycling mode
+			else if (userData12GE == 1) {
+				d.diffCyclingModeGE = kGE_DIFF_CYCLING_2TR;
+				if (userData11GE == 0)
+					d.tensorFileGE = 2;
+			}
+			// 3TR cycling mode
+			else if (userData12GE == 2) {
+				d.diffCyclingModeGE = kGE_DIFF_CYCLING_3TR;
+				if (userData11GE == 0)
+					d.tensorFileGE = 3;
+			}
+			// (Default) ALLTR cycling mode
+			else 
+				d.diffCyclingModeGE = kGE_DIFF_CYCLING_ALLTR;
+		}
+		// Non-cylcing systems: all other systems including MR750, Architect, etc
+		else {
+			d.diffCyclingModeGE = kGE_DIFF_CYCLING_OFF;
+		}
 	}
 	//detect pepolar https://github.com/nipy/heudiconv/issues/479
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 1))

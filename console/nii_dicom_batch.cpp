@@ -1519,6 +1519,28 @@ tse3d: T2*/
 	json_Str(fp, "\t\"PrescanReuseString\": \"%s\",\n", d.prescanReuseString);
 	float delayTimeInTR = -0.01;
 	float repetitionTimePreparation = 0.0;
+	if (d.numberOfDiffusionDirectionGE > 0)
+		fprintf(fp, "\t\"NumberOfDiffusionDirectionGE\": %d,\n", d.numberOfDiffusionDirectionGE);
+	if (d.numberOfDiffusionT2GE > 0)
+		fprintf(fp, "\t\"NumberOfDiffusionT2GE\": %d,\n", d.numberOfDiffusionT2GE);
+	if ((d.manufacturer == kMANUFACTURER_GE) && (d.tensorFileGE > 0))
+		fprintf(fp, "\t\"TensorFileNumberGE\": %d,\n", d.tensorFileGE);
+	if ((d.manufacturer == kMANUFACTURER_GE) && (opts.diffCyclingModeGE >= 0)) {
+		fprintf(fp, "\t\"DiffGradientCyclingGE\": \"OVERRIDE\",\n"); // see issue 635
+		d.diffCyclingModeGE = opts.diffCyclingModeGE;
+	}
+	if (d.diffCyclingModeGE > 0) {
+		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_OFF)
+			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"OFF\",\n");
+		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_ALLTR)
+			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"ALLTR\",\n");
+		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_2TR)
+			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"2TR\",\n");
+		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_3TR)
+			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"3TR\",\n");
+		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_SPOFF)
+			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"SPOFF\",\n");
+	}
 #ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		float pf = 1.0f; //partial fourier
@@ -5968,6 +5990,7 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose, char geVersi
 	// softwareVersionsGE
 	//	"27\LX\MR Software release:RX27.0_R02_1831.a" -> 27
 	//	"28\LX\MR29.1_EA_2039.g" -> 29
+	//  "30\LX\SIGNA_LX1.MR30.0_R01_2236.d" -> 30; see issue 634
 	// geVersionPrefix
 	//	RX27.0_R02_1831.a -> RX
 	//	MR29.1_EA_2039.g -> MR
@@ -5985,16 +6008,36 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose, char geVersi
 	//	RX27.0_R02_1831.a -> 2
 	//	MR29.1_EA_2039.g -> 0
 	int len = 0;
-	// If softwareVersionsGE is 27\LX\MR Software release:RX27.0_R02_1831.a
-	char *sepStart = strchr(softwareVersionsGE, ':');
-	if (sepStart == NULL) {
-		// If softwareVersionsGE is 28\LX\MR29.1_EA_2039.g
-		sepStart = strrchr(softwareVersionsGE, '\\');
-		if (sepStart == NULL)
-			return;
+	bool ismatched = false;
+	int substrlen = 0;
+
+	// If softwareVersionsGE is 30\LX\SIGNA_LX1.MR30.0_R01_2236.d; see issue 634
+	char *sepStart = strstr(softwareVersionsGE, "SIGNA_LX1");
+	if (ismatched == false) {
+		if (sepStart != NULL) {
+			ismatched = true;
+			substrlen = strlen("SIGNA_LX1");
+			sepStart += substrlen+1;
+		}
 	}
-	sepStart += 1;
-	len = 11;
+	// If softwareVersionsGE is 27\LX\MR Software release:RX27.0_R02_1831.a
+	if (ismatched == false) {
+		sepStart = strstr(softwareVersionsGE, "MR Software release");
+		if (sepStart != NULL) {
+			ismatched = true;
+			substrlen = strlen("MR Software release");
+			sepStart += substrlen+1;
+		}
+	}
+	// If softwareVersionsGE is 28\LX\MR29.1_EA_2039.g
+	if (ismatched == false) {
+		sepStart = strrchr(softwareVersionsGE, '\\');
+		if (sepStart != NULL) {
+			ismatched = true;
+			sepStart += 1;
+		}
+	}
+	len = 11; // RX27.0_R02_
 	char *versionString = (char *)malloc(sizeof(char) * len);
 	versionString[len - 1] = 0;
 	memcpy(versionString, sepStart, len);
@@ -6010,6 +6053,7 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose, char geVersi
 	*geMajorVersion = (float)*geMajorVersionInt + (float)0.1 * (float)*geMinorVersionInt;
 	*is27r3 = ((*geMajorVersion >= 27.1) || ((*geMajorVersionInt == 27) && (*geReleaseVersionInt >= 3)));
 	if (verbose > 1) {
+		printMessage("GE Software VersionSting: %s\n", softwareVersionsGE);
 		printMessage("GE Software VersionPrefix: %s\n", geVersionPrefix);
 		printMessage("GE Software MajorVersion: %d\n", *geMajorVersionInt);
 		printMessage("GE Software MinorVersion: %d\n", *geMinorVersionInt);
@@ -6078,7 +6122,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	//start version check:
 	float geMajorVersion = 0;
 	int geMajorVersionInt = 0, geMinorVersionInt = 0, geReleaseVersionInt = 0;
-	char geVersionPrefix[2] = " ";
+	char geVersionPrefix[3] = "";
 	bool is27r3 = false;
 	readSoftwareVersionsGE(d->softwareVersions, opts.isVerbose, geVersionPrefix, &geMajorVersion, &geMajorVersionInt, &geMinorVersionInt, &geReleaseVersionInt, &is27r3);
 	//readSoftwareVersionsGE(&geMajorVersion);
@@ -6118,7 +6162,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	if (nSlices != hdr->dim[3]) //redundant with locationsInAcquisition check?
 		printWarning("Missing DICOMs, number of slices estimated (%d) differs from Protocol Block (0025,101B) report (%d).\n", hdr->dim[3], nSlices);
 	d->CSA.multiBandFactor = max(d->CSA.multiBandFactor, mbAccel);
-	bool isInterleaved = (sliceOrderGE != 0);
+	bool isInterleaved = true;
 	groupDelay *= 1000.0; //sec -> ms
 	//
 	// Estimate GE Slice Time only for EPI Multi-Phase (epi) or EPI fMRI/BrainWave (epiRT)
@@ -6127,6 +6171,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	if (d->epiVersionGE >= kGE_EPI_PEPOLAR_FWD)
 		printWarning("GE ABCD pepolar research sequence handling is experimental\n");//
 	else if ((d->epiVersionGE == 1) || (strstr(ioptGE, "FMRI") != NULL)) { //-1 = not epi, 0 = epi, 1 = epiRT
+		isInterleaved = (sliceOrderGE != 0);
 		d->epiVersionGE = 1;
 		d->internalepiVersionGE = 1; // 'EPI'(gradient echo)/'EPI2'(spin echo)
 		if (!isSameFloatGE(groupDelay, d->groupDelay))
@@ -6147,11 +6192,34 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 			return;
 		}
 	}
-	// Diffusion (Unsupported)
+	// Diffusion (see issue 635)
 	else if ((d->epiVersionGE == 2) || (d->internalepiVersionGE == 2) || (strstr(ioptGE, "DIFF") != NULL)) {
-		printWarning("Unable to compute slice times for GE Diffusion\n");
-		d->CSA.sliceTiming[0] = -1.0;
-		return;
+		// diffusion gradient cycling OFF
+		if (opts.diffCyclingModeGE >= 0)
+			d->diffCyclingModeGE = opts.diffCyclingModeGE;
+		if ((d->diffCyclingModeGE == kGE_DIFF_CYCLING_SPOFF) || (d->diffCyclingModeGE == kGE_DIFF_CYCLING_OFF))
+			is27r3 = false;
+		else if (d->diffCyclingModeGE == kGE_DIFF_CYCLING_ALLTR) {
+			printWarning("Unable to compute slice times for GE Diffusion:Cycling\n");
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
+		// TO DO: support 2TR/3TR cycling mode
+		else if (d->diffCyclingModeGE == kGE_DIFF_CYCLING_2TR) {
+			printWarning("Unable to compute slice times for GE Diffusion:2TR-Cycling\n");
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
+		else if (d->diffCyclingModeGE == kGE_DIFF_CYCLING_3TR) {
+			printWarning("Unable to compute slice times for GE Diffusion:3TR-Cyclin\n");
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
+		else {
+			printWarning("Unable to compute slice times for GE Diffusion\n");
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
 	}
 	// Others (Unsupported)
 	else {
@@ -8726,6 +8794,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	opts->isSaveNativeEndian = true;
 	opts->isAddNamePostFixes = true; //e.g. "_e2" added for second echo
 	opts->isTestx0021x105E = false; //GE test slice times stored in 0021,105E
+	opts->diffCyclingModeGE = -1;
 	opts->isIgnoreTriggerTimes = false;
 	opts->saveFormat = kSaveFormatNIfTI;
 	opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
