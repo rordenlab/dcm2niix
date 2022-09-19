@@ -228,6 +228,7 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | ASLContrastTechnique           |      | DICOM tag 0043,10A3      | D          |
 | ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
 | LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
+| SliceTiming                    | s    | [see notes](https://github.com/rordenlab/dcm2niix/tree/master/GE#slice-timing)  | B          |
 
 ### Manufacturer Philips
 
@@ -321,15 +322,16 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 
 ### Manufacturer Siemens Magnetic Resonance Imaging (XA)
 
-Fields specific to Siemens XA-series MRI systems (Sola, Vida).
+Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tree/master/Siemens#siemens-x-series) MRI systems (Sola, Vida).
 
-| Field                        | Unit | Comments               | Defined By |
-|------------------------------|------|------------------------|------------|
-| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F    | B          |
-| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153    | D          |
-| ScanningSequence             |      | DICOM tag 0021,105a    | D          |
-| PostLabelDelay               | s    | DICOM tag 0018,9258    | D          |
-| NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175 | B          |
+| Field                        | Unit | Comments                   | Defined By |
+|------------------------------|------|----------------------------|------------|
+| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F        | B          |
+| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153        | D          |
+| ScanningSequence             |      | DICOM tag 0021,105a        | D          |
+| PostLabelDelay               | s    | DICOM tag 0018,9258        | D          |
+| NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
+| PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
 
 ### Manufacturer UIH
 
