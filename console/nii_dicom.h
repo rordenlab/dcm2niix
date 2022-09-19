@@ -50,7 +50,7 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20220909"
+#define kDCMdate "v1.0.20220915"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -98,6 +98,13 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kGE_EPI_PEPOLAR_REV_FWD_FLIP  7
 #define kGE_EPI_PEPOLAR_FWD_REV_FLIP  8
 
+//GE Diff Gradient Cycling Mode
+#define kGE_DIFF_CYCLING_UNKNOWN -1
+#define kGE_DIFF_CYCLING_OFF  0
+#define kGE_DIFF_CYCLING_ALLTR  1
+#define kGE_DIFF_CYCLING_2TR 2
+#define kGE_DIFF_CYCLING_3TR 3
+#define kGE_DIFF_CYCLING_SPOFF  100
 
 //GE phase encoding
 #define kGE_PHASE_ENCODING_POLARITY_UNKNOWN  -1
@@ -222,7 +229,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         int xyzDim[5];
         uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
         int overlayStart[kMaxOverlay];
-        int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionDirectionGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
+        int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
         float  xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)

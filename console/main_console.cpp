@@ -410,6 +410,25 @@ int main(int argc, const char *argv[]) {
 					opts.isTestx0021x105E = true;
 					printf("undocumented '-j y' compares GE slice timing from 0021,105E\n");
 				}
+			} else if ((!strcmp(argv[i], "--diffCyclingModeGE")) && ((i + 1) < argc)) {
+				// see issue 635
+				i++;
+				if (argv[i][0] == '0') {
+					opts.diffCyclingModeGE = 0;
+					printf("undocumented '--diffCyclingModeGE 0' cycling OFF\n");
+				}
+				else if (argv[i][0] == '1') {
+					opts.diffCyclingModeGE = 1;
+					printf("undocumented '--diffCyclingModeGE 1' cycling All-TR\n");
+				}
+				else if (argv[i][0] == '2') {
+					opts.diffCyclingModeGE = 2;
+					printf("undocumented '--diffCyclingModeGE 2' cycling 2-TR\n");
+				}
+				else if (argv[i][0] == '3') {
+					opts.diffCyclingModeGE = 3;
+					printf("undocumented '--diffCyclingModeGE 3' cycling 3-TR\n");
+				}				
 			} else if ((argv[i][1] == 'l') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))

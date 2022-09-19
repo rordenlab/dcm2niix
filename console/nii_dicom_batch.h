@@ -57,7 +57,7 @@ void nii_clrMrifsStruct();
 
     struct TDCMopts {
         bool isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes,isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop;
-        int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
+        int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, gzLevel, diffCyclingModeGE; //support for compressed data 0=none,
         char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
         double seriesNumber[MAX_NUM_SERIES]; //requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
         long numSeries;
