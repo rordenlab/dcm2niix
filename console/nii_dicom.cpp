@@ -6373,6 +6373,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.decayFactor = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
 		case kIconImageSequence:
+			if (lLength > 8)
+				break; //issue638: we will skip entire icon if there is an explicit length
 			isIconImageSequence = true;
 			if (sqDepthIcon < 0)
 				sqDepthIcon = sqDepth;

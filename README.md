@@ -163,6 +163,7 @@ The following tools exploit dcm2niix
   - [DICOM2BIDS](https://github.com/klsea/DICOM2BIDS) is a Python 2 script for creating BIDS files.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
+  - [DPABI Data Processing & Analysis for Brain Imaging](http://rfmri.org/dpabi) includes dcm2niix.
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a [web service](https://brainlife.io/ezbids/) for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
   - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
