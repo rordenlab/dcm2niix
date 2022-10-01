@@ -7246,6 +7246,15 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//Uncompressed data (unencapsulated) is sent in DICOM as a series of raw bytes or words (little or big endian) in the Value field of the Pixel Data element (7FE0,0010). Encapsulated data on the other hand is sent not as raw bytes or words but as Fragments contained in Items that are the Value field of Pixel Data
 		printWarning("DICOM violation (contact vendor): compressed image without image fragments, assuming image offset defined by 0x7FE0,x0010: %s\n", fname);
 		d.imageStart = encapsulatedDataImageStart;
+	} else if ((!isEncapsulatedData) && (d.imageStart < 128)) {
+		//issue639 d.samplesPerPixel == 3
+		int imageStart = (int) (lPos- lLength);
+		int imgBytes = (int) (lLength);
+		int imgBytesExpected = (d.bitsAllocated >> 3) * d.samplesPerPixel * d.xyzDim[1]  * d.xyzDim[2] ;
+		if ((imgBytes >= imgBytesExpected) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1)) {
+			printf("Assuming final tag is Pixel Data (7fe0,0010) (issue 639)\n");
+			d.imageStart = imageStart;
+		}
 	}
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.groupDelay > 0.0))
 		d.TR += d.groupDelay; //Strangely, for GE the sample rate is (0018,0080) + ((0043,107c) * 1000.0)
