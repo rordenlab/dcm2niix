@@ -171,6 +171,7 @@ The following tools exploit dcm2niix
   - [FreeSurfer](https://github.com/freesurfer/freesurfer) includes dcm2niix for image conversion.
   - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
   - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
+  - [https://github.com/TamerGezici/HCF-bidser](https://github.com/TamerGezici/HCF-bidser) Jupyter notebook script for DICOM to BIDS format.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Data acquired using the [reproin](https://github.com/ReproNim/reproin) convention can be easily converted to BIDS.
   - [Horos (Osirix) Bids Output Extension](https://github.com/mslw/horos-bids-output) is a OsiriX / Horos plugin that uses dcm2niix for creating BIDS output.
   - [kipettools](https://github.com/mathesong/kipettools) uses dcm2niix to load PET data.

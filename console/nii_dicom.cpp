@@ -5342,6 +5342,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			dcmStr(lLength, &buffer[lPos], d.referringPhysicianName);
 			break;
 		case kReferencedImageEvidenceSQ:
+			if (lLength > 8)
+				break; //issue639: we will skip entire icon if there is an explicit length
 			is00089092SQ = true;
 			break;
 		case kComplexImageComponent:
@@ -6759,6 +6761,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			philMRImageDiffVolumeNumber = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		case kOriginalAttributesSq:
+			if (lLength > 8)
+				break; //issue639: we will skip entire icon if there is an explicit length
 			is4000561SQ = true;
 			break;
 		case kWaveformSq:
