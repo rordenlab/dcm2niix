@@ -4464,6 +4464,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 //#define kNumberOfLocationsPhilips 0x2001+(0x1015 << 16 ) //SS
 //#define kStackSliceNumber 0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define kNumberOfDynamicScans 0x2001 + (0x1081 << 16) //'2001' '1081' 'IS' 'NumberOfDynamicScans'
+//#define kTRPhilips 0x2005 + (0x1030 << 16) //(2005,1030) FL 30\150
 #define kMRfMRIStatusIndicationPhilips 0x2005 + (0x1063 << 16)
 #define kMRAcquisitionTypePhilips 0x2005 + (0x106F << 16) //SS
 #define kAngulationAP 0x2005 + (0x1071 << 16) //'2005' '1071' 'FL' 'MRStackAngulationAP'
@@ -4473,7 +4474,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 #define kMRStackOffcentreFH 0x2005 + (0x1079 << 16)
 #define kMRStackOffcentreRL 0x2005 + (0x107A << 16)
 #define kPhilipsSlope 0x2005 + (0x100E << 16)
-#define kMRImageDynamicScanBeginTime 0x2005 + (0x10a0 << 16) //FL
+#define kMRImageDynamicScanBeginTime 0x2005 + (0x10A0 << 16) //FL
 #define kDiffusionDirectionRL 0x2005 + (0x10B0 << 16)
 #define kDiffusionDirectionAP 0x2005 + (0x10B1 << 16)
 #define kDiffusionDirectionFH 0x2005 + (0x10B2 << 16)
@@ -4610,6 +4611,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	float vRLPhilips = 0.0;
 	float vAPPhilips = 0.0;
 	float vFHPhilips = 0.0;
+	//float TRPhilips = -1.0;
 	double acquisitionTimePhilips = -1.0;
 	bool isPhase = false;
 	bool isReal = false;
@@ -6388,6 +6390,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//~d.numberOfDynamicScans = dcmStrInt(lLength, &buffer[lPos]);
 			numberOfDynamicScans = dcmStrInt(lLength, &buffer[lPos]);
 			break;
+		/*case kTRPhilips:
+			if (d.manufacturer != kMANUFACTURER_PHILIPS) break;
+			TRPhilips = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
+			break;*/
 		case kMRAcquisitionType: //detect 3D acquisition: we can reorient these without worrying about slice time correct or BVEC/BVAL orientation
 			if (lLength > 1)
 				d.is2DAcq = (buffer[lPos] == '2') && (toupper(buffer[lPos + 1]) == 'D');

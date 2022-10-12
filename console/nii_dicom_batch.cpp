@@ -7662,6 +7662,13 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		warnings->phaseVaries = true;
 		return false;
 	}
+	if (!(isSameFloat(d1.TR, d2.TR))) {
+		if (!warnings->echoVaries)
+		printMessage("Slices not stacked: TR varies (%g, %g, issue 641). Use 'merge 2D slices' option to force stacking\n", d1.TR, d2.TR);
+		*isMultiEcho = true;
+		warnings->echoVaries = true;
+		return false;
+	}
 	//if ((d1.TE != d2.TE) || (d1.echoNum != d2.echoNum)) {
 	if ((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) {
 		if ((!warnings->echoVaries) && (d1.isXRay)) //for CT/XRay we check DICOM tag 0018,1152 (XRayExposure)
