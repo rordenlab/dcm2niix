@@ -1037,7 +1037,7 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
 	int o = 0;
 	for (int i = 0; i < (int)strlen(sVal); i++) {
 		//escape double quote (") and Backslash
-		if ((sVal[i] == '"') || (sVal[i] == '\\')) { //escape double quotes and back slash
+		if ((sVal[i] == '"') || (sVal[i] == '\\') || (sVal[i] == '/')) { //escape double quotes, back slash, or slash
 			sValEsc[o] = '\\';
 			o++;
 		}
