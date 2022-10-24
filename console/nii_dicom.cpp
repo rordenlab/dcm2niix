@@ -885,6 +885,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isHasOverlay = false;
 	d.isPrivateCreatorRemap = false;
 	d.isRealIsPhaseMapHz = false;
+	d.isQuadruped = false;
 	d.numberOfImagesInGridUIH = 0;
 	d.phaseEncodingRC = '?';
 	d.patientSex = '?';
@@ -1211,6 +1212,8 @@ int dcmStrManufacturer(const int lByteLength, unsigned char lBuffer[]) { //read 
 		ret = kMANUFACTURER_UIH;
 	if ((toupper(cString[0]) == 'B') && (toupper(cString[1]) == 'R'))
 		ret = kMANUFACTURER_BRUKER;
+	if ((toupper(cString[0]) == 'M') && (toupper(cString[1]) == 'R'))
+		ret = kMANUFACTURER_MRSOLUTIONS;
 	//if (ret == kMANUFACTURER_UNKNOWN) //reduce verbosity: single warning for series : Unable to determine manufacturer (0008,0070)
 	//	printWarning("Unknown manufacturer %s\n", cString);
 	//#ifdef _MSC_VER
@@ -5417,6 +5420,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			int slen = (int)strlen(aotTxt);
 			if ((slen < 9) || (strstr(aotTxt, "QUADRUPED") == NULL))
 				break;
+			d.isQuadruped = true;
 			printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
 			break;
 		}

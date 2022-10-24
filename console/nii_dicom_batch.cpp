@@ -1244,6 +1244,9 @@ tse3d: T2*/
 	case kMANUFACTURER_UIH:
 		fprintf(fp, "\t\"Manufacturer\": \"UIH\",\n");
 		break;
+	case kMANUFACTURER_MRSOLUTIONS:
+		fprintf(fp, "\t\"Manufacturer\": \"MRSolutions\",\n");
+		break;
 	};
 	//if (d.epiVersionGE == 0)
 	//	fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
@@ -1284,6 +1287,8 @@ tse3d: T2*/
 		//d.patientBirthDate //convert from DICOM YYYYMMDD to JSON
 		//d.patientAge //4-digit Age String: nnnD, nnnW, nnnM, nnnY;
 	}
+	if (d.isQuadruped)
+		json_Bool(fp, "\t\"Quadruped\": %s,\n", true); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
 	json_Str(fp, "\t\"BodyPartExamined\": \"%s\",\n", d.bodyPartExamined);
 	json_Str(fp, "\t\"PatientPosition\": \"%s\",\n", d.patientOrient); // 0018,5100 = PatientPosition in DICOM
 	json_Str(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription);
@@ -3140,6 +3145,10 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "Ph");
 				else if (dcm.manufacturer == kMANUFACTURER_SIEMENS)
 					strcat(outname, "Si");
+				else if (dcm.manufacturer == kMANUFACTURER_MEDISO)
+					strcat(outname, "Me");
+				else if (dcm.manufacturer == kMANUFACTURER_MRSOLUTIONS)
+					strcat(outname, "MR");
 				else
 					strcat(outname, "NA"); //manufacturer name not available
 			}
@@ -3635,6 +3644,9 @@ void nii_saveAttributes(struct TDICOMdata &data, struct nifti_1_header &header, 
 		break;
 	case kMANUFACTURER_CANON:
 		images->addAttribute("manufacturer", "Canon");
+		break;
+	case kMANUFACTURER_MRSOLUTIONS:
+		images->addAttribute("manufacturer", "MRSolutions");
 		break;
 	}
 	images->addAttribute("scannerModelName", data.manufacturersModelName);
