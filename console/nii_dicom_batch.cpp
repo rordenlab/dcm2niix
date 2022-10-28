@@ -8238,6 +8238,12 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 	}
 	size_t nDcm = nameList.numItems;
 	printMessage("Found %lu DICOM file(s)\n", nameList.numItems); //includes images and other non-image DICOMs
+	if (opts->onlySearchDirForDICOM == 2) {
+		printMessage("List of DICOM file(s):\n");
+		for (int i = 0; i < nameList.numItems; i++)
+			printMessage("%s\n", nameList.str[i]);
+		printMessage("End of list (%lu in total)\n", nameList.numItems);
+	}
 #ifdef myTimer
 	if (opts->isProgress > 1)
 		printMessage("Stage 1 (Count number of DICOMs) required %f seconds.\n", ((float)(clock() - start)) / CLOCKS_PER_SEC);
@@ -8294,7 +8300,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 		printMessage("Stage 2 (Read DICOM headers, Convert 4D) required %f seconds.\n", ((float)(clock() - start)) / CLOCKS_PER_SEC);
 	start = clock();
 #endif
-	if (opts->isRenameNotConvert) {
+	if ((opts->isRenameNotConvert) || (opts->onlySearchDirForDICOM != 0)) {
 		free(dcmList);
 		free(dti4D);
 		return EXIT_SUCCESS;
@@ -8852,6 +8858,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	opts->isPipedGz = false; //e.g. pipe data directly to pigz instead of saving uncompressed to disk
 	opts->isSave3D = false;
 	opts->dirSearchDepth = 5;
+	opts->onlySearchDirForDICOM = 0;
 	opts->isProgress = 0;
 	opts->nameConflictBehavior = kNAME_CONFLICT_ADD_SUFFIX;
 #ifdef myDisableZLib
