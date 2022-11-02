@@ -1525,27 +1525,30 @@ tse3d: T2*/
 	json_Str(fp, "\t\"PrescanReuseString\": \"%s\",\n", d.prescanReuseString);
 	float delayTimeInTR = -0.01;
 	float repetitionTimePreparation = 0.0;
-	if (d.numberOfDiffusionDirectionGE > 0)
-		fprintf(fp, "\t\"NumberOfDiffusionDirectionGE\": %d,\n", d.numberOfDiffusionDirectionGE);
-	if (d.numberOfDiffusionT2GE > 0)
-		fprintf(fp, "\t\"NumberOfDiffusionT2GE\": %d,\n", d.numberOfDiffusionT2GE);
-	if ((d.manufacturer == kMANUFACTURER_GE) && (d.tensorFileGE > 0))
-		fprintf(fp, "\t\"TensorFileNumberGE\": %d,\n", d.tensorFileGE);
-	if ((d.manufacturer == kMANUFACTURER_GE) && (opts.diffCyclingModeGE >= 0)) {
-		fprintf(fp, "\t\"DiffGradientCyclingGE\": \"OVERRIDE\",\n"); // see issue 635
-		d.diffCyclingModeGE = opts.diffCyclingModeGE;
-	}
-	if (d.diffCyclingModeGE > 0) {
-		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_OFF)
-			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"OFF\",\n");
-		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_ALLTR)
-			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"ALLTR\",\n");
-		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_2TR)
-			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"2TR\",\n");
-		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_3TR)
-			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"3TR\",\n");
-		if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_SPOFF)
-			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"SPOFF\",\n");
+	// GE Diffusion specific fields
+	if ((d.epiVersionGE == kGE_EPI_EPI2) || (d.internalepiVersionGE == 2)) {
+		if (d.numberOfDiffusionDirectionGE > 0)
+			fprintf(fp, "\t\"NumberOfDiffusionDirectionGE\": %d,\n", d.numberOfDiffusionDirectionGE);
+		if (d.numberOfDiffusionT2GE > 0)
+			fprintf(fp, "\t\"NumberOfDiffusionT2GE\": %d,\n", d.numberOfDiffusionT2GE);
+		if (d.tensorFileGE > 0)
+			fprintf(fp, "\t\"TensorFileNumberGE\": %d,\n", d.tensorFileGE);
+		if (opts.diffCyclingModeGE >= 0) {
+			fprintf(fp, "\t\"DiffGradientCyclingGE\": \"OVERRIDE\",\n"); // see issue 635
+			d.diffCyclingModeGE = opts.diffCyclingModeGE;
+		}
+		if (d.diffCyclingModeGE > 0) {
+			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_OFF)
+				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"OFF\",\n");
+			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_ALLTR)
+				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"ALLTR\",\n");
+			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_2TR)
+				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"2TR\",\n");
+			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_3TR)
+				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"3TR\",\n");
+			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_SPOFF)
+				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"SPOFF\",\n");
+		}
 	}
 #ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
