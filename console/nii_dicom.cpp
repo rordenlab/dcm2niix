@@ -7753,13 +7753,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (isSameFloatGE(userData15GE, 0.72))
 				d.diffCyclingModeGE = kGE_DIFF_CYCLING_SPOFF;
 			// 2TR cycling mode
-			else if (userData12GE == 1) {
+			else if (userData12GE == 2) {
 				d.diffCyclingModeGE = kGE_DIFF_CYCLING_2TR;
 				if (userData11GE == 0)
 					d.tensorFileGE = 2;
 			}
 			// 3TR cycling mode
-			else if (userData12GE == 2) {
+			else if (userData12GE == 3) {
 				d.diffCyclingModeGE = kGE_DIFF_CYCLING_3TR;
 				if (userData11GE == 0)
 					d.tensorFileGE = 3;
