@@ -140,6 +140,7 @@ Fields specific to MRI scans.
 | EstimatedEffectiveEchoSpacing      | s    |                                                                                         | D          |
 | EstimatedTotalReadoutTime          | s    |                                                                                         | D          |
 | FlipAngle                          | deg  | DICOM tag 0018,1314                                                                     | B          |
+| VariableFlipAngleFlag              | b    | DICOM tag 0018,1315                                                                     | D          |
 | ImageOrientationPatientDICOM       |      | DICOM tag 0020,0037                                                                     | D          |
 | ImagingFrequency                   | MHz  | DICOM tag 0018,0084                                                                     | D          |
 | InPlanePhaseEncodingDirectionDICOM |      | DICOM tag 0018,1312                                                                     | D          |

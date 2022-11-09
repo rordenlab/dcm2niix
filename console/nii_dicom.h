@@ -242,7 +242,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         char scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
-        bool isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
+        bool isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
     };
     struct TDCMprefs {

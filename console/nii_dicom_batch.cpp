@@ -1509,6 +1509,8 @@ tse3d: T2*/
 		fprintf(fp, "\t\"SpoilingType\": \"COMBINED\",\n");
 	json_Float(fp, "\t\"InversionTime\": %g,\n", d.TI / 1000.0);
 	json_Float(fp, "\t\"FlipAngle\": %g,\n", d.flipAngle);
+	if (d.isVariableFlipAngle)
+		json_Bool(fp, "\t\"VariableFlipAngleFlag\": %s,\n", true); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
 	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
@@ -1603,7 +1605,7 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);				// mT/m
+			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.RepetitionTimeExcitation[10]);				// mT/m
 			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", csaAscii.adFree[11]);				// percent
 		}
 		//ASL specific tags - 3D pCASL Danny J.J. Wang http://www.loft-lab.org
@@ -6565,6 +6567,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		dti4D->frameDuration[0] = -1;
 		dti4D->frameReferenceTime[0] = -1;
 	}
+	if (strlen(dcmList[indx0].patientOrient) < 3)
+		printWarning("PatientOrient (0018,5100) not specified (issue 642).\n");
+	if (dcmList[indx0].isQuadruped)
+		printWarning("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly (issue 642)\n");
 #ifdef newTilt //see issue 254
 	if (((nConvert > 1) || (dcmList[indx0].xyzDim[3] > 1)) && ((dcmList[indx0].modality == kMODALITY_CT) || (dcmList[indx0].isXRay) || (dcmList[indx0].gantryTilt > 0.0))) { //issue372: enhanced DICOMs can also have gantry tilt
 		dcmList[indx0].gantryTilt = computeGantryTiltPrecise(dcmList[indx0], dcmList[indxEnd], opts.isVerbose);
@@ -7681,6 +7687,13 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	if (!(isSameFloat(d1.TR, d2.TR))) {
 		if (!warnings->echoVaries)
 		printMessage("Slices not stacked: TR varies (%g, %g, issue 641). Use 'merge 2D slices' option to force stacking\n", d1.TR, d2.TR);
+		*isMultiEcho = true;
+		warnings->echoVaries = true;
+		return false;
+	}
+	if (!(isSameFloat(d1.flipAngle, d2.flipAngle))) {
+		if (!warnings->echoVaries)
+		printMessage("Slices not stacked: flip angle varies (%g, %g, issue 646).\n", d1.TR, d2.TR);
 		*isMultiEcho = true;
 		warnings->echoVaries = true;
 		return false;
@@ -8906,7 +8919,7 @@ void readIniFile(struct TDCMopts *opts, const char *argv[]) {
 	FILE *fp = fopen(opts->optsname, "r");
 	if (fp == NULL)
 		return;
-	char Setting[20], Value[255];
+	char Setting[255], Value[255];
 	//while ( fscanf(fp, "%[^=]=%s\n", Setting, Value) == 2 ) {
 	//while ( fscanf(fp, "%[^=]=%s\n", Setting, Value) == 2 ) {
 	while (fscanf(fp, "%[^=]=%[^\n]\n", Setting, Value) == 2) {

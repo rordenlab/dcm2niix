@@ -719,6 +719,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.studyDate, "");
 	strcpy(d.studyTime, "");
 	strcpy(d.protocolName, "");
+	strcpy(d.patientOrient, "");
 	strcpy(d.seriesDescription, "");
 	strcpy(d.sequenceName, "");
 	strcpy(d.scanningSequence, "");
@@ -885,6 +886,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isHasOverlay = false;
 	d.isPrivateCreatorRemap = false;
 	d.isRealIsPhaseMapHz = false;
+	d.isVariableFlipAngle = false;
 	d.isQuadruped = false;
 	d.numberOfImagesInGridUIH = 0;
 	d.phaseEncodingRC = '?';
@@ -4283,8 +4285,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kReceiveCoilName 0x0018 + (0x1250 << 16) // SH
 //#define kTransmitCoilName 0x0018 + (0x1251 << 16) // SH issue527
 #define kAcquisitionMatrix 0x0018 + (0x1310 << 16) //US
-#define kFlipAngle 0x0018 + (0x1314 << 16)
 #define kInPlanePhaseEncodingDirection 0x0018 + (0x1312 << 16) //CS
+#define kFlipAngle 0x0018 + (0x1314 << 16)
+#define kVariableFlipAngleFlag 0x0018 + (0x1315 << 16) //CS
 #define kSAR 0x0018 + (0x1316 << 16) //'DS' 'SAR'
 #define kPatientOrient 0x0018 + (0x5100 << 16) //0018,5100. patient orientation - 'HFS'
 #define kPulseSequenceName 0x0018 + uint32_t(0x9005 << 16) //'SH' 'YES'/'NO'
@@ -5421,7 +5424,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if ((slen < 9) || (strstr(aotTxt, "QUADRUPED") == NULL))
 				break;
 			d.isQuadruped = true;
-			printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
+			//printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
 			break;
 		}
 		case kDeidentificationMethod: { //issue 383
@@ -6229,6 +6232,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kFlipAngle:
 			d.flipAngle = dcmStrFloat(lLength, &buffer[lPos]);
+			break;
+		case kVariableFlipAngleFlag:
+			d.isVariableFlipAngle = ('Y' == toupper(buffer[lPos])); //first character is either 'y'es or 'n'o
 			break;
 		case kRadionuclideHalfLife:
 			d.radionuclideHalfLife = dcmStrFloat(lLength, &buffer[lPos]);
