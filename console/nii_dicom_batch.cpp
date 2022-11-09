@@ -1605,7 +1605,7 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.RepetitionTimeExcitation[10]);				// mT/m
+			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);
 			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", csaAscii.adFree[11]);				// percent
 		}
 		//ASL specific tags - 3D pCASL Danny J.J. Wang http://www.loft-lab.org
