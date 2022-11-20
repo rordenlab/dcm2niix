@@ -8244,8 +8244,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 	start = clock();
 #endif
 	if (opts->isProgress)
-		progressPct = reportProgress(progressPct, kStage1Frac); //proportion correct, 0..100
-																// struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
+		progressPct = reportProgress(progressPct, kStage1Frac); //proportion correct, 0..100															// struct TDICOMdata dcmList [nameList.numItems]; //<- this exhausts the stack for large arrays
 	struct TDICOMdata *dcmList = (struct TDICOMdata *)malloc(nameList.numItems * sizeof(struct TDICOMdata));
 	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
 	struct TDCMprefs prefs;
@@ -8708,27 +8707,29 @@ int findpathof(char *pth, const char *exe) {
 void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 #if defined(_WIN64) || defined(_WIN32)
 	strcpy(opts->pigzname, "pigz.exe");
+	if (is_exe(opts->pigzname)) 
+		return;
 	if (!is_exe(opts->pigzname)) {
-#if defined(__APPLE__)
-#ifdef myDisableZLib
-		printMessage("Compression requires %s in the same folder as the executable http://macappstore.org/pigz/\n", opts->pigzname);
-#else //myUseZLib
-		if (opts->isVerbose > 0)
-			printMessage("Compression will be faster with %s in the same folder as the executable http://macappstore.org/pigz/\n", opts->pigzname);
-#endif
-		strcpy(opts->pigzname, "");
-#else
+		char exepth[PATH_MAX];
+		strcpy(exepth, argv[0]);
+		dropFilenameFromPath(exepth); //, opts.pigzname);
+		char appendChar[2] = {"a"};
+		appendChar[0] = kPathSeparator;
+		strcat(exepth, appendChar);
+		strcat(exepth, opts->pigzname);
+		strcpy(opts->pigzname, exepth);
+	}
+	if (is_exe(opts->pigzname)) 
+		return;
 #ifdef myDisableZLib
 		printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
 #else //myUseZLib
 		if (opts->isVerbose > 0)
 			printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
 #endif
-		strcpy(opts->pigzname, "");
-#endif
-	} else
-		strcpy(opts->pigzname, ".\\pigz"); //drop
-#else
+	strcpy(opts->pigzname, "");
+	return;
+#else //if windows else linux
 	char str[PATH_MAX];
 	//possible pigz names
 	const char *names[] = {

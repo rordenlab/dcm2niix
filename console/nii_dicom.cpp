@@ -5821,8 +5821,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			}			//if not first slice in file
 			set_isAtFirstPatientPosition_tvd(&volDiffusion, isAtFirstPatientPosition);
 			//if (isAtFirstPatientPosition) numFirstPatientPosition++;
-			if (isVerbose > 0) //verbose > 1 will report full DICOM tag
-				printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%ld\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
+			if (isVerbose > 1) //verbose > 1 will report full DICOM tag
+				printMessage("   Patient Position 0020,0032 (#,@,X,Y,Z)\t%d\t%zu\t%g\t%g\t%g\n", patientPositionNum, lPos, patientPosition[1], patientPosition[2], patientPosition[3]);
 			if ((isOrient) && (nSliceMM < kMaxSlice2D)) {
 				vec3 pos = setVec3(patientPosition[1], patientPosition[2], patientPosition[3]);
 				sliceMM[nSliceMM] = dotProduct(pos, sliceV);
@@ -6852,7 +6852,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			int isVerboseX = isVerbose; //for debugging only - in standard release we will enable user defined "isVerbose"
 			//int isVerboseX = 2;
 			if (isVerboseX > 1)
-				printMessage(" UserDefineDataGE file offset/length %ld %u\n", lFileOffset + lPos, lLength);
+				printMessage(" UserDefineDataGE file offset/length %zu %u\n", lFileOffset + lPos, lLength);
 			if (lLength < 916) { //minimum size is hdr_offset=0, read 0x0394
 				printMessage(" GE header too small to be valid  (A)\n");
 				break;
@@ -7165,7 +7165,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			// this section will report very little for implicit data
 			//if (d.isHasReal) printf("r");else printf("m");
 			char str[kDICOMStr];
-			sprintf(str, "%*c%04x,%04x %u@%ld ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
+			sprintf(str, "%*c%04x,%04x %u@%zu ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
 			bool isStr = false;
 			if (d.isExplicitVR) {
 				//sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
