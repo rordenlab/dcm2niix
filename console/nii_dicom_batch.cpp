@@ -8721,6 +8721,21 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	}
 	if (is_exe(opts->pigzname)) 
 		return;
+	HMODULE hModule = GetModuleHandle(NULL);
+    if (hModule != NULL) {
+		// https://stackoverflow.com/questions/1528298/get-path-of-executable
+		char exepth[PATH_MAX];
+		GetModuleFileName(hModule, exepth, (sizeof(exepth))); 
+		dropFilenameFromPath(exepth); //, opts.pigzname);
+		char appendChar[2] = {"a"};
+		appendChar[0] = kPathSeparator;
+		strcat(exepth, appendChar);
+		strcpy(opts->pigzname, "pigz.exe");
+		strcat(exepth, opts->pigzname);
+		strcpy(opts->pigzname, exepth);
+	}
+	if (is_exe(opts->pigzname)) 
+		return;
 #ifdef myDisableZLib
 		printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
 #else //myUseZLib
