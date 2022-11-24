@@ -2,3 +2,14 @@
 /build/
 /bin/
 /console/dcm2niix
+# Python wrapper
+*.py[co]
+*.so
+__pycache__/
+/_skbuild/
+/_cmake_test_compile/
+/dcm2niix/_dist_ver.py
+/dcm2niix/dcm2niix
+MANIFEST
+/*.egg*/
+/dist/
