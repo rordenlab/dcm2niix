@@ -4536,6 +4536,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	int philMRImageDiffBValueNumber = 0;
 	int philMRImageDiffVolumeNumber = -1;
 	int sqDepth = 0;
+	int seriesInstanceUIDsqDepth = 65535; //issue655
 	int acquisitionTimesGE_UIH = 0;
 	int sqDepth00189114 = -1;
 	bool hasDwiDirectionality = false;
@@ -5788,8 +5789,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
 			break;
 		case kSeriesInstanceUID: // 0020,000E
+		    if (sqDepth > seriesInstanceUIDsqDepth) break; //issue655
+			seriesInstanceUIDsqDepth = sqDepth;
 			dcmStr(lLength, &buffer[lPos], d.seriesInstanceUID);
-			//printMessage(">>%s\n", d.seriesInstanceUID);
 			d.seriesUidCrc = mz_crc32X((unsigned char *)&d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 			break;
 		case kImagePositionPatient: {
