@@ -2266,10 +2266,10 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	}
 	if (numDti < 1)
 		return NULL;
-	if ((numDti < 3) && (nConvert < 3))
+	if ((numDti < 2) && (nConvert < 2))
 		return NULL;
 	TDTI *vx = NULL;
-	if (numDti > 2) {
+	if (numDti > 1) {
 		vx = (TDTI *)malloc(numDti * sizeof(TDTI));
 		for (int i = 0; i < numDti; i++) //for each direction
 			for (int v = 0; v < 4; v++) //for each vector+B-value
