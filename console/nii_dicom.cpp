@@ -4551,6 +4551,7 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 	size_t dimensionIndexPointerCounter = 0;
 	int maxInStackPositionNumber = 0;
 	int temporalPositionIndex = 0;
+	int minTemporalPositionIndex = 65535;
 	int maxTemporalPositionIndex = 0;
 	//int temporalPositionIdentifier = 0;
 	int locationsInAcquisitionPhilips = 0;
@@ -5877,6 +5878,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			temporalPositionIndex = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			if (temporalPositionIndex > maxTemporalPositionIndex)
 				maxTemporalPositionIndex = temporalPositionIndex;
+			if (temporalPositionIndex < minTemporalPositionIndex)
+				minTemporalPositionIndex = temporalPositionIndex;
 			break;
 		case kDimensionIndexPointer:
 			dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos], d.isLittleEndian);
@@ -7413,6 +7416,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		strcpy(d.protocolName, d.sequenceName); //protocolName (0018,1030) optional, sequence name (0018,0024) is not a good substitute for Siemens as it can vary per volume: *ep_b0 *ep_b1000#1, *ep_b1000#2, etc https://www.nitrc.org/forum/forum.php?thread_id=8771&forum_id=4703
 	if (numberOfFrames == 0)
 		numberOfFrames = d.xyzDim[3];
+	if ((numberOfDynamicScans < 1) && (maxTemporalPositionIndex > minTemporalPositionIndex))
+		numberOfDynamicScans = maxTemporalPositionIndex - minTemporalPositionIndex + 1;
 	if ((locationsInAcquisitionPhilips > 0) && ((d.xyzDim[3] % locationsInAcquisitionPhilips) == 0)) {
 		d.xyzDim[4] = d.xyzDim[3] / locationsInAcquisitionPhilips;
 		d.xyzDim[3] = locationsInAcquisitionPhilips;
