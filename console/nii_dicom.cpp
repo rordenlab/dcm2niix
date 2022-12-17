@@ -1,5 +1,6 @@
 //#define MY_DEBUG
 #if defined(_WIN64) || defined(_WIN32)
+#define NOMINMAX
 #include <windows.h> //write to registry
 #endif
 #ifdef _MSC_VER
@@ -36,14 +37,11 @@
 #include <string.h>
 #include <sys/stat.h> // discriminate files from folders
 #include <sys/types.h>
+#include <algorithm>
 
 #ifdef USING_R
 #undef isnan
 #define isnan ISNAN
-#endif
-
-#ifndef max
-#define max(a, b) (a > b ? a : b)
 #endif
 
 #ifndef myDisableClassicJPEG
@@ -2347,7 +2345,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			//offset images by type: mag+0,real+1, imag+2,phase+3
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
-			maxSlice2D = max(slice, maxSlice2D);
+			maxSlice2D = std::max(slice, maxSlice2D);
 			if ((slice >= 0) && (slice < kMaxSlice2D) && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice - 1] = numSlice2D;
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
@@ -2413,7 +2411,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	if (d.isHasImaginary) nType ++;
 	if (d.isHasPhase) nType ++;
 	if (d.isHasReal) nType ++;
-	nType = max(nType, 1);
+	nType = std::max(nType, 1);
 	if (slice != numSlice2D) {
 		printError("Catastrophic error: found %d but expected %d slices. %s\n", slice, numSlice2D, parname);
 		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels*types = %d*%d*%d*%d*%d*%d*%d*%d*%d\n",
