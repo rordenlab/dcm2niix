@@ -4,6 +4,9 @@ CFLAGS=-s -O3
 # Debugging
 #CFLAGS=-g
 
+# issue659: increase stack to 16mb
+LFLAGS=-s -O3 -Wl,-stack_size -Wl,3f00000
+
 #Leak tests:
 # https://clang.llvm.org/docs/AddressSanitizer.html
 # clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.c -o dcm2niix -DmyDisableOpenJPEG
@@ -37,4 +40,4 @@ ifneq ($(OS),Windows_NT)
 	endif
 endif
 all:
-	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG
+	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG
