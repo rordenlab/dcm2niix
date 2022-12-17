@@ -5,7 +5,7 @@ CFLAGS=-s -O3
 #CFLAGS=-g
 
 # issue659: increase stack to 16mb
-LFLAGS=-s -O3 -Wl,-stack_size -Wl,3f00000
+LFLAGS=-s -O3 -Wl,-stack_size -Wl,0x1000000
 
 #Leak tests:
 # https://clang.llvm.org/docs/AddressSanitizer.html
