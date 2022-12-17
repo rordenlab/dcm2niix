@@ -8,7 +8,7 @@ Beyond the complexity of compiling the software, the only downside to adding opt
 
 The text below generally describes how to build dcm2niix using the [GCC](https://gcc.gnu.org) compiler using the `g++` command. However, the code is portable and you can use different compilers. For [clang/llvm](https://clang.llvm.org) compile using `clang++`.  If you have the [Intel C compiler](https://software.intel.com/en-us/c-compilers), you can substitute the `icc` command. The code is compatible with Microsoft's VS 2015 or later. For [Microsoft's C compiler](http://landinghub.visualstudio.com/visual-cpp-build-tools) you would use the `cl` command. In theory, the code should support other compilers, but this has not been tested. Be aware that if you do not have gcc installed the `g++` command may use a default to a compiler (e.g. clang). To check what compiler was used, run the dcm2niix software: it always reports the version and the compiler used for the build.
 
-Note that in the commands below we increase the [stack size](https://stackoverflow.com/questions/71253952/how-to-increase-stack-size-in-macos-for-running-c-c-program#:~:text=You%20can%20increase%20the%20stack,requests%20the%20system%20will%20grant.) to 16mb, which is larger than the Unix (8mb) and Windows (1mb) defaults.
+Note that in the commands below we increase the [stack size](https://stackoverflow.com/questions/18909395/how-do-i-increase-the-stack-size-when-compiling-with-clang-on-os-x)zgit to 16mb, which is larger than the Unix (8mb) and Windows (1mb) defaults.
 
 ## Building the command line version without cmake
 

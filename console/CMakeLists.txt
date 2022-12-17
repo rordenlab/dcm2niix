@@ -21,7 +21,7 @@ endif()
 if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     # using Clang
     add_definitions(-fno-caret-diagnostics)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip -Wl,-stack_size -Wl,0x1000000")
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     # using GCC
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 7.1.0))
