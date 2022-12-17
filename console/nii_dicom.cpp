@@ -42,6 +42,10 @@
 #define isnan ISNAN
 #endif
 
+#ifndef max
+#define max(a, b) (a > b ? a : b)
+#endif
+
 #ifndef myDisableClassicJPEG
 #ifdef myTurboJPEG
 #include <turbojpeg.h>
@@ -392,6 +396,39 @@ mat44 noNaN(mat44 Q44, bool isVerbose, bool *isBogus) //simplify any headers tha
 	} //if isNaN detected
 	return ret;
 }
+
+#define kYYYYMMDDlen 8 //how many characters to encode year,month,day in "YYYYDDMM" format
+
+/*double dicomTimeToSecX(double dicomTime) {
+	//convert HHMMSS to seconds, 135300.024 -> 135259.731 are 0.293 sec apart
+	char acqTimeBuf[64];
+	snprintf(acqTimeBuf, sizeof acqTimeBuf, "%+013.5f", (double)dicomTime);
+	int ahour, amin;
+	double asec;
+	int count = 0;
+	sscanf(acqTimeBuf, "%3d%2d%lf%n", &ahour, &amin, &asec, &count);
+	if (!count)
+		return -1;
+	return (ahour * 3600) + (amin * 60) + asec;
+}
+
+double DateTimeToTime(char *dstr) {
+	if (strlen(dstr) > (kYYYYMMDDlen + 5)) {
+		// 20161117131643.80000 -> date 20161117 time 131643.80000
+		//printMessage("acquisitionDateTime %s\n",acquisitionDateTimeTxt);
+		//char acquisitionDateTxt[kDICOMStr];
+		//memcpy(acquisitionDateTxt, dstr, kYYYYMMDDlen);
+		//acquisitionDateTxt[kYYYYMMDDlen] = '\0'; // IMPORTANT!
+		//d.acquisitionDate = atof(acquisitionDateTxt);
+		char acquisitionTimeTxt[kDICOMStr];
+		int timeLen = (int)strlen(dstr) - kYYYYMMDDlen;
+		strncpy(acquisitionTimeTxt, &dstr[kYYYYMMDDlen], timeLen);
+		acquisitionTimeTxt[timeLen] = '\0'; // IMPORTANT!
+		printf(">>>%s\n", acquisitionTimeTxt);
+		return atof(acquisitionTimeTxt);
+	}
+	return 0.0;
+}*/
 
 #define kSessionOK 0
 #define kSessionBadMatrix 1
@@ -1840,6 +1877,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	int numSlice2D = 0;
 	int prevDyn = -1;
 	bool dynNotAscending = false;
+	int maxSlice2D = 0;
 	int parVers = 0;
 	int maxSeq = -1; //maximum value of Seq column
 	int seq1 = -1; //value of Seq volume for first slice
@@ -2123,10 +2161,6 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			if ((d.intenScale != cols[kRS]) || (d.intenIntercept != cols[kRI]))
 				isIntenScaleVaries = true;
 		}
-		if (cols[kImageType] == 0)
-			d.isHasMagnitude = true;
-		if (cols[kImageType] != 0)
-			d.isHasPhase = true;
 		if (isSameFloat(cols[kImageType], 18)) {
 			//printWarning("Field map in Hz will be saved as the 'real' image.\n");
 			//isTypeWarning = true;
@@ -2231,13 +2265,25 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			//if (slice == 1)  printMessage("%d\t%d\t%d\t%d\t%d\n", isADC,(int)cols[kbvalNumber], (int)cols[kGradientNumber], bval, vol);
 			if (vol > maxVol)
 				maxVol = vol;
-			bool isReal = (cols[kImageType] == 1);
-			bool isImaginary = (cols[kImageType] == 2);
-			bool isPhase = (cols[kImageType] == 3);
-			if (cols[kImageType] == 18) {
+			int imageType = (int) cols[kImageType];
+			bool isMagnitude = (imageType == 0); 
+			bool isReal = (imageType == 1);
+			bool isImaginary = (imageType == 2);
+			bool isPhase = (imageType == 3);
+			bool isRealIsPhaseMapHz = (imageType == 18);
+			if (isMagnitude)
+				d.isHasMagnitude = true;
+			if (isImaginary)
+				d.isHasImaginary = true;
+			if (isPhase)
+				d.isHasPhase = true;
+			if (isRealIsPhaseMapHz) {
 				isReal = true;
+				d.isHasReal = true;
 				d.isRealIsPhaseMapHz = true;
 			}
+			if (isReal)
+				d.isHasReal = true;
 			if (cols[kImageType] == 4) {
 				if (!isType4Warning) {
 					printWarning("Unknown image type (4). Be aware the 'phase' image is of an unknown type.\n");
@@ -2252,6 +2298,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 				}
 				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
 			}
+			int vx = vol;
 			if (isReal)
 				vol += num3DExpected;
 			if (isImaginary)
@@ -2300,7 +2347,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			//offset images by type: mag+0,real+1, imag+2,phase+3
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
-			//printWarning("%d\t%d\n", slice -1, numSlice2D);
+			maxSlice2D = max(slice, maxSlice2D);
 			if ((slice >= 0) && (slice < kMaxSlice2D) && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice - 1] = numSlice2D;
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
@@ -2356,11 +2403,22 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			slice = slice + 1;
 		}
 	}
+	if (maxSlice2D >= kMaxSlice2D) {//issue659
+		printError("Use dicm2nii or increase kMaxSlice2D (issue 659) %d\n", maxSlice2D);
+		d.isValid = false;
+	}
+	//number of image types: issue659
+	int nType = 0;
+	if (d.isHasMagnitude) nType ++;
+	if (d.isHasImaginary) nType ++;
+	if (d.isHasPhase) nType ++;
+	if (d.isHasReal) nType ++;
+	nType = max(nType, 1);
 	if (slice != numSlice2D) {
 		printError("Catastrophic error: found %d but expected %d slices. %s\n", slice, numSlice2D, parname);
-		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels = %d*%d*%d*%d*%d*%d*%d*%d\n",
+		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels*types = %d*%d*%d*%d*%d*%d*%d*%d*%d\n",
 				d.xyzDim[3], maxNumberOfGradientOrients, maxNumberOfDiffusionValues,
-				maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels);
+				maxNumberOfCardiacPhases, maxNumberOfEchoes, maxNumberOfDynamics, maxNumberOfMixes, maxNumberOfLabels, nType);
 		d.isValid = false;
 	}
 	for (int i = 0; i < numSlice2D; i++) { //issue363
@@ -4133,6 +4191,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->volumeOnsetTime[0] = -1;
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
+	dti4D->frameReferenceTime[0] = -1;
 	//dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
@@ -4300,7 +4359,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kCardiacSynchronizationTechnique 0x0018 + uint32_t(0x9037 << 16) //'CS'
 #define kParallelReductionFactorInPlane 0x0018 + uint32_t(0x9069 << 16) //FD
 #define kAcquisitionDuration 0x0018 + uint32_t(0x9073 << 16) //FD
-//#define kFrameAcquisitionDateTime 0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
+#define kFrameAcquisitionDateTime 0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
 #define kDiffusionDirectionality 0x0018 + uint32_t(0x9075 << 16) // NONE, ISOTROPIC, or DIRECTIONAL
 #define kParallelAcquisitionTechnique 0x0018 + uint32_t(0x9078 << 16) //CS: SENSE, SMASH
 #define kInversionTimes 0x0018 + uint32_t(0x9079 << 16) //FD
@@ -5585,13 +5644,15 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.acquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		//in theory, 0018,9074 could provide XA10 slice time information, but scrambled by XA10 de-identification: better to use 0021,1104
-		//case kFrameAcquisitionDateTime: {
-		// //(0018,9074) DT [20190621095516.140000] YYYYMMDDHHMMSS
-		// //see https://github.com/rordenlab/dcm2niix/issues/303
-		//	char dateTime[kDICOMStr];
-		//	dcmStr(lLength, &buffer[lPos], dateTime);
-		//	printf("%s\tkFrameAcquisitionDateTime\n", dateTime);
-		//}
+		/*case kFrameAcquisitionDateTime: {
+			//(0018,9074) DT [20190621095516.140000] YYYYMMDDHHMMSS
+			//see https://github.com/rordenlab/dcm2niix/issues/303
+			char dateTime[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], dateTime);
+			double dTime = DateTimeToTime(dateTime);
+			printf("%s\t FrameAcquisitionDateTime %0.4f \n", dateTime, dTime);
+			//d.triggerDelayTime = dTime;
+		}*/
 		case kDiffusionDirectionality: { // 0018, 9075
 			set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
 			if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 10))
@@ -7296,7 +7357,6 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.isHasOverlay = false;
 	}
 //Recent Philips images include DateTime (0008,002A) but not separate date and time (0008,0022 and 0008,0032)
-#define kYYYYMMDDlen 8 //how many characters to encode year,month,day in "YYYYDDMM" format
 	if ((strlen(acquisitionDateTimeTxt) > (kYYYYMMDDlen + 5)) && (!isFloatDiff(d.acquisitionTime, 0.0f)) && (!isFloatDiff(d.acquisitionDate, 0.0f))) {
 		// 20161117131643.80000 -> date 20161117 time 131643.80000
 		//printMessage("acquisitionDateTime %s\n",acquisitionDateTimeTxt);
