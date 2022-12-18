@@ -114,8 +114,9 @@ if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
     if(MSVC)
         add_definitions(-DCHARLS_STATIC)
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
     set(CHARLS_SRCS
         charls/jpegls.cpp
