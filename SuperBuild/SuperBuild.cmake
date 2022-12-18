@@ -4,14 +4,6 @@ if(NOT GIT_FOUND)
     message(FATAL_ERROR "Cannot find Git. Git is required for Superbuild")
 endif()
 
-# Use git protocol or not
-option(USE_GIT_PROTOCOL "If behind a firewall turn this off to use http instead." OFF)
-if(USE_GIT_PROTOCOL)
-    set(git_protocol "git")
-else()
-    set(git_protocol "https")
-endif()
-
 # Basic CMake build settings
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING

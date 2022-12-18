@@ -1,7 +1,7 @@
 set(YAML-CPP_TAG yaml-cpp-0.5.3) # version yaml-cpp-0.5.3
 
 ExternalProject_Add(yaml-cpp
-    GIT_REPOSITORY "${git_protocol}://github.com/ningfei/yaml-cpp.git"
+    GIT_REPOSITORY "https://github.com/ningfei/yaml-cpp.git"
     GIT_TAG "${YAML-CPP_TAG}"
     SOURCE_DIR yaml-cpp
     BINARY_DIR yaml-cpp-build
