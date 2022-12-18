@@ -7,6 +7,7 @@ ExternalProject_Add(zlib
     BINARY_DIR cloudflare-zlib-build
     CMAKE_ARGS
         -Wno-dev
+        ${OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=${DEP_INSTALL_DIR}
 )

@@ -57,7 +57,7 @@ for:
       - cmake --build build
 
     after_build:
-      - strip -sx ./build/bin/*
+      - strip -sx build/bin/*
       - 7z a dcm2niix_lnx.zip ./build/bin/* &>/dev/null
       - appveyor PushArtifact dcm2niix_lnx.zip
 
@@ -68,11 +68,17 @@ for:
 
     build_script:
       - sudo xcode-select -s /Applications/Xcode-11.3.1.app
-      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B build
-      - cmake --build build
+      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=x86_64 -DBATCH_VERSION=ON -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B intel
+      - cmake --build intel
+      - sudo xcode-select -s /Applications/Xcode-12.3.app
+      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=arm64 -DBATCH_VERSION=ON -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B apple
+      - cmake --build apple
 
     after_build:
-      - strip -Sx ./build/bin/*
+      - mkdir -p build/bin
+      - lipo -create -output build/bin/dcm2niix intel/bin/dcm2niix apple/bin/dcm2niix
+      - lipo -create -output build/bin/dcm2niibatch intel/bin/dcm2niibatch apple/bin/dcm2niibatch
+      - strip -Sx build/bin/*
       - 7z a dcm2niix_macos.zip ./build/bin/* &>/dev/null
       - appveyor PushArtifact dcm2niix_macos.zip
 

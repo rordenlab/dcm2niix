@@ -28,6 +28,10 @@ if(USE_STATIC_RUNTIME)
     endif()
 endif()
 
+if(APPLE)
+    set(OSX_ARCHITECTURES "-DCMAKE_OSX_ARCHITECTURES:STRING=${CMAKE_OSX_ARCHITECTURES}")
+endif()
+
 option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
 set(USE_OPENJPEG "OFF" CACHE STRING "Build with JPEG2000 support using OpenJPEG.")
@@ -147,6 +151,7 @@ ExternalProject_Add(console
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
+        ${OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
         -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
@@ -170,11 +175,9 @@ ExternalProject_Add(console
 )
 
 if(SKBUILD)
-  install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION dcm2niix
-          USE_SOURCE_PERMISSIONS)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION dcm2niix USE_SOURCE_PERMISSIONS)
 endif()
-install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin
-        USE_SOURCE_PERMISSIONS)
+install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin USE_SOURCE_PERMISSIONS)
 
 option(BUILD_DOCS "Build documentation (manpages)" OFF)
 if(BUILD_DOCS)

@@ -8,6 +8,7 @@ ExternalProject_Add(openjpeg
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
+        ${OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=${DEP_INSTALL_DIR}
 )
