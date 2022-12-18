@@ -39,7 +39,7 @@ for:
         - job_name: win
 
     build_script:
-      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=ON -B build
+      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B build
       - cmake --build build --config %configuration%
 
     after_build:
@@ -53,7 +53,7 @@ for:
 
     build_script:
       - export CC=gcc-8 CXX=g++-8
-      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=ON -B build
+      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B build
       - cmake --build build
 
     after_build:
@@ -68,7 +68,7 @@ for:
 
     build_script:
       - sudo xcode-select -s /Applications/Xcode-11.3.1.app
-      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON -DUSE_JPEGLS=ON -B build
+      - cmake -Wno-dev -DBATCH_VERSION=ON -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B build
       - cmake --build build
 
     after_build:
