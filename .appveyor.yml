@@ -1,0 +1,96 @@
+environment:
+  matrix:
+    - job_name: win
+      appveyor_build_worker_image: Visual Studio 2022
+
+    - job_name: linux
+      appveyor_build_worker_image: Ubuntu1604
+
+    - job_name: mac
+      appveyor_build_worker_image: macos-catalina
+
+matrix:
+  fast_finish: true
+
+version: build-{build}
+
+configuration: Release
+
+platform: x64
+
+clone_depth: 1
+
+init:
+  - ps: >-
+      $env:DATE = $(Get-Date -Format d-MMM-yyyy)
+
+      $githash = $env:APPVEYOR_REPO_COMMIT.Substring(0, 7)
+
+      $gittag = if ($env:APPVEYOR_REPO_TAG -eq $True) {"_$($env:APPVEYOR_REPO_TAG_NAME)"} else {""}
+
+      Update-AppveyorBuild -Version "$($env:DATE)_g${githash}${gittag}"
+
+      $env:RELEASE_VERSION = $(Get-Date -Format d-MMMM-yyyy)
+
+for:
+  -
+    matrix:
+      only:
+        - job_name: win
+
+    build_script:
+      - cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B build
+      - cmake --build build --config %configuration%
+
+    after_build:
+      - 7z a dcm2niix_win.zip .\build\bin\* >$null
+      - appveyor PushArtifact dcm2niix_win.zip
+
+  -
+    matrix:
+      only:
+        - job_name: linux
+
+    build_script:
+      - export CC=gcc-8 CXX=g++-8
+      - cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B build
+      - cmake --build build
+
+    after_build:
+      - strip -sx build/bin/*
+      - 7z a dcm2niix_lnx.zip ./build/bin/* &>/dev/null
+      - appveyor PushArtifact dcm2niix_lnx.zip
+
+  -
+    matrix:
+      only:
+        - job_name: mac
+
+    build_script:
+      - sudo xcode-select -s /Applications/Xcode-11.3.1.app
+      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=x86_64 -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B intel
+      - cmake --build intel
+      - sudo xcode-select -s /Applications/Xcode-12.3.app
+      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=arm64 -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_OPENJPEG=GitHub -DUSE_JPEGLS=ON -B apple
+      - cmake --build apple
+
+    after_build:
+      - mkdir -p build/bin
+      - lipo -create -output build/bin/dcm2niix intel/bin/dcm2niix apple/bin/dcm2niix
+      - strip -Sx build/bin/*
+      - 7z a dcm2niix_macos.zip ./build/bin/* &>/dev/null
+      - appveyor PushArtifact dcm2niix_macos.zip
+
+deploy:
+  - provider: GitHub
+    tag: $(APPVEYOR_REPO_TAG_NAME)
+    release: version $(RELEASE_VERSION) ($(APPVEYOR_REPO_TAG_NAME))
+    description: ""
+    auth_token:
+      secure: gCltVLQEWsjSTRlsi8qw7FGP54ujBq60apjXkWTV954b65bOHl95hXMxxkQ734L4
+    artifact: /dcm2niix_.*\.zip/
+    draft: false
+    prerelease: false
+    on:
+      branch: master
+      APPVEYOR_REPO_TAG: true

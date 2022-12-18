@@ -4,14 +4,6 @@ if(NOT GIT_FOUND)
     message(FATAL_ERROR "Cannot find Git. Git is required for Superbuild")
 endif()
 
-# Use git protocol or not
-option(USE_GIT_PROTOCOL "If behind a firewall turn this off to use http instead." OFF)
-if(USE_GIT_PROTOCOL)
-    set(git_protocol "git")
-else()
-    set(git_protocol "https")
-endif()
-
 # Basic CMake build settings
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING
@@ -36,9 +28,14 @@ if(USE_STATIC_RUNTIME)
     endif()
 endif()
 
+if(APPLE)
+    set(OSX_ARCHITECTURES "-DCMAKE_OSX_ARCHITECTURES:STRING=${CMAKE_OSX_ARCHITECTURES}")
+endif()
+
 option(USE_TURBOJPEG "Use TurboJPEG to decode classic JPEG" OFF)
 option(USE_JASPER "Build with JPEG2000 support using Jasper" OFF)
-option(USE_OPENJPEG "Build with JPEG2000 support using OpenJPEG" OFF)
+set(USE_OPENJPEG "OFF" CACHE STRING "Build with JPEG2000 support using OpenJPEG.")
+set_property(CACHE USE_OPENJPEG PROPERTY STRINGS  "OFF;GitHub;System;Custom")
 option(USE_JPEGLS "Build with JPEG-LS support using CharLS" OFF)
 option(USE_JNIFTI "Build with JNIFTI support" ON)
 
@@ -67,55 +64,67 @@ else()
     set(DEP_INSTALL_DIR ${CMAKE_BINARY_DIR})
 endif()
 
-if(USE_OPENJPEG)
+if(NOT ${USE_OPENJPEG} STREQUAL "OFF")
     message("-- Build with OpenJPEG: ${USE_OPENJPEG}")
 
     if(OpenJPEG_DIR)
+        set(USE_OPENJPEG "Custom" CACHE STRING "Build with JPEG2000 support using OpenJPEG." FORCE)
         set(OpenJPEG_DIR "${OpenJPEG_DIR}" CACHE PATH "Path to OpenJPEG configuration file"  FORCE)
         message("--   Using OpenJPEG library from ${OpenJPEG_DIR}")
-    else()
+    elseif(${USE_OPENJPEG} STREQUAL "System")
         find_package(PkgConfig)
         if(PKG_CONFIG_FOUND)
             pkg_check_modules(OPENJPEG libopenjp2)
         endif()
 
-        if(OPENJPEG_FOUND AND NOT ${OPENJPEG_INCLUDE_DIRS} MATCHES "gdcmopenjpeg")
-	    set(OpenJPEG_DIR ${OPENJPEG_LIBDIR}/openjpeg-${OPENJPEG_VERSION} CACHE PATH "Path to OpenJPEG configuration file" FORCE)
-            message("--   Using OpenJPEG library from ${OpenJPEG_DIR}")
-        else()
-            if(${OPENJPEG_INCLUDE_DIRS} MATCHES "gdcmopenjpeg")
+        if(OPENJPEG_FOUND)
+            if(NOT ${OPENJPEG_INCLUDE_DIRS} MATCHES "gdcmopenjpeg")
+        	    set(OpenJPEG_DIR ${OPENJPEG_LIBDIR}/openjpeg-${OPENJPEG_VERSION} CACHE PATH "Path to OpenJPEG configuration file" FORCE)
+                message("--   Using OpenJPEG library from ${OpenJPEG_DIR}")
+            else()
                 message("--   Unable to use GDCM's internal OpenJPEG")
             endif()
-            include(${CMAKE_SOURCE_DIR}/SuperBuild/External-OPENJPEG.cmake)
-            list(APPEND DEPENDENCIES openjpeg)
-            set(BUILD_OPENJPEG TRUE)
-            message("--   Will build OpenJPEG library from github")
         endif()
+    endif()
+
+    if(${USE_OPENJPEG} STREQUAL "GitHub" OR NOT OpenJPEG_DIR)
+        set(USE_OPENJPEG "GitHub" CACHE STRING "Build with JPEG2000 support using OpenJPEG." FORCE)
+        include(${CMAKE_SOURCE_DIR}/SuperBuild/External-OPENJPEG.cmake)
+        list(APPEND DEPENDENCIES openjpeg)
+        set(BUILD_OPENJPEG TRUE)
+        message("--   Will build OpenJPEG library from GitHub")
     endif()
 endif()
 
 if(BATCH_VERSION)
     message("-- Build dcm2niibatch: ${BATCH_VERSION}")
 
+    set(YAML-CPP_IMPLEMENTATION "GitHub" CACHE STRING "Choose yaml-cpp implementation.")
+    set_property(CACHE YAML-CPP_IMPLEMENTATION PROPERTY STRINGS  "GitHub;System;Custom")
+
     if(YAML-CPP_DIR)
+        set(YAML-CPP_IMPLEMENTATION "Custom" CACHE STRING "Choose yaml-cpp implementation." FORCE)
         set(YAML-CPP_DIR ${YAML-CPP_DIR} CACHE PATH "Path to yaml-cpp configuration file"  FORCE)
         message("--   Using yaml-cpp library from ${YAML-CPP_DIR}")
-    else()
+    elseif(${YAML-CPP_IMPLEMENTATION} STREQUAL "System")
         find_package(PkgConfig)
         if(PKG_CONFIG_FOUND)
             pkg_check_modules(YAML-CPP yaml-cpp)
         endif()
 
-        # Build from github if not found or version < 0.5.3
+        # Build from GitHub if not found or version < 0.5.3
         if(YAML-CPP_FOUND AND NOT (YAML-CPP_VERSION VERSION_LESS "0.5.3"))
             set(YAML-CPP_DIR ${YAML-CPP_LIBDIR}/cmake/yaml-cpp CACHE PATH "Path to yaml-cpp configuration file"  FORCE)
             message("--   Using yaml-cpp library from ${YAML-CPP_DIR}")
-        else()
-            include(${CMAKE_SOURCE_DIR}/SuperBuild/External-YAML-CPP.cmake)
-            list(APPEND DEPENDENCIES yaml-cpp)
-            set(BUILD_YAML-CPP TRUE)
-            message("--   Will build yaml-cpp library from github")
         endif()
+    endif()
+
+    if(${YAML-CPP_IMPLEMENTATION} STREQUAL "GitHub" OR NOT YAML-CPP_DIR)
+        set(YAML-CPP_IMPLEMENTATION "GitHub" CACHE STRING "Choose yaml-cpp implementation." FORCE)
+        include(${CMAKE_SOURCE_DIR}/SuperBuild/External-YAML-CPP.cmake)
+        list(APPEND DEPENDENCIES yaml-cpp)
+        set(BUILD_YAML-CPP TRUE)
+        message("--   Will build yaml-cpp library from GitHub")
     endif()
 endif()
 
@@ -126,7 +135,7 @@ if(${ZLIB_IMPLEMENTATION} STREQUAL "Cloudflare")
     include(${CMAKE_SOURCE_DIR}/SuperBuild/External-CLOUDFLARE-ZLIB.cmake)
     list(APPEND DEPENDENCIES zlib)
     set(BUILD_CLOUDFLARE-ZLIB TRUE)
-    message("--   Will build Cloudflare zlib from github")
+    message("--   Will build Cloudflare zlib from GitHub")
 elseif(${ZLIB_IMPLEMENTATION} STREQUAL "Custom")
     set(ZLIB_ROOT ${ZLIB_ROOT} CACHE PATH "Specify custom zlib root directory.")
     if(NOT ZLIB_ROOT)
@@ -142,6 +151,7 @@ ExternalProject_Add(console
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
+        ${OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
         -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
@@ -165,11 +175,9 @@ ExternalProject_Add(console
 )
 
 if(SKBUILD)
-  install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION dcm2niix
-          USE_SOURCE_PERMISSIONS)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION dcm2niix USE_SOURCE_PERMISSIONS)
 endif()
-install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin
-        USE_SOURCE_PERMISSIONS)
+install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION bin USE_SOURCE_PERMISSIONS)
 
 option(BUILD_DOCS "Build documentation (manpages)" OFF)
 if(BUILD_DOCS)

@@ -114,8 +114,9 @@ if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
     if(MSVC)
         add_definitions(-DCHARLS_STATIC)
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
     set(CHARLS_SRCS
         charls/jpegls.cpp
@@ -210,6 +211,10 @@ if(BATCH_VERSION)
     set(YAML-CPP_DIR ${YAML-CPP_DIR} CACHE PATH "Path to yaml-cpp configuration file" FORCE)
 
     find_package(YAML-CPP REQUIRED)
+    if(YAML-CPP_FOUND AND NOT YAML_CPP_LIBRARIES)
+        # workaround for yaml-cpp-devel-0.7.0-1.fc38 on Fedora Rawhide
+        set(YAML_CPP_LIBRARIES yaml-cpp)
+    endif()
     target_include_directories(dcm2niibatch PRIVATE ${YAML_CPP_INCLUDE_DIR})
     target_link_libraries(dcm2niibatch ${YAML_CPP_LIBRARIES})
 
