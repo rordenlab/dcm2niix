@@ -104,6 +104,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
 	printf("  -o : output directory (omit to save to input folder)\n");
 	printf("  -p : Philips precise float (not display) scaling (y/n, default y)\n");
+	printf("  -q : only search directory for DICOMs (y/l/n, default y) [y=show number of DICOMs found, l=additionally list DICOMs found, n=no]\n");
 	printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
 	printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
 //text notes replaced with BIDS: this function is deprecated
@@ -178,7 +179,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 } //showHelp()
 
 int invalidParam(int i, const char *argv[]) {
-	if (strchr("yYnNoOhHiIjJBb01234",argv[i][0]))
+	if (strchr("yYnNoOhHiIjlLJBb01234",argv[i][0]))
 		return 0;
 
 	//if (argv[i][0] != '-') return 0;
@@ -471,6 +472,14 @@ int main(int argc, const char *argv[]) {
 					return 0;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
 					opts.isRenameNotConvert = true;
+			} else if ((argv[i][1] == 'q') && ((i + 1) < argc)) {
+				i++;
+				if (invalidParam(i, argv))
+					return 0;
+				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
+					opts.onlySearchDirForDICOM = 1;
+				else if ((argv[i][0] == 'l') || (argv[i][0] == 'L'))
+					opts.onlySearchDirForDICOM = 2;
 			} else if ((argv[i][1] == 's') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
@@ -624,11 +633,14 @@ int main(int argc, const char *argv[]) {
 		if (ret != EXIT_SUCCESS)
 			return ret;
 	}
+
+	if (opts.onlySearchDirForDICOM == 0) {
 #if !defined(_WIN64) && !defined(_WIN32)
-	printf("Conversion required %f seconds (%f for core code).\n", get_wall_time() - startWall, ((float)(clock() - start)) / CLOCKS_PER_SEC);
+		printf("Conversion required %f seconds (%f for core code).\n", get_wall_time() - startWall, ((float)(clock() - start)) / CLOCKS_PER_SEC);
 #else
-	printf("Conversion required %f seconds.\n", ((float)(clock() - start)) / CLOCKS_PER_SEC);
+		printf("Conversion required %f seconds.\n", ((float)(clock() - start)) / CLOCKS_PER_SEC);
 #endif
+	}
 	//if (isSaveIni) //we now save defaults earlier, in case of early termination.
 	//	saveIniFile(opts);
 	return EXIT_SUCCESS;
