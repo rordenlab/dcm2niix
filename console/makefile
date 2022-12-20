@@ -5,7 +5,10 @@ CFLAGS=-s -O3
 #CFLAGS=-g
 
 # issue659: increase stack to 16mb
-LFLAGS=-s -O3 -Wl,-stack_size -Wl,0x1000000
+#For Linux linker stacksize ignored: we must use setrlimit 
+# LFLAGS=-Wl,-z -Wl,stack-size=16777216
+LFLAGS=
+
 
 #Leak tests:
 # https://clang.llvm.org/docs/AddressSanitizer.html
@@ -37,6 +40,7 @@ ifneq ($(OS),Windows_NT)
 		# otool -l ./dcm2niix | grep info_plist -B1 -A10
 		# launchctl plist ./dcm2niix
 		#MacOS links g++ to clang++, for gcc install via homebrew and replace g++ with /usr/local/bin/gcc-9
+		LFLAGS=-Wl,-stack_size -Wl,0x1000000
 	endif
 endif
 all:
