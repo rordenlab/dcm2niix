@@ -168,6 +168,7 @@ The following tools exploit dcm2niix
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [DPABI Data Processing & Analysis for Brain Imaging](http://rfmri.org/dpabi) includes dcm2niix.
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
+  - [ExploreASL-GUI](https://github.com/MauricePasternak/ExploreASL-GUI) uses dcm2niix for image conversion.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a [web service](https://brainlife.io/ezbids/) for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
   - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
   - [fMRIprep.dcm2niix](https://github.com/BrettNordin/fMRIprep.dcm2niix) is designed to convert DICOM format to the NIfTI format.

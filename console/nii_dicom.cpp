@@ -662,9 +662,9 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
 		d.orient[1] = 1.0f;
 		d.orient[2] = 0.0f;
 		d.orient[3] = 0.0f;
-		d.orient[1] = 0.0f;
-		d.orient[2] = 1.0f;
-		d.orient[3] = 0.0f;
+		d.orient[4] = 0.0f;
+		d.orient[5] = 1.0f;
+		d.orient[6] = 0.0f;
 		if ((d.isDerived) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
 			printMessage("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
 		} else {
