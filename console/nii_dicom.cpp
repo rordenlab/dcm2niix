@@ -6046,7 +6046,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			d.CSA.sliceTiming[acquisitionTimesGE_UIH] = dcmStrFloat(lLength, &buffer[lPos]);
 			d.CSA.sliceTiming[acquisitionTimesGE_UIH] *= 1000.0; //convert sec to msec
-			//printf("x\t%d\t%g\tkTimeAfterStart\n", acquisitionTimesGE_UIH, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
+			//printf("\t%d\t%g\tTimeAfterStart(0021,1104)\n", d.imageNum, d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
 			acquisitionTimesGE_UIH++;
 			break;
 		case kICE_dims: { //issue568: LO (0021,1106) [X_4_1_1_1_1_160_1_1_1_1_1_277]

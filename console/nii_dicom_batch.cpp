@@ -390,7 +390,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
 	for (int i = 0; i < d->CSA.numDti; i++) {
 		float vLen = sqrt((vx[i].V[1] * vx[i].V[1]) + (vx[i].V[2] * vx[i].V[2]) + (vx[i].V[3] * vx[i].V[3]));
 		if ((vx[i].V[0] <= FLT_EPSILON) || (vLen <= FLT_EPSILON)) { //bvalue=0
-			if (vx[i].V[0] > 5.0)									//Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
+			if ((vx[i].V[0] > 5.0) && (!d->isDerived))	//Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
 				printWarning("Volume %d appears to be derived image ADC/Isotropic (non-zero b-value with zero vector length)\n", i);
 			continue; //do not normalize or reorient b0 vectors
 		} //if bvalue=0
@@ -2222,6 +2222,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 #endif
 	//https://github.com/rordenlab/dcm2niix/issues/352
 	bool allB0 = dcmList[indx0].isDiffusion;
+	bool isDerived = dcmList[indx0].isDerived;
 	if (dcmList[indx0].isDerived)
 		allB0 = false; //e.g. FA map
 	if ((numDti == numVol) && (numDti > 1))
@@ -2351,11 +2352,13 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	for (int i = 0; i < numDti; i++)
 		if (vx[i].V[0] > maxB0)
 			maxB0 = vx[i].V[0];
-	//for CMRR sequences unweighted volumes are not actually B=0 but they have B near zero
-	if (minB0 > 50)
-		printWarning("This diffusion series does not have a B0 (reference) volume\n");
-	if ((!opts.isSortDTIbyBVal) && (minB0idx > 0))
-		printMessage("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", minB0idx);
+	if (!isDerived) { //no warnings for derived data
+		//for CMRR sequences unweighted volumes are not actually B=0 but they have B near zero
+		if (minB0 > 50)
+			printWarning("This diffusion series does not have a B0 (reference) volume\n");
+		if ((!opts.isSortDTIbyBVal) && (minB0idx > 0))
+			printMessage("Note: B0 not the first volume in the series (FSL eddy reference volume is %d)\n", minB0idx);
+	}
 	float kADCval = maxB0 + 1; //mark as unusual
 	*numADC = 0;
 	bvals = (float *)malloc(numDti * sizeof(float));
@@ -5886,6 +5889,10 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 	if ((minT1 < 0.0) && (d->rtia_timerGE >= 0.0))
 		return; //use rtia timer
 	if (minT1 < 0.0) { //https://github.com/neurolabusc/MRIcroGL/issues/31
+		if (d->isDerived) { //slice timing not relevant for derived data, values mangled with Siemens XA30
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
 		if (d->modality == kMODALITY_MR)
 			printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRms);
 		return;
@@ -5909,10 +5916,10 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 	// Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
 	// an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
 	uint64_t indx0 = dcmSort[0].indx; //first volume
-	if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1))
+	if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1) || (hdr->dim[4] < 1))
 		return;
-	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
-		//XA11 2D classic
+	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1)) {
+		//XA11 2D classic: nb XA30 in `MFSPLIT` will save each 3D volume from 4D timeseries as a unique series number!
 		for (int v = 0; v < hdr->dim[3]; v++)
 			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0];
 	} else if ((nConvert == (hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
@@ -6640,6 +6647,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 
 	//printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
 	bool isHasOverlay = dcmList[indx0].isHasOverlay;
+	bool isDerived = dcmList[indx0].isDerived;
 	if (nConvert > 1) {
 		//next: detect trigger time see example https://www.slicer.org/wiki/Documentation/4.4/Modules/MultiVolumeExplorer
 		double triggerDx = dcmList[dcmSort[nConvert - 1].indx].triggerDelayTime - dcmList[indx0].triggerDelayTime;
@@ -6693,7 +6701,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 					}
 				}
 			}
-			if (nAcq != nSamePos) 
+			if ((nAcq != nSamePos) && (!isDerived)) //Siemens Derived FA-RGB images have bogus spatial data
 				printWarning("Expected %d volumes but found spatial position repeats %d times.\n", nAcq, nSamePos);
 			//end validate number of spatial volumes
 			if ((nAcq > 1) && ((nConvert / nAcq) > 1) && ((nConvert % nAcq) == 0)) {
