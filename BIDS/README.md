@@ -142,7 +142,7 @@ Fields specific to MRI scans.
 | FlipAngle                          | deg  | DICOM tag 0018,1314                                                                     | B          |
 | VariableFlipAngleFlag              | b    | DICOM tag 0018,1315                                                                     | D          |
 | ImageOrientationPatientDICOM       |      | DICOM tag 0020,0037                                                                     | D          |
-| ImagingFrequency                   | MHz  | DICOM tag 0018,0084                                                                     | D          |
+| ImagingFrequency                   | MHz  | DICOM tag 0018,0084 or 0018,9098                                                        | D          |
 | InPlanePhaseEncodingDirectionDICOM |      | DICOM tag 0018,1312                                                                     | D          |
 | InversionTime                      | s    | DICOM tag 0018,0082                                                                     | B          |
 | MagneticFieldStrength              | T    | DICOM tag 0018,0087                                                                     | B          |
@@ -158,13 +158,13 @@ Fields specific to MRI scans.
 | PercentSampling                    |      | DICOM tag 0018,0093                                                                     | D          |
 | PhaseEncodingAxis                  |      | When polarity unknown                                                                   | B          |
 | PhaseEncodingDirection             |      | When polarity known                                                                     | B          |
-| PhaseEncodingSteps                 |      | DICOM tag 0018,0089                                                                     | D          |
+| PhaseEncodingSteps                 |      | DICOM tag 0018,0089 or 0018,9231                                                        | D          |
 | PixelBandwidth                     | Hz   | DICOM tag 0018,0095                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 | RepetitionTime                     | s    | DICOM tag 0018,0080                                                                     | B          |
 | RepetitionTimeExcitation           | s    | DICOM tag 0018, 0080 for some manufacturers                                             | B          |
 | RepetitionTimeInversion            | s    |                                                                                         | D          |
-| SAR                                |      | DICOM tag 0018,1316                                                                     | D          |
+| SAR                                |      | DICOM tag 0018,1316 or 0018,9181                                                        | D          |
 | SliceThickness                     | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
 | SliceTiming                        | s    |                                                                                         | B          |
 | SpacingBetweenSlices               | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |

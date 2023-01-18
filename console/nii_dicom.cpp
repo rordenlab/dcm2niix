@@ -4321,7 +4321,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kEchoNum 0x0018 + (0x0086 << 16) //IS
 #define kMagneticFieldStrength 0x0018 + (0x0087 << 16) //DS
 #define kZSpacing 0x0018 + (0x0088 << 16) //'DS' 'SpacingBetweenSlices'
-#define kPhaseEncodingSteps 0x0018 + (0x0089 << 16) //'IS'
+#define kPhaseEncodingSteps 0x0018 + (0x0089 << 16) //IS
 #define kEchoTrainLength 0x0018 + (0x0091 << 16) //IS
 #define kPercentSampling 0x0018 + (0x0093 << 16) //'DS'
 #define kPhaseFieldofView 0x0018 + (0x0094 << 16) //'DS'
@@ -4366,8 +4366,9 @@ const uint32_t kEffectiveTE = 0x0018 + (0x9082 << 16);
 //#define kDiffusionBFactorSiemens 0x0019+(0x100C<< 16 ) // 0019;000C;SIEMENS MR HEADER;B_value
 #define kDiffusion_bValue 0x0018 + uint32_t(0x9087 << 16) // FD
 #define kDiffusionOrientation 0x0018 + uint32_t(0x9089 << 16) // FD, seen in enhanced DICOM from Philips 5.* and Siemens XA10.
-#define kImagingFrequency2 0x0018 + uint32_t(0x9098 << 16) //FD
+#define kImagingFrequencyFD 0x0018 + uint32_t(0x9098 << 16) //FD
 #define kParallelReductionFactorOutOfPlane 0x0018 + uint32_t(0x9155 << 16) //FD
+#define kSARFD 0x0018 + (0x9181 << 16) //FD
 //#define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) //CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16) //UL
@@ -6657,13 +6658,17 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
 			}
 			break;
-		case kImagingFrequency2:
+		case kImagingFrequencyFD:
 			d.imagingFrequency = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kParallelReductionFactorOutOfPlane:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
 				break;
 			d.accelFactOOP = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kSARFD:
+			//see issue668
+			//d.SAR = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		//case kFrameAcquisitionDuration :
 		//	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
