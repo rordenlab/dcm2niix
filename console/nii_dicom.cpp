@@ -819,7 +819,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.frameDuration = -1.0;
 	d.frameReferenceTime = -1.0;
 	d.ecat_dosage = 0.0;
-	d.radionuclideTotalDose = 0.0;
+	d.injectedRadioactivity = 0.0;
 	d.seriesNum = 1;
 	d.acquNum = 0;
 	d.imageNum = 1;
@@ -4235,7 +4235,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kSoftwareVersions 0x0018 + (0x1020 << 16) //LO
 #define kProtocolName 0x0018 + (0x1030 << 16)
 #define kTriggerTime 0x0018 + (0x1060 << 16) //DS
-#define kRadionuclideTotalDose 0x0018 + (0x1074 << 16)
+#define kinjectedRadioactivity 0x0018 + (0x1074 << 16)
 #define kRadionuclideHalfLife 0x0018 + (0x1075 << 16)
 #define kRadionuclidePositronFraction 0x0018 + (0x1076 << 16)
 #define kGantryTilt 0x0018 + (0x1120 << 16)
@@ -6100,8 +6100,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			acquisitionTimesGE_UIH++;
 			break;
 		}
-		case kRadionuclideTotalDose:
-			d.radionuclideTotalDose = dcmStrFloat(lLength, &buffer[lPos]);
+		case kinjectedRadioactivity:
+			d.injectedRadioactivity = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
 		case kEffectiveTE: {
 			TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);

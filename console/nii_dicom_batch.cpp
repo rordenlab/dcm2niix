@@ -1386,7 +1386,7 @@ tse3d: T2*/
 	//PET ISOTOPE MODULE ATTRIBUTES
 	json_Str(fp, "\t\"Radiopharmaceutical\": \"%s\",\n", d.radiopharmaceutical);
 	json_Float(fp, "\t\"RadionuclidePositronFraction\": %g,\n", d.radionuclidePositronFraction);
-	json_Float(fp, "\t\"RadionuclideTotalDose\": %g,\n", d.radionuclideTotalDose);
+	json_Float(fp, "\t\"InjectedRadioactivity\": %g,\n", d.injectedRadioactivity);
 	json_Float(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife);
 	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor);
 	json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);

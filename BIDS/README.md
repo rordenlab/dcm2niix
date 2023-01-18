@@ -182,7 +182,7 @@ The term ECAT in the comments suggests that values are defined by the [ECAT7](ht
 |------------------------------|------|-----------------------------|------------|
 | Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT | D          |
 | RadionuclidePositronFraction | f    | DICOM tag 0018,1076         | D          |
-| RadionuclideTotalDose        | MBq  | DICOM tag 0018,1074         | D          |
+| InjectedRadioactivity        | MBq  | DICOM tag 0018,1074         | D          |
 | RadionuclideHalfLife         | s    | DICOM tag 0018,1075         | D          |
 | DoseCalibrationFactor        |      | DICOM tag 0054,1322         | D          |
 | IsotopeHalfLife              |      | ECAT                        | D          |
