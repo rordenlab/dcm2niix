@@ -4564,12 +4564,13 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 // https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl
 // https://github.com/neurolabusc/dcm_qa_agfa
 // http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_7.8.html
-#define kMaxRemaps 16 //no vendor uses more than 5 private creator groups
+	#define kMaxRemaps 16 //no vendor uses more than 5 private creator groups
 	//we need to keep track of multiple remappings, e.g. issue 437 2005,0014->2005,0012; 2005,0015->2005,0011
 	int nRemaps = 0;
 	uint32_t privateCreatorMasks[kMaxRemaps]; //0 -> none
 	uint32_t privateCreatorRemaps[kMaxRemaps]; //0 -> none
 #endif
+	double maxSAR = -INFINITY;
 	double TE = 0.0; //most recent echo time recorded
 	float temporalResolutionMS = 0.0;
 	float MRImageDynamicScanBeginTime = 0.0;
@@ -5908,6 +5909,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kSAR:
 			d.SAR = dcmStrFloat(lLength, &buffer[lPos]);
+			maxSAR = fmax(maxSAR, d.SAR);
 			break;
 		case kStudyID:
 			dcmStr(lLength, &buffer[lPos], d.studyID);
@@ -6667,8 +6669,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.accelFactOOP = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kSARFD:
-			//see issue668
-			//d.SAR = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+			//Siemens XA uses kSARFD instead of kSAR
+			d.SAR = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+			maxSAR = fmax(maxSAR, d.SAR);
 			break;
 		//case kFrameAcquisitionDuration :
 		//	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369
@@ -7923,6 +7926,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.rawDataRunNumber = philMRImageDiffVolumeNumber;
 		d.phaseNumber  = 0; 
 	}
+	//issue 668: several SAR levels for different regions (IEC_HEAD, IEC_LOCAL, etc)
+	d.SAR = fmax(maxSAR, d.SAR);
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	//end: issue529
 	if (hasDwiDirectionality)

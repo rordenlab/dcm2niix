@@ -712,13 +712,10 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	if ((int)result != csaLength)
 		return;
 	fclose(pFile);
-	
 	//next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
 	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
-	if (startAscii == EXIT_FAILURE) {
-		free(buffer);
-		return;
-	}
+	//n.b. previous function parses binary V* "SV10" portion of header
+	// it will return "EXIT_FAILURE for text based X* "<XProtocol>"
 	int csaLengthTrim = csaLength;
 	char *bufferTrim = buffer;
 	if ((startAscii > 0) && (startAscii < csaLengthTrim)) { //ignore binary data at start
@@ -1475,6 +1472,7 @@ tse3d: T2*/
 		json_Float(fp, "\t\"SliceThickness\": %g,\n", d.zThick);
 		json_Float(fp, "\t\"SpacingBetweenSlices\": %g,\n", d.zSpacing);
 	}
+	//if (!opts.isAnonymizeBIDS) //issue668 is SAR identifiable??
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR);
 	if (d.numberOfAverages > 1.0)
 		json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages);
@@ -5911,6 +5909,22 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
 } //checkSliceTiming()
 
+void setMultiBandFactor(int dim3, uint64_t indx0, struct TDICOMdata *dcmList) {
+		float mn = dcmList[indx0].CSA.sliceTiming[0];
+		//first pass: find minimum
+		for (int v = 0; v < dim3; v++)
+			mn = fminf(dcmList[indx0].CSA.sliceTiming[v],mn);
+		//second pass: all times relative to min (i.e. make min = 0)
+		int mb = 0;
+		for (int v = 0; v < dim3; v++) {
+			dcmList[indx0].CSA.sliceTiming[v] -= mn;
+			if (isSameFloatGE(dcmList[indx0].CSA.sliceTiming[v], 0.0))
+				mb++;
+		}
+		if ((dcmList[indx0].CSA.multiBandFactor < 2) && (mb > 1))
+			dcmList[indx0].CSA.multiBandFactor = mb;
+} // setMultiBandFactor()
+
 void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct nifti_1_header *hdr, int verbose, const char *filename, int nConvert) {
 	//Siemens XA10 slice timing
 	// Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
@@ -5922,25 +5936,13 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 		//XA11 2D classic: nb XA30 in `MFSPLIT` will save each 3D volume from 4D timeseries as a unique series number!
 		for (int v = 0; v < hdr->dim[3]; v++)
 			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0];
+		setMultiBandFactor(hdr->dim[3], indx0, dcmList);
 	} else if ((nConvert == (hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
 		//XA10 mosaics - these are missing a lot of information
-		float mn = dcmList[dcmSort[1].indx].CSA.sliceTiming[0];
 		//get slice timing from second volume
-		for (int v = 0; v < hdr->dim[3]; v++) {
+		for (int v = 0; v < hdr->dim[3]; v++)
 			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[1].indx].CSA.sliceTiming[v];
-			if (dcmList[indx0].CSA.sliceTiming[v] < mn)
-				mn = dcmList[indx0].CSA.sliceTiming[v];
-		}
-		if (mn < 0.0)
-			mn = 0.0;
-		int mb = 0;
-		for (int v = 0; v < hdr->dim[3]; v++) {
-			dcmList[indx0].CSA.sliceTiming[v] -= mn;
-			if (isSameFloatGE(dcmList[indx0].CSA.sliceTiming[v], 0.0))
-				mb++;
-		}
-		if ((dcmList[indx0].CSA.multiBandFactor < 2) && (mb > 1))
-			dcmList[indx0].CSA.multiBandFactor = mb;
+		setMultiBandFactor(hdr->dim[3], indx0, dcmList);
 		return; //we have subtracted min
 	}
 	//issue429: subtract min
