@@ -5921,7 +5921,7 @@ void setMultiBandFactor(int dim3, uint64_t indx0, struct TDICOMdata *dcmList) {
 			if (isSameFloatGE(dcmList[indx0].CSA.sliceTiming[v], 0.0))
 				mb++;
 		}
-		if ((dcmList[indx0].CSA.multiBandFactor < 2) && (mb > 1))
+		if ((dcmList[indx0].CSA.multiBandFactor < 2) && (mb > 1) && (mb < dim3))
 			dcmList[indx0].CSA.multiBandFactor = mb;
 } // setMultiBandFactor()
 
