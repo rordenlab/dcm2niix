@@ -764,6 +764,10 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		char keyStrAF3D[] = "sPat.lAccelFact3D";
 		csaAscii->accelFact3D = readKey(keyStrAF3D, keyPos, csaLengthTrim);
+		//issue 672: the tag "sSliceAcceleration.lMultiBandFactor" is not reliable:
+		//  series 7 dcm_qa_xa30 has x3 multiband, but this tag reports "1" (perhaps cmrr sequences)
+		//char keyStrMB[] = "sSliceAcceleration.lMultiBandFactor";
+		//csaAscii->multiBandFactor = readKey(keyStrMB, keyPos, csaLengthTrim);
 		char keyStrRef[] = "sPat.lRefLinesPE";
 		csaAscii->refLinesPE = readKey(keyStrRef, keyPos, csaLengthTrim);
 		char keyStrCombineMode[] = "ucCoilCombineMode";
@@ -1801,15 +1805,15 @@ tse3d: T2*/
 		if ((csaAscii.ucMTC == 1) && (d.mtState < 0)) //precedence for 0018,9020 over CSA
 			json_Bool(fp, "\t\"MTState\": %s,\n", 1);
 		json_Str(fp, "\t\"ConsistencyInfo\": \"%s\",\n", consistencyInfo);
-		if (csaAscii.accelFact3D > 1.01) json_Float(fp, "\t\"AccelFact3D\": %g,\n", csaAscii.accelFact3D); //see *spcR_44ns where "sPat.lAccelFactPE = 1", "sPat.lAccelFact3D = 2" (0051,1011) LO [p2], perhaps ParallelReductionFactorInPlane should be 1?
+		if (csaAscii.accelFact3D > 0)
+			d.accelFactOOP = csaAscii.accelFact3D;
+		//see issue 672 if (csaAscii.accelFact3D > 1.01) json_Float(fp, "\t\"AccelFact3D\": %g,\n", csaAscii.accelFact3D); //see *spcR_44ns where "sPat.lAccelFactPE = 1", "sPat.lAccelFact3D = 2" (0051,1011) LO [p2], perhaps ParallelReductionFactorInPlane should be 1?
 		if (csaAscii.parallelReductionFactorInPlane > 0) { //AccelFactorPE -> phase encoding
 			if (csaAscii.patMode == 1)
 				fprintf(fp, "\t\"MatrixCoilMode\": \"SENSE\",\n");
 			if (csaAscii.patMode == 2)
 				fprintf(fp, "\t\"MatrixCoilMode\": \"GRAPPA\",\n");
-			if (d.accelFactPE < 1.0) { //value not found in DICOM header, but WAS found in CSA ascii
-				d.accelFactPE = csaAscii.parallelReductionFactorInPlane; //value found in ASCII but not in DICOM (0051,1011)
-			}
+			d.accelFactPE = csaAscii.parallelReductionFactorInPlane; //issue672: csa precedence over value found in DICOM (0051,1011)
 			if ((csaAscii.accelFact3D < 1.01) && (csaAscii.parallelReductionFactorInPlane != (int)(d.accelFactPE)))
 				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), csaAscii.parallelReductionFactorInPlane);
 		}
@@ -1893,6 +1897,10 @@ tse3d: T2*/
 		fprintf(fp, "\t\"PhaseEncodingStepsNoPartialFourier\": %d,\n", d.phaseEncodingSteps);
 	} else if (d.phaseEncodingSteps > 0)
 		fprintf(fp, "\t\"PhaseEncodingSteps\": %d,\n", d.phaseEncodingSteps);
+	if (d.frequencyEncodingSteps > 0)
+		fprintf(fp, "\t\"FrequencyEncodingSteps\": %d,\n", d.frequencyEncodingSteps);
+	if (d.phaseEncodingStepsOutOfPlane > 0)
+		fprintf(fp, "\t\"PhaseEncodingStepsOutOfPlane\": %d,\n", d.phaseEncodingStepsOutOfPlane);
 	if ((d.phaseEncodingLines > 0) && (d.modality == kMODALITY_MR))
 		fprintf(fp, "\t\"AcquisitionMatrixPE\": %d,\n", d.phaseEncodingLines);
 	//Compute ReconMatrixPE
@@ -1921,7 +1929,7 @@ tse3d: T2*/
 	json_Str(fp, "\t\"ParallelAcquisitionTechnique\": \"%s\",\n", d.parallelAcquisitionTechnique);
 	//https://github.com/rordenlab/dcm2niix/issues/314
 	if (d.accelFactOOP > 1.0)
-		fprintf(fp, "\t\"ParallelReductionOutOfPlane\": %g,\n", d.accelFactOOP);
+		fprintf(fp, "\t\"ParallelReductionFactorOutOfPlane\": %g,\n", d.accelFactOOP); //issue672
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
 	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the

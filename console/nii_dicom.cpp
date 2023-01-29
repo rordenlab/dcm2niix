@@ -835,6 +835,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.protocolBlockStartGE = 0;
 	d.protocolBlockLengthGE = 0;
 	d.phaseEncodingSteps = 0;
+	d.frequencyEncodingSteps = 0;
+	d.phaseEncodingStepsOutOfPlane = 0;
 	d.coilCrc = 0;
 	d.seriesUidCrc = 0;
 	d.instanceUidCrc = 0;
@@ -4355,6 +4357,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kRectilinearPhaseEncodeReordering 0x0018 + uint32_t(0x9034 << 16) //'CS' 'REVERSE_LINEAR'/'LINEAR'
 #define kPartialFourierDirection 0x0018 + uint32_t(0x9036 << 16) //'CS'
 #define kCardiacSynchronizationTechnique 0x0018 + uint32_t(0x9037 << 16) //'CS'
+#define kMRAcquisitionFrequencyEncodingSteps 0x0018 + uint32_t(0x9058 << 16) //US
 #define kParallelReductionFactorInPlane 0x0018 + uint32_t(0x9069 << 16) //FD
 #define kAcquisitionDuration 0x0018 + uint32_t(0x9073 << 16) //FD
 #define kFrameAcquisitionDateTime 0x0018+uint32_t(0x9074<< 16 ) //DT "20181019212528.232500"
@@ -4367,8 +4370,11 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kDiffusion_bValue 0x0018 + uint32_t(0x9087 << 16) // FD
 #define kDiffusionOrientation 0x0018 + uint32_t(0x9089 << 16) // FD, seen in enhanced DICOM from Philips 5.* and Siemens XA10.
 #define kImagingFrequencyFD 0x0018 + uint32_t(0x9098 << 16) //FD
+#define kMREchoSequence 0x0018 + uint32_t(0x9114 << 16) //SQ
 #define kParallelReductionFactorOutOfPlane 0x0018 + uint32_t(0x9155 << 16) //FD
 #define kSARFD 0x0018 + uint32_t(0x9181 << 16) //FD
+#define kMRAcquisitionPhaseEncodingStepsInPlane 0x0018 + uint32_t(0x9231 << 16) //US
+#define kMRAcquisitionPhaseEncodingStepsOutOfPlane 0x0018 + uint32_t(0x9232 << 16) //US
 //#define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) //CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16) //UL
@@ -4378,8 +4384,6 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kDiffusionBValueYY 0x0018 + uint32_t(0x9605 << 16) //FD
 #define kDiffusionBValueYZ 0x0018 + uint32_t(0x9606 << 16) //FD
 #define kDiffusionBValueZZ 0x0018 + uint32_t(0x9607 << 16) //FD
-#define kMREchoSequence 0x0018 + uint32_t(0x9114 << 16) //SQ
-#define kMRAcquisitionPhaseEncodingStepsInPlane 0x0018 + uint32_t(0x9231 << 16) //US
 #define kNumberOfImagesInMosaic 0x0019 + (0x100A << 16) //US NumberOfImagesInMosaic
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 // https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
@@ -5686,7 +5690,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			sqDepth00189114 = sqDepth - 1;
 			break;
 		case kMRAcquisitionPhaseEncodingStepsInPlane:
-			d.phaseEncodingLines = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			d.phaseEncodingSteps = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kMRAcquisitionFrequencyEncodingSteps:
+			d.frequencyEncodingSteps = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kMRAcquisitionPhaseEncodingStepsOutOfPlane:
+			d.phaseEncodingStepsOutOfPlane = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kNumberOfImagesInMosaic:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
@@ -6670,8 +6680,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kSARFD:
 			//Siemens XA uses kSARFD instead of kSAR
-			d.SAR = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-			maxSAR = fmax(maxSAR, d.SAR);
+			// ignore as we also need to know the definition issue 668
+			//d.SAR = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+			//maxSAR = fmax(maxSAR, d.SAR);
 			break;
 		//case kFrameAcquisitionDuration :
 		//	frameAcquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian); //issue369

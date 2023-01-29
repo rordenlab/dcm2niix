@@ -152,19 +152,22 @@ Fields specific to MRI scans.
 | NumberOfAverages                   |      | DICOM tag 0018,0083                                                                     | D          |
 | ParallelAcquisitionTechnique       |      | DICOM tag 0018, 9078, aka `SENSE`, `GRAPPA`                                             | B          |
 | ParallelReductionFactorInPlane     |      | DICOM tag 0018,9069                                                                     | B          |
+| ParallelReductionFactorOutOfPlane  |      | DICOM tag 0018,9069                                                                     | B          |
 | ParallelReductionOutOfPlane        |      | DICOM tag 0018,9155                                                                     | D          |
 | PartialFourierDirection            |      | DICOM tag 0018,9036                                                                     | B          |
 | PercentPhaseFOV                    |      | DICOM tag 0018,0094                                                                     | D          |
 | PercentSampling                    |      | DICOM tag 0018,0093                                                                     | D          |
 | PhaseEncodingAxis                  |      | When polarity unknown                                                                   | B          |
 | PhaseEncodingDirection             |      | When polarity known                                                                     | B          |
-| PhaseEncodingSteps                 |      | DICOM tag 0018,0089 or 0018,9231                                                        | D          |
+| FrequencyEncodingSteps             |      | DICOM tag 0018,9058                                                        | D          |
+| PhaseEncodingSteps                 |      | DICOM tag 0018,0089 or 0018,9231 aka PhaseEncodingStepsInPlane                          | D          |
+| PhaseEncodingStepsOutOfPlane       |      | DICOM tag 0018,9232                                                        | D          |
 | PixelBandwidth                     | Hz   | DICOM tag 0018,0095                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 | RepetitionTime                     | s    | DICOM tag 0018,0080                                                                     | B          |
 | RepetitionTimeExcitation           | s    | DICOM tag 0018, 0080 for some manufacturers                                             | B          |
 | RepetitionTimeInversion            | s    |                                                                                         | D          |
-| SAR                                |      | DICOM tag 0018,1316 or 0018,9181                                                        | D          |
+| SAR                                |      | DICOM tag 0018,1316 or 0018,9181 defined by 0018,9179                                   | D          |
 | SliceThickness                     | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
 | SliceTiming                        | s    |                                                                                         | B          |
 | SpacingBetweenSlices               | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
@@ -333,6 +336,7 @@ Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tre
 | PostLabelDelay               | s    | DICOM tag 0018,9258        | D          |
 | NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
 | PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
+| SpoilingState                |      | 0021,105B                  | B          |
 
 ### Manufacturer UIH
 
