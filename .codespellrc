@@ -7,4 +7,5 @@ skip = .git,*.json,dcm_qa*
 # ❯ grep -e 'trace or MD ' -e 'Trace/ND' ./console/nii_dicom_batch.cpp
 #		// the isotropic trace or MD can be calculated) often come as
 #			/*if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
-ignore-words-list = te,clen,tage,nd
+# ser - used in  printMessage(" acq %d img %d ser %ld ...
+ignore-words-list = te,clen,tage,nd,ser
