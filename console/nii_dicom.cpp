@@ -5616,9 +5616,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (lLength < 2)
 				break;
 			if (toupper(buffer[lPos]) == 'L')
-				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED; //issue674, (0018, 9034) LINEAR-->FLIPPED
 			if (toupper(buffer[lPos]) == 'R')
-				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED; //issue674, R(0018, 9034) REVERSE_LINEAR-->UNFLIPPED
 			break;
 		}
 		case kPartialFourierDirection: { //'CS' PHASE FREQUENCY SLICE_SELECT COMBINATION
