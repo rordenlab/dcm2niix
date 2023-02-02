@@ -7839,7 +7839,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((d.epiVersionGE == kGE_EPI_EPI2) || (d.internalepiVersionGE == 2)) {
 		// Diffusion tensor file number
 		d.tensorFileGE = userData11GE;
-		// cycling sytems: Premier, UHP, 7.0T
+		// cycling systems: Premier, UHP, 7.0T
 		if ((strstr(d.manufacturersModelName, "Premier") != NULL) || (strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) {
 			// cycling special OFF mode
 			if (isSameFloatGE(userData15GE, 0.72))
