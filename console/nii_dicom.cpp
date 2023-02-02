@@ -5363,7 +5363,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			char uid[kDICOMStrLarge];
 			dcmStr(lLength, &buffer[lPos], uid, true);
 			char *timeStr = strrchr(uid, '.');
-			//nb Manufactuer (0008,0070) comes AFTER (0008,0018) SOPInstanceUID.
+			//nb Manufacturer (0008,0070) comes AFTER (0008,0018) SOPInstanceUID.
 			//format of (0008,0018) UI 
 			//[1.23.4.2019051416101221842
 			//       .YYYYMMDDHHmmssxxxxx
