@@ -1,0 +1,5 @@
+[codespell]
+skip = .git,*.json,dcm_qa*
+# te - the TE used in the code often
+# clen - another common variable for length of smth
+ignore-words-list = te,clen
