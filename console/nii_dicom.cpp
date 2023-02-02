@@ -6999,16 +6999,18 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			int sliceOrderFlag = dcmInt(2, (unsigned char *)hdr + kydir_off, true);
 			if (isVerboseX > 1)
 				printMessage(" GE phasePolarity/sliceOrder flags %d %d\n", phasePolarityFlag, sliceOrderFlag);
-			if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
-				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
-			if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
-				d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
-			if (sliceOrderFlag == kGE_SLICE_ORDER_BOTTOM_UP) {
-				//https://cfmriweb.ucsd.edu/Howto/3T/operatingtips.html
-				if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+			if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNKNOWN) { //issue674 precedence of 0018,9034 over 0043,102A
+				if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
 					d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
-				else
+				if (phasePolarityFlag == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
 					d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+				if (sliceOrderFlag == kGE_SLICE_ORDER_BOTTOM_UP) {
+					//https://cfmriweb.ucsd.edu/Howto/3T/operatingtips.html
+					if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+						d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_FLIPPED;
+					else
+						d.phaseEncodingGE = kGE_PHASE_ENCODING_POLARITY_UNFLIPPED;
+				}
 			}
 //if (sliceOrderFlag == kGE_SLICE_ORDER_TOP_DOWN)
 //	d.sliceOrderGE = kGE_SLICE_ORDER_TOP_DOWN;

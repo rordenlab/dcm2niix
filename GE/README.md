@@ -86,7 +86,7 @@ While GE DICOMs will report if the image uses partial Fourier, it will not revea
 
 ## Phase-Encoding Polarity
 
-All EPI scans have spatial distortion, particularly those with longer readout times. Tools like [FSL topup](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide) can leverage data where two spin-echo images are acquired that are identical except for using opposite phase-encoding polarity (e.g. one uses A>P, the other P>A). Each image is distorted with the same magnitude, but in the opposite direction.  GE's Rx27 software version and later populate the [Rectilinear Phase Encode Reordering (0018,9034)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9034)) tag which for EPI is set to either LINEAR or REVERSE_LINEAR.
+All EPI scans have spatial distortion, particularly those with longer readout times. Tools like [FSL topup](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide) can leverage data where two spin-echo images are acquired that are identical except for using opposite phase-encoding polarity (e.g. one uses A>P, the other P>A). Each image is distorted with the same magnitude, but in the opposite direction.  GE's Rx27 software version and later populate the [Rectilinear Phase Encode Reordering (0018,9034)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9034)) tag which for EPI is set to either LINEAR or REVERSE_LINEAR. This should be given precedence to similar values in [User Define Data GE (0043,102A)](https://github.com/rordenlab/dcm2niix/issues/674).
 
 ## GE Protocol Data Block
 
