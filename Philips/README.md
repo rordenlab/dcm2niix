@@ -136,7 +136,7 @@ MyCustomDirections
 
 ```
 
-Important tags for Philips DICOM include b-value index (2005,1412) and gradient direction number (2005,1413). Knowing both 2005,1412 nd 2005,1413 uniquely identifies a volume in a series (two volumes can share either b-value or gradient direction, but can not be identical in both dimensions). With software release R5.6 and later there are additional useful tags: DIFFUSION2_KDTI (2005, 1595, Y/N) specifies whether acquisition ordering is enabled for a series. NR_OF_DIFFUSION_ORDER (2005,1599) specifies the number of vectors in a series.  DIFFUSION_ORDER (2005,1596) specifies the acquisition ordering of a series.
+Important tags for Philips DICOM include b-value index (2005,1412) and gradient direction number (2005,1413). Knowing both 2005,1412 and 2005,1413 uniquely identifies a volume in a series (two volumes can share either b-value or gradient direction, but can not be identical in both dimensions). With software release R5.6 and later there are additional useful tags: DIFFUSION2_KDTI (2005, 1595, Y/N) specifies whether acquisition ordering is enabled for a series. NR_OF_DIFFUSION_ORDER (2005,1599) specifies the number of vectors in a series.  DIFFUSION_ORDER (2005,1596) specifies the acquisition ordering of a series.
 
 ## Missing Information
 

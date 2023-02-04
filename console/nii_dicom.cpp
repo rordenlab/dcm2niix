@@ -5363,7 +5363,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			char uid[kDICOMStrLarge];
 			dcmStr(lLength, &buffer[lPos], uid, true);
 			char *timeStr = strrchr(uid, '.');
-			//nb Manufactuer (0008,0070) comes AFTER (0008,0018) SOPInstanceUID.
+			//nb Manufacturer (0008,0070) comes AFTER (0008,0018) SOPInstanceUID.
 			//format of (0008,0018) UI 
 			//[1.23.4.2019051416101221842
 			//       .YYYYMMDDHHmmssxxxxx
@@ -7839,7 +7839,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((d.epiVersionGE == kGE_EPI_EPI2) || (d.internalepiVersionGE == 2)) {
 		// Diffusion tensor file number
 		d.tensorFileGE = userData11GE;
-		// cycling sytems: Premier, UHP, 7.0T
+		// cycling systems: Premier, UHP, 7.0T
 		if ((strstr(d.manufacturersModelName, "Premier") != NULL) || (strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) {
 			// cycling special OFF mode
 			if (isSameFloatGE(userData15GE, 0.72))

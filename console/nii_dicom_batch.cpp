@@ -4608,7 +4608,7 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	size_t compressedbytes, totalbytes;
 	unsigned char *compressed=NULL, *buf=NULL;
 
-	/*jnifti convers code-based header fields to human-readable/standardized strings*/
+	/*jnifti converts code-based header fields to human-readable/standardized strings*/
 	int datatypeidx;
 	const char *datatypestr[]={"uint8","int16","int32","single","complex64","double",
 				"rgb24" ,"int8","uint16","uint32","int64","uint64",
@@ -7631,7 +7631,7 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	}
 	if ((d1.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d1.protocolName, d2.protocolName) == 0) && (strlen(d1.softwareVersions) > 4) && (strlen(d1.sequenceName) > 4) && (strlen(d2.sequenceName) > 4)) {
 		if (strstr(d1.sequenceName, "_ep_b") && strstr(d2.sequenceName, "_ep_b") && (strstr(d1.softwareVersions, "VB13") || strstr(d1.softwareVersions, "VB12"))) {
-			//Siemens B12/B13 users with a "DWI" but not "DTI" license would ofter create multi-series acquisitions
+			//Siemens B12/B13 users with a "DWI" but not "DTI" license would often create multi-series acquisitions
 			if (!warnings->forceStackSeries)
 				printMessage("Diffusion images stacked despite varying series number (early Siemens DTI).\n");
 			warnings->forceStackSeries = true;
