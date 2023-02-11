@@ -842,6 +842,9 @@ struct TDICOMdata clear_dicom_data() {
 	d.instanceUidCrc = 0;
 	d.accelFactPE = 0.0;
 	d.accelFactOOP = 0.0;
+	d.compressedSensingFactor = 0.0;
+	d.isDeepLearning = false;
+	strcpy(d.deepLearningText, "");
 	//d.patientPositionNumPhilips = 0;
 	d.imageBytes = 0;
 	d.intenScale = 1;
@@ -977,7 +980,7 @@ void dcmStrDigitsOnlyKey(char key, char *lStr) {
 		return;
 	bool isKey = false;
 	for (int i = 0; i < (int)len; i++) {
-		if (!isdigit(lStr[i])) {
+		if (!isdigitdot(lStr[i])) {
 			isKey = (lStr[i] == key);
 			lStr[i] = ' ';
 		} else if (!isKey)
@@ -1253,6 +1256,8 @@ int dcmStrManufacturer(const int lByteLength, unsigned char lBuffer[]) { //read 
 		ret = kMANUFACTURER_BRUKER;
 	if ((toupper(cString[0]) == 'M') && (toupper(cString[1]) == 'R'))
 		ret = kMANUFACTURER_MRSOLUTIONS;
+	if ((toupper(cString[0]) == 'H') && (toupper(cString[1]) == 'Y'))
+		ret = kMANUFACTURER_HYPERFINE;
 	//if (ret == kMANUFACTURER_UNKNOWN) //reduce verbosity: single warning for series : Unable to determine manufacturer (0008,0070)
 	//	printWarning("Unknown manufacturer %s\n", cString);
 	//#ifdef _MSC_VER
@@ -4438,10 +4443,12 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
 #define kRealDwellTime 0x0021+(0x1142<< 16 )//IS
+//#define kPATModeText2 0x0021 + (0x1156 << 16) //LO, always same as 0021,1009 
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
 #define kCoilElements 0x0021 + (0x114F << 16) //LO
 #define kAcquisitionMatrixText21 0x0021 + (0x1158 << 16) //SH
 #define kImageTypeText 0x0021 + (0x1175 << 16) //CS
+#define kDeepLearningText 0x0021 + (0x1176 << 16) //LO
 //Private Group 21 as used by GE:
 #define kLocationsInAcquisitionGE 0x0021 + (0x104F << 16) //SS 'LocationsInAcquisitionGE'
 #define kRTIA_timer 0x0021 + (0x105E << 16) //DS
@@ -4488,6 +4495,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kASLLabelingTechniqueGE 0x0043 + (0x10A4 << 16) //LO
 #define kDurationLabelPulseGE 0x0043 + (0x10A5 << 16) //IS
 #define kMultiBandGE 0x0043 + (0x10B6 << 16) //LO
+#define kCompressedSensingParameters 0x0043 + (0x10B7 << 16) //LO
+#define kDeepLearningParameters 0x0043 + (0x10CA << 16) //LO "0.75\High"
 #define kAcquisitionMatrixText 0x0051 + (0x100B << 16) //LO
 #define kImageOrientationText 0x0051 + (0x100E << 16) //
 #define kCoilSiemens 0x0051 + (0x100F << 16)
@@ -6028,13 +6037,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			char accelStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], accelStr);
 			char *ptr;
-			dcmStrDigitsOnlyKey('p', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
+			dcmStrDigitsDotOnlyKey('p', accelStr); //e.g. if "p2s4" return "2", if "s4" return ""
 			d.accelFactPE = (float)strtof(accelStr, &ptr);
 			if (*ptr != '\0')
 				d.accelFactPE = 0.0;
 			//between slice accel
 			dcmStr(lLength, &buffer[lPos], accelStr);
-			dcmStrDigitsOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
+			dcmStrDigitsDotOnlyKey('s', accelStr); //e.g. if "p2s4" return "4", if "p2" return ""
 			multiBandFactor = (int)strtol(accelStr, &ptr, 10);
 			if (*ptr != '\0')
 				multiBandFactor = 0.0;
@@ -6386,6 +6395,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 					if (d.imageTypeText[i] == '\\')
 						d.imageTypeText[i] = '_';
 			}
+			break;
+		}
+		case kDeepLearningText: {
+			if ((d.manufacturer != kMANUFACTURER_SIEMENS) || (lLength < 2))
+				break;
+			dcmStr(lLength, &buffer[lPos], d.deepLearningText, true);
 			break;
 		}
 		case kAcquisitionMatrixText21:
@@ -7098,6 +7113,24 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			int mb = dcmStrInt(lLength, &buffer[lPos]);
 			if (mb > 1)
 				d.CSA.multiBandFactor = mb;
+			break;
+		}
+		case kCompressedSensingParameters: { //LO issue672
+			if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 2))
+				break;
+			//0043,10b7) LO [1.24\1\10\0]    #  12, 4 Compressed Sensing Parameters
+			float cs = dcmStrFloat(lLength, &buffer[lPos]);
+			if (cs > 1.0)
+				d.compressedSensingFactor = cs;
+			//dcmStr(lLength, &buffer[lPos], d.compressedSensingText);
+			break;
+		}
+		case kDeepLearningParameters: { //LO issue672
+			if ((d.manufacturer != kMANUFACTURER_GE) || (lLength < 2))
+				break;
+			//(0043,10ca) LO [0.75\High]
+			d.isDeepLearning = true;
+			dcmStr(lLength, &buffer[lPos], d.deepLearningText, true);
 			break;
 		}
 		case kGeiisFlag:

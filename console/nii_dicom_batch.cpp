@@ -650,7 +650,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 
 #define kMaxWipFree 64
 typedef struct {
-	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp;
+	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
 	int phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
 		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D;
 	float alFree[kMaxWipFree];
@@ -680,6 +680,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
 	csaAscii->parallelReductionFactorInPlane = 0;
 	csaAscii->accelFact3D = 0;//lAccelFact3D
+	csaAscii->accelFactTotal = 0.0;
 	csaAscii->refLinesPE = 0;
 	csaAscii->combineMode = 0;
 	csaAscii->patMode = 0;
@@ -764,6 +765,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->parallelReductionFactorInPlane = readKey(keyStrAF, keyPos, csaLengthTrim);
 		char keyStrAF3D[] = "sPat.lAccelFact3D";
 		csaAscii->accelFact3D = readKey(keyStrAF3D, keyPos, csaLengthTrim);
+		char keyStrAFTotal[] = "sPat.dTotalAccelFact";
+		csaAscii->accelFactTotal = readKeyFloat(keyStrAFTotal, keyPos, csaLengthTrim);
 		//issue 672: the tag "sSliceAcceleration.lMultiBandFactor" is not reliable:
 		//  series 7 dcm_qa_xa30 has x3 multiband, but this tag reports "1" (perhaps cmrr sequences)
 		//char keyStrMB[] = "sSliceAcceleration.lMultiBandFactor";
@@ -1247,6 +1250,9 @@ tse3d: T2*/
 		break;
 	case kMANUFACTURER_MRSOLUTIONS:
 		fprintf(fp, "\t\"Manufacturer\": \"MRSolutions\",\n");
+		break;
+	case kMANUFACTURER_HYPERFINE:
+		fprintf(fp, "\t\"Manufacturer\": \"Hyperfine\",\n");
 		break;
 	};
 	//if (d.epiVersionGE == 0)
@@ -1817,6 +1823,8 @@ tse3d: T2*/
 			if ((csaAscii.accelFact3D < 1.01) && (csaAscii.parallelReductionFactorInPlane != (int)(d.accelFactPE)))
 				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), csaAscii.parallelReductionFactorInPlane);
 		}
+		if ((!isnan(csaAscii.accelFactTotal)) && (csaAscii.accelFactTotal > (d.accelFactPE * d.accelFactOOP) ))
+			d.compressedSensingFactor = csaAscii.accelFactTotal; //see dcm_qa_cs_dl
 	} else { //e.g. Siemens Vida does not have CSA header, but has many attributes
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
 		if (strcmp(d.coilElements, d.coilName) != 0)
@@ -1929,7 +1937,19 @@ tse3d: T2*/
 	json_Str(fp, "\t\"ParallelAcquisitionTechnique\": \"%s\",\n", d.parallelAcquisitionTechnique);
 	//https://github.com/rordenlab/dcm2niix/issues/314
 	if (d.accelFactOOP > 1.0)
-		fprintf(fp, "\t\"ParallelReductionFactorOutOfPlane\": %g,\n", d.accelFactOOP); //issue672
+		json_Float(fp, "\t\"ParallelReductionFactorOutOfPlane\": %g,\n", d.accelFactOOP); //issue672
+	if (d.compressedSensingFactor > 1.0)
+		json_Float(fp, "\t\"CompressedSensingFactor\": %g,\n", d.compressedSensingFactor);
+	//detect if Siemens data is DeepLearning: see dcm_qa_cs_dl
+	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
+		//DRB,DRG,DRS DeepReveal Boost,Gain,Sharp
+		d.isDeepLearning = (strstr(d.imageType, "_DRB_")|| strstr(d.imageType, "_DRG_") || strstr(d.imageType, "_DRS_") ||
+			strstr(d.imageTypeText, "_DRB_")|| strstr(d.imageTypeText, "_DRG_") || strstr(d.imageTypeText, "_DRS_"));
+	}
+	if (d.isDeepLearning) {
+		json_Bool(fp, "\t\"DeepLearning\": %s,\n", 1);
+		json_Str(fp, "\t\"DeepLearningDetails\": \"%s\",\n", d.deepLearningText);
+	}
 	//EffectiveEchoSpacing
 	// Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
 	// interpolation, phaseOversampling, and phaseResolution, in the context of the size of the
@@ -2048,7 +2068,7 @@ tse3d: T2*/
 	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if ((d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
 		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < h->dim[3]; i++) {
 			if (i != 0)
@@ -3163,6 +3183,8 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "Me");
 				else if (dcm.manufacturer == kMANUFACTURER_MRSOLUTIONS)
 					strcat(outname, "MR");
+				else if (dcm.manufacturer == kMANUFACTURER_HYPERFINE)
+					strcat(outname, "Hy");
 				else
 					strcat(outname, "NA"); //manufacturer name not available
 			}
@@ -3661,6 +3683,9 @@ void nii_saveAttributes(struct TDICOMdata &data, struct nifti_1_header &header, 
 		break;
 	case kMANUFACTURER_MRSOLUTIONS:
 		images->addAttribute("manufacturer", "MRSolutions");
+		break;
+	case kMANUFACTURER_HYPERFINE:
+		images->addAttribute("manufacturer", "Hyperfine");
 		break;
 	}
 	images->addAttribute("scannerModelName", data.manufacturersModelName);
@@ -5811,7 +5836,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 	int nSlices = 0;
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
 		nSlices++;
-	if (nSlices < 1)
+	if (nSlices < 2)
 		return;
 	if (d->CSA.sliceTiming[kMaxEPI3D - 1] < -1.0) //the value -2.0 is used as a flag for negative MosaicRefAcqTimes in checkSliceTimes(), see issue 271
 		printWarning("Adjusting for negative MosaicRefAcqTimes (issue 271).\n");

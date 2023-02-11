@@ -50,7 +50,7 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20230201"
+#define kDCMdate "v1.0.20230210"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -76,6 +76,7 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 #define kMANUFACTURER_CANON  8
 #define kMANUFACTURER_MEDISO  9
 #define kMANUFACTURER_MRSOLUTIONS  10
+#define kMANUFACTURER_HYPERFINE  11
 
 //note: note a complete modality list, e.g. XA,PX, etc
 #define kMODALITY_UNKNOWN  0
@@ -236,7 +237,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
         int overlayStart[kMaxOverlay];
         int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
-        float  xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
+        float compressedSensingFactor, xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, percentSampling,waterFatShift, numberOfAverages, imagingFrequency, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
         float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
         float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor; //PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
         float frameReferenceTime, frameDuration, ecat_isotope_halflife, ecat_dosage;
@@ -244,10 +245,10 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         double acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, acquisitionDate, bandwidthPerPixelPhaseEncode;
         char parallelAcquisitionTechnique[kDICOMStr], radiopharmaceutical[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr],reconstructionMethod[kDICOMStr];
         char prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr];
-        char scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
+        char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
-        bool isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
+        bool isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
     };
     struct TDCMprefs {
