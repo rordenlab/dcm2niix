@@ -1564,6 +1564,15 @@ void dcmMultiFloat(int lByteLength, char lBuffer[], int lnFloats, float *lFloats
 	free(cString);
 } //dcmMultiFloat()
 
+double dcmStrDouble(const int lByteLength, const unsigned char lBuffer[]) { //read float stored as a string
+	char *cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
+	memcpy(cString, (char *)&lBuffer[0], lByteLength);
+	cString[lByteLength] = 0; //null terminate
+	double ret = (double)atof(cString);
+	free(cString);
+	return ret;
+} //dcmStrDouble()
+
 float dcmStrFloat(const int lByteLength, const unsigned char lBuffer[]) { //read float stored as a string
 	char *cString = (char *)malloc(sizeof(char) * (lByteLength + 1));
 	memcpy(cString, (char *)&lBuffer[0], lByteLength);
@@ -6248,7 +6257,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.numberOfAverages = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
 		case kImagingFrequency:
-			d.imagingFrequency = dcmStrFloat(lLength, &buffer[lPos]);
+			d.imagingFrequency = dcmStrDouble(lLength, &buffer[lPos]);
 			break;
 		case kTriggerTime: {
 			if (prefs->isIgnoreTriggerTimes)

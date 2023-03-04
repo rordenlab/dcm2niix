@@ -151,6 +151,8 @@ The following tools exploit dcm2niix
   - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
   - [clpipe](https://github.com/cohenlabUNC/clpipe) uses dcm2bids for DICOM import.
   - [conversion](https://github.com/pnlbwh/conversion) is a Python library that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
+  - [convert_source](https://github.com/AdebayoBraimah/convert_source) to convert DICOM to BIDS directory layout.
+  - [CT-preprocess](https://github.com/GravO8/CT-preprocess) brain extract head CT scans.
   - [d2b-dcm2niix](https://github.com/d2b-dev/d2b-dcm2niix) data to BIDS wrapper.
   - [DAC2BIDS](https://github.com/dangom/dac2bids) uses dcm2niibatch to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [Data2Bids](https://github.com/SIMEXP/Data2Bids) converts non-DICOM images with associated JSON files to BIDS. While this tool does not require dcm2niix, it can leverage dcm2niix output similar to niix2bids.
@@ -165,6 +167,7 @@ The following tools exploit dcm2niix
   - [dicom2bids](https://github.com/Jolinda/lcnimodules) includes python modules for converting dicom files to nifti in a bids-compatible file structure that use dcm2niix.
   - [DICOM2BIDS](https://github.com/klsea/DICOM2BIDS) is a Python 2 script for creating BIDS files.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
+  - [dicomConversionToNifti](https://github.com/bsmarine/dicomConversionToNifti) converts, de-identifies and assigns standardized naming convention to medical imaging.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [DPABI Data Processing & Analysis for Brain Imaging](http://rfmri.org/dpabi) includes dcm2niix.
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
@@ -183,6 +186,7 @@ The following tools exploit dcm2niix
   - [lin4neuro](http://www.lin4neuro.net/lin4neuro/18.04bionic/vm/) releases such as the English l4n-18.04.4-amd64-20200801-en.ova include MRIcroGL and dcm2niix pre-installed. This allows user with VirtualBox or VMWarePlayer to use these tools (and many other neuroimaging tools) in a graphical virtual machine.
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
   - [MrPyConvert](https://github.com/Jolinda/mrpyconvert) Python library dicom to bids conversion.
+  - [Nekton](https://github.com/deepc-health/nekton) is a python package for DICOM to NifTi and NifTi to DICOM-SEG and GSPS conversion.
   - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a single, static Dockerfile.
   - [NeuroDebian](http://neuro.debian.net/pkgs/dcm2niix.html) provides up-to-date version of dcm2niix for Debian-based systems.
   - [neurodocker](https://github.com/kaczmarj/neurodocker) includes dcm2niix as a lean, minimal install Dockerfile.
@@ -192,9 +196,11 @@ The following tools exploit dcm2niix
   - [niix2bids](https://github.com/benoitberanger/niix2bids ) attempts to automatically convert Siemens MRI images converted by dcm2niix to BIDS.
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
   - [PET2BIDS](https://github.com/openneuropet/PET2BIDS) uses dcm2niix for DICOM images.
+  - [pl-dcm2niix](https://github.com/FNNDSC/pl-dcm2niix) is a ChRIS wrapper for dcm2niix.
   - [py2bids](https://github.com/Jolinda/py2bids) dcm2niix dicom to bids conversion wrapper.
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
+  - [pydra-dcm2bids](https://github.com/aramis-lab/pydra-dcm2bids) supports Pydra tasks for dcm2bids.
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
@@ -205,4 +211,5 @@ The following tools exploit dcm2niix
   - [tar2bids](https://github.com/khanlab/tar2bids) converts DICOM tarball(s) to BIDS using heudiconv which invokes dcm2niix.
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).
+  - [twice_exceptionality_repository](https://github.com/avery-water/twice_exceptionality_repository) converts DICOM to BIDS format, creates masks, and runs VBM.
   - [XNAT2BIDS](https://github.com/kamillipi/2bids) is a simple xnat pipeline to convert DICOM scans to BIDS-compatible output.

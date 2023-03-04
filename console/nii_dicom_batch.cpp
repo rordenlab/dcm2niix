@@ -1219,7 +1219,7 @@ tse3d: T2*/
 	//Imaging Frequency (0018,0084) can be useful https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth
 	// however, UIH stores 128176031 not 128.176031 https://github.com/rordenlab/dcm2niix/issues/225
 	if (d.imagingFrequency < 9000000)
-		json_Float(fp, "\t\"ImagingFrequency\": %g,\n", d.imagingFrequency);
+		fprintf(fp, "\t\"ImagingFrequency\": %.10g,\n", d.imagingFrequency);
 	switch (d.manufacturer) {
 	case kMANUFACTURER_BRUKER:
 		fprintf(fp, "\t\"Manufacturer\": \"Bruker\",\n");
