@@ -1815,6 +1815,7 @@ tse3d: T2*/
 			d.accelFactOOP = csaAscii.accelFact3D;
 		//see issue 672 if (csaAscii.accelFact3D > 1.01) json_Float(fp, "\t\"AccelFact3D\": %g,\n", csaAscii.accelFact3D); //see *spcR_44ns where "sPat.lAccelFactPE = 1", "sPat.lAccelFact3D = 2" (0051,1011) LO [p2], perhaps ParallelReductionFactorInPlane should be 1?
 		if (csaAscii.parallelReductionFactorInPlane > 0) { //AccelFactorPE -> phase encoding
+			//1=SENSE, 2=GRAPPA, 32=SMS??, 256=CompressedSense?
 			if (csaAscii.patMode == 1)
 				fprintf(fp, "\t\"MatrixCoilMode\": \"SENSE\",\n");
 			if (csaAscii.patMode == 2)
@@ -1823,7 +1824,7 @@ tse3d: T2*/
 			if ((csaAscii.accelFact3D < 1.01) && (csaAscii.parallelReductionFactorInPlane != (int)(d.accelFactPE)))
 				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), csaAscii.parallelReductionFactorInPlane);
 		}
-		if ((!isnan(csaAscii.accelFactTotal)) && (csaAscii.accelFactTotal > (d.accelFactPE * d.accelFactOOP) ))
+		if ((csaAscii.patMode == 256) && (!isnan(csaAscii.accelFactTotal)) && (csaAscii.accelFactTotal > (d.accelFactPE * d.accelFactOOP) ))
 			d.compressedSensingFactor = csaAscii.accelFactTotal; //see dcm_qa_cs_dl
 	} else { //e.g. Siemens Vida does not have CSA header, but has many attributes
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
@@ -1927,6 +1928,12 @@ tse3d: T2*/
 	}
 	if ((d.modality == kMODALITY_MR) && (reconMatrixPE > 0))
 		fprintf(fp, "\t\"ReconMatrixPE\": %d,\n", reconMatrixPE);
+	if ((d.accelFactPE > 1.0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && strstr(d.parallelAcquisitionTechnique, "CSENSE") ) {
+		//see dcm_qa_cs_dl: while GE allows you to set ASSET and compressed sense, Philips reports only CSENSE
+		d.compressedSensingFactor = d.accelFactPE;
+		d.accelFactPE = 1.0;
+		d.parallelAcquisitionTechnique[0] = '\0';
+	}
 	double bandwidthPerPixelPhaseEncode = d.bandwidthPerPixelPhaseEncode;
 	if (bandwidthPerPixelPhaseEncode == 0.0)
 		bandwidthPerPixelPhaseEncode = d.CSA.bandwidthPerPixelPhaseEncode;

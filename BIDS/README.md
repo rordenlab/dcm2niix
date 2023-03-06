@@ -339,6 +339,8 @@ Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tre
 | PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
 | SpoilingState                |      | 0021,105B                  | B          |
 
+Siemens also includes some sequence information in the private MRPhoenixProtocol (0021,1019) tag. You can view this with [gdcmdump](https://gdcm.sourceforge.net/html/gdcmdump.html), e.g. `gdcmdump --mrprotocol img.dcm`. Fields that dcm2niix inspects include `sPat.lAccelFact3D `, `sPat.lAccelFactPE`, `sPat.lRefLinesPE` and `sPat.ucPATMode`. The behavior of dcm2niix will be more well documented as our understanding of this tag improves.
+
 ### Manufacturer UIH
 
 Fields specific to United Imaging Healthcare systems (e.g. uMR 770).
