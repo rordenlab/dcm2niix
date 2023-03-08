@@ -5093,7 +5093,11 @@ void nii_storeIntegerScaleFactor(int scale, struct nifti_1_header *hdr) {
 		strcat(hdr->descrip, newstr);
 }
 
-void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr) {
+int int12toint16(int U12) {
+	return (short)(U12 & 0xFFF) - ((U12 & 0x800) << 1);
+}
+
+void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr, bool isSigned) {
 	//https://github.com/rordenlab/dcm2niix/issues/251
 	if (hdr->datatype != DT_INT16)
 		return;
@@ -5105,8 +5109,15 @@ void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr) {
 	if (nVox < 1)
 		return;
 	int16_t *img16 = (int16_t *)img;
-	for (int i = 0; i < nVox; i++)
-		img16[i] = img16[i] & 4095; //12 bit data ranges from 0..4095, any other values are overflow
+	//issue 688
+	if (isSigned) {
+		for (int i = 0; i < nVox; i++)
+			img16[i] = int12toint16(img16[i]); //signed 12 bit data ranges from 0..4095, any other values are overflow
+	
+	} else {
+		for (int i = 0; i < nVox; i++)
+			img16[i] = img16[i] & 4095; //12 bit data ranges from 0..4095, any other values are overflow
+	}
 }
 
 unsigned char * nii_uint16toFloat32(unsigned char *img, struct nifti_1_header *hdr, int isVerbose) {
@@ -7183,7 +7194,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	int *volOrderIndex = nii_saveDTI(pathoutname, nConvert, dcmSort, dcmList, opts, sliceDir, dti4D, &numADC, hdr0.dim[4]);
 	PhilipsPrecise(&dcmList[dcmSort[0].indx], opts.isPhilipsFloatNotDisplayScaling, &hdr0, opts.isVerbose);
 	if ((dcmList[dcmSort[0].indx].bitsStored == 12) && (dcmList[dcmSort[0].indx].bitsAllocated == 16))
-		nii_mask12bit(imgM, &hdr0);
+		nii_mask12bit(imgM, &hdr0, dcmList[dcmSort[0].indx].isSigned);
 	if ((opts.saveFormat == kSaveFormatMGH) && (hdr0.datatype == DT_UINT16))
 		imgM = nii_uint16toFloat32(imgM, &hdr0, opts.isVerbose);
 	if ((opts.isMaximize16BitRange == kMaximize16BitRange_True) && (hdr0.datatype == DT_INT16)) {
