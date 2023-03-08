@@ -5105,9 +5105,14 @@ void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr) {
 	if (nVox < 1)
 		return;
 	int16_t *img16 = (int16_t *)img;
-	for (int i = 0; i < nVox; i++)
-		img16[i] = (img16[i] << 4) >> 4; //12 bit data ranges from 0..4095, any other values are overflow. 
-                                     //Discard upper bits but preserve signage whenever allowed by compiler/architecture
+	for (int i = 0; i < nVox; i++){
+		/*Keep as two separate operations or risk getting the operation optimized out in -O2 
+		*by old gcc and clang. Newer gcc and clang might optimize these bit shifts to SIMD (XMM in Intel)
+		*without needing to combine them into one operation. MSVC might not use SIMD in -O2.
+		*See https://godbolt.org/ (Compiler Explorer) for an exploration of compiler behavior. */
+		img16[i] = img16[i] << 4; //12 bit data ranges from 0..4095, any other values are overflow.
+		img16[i] = img16[i] >> 4; //Discard upper bits but preserve signage whenever allowed by compiler/architecture
+	}
 }
 
 unsigned char * nii_uint16toFloat32(unsigned char *img, struct nifti_1_header *hdr, int isVerbose) {
