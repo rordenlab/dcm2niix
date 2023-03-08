@@ -5106,7 +5106,8 @@ void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr) {
 		return;
 	int16_t *img16 = (int16_t *)img;
 	for (int i = 0; i < nVox; i++)
-		img16[i] = img16[i] & 4095; //12 bit data ranges from 0..4095, any other values are overflow
+		img16[i] = (img16[i] << 4) >> 4; //12 bit data ranges from 0..4095, any other values are overflow. 
+                                     //Discard upper bits but preserve signage whenever allowed by compiler/architecture
 }
 
 unsigned char * nii_uint16toFloat32(unsigned char *img, struct nifti_1_header *hdr, int isVerbose) {
