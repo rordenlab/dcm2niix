@@ -1617,8 +1617,7 @@ int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeS
 		printMessage("Unsupported DICOM bit-depth %d with %d samples per pixel\n", d.bitsAllocated, d.samplesPerPixel);
 		return EXIT_FAILURE;
 	}
-	if ((h->datatype == DT_UINT16) && (d.bitsStored > 0) && (d.bitsStored < 16))
-		h->datatype = DT_INT16; // DT_INT16 is more widely supported, same representation for values 0..32767
+	
 	for (int i = 0; i < 8; i++) {
 		h->pixdim[i] = 0.0f;
 		h->dim[i] = 0;
