@@ -683,12 +683,12 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
 	if (h->slice_code == NIFTI_SLICE_UNKNOWN)
 		h->slice_code = d2.CSA.sliceOrder; //sometimes the first slice order is screwed up https://github.com/eauerbach/CMRR-MB/issues/29
 	if (d.modality == kMODALITY_MR)
-		sprintf(txt, "TE=%.2g;Time=%.3f", d.TE, d.acquisitionTime);
+		snprintf(txt, 1024, "TE=%.2g;Time=%.3f", d.TE, d.acquisitionTime);
 	else
-		sprintf(txt, "Time=%.3f", d.acquisitionTime);
+		snprintf(txt, 1024, "Time=%.3f", d.acquisitionTime);
 	if (d.CSA.phaseEncodingDirectionPositive >= 0) {
 		char dtxt[1024] = {""};
-		sprintf(dtxt, ";phase=%d", d.CSA.phaseEncodingDirectionPositive);
+		snprintf(dtxt, 1024, ";phase=%d", d.CSA.phaseEncodingDirectionPositive);
 		strcat(txt, dtxt);
 	}
 	//from dicm2nii 20151117 InPlanePhaseEncodingDirection
@@ -698,7 +698,7 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
 		h->dim_info = (3 << 4) + (2 << 2) + 1;
 	if (d.CSA.multiBandFactor > 1) {
 		char dtxt[1024] = {""};
-		sprintf(dtxt, ";mb=%d", d.CSA.multiBandFactor);
+		snprintf(dtxt, 1024, ";mb=%d", d.CSA.multiBandFactor);
 		strcat(txt, dtxt);
 	}
 	// GCC 8 warns about truncation using snprintf
@@ -6093,7 +6093,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				int coilNumber = (int)strtol(iceStr, &end, 10);
 				//if ((iceStr != end) && (coilNumber > 0) && (strlen(d.coilName) < 1)) { //nb with uncombined coil will still have a name, e.g. 'HeadNeck_64'
 				if ((iceStr != end) && (coilNumber > 0)) {
-					sprintf(d.coilName, "%d", coilNumber);
+					snprintf(d.coilName, kDICOMStr, "%d", coilNumber);
 					//printf("issue631 coil name '%s'\n", d.coilName);
 					d.coilCrc = mz_crc32X((unsigned char *)&d.coilName, strlen(d.coilName));
 				}
@@ -6904,7 +6904,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (!d.isHasPhase)
 				d.isHasPhase = d.CSA.isPhaseMap;
 			if ((d.CSA.coilNumber > 0) && (strlen(d.coilName) < 1)) {
-				sprintf(d.coilName, "%d", d.CSA.coilNumber);
+				snprintf(d.coilName, kDICOMStr, "%d", d.CSA.coilNumber);
 				//printf("issue631 coil name '%s'\n", d.coilName);
 				d.coilCrc = mz_crc32X((unsigned char *)&d.coilName, strlen(d.coilName));
 			}
@@ -6967,7 +6967,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//debug code to export binary data
 			/*
 				char str[kDICOMStr];
-				sprintf(str, "%s_ge.bin",fname);
+				snprintf(str, kDICOMStr, "%s_ge.bin",fname);
 				FILE *pFile = fopen(str, "wb");
 				fwrite(&buffer[lPos], 1, lLength, pFile);
 				fclose (pFile);
@@ -7292,30 +7292,30 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			// this section will report very little for implicit data
 			//if (d.isHasReal) printf("r");else printf("m");
 			char str[kDICOMStr];
-			sprintf(str, "%*c%04x,%04x %u@%zu ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
+			snprintf(str, kDICOMStr, "%*c%04x,%04x %u@%zu ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
 			bool isStr = false;
 			if (d.isExplicitVR) {
-				//sprintf(str, "%s%c%c ", str, vr[0], vr[1]);
+				//snprintf(str, kDICOMStr, "%s%c%c ", str, vr[0], vr[1]);
 				//if (snprintf(str2, kDICOMStr-1, "%s%c%c", str, vr[0], vr[1]) < 0) exit(EXIT_FAILURE);
 				strncat(str, &vr[0], 1);
 				str[kDICOMStr-1]  = '\0'; //silence warning -Wstringop-truncation
 				strncat(str, &vr[1], 1);
 				str[kDICOMStr-1]  = '\0'; //silence warning -Wstringop-truncation
 				strcat(str, " ");
-				//sprintf(str, "%s%c%c ", str2, vr[0], vr[1]);
+				//snprintf(str, kDICOMStr, "%s%c%c ", str2, vr[0], vr[1]);
 				char str2[kDICOMStr] = "";
 				if ((vr[0] == 'F') && (vr[1] == 'D'))
-					sprintf(str2, "%g ", dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
+					snprintf(str2, kDICOMStr, "%g ", dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'F') && (vr[1] == 'L'))
-					sprintf(str2, "%g ", dcmFloat(lLength, &buffer[lPos], d.isLittleEndian));
+					snprintf(str2, kDICOMStr, "%g ", dcmFloat(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'S') && (vr[1] == 'S'))
-					sprintf(str2, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					snprintf(str2, kDICOMStr, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'S') && (vr[1] == 'L'))
-					sprintf(str2, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					snprintf(str2, kDICOMStr, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'U') && (vr[1] == 'S'))
-					sprintf(str2, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					snprintf(str2, kDICOMStr, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'U') && (vr[1] == 'L'))
-					sprintf(str, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
+					snprintf(str2, kDICOMStr, "%d ", dcmInt(lLength, &buffer[lPos], d.isLittleEndian));
 				if ((vr[0] == 'A') && (vr[1] == 'E'))
 					isStr = true;
 				if ((vr[0] == 'A') && (vr[1] == 'S'))
@@ -7832,7 +7832,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	}
 	if (((d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON)) && (B0Philips > 0.0)) { //issue 388
 		char txt[1024] = {""};
-		sprintf(txt, "b=%d(", (int)round(B0Philips));
+		snprintf(txt, 1024, "b=%d(", (int)round(B0Philips));
 		if (strstr(d.imageComments, txt) != NULL) {
 			//printf("%s>>>%s %g\n", txt, d.imageComments, B0Philips);
 			int len = strlen(txt);

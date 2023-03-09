@@ -399,7 +399,7 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 	}
 	dcm->manufacturer = kMANUFACTURER_SIEMENS;
 	//dcm->manufacturersModelName = itoa(mhdr.system_type);
-	sprintf(dcm->manufacturersModelName, "%d", mhdr.system_type);
+	snprintf(dcm->manufacturersModelName, kDICOMStr, "%d", mhdr.system_type);
 	dcm->bitsAllocated = bytesPerVoxel * 8;
 	if (isScaleFactorVaries)
 		dcm->isFloat = true;
