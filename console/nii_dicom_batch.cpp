@@ -390,7 +390,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
 	for (int i = 0; i < d->CSA.numDti; i++) {
 		float vLen = sqrt((vx[i].V[1] * vx[i].V[1]) + (vx[i].V[2] * vx[i].V[2]) + (vx[i].V[3] * vx[i].V[3]));
 		if ((vx[i].V[0] <= FLT_EPSILON) || (vLen <= FLT_EPSILON)) { //bvalue=0
-			if ((vx[i].V[0] > 5.0) && (!d->isDerived))	//Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
+			if ((vx[i].V[0] > 50.0) && (!d->isDerived))	//Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
 				printWarning("Volume %d appears to be derived image ADC/Isotropic (non-zero b-value with zero vector length)\n", i);
 			continue; //do not normalize or reorient b0 vectors
 		} //if bvalue=0

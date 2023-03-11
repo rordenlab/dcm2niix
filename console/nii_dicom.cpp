@@ -4019,7 +4019,15 @@ void _update_tvd(struct TVolumeDiffusion *ptvd) {
 			}
 		}
 	}
-	if (!isReady) { //bvecs NOT filled: see if symBMatrix filled
+	if ((!isReady) && (ptvd->_dtiV[0] < 100.0) && (!isnan(ptvd->_symBMatrix[0]))) {
+		//issue265: Bruker omits 0018,9089 for low b-values though it includes a bmatrix
+		ptvd->_dtiV[1] = 0.0;
+		ptvd->_dtiV[2] = 0.0;
+		ptvd->_dtiV[3] = 0.0;
+		isReady = true;
+		
+	}
+	/*if (!isReady) { //bvecs NOT filled: see if symBMatrix filled
 		isReady = true;
 		for (int i = 1; i < 6; ++i)
 			if (isnan(ptvd->_symBMatrix[i]))
@@ -4068,11 +4076,7 @@ void _update_tvd(struct TVolumeDiffusion *ptvd) {
 		ptvd->_dtiV[1] = bVec.v[0];
 		ptvd->_dtiV[2] = bVec.v[1];
 		ptvd->_dtiV[3] = bVec.v[2];
-		//printf("bmat=[%g %g %g %g %g %g %g %g %g]\n", ptvd->_symBMatrix[0],ptvd->_symBMatrix[1],ptvd->_symBMatrix[2], ptvd->_symBMatrix[1],ptvd->_symBMatrix[3],ptvd->_symBMatrix[4], ptvd->_symBMatrix[2],ptvd->_symBMatrix[4],ptvd->_symBMatrix[5]);
-		//printf("bmats=[%g %g %g %g %g %g];\n", ptvd->_symBMatrix[0],ptvd->_symBMatrix[1],ptvd->_symBMatrix[2],ptvd->_symBMatrix[3],ptvd->_symBMatrix[4],ptvd->_symBMatrix[5]);
-		//printf("bvec=[%g %g %g];\n", ptvd->_dtiV[1], ptvd->_dtiV[2], ptvd->_dtiV[3]);
-		//printf("bval=%g;\n\n", ptvd->_dtiV[0]);
-	}
+	}*/
 	if (!isReady)
 		return;
 	// If still here, update dd and *pdti4D.
@@ -4393,11 +4397,11 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) //CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16) //UL
 #define kDiffusionBValueXX 0x0018 + uint32_t(0x9602 << 16) //FD
-#define kDiffusionBValueXY 0x0018 + uint32_t(0x9603 << 16) //FD
-#define kDiffusionBValueXZ 0x0018 + uint32_t(0x9604 << 16) //FD
-#define kDiffusionBValueYY 0x0018 + uint32_t(0x9605 << 16) //FD
-#define kDiffusionBValueYZ 0x0018 + uint32_t(0x9606 << 16) //FD
-#define kDiffusionBValueZZ 0x0018 + uint32_t(0x9607 << 16) //FD
+//#define kDiffusionBValueXY 0x0018 + uint32_t(0x9603 << 16) //FD
+//#define kDiffusionBValueXZ 0x0018 + uint32_t(0x9604 << 16) //FD
+//#define kDiffusionBValueYY 0x0018 + uint32_t(0x9605 << 16) //FD
+//#define kDiffusionBValueYZ 0x0018 + uint32_t(0x9606 << 16) //FD
+//#define kDiffusionBValueZZ 0x0018 + uint32_t(0x9607 << 16) //FD
 #define kNumberOfImagesInMosaic 0x0019 + (0x100A << 16) //US NumberOfImagesInMosaic
 //https://nmrimaging.wordpress.com/2011/12/20/when-we-process/
 // https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
@@ -4596,6 +4600,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 	double TE = 0.0; //most recent echo time recorded
 	float temporalResolutionMS = 0.0;
 	float MRImageDynamicScanBeginTime = 0.0;
+	bool isHasBMatrix = false;
+	bool isHasBVec = false;
 	bool is2005140FSQ = false;
 	bool is4000561SQ = false; //Original Attributes SQ
 	bool is00089092SQ = false; //Referenced Image Evidence SQ
@@ -6675,7 +6681,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//  ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
 			//  (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 			//if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-			if ((d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
+			if (true) {
+			//if ((d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
 				//for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
 				float v[4];
 				//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
@@ -6692,6 +6699,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				hasDwiDirectionality = true;
 				d.isBVecWorldCoordinates = true; //e.g. Canon saved image space coordinates in Comments, world space in 0018, 9089
 				set_orientation0018_9089(&volDiffusion, lLength, &buffer[lPos], d.isLittleEndian);
+				isHasBVec = true;
 			}
 			break;
 		case kImagingFrequencyFD:
@@ -6732,42 +6740,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break; //other manufacturers provide bvec directly, rather than bmatrix
 			double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			set_bMatrix(&volDiffusion, bMat, 0);
-			break;
-		}
-		case kDiffusionBValueXY: {
-			if (!(d.manufacturer == kMANUFACTURER_BRUKER))
-				break; //other manufacturers provide bvec directly, rather than bmatrix
-			double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-			set_bMatrix(&volDiffusion, bMat, 1);
-			break;
-		}
-		case kDiffusionBValueXZ: {
-			if (!(d.manufacturer == kMANUFACTURER_BRUKER))
-				break; //other manufacturers provide bvec directly, rather than bmatrix
-			double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-			set_bMatrix(&volDiffusion, bMat, 2);
-			break;
-		}
-		case kDiffusionBValueYY: {
-			if (!(d.manufacturer == kMANUFACTURER_BRUKER))
-				break; //other manufacturers provide bvec directly, rather than bmatrix
-			double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-			set_bMatrix(&volDiffusion, bMat, 3);
-			break;
-		}
-		case kDiffusionBValueYZ: {
-			if (!(d.manufacturer == kMANUFACTURER_BRUKER))
-				break; //other manufacturers provide bvec directly, rather than bmatrix
-			double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-			set_bMatrix(&volDiffusion, bMat, 4);
-			break;
-		}
-		case kDiffusionBValueZZ: {
-			if (!(d.manufacturer == kMANUFACTURER_BRUKER))
-				break; //other manufacturers provide bvec directly, rather than bmatrix
-			double bMat = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
-			set_bMatrix(&volDiffusion, bMat, 5);
-			d.isVectorFromBMatrix = true;
+			isHasBMatrix = true;
 			break;
 		}
 		case kSliceNumberMrPhilips: {
@@ -7500,6 +7473,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.isDerived = true; //to my knowledge, palette images always derived
 		printWarning("Photometric Interpretation 'PALETTE COLOR' not supported\n");
 	}
+	if ((isHasBMatrix) && (!isHasBVec))
+		printWarning("Underspecified BMatrix without BVector (issue 265)\n");
 	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8)) {
 		//dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
 		printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
