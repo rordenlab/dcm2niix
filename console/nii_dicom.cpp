@@ -7786,7 +7786,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fldyn3d1") != NULL)) {
 		//combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
 		d.isStackableSeries = true;
-		d.imageNum += (d.seriesNum * 1000);
+		if (d.isXA10A) //issue689
+			d.imageNum += (d.acquNum * 1000);
+		else
+			d.imageNum += (d.seriesNum * 1000);
 		strcpy(d.seriesInstanceUID, d.studyInstanceUID);
 		d.seriesUidCrc = mz_crc32X((unsigned char *)&d.protocolName, strlen(d.protocolName));
 	}
