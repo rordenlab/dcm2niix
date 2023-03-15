@@ -4447,7 +4447,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kTemporalPositionIndex 0x0020 + uint32_t(0x9128 << 16) // UL
 #define kDimensionIndexPointer 0x0020 + uint32_t(0x9165 << 16)
 //Private Group 21 as Used by Siemens:
-#define kScanningSequenceSiemens 0x0021 + (0x105A << 16) //CS
+#define kScanningSequenceSiemens 0x0021 + (0x105A << 16) //CS n.b. for GE this is Diffusion direction of SL!
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16) //CS Siemens ONLY
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
@@ -4683,6 +4683,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 	char scanningSequenceSiemens[kDICOMStr] = "";
 	char imageType1st[kDICOMStr] = "";
 	bool isEncapsulatedData = false;
+	int diffusionDirectionTypeGE = 0; //issue690
 	int multiBandFactor = 0;
 	int frequencyRows = 0;
 	int numberOfImagesInMosaic = 0;
@@ -6540,7 +6541,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break; //warp
 		}
 		case kScanningSequenceSiemens:
-			dcmStr(lLength, &buffer[lPos], scanningSequenceSiemens);
+			if (d.manufacturer == kMANUFACTURER_SIEMENS) 
+				dcmStr(lLength, &buffer[lPos], scanningSequenceSiemens);
+			if (d.manufacturer == kMANUFACTURER_GE) //issue690
+				diffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
@@ -7942,6 +7946,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
+	//issue690
+	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16))
+		d.numberOfDiffusionDirectionGE = 0;
 	//issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
 		printWarning("GE DWI vectors may have been removed by Neologica DICOM Anonymizer Pro (Issue 542)\n");
