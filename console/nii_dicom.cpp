@@ -4497,6 +4497,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
 #define kShimGradientX 0x0043 + (0x1002 << 16) //SS
 #define kShimGradientY 0x0043 + (0x1003 << 16) //SS
 #define kShimGradientZ 0x0043 + (0x1004 << 16) //SS
+#define kVasCollapseFlagGE 0x0043 + (0x1030 << 16) //SS issue690
 #define kPrescanReuseString 0x0043 + (0x1095 << 16) //LO
 #define kUserDefineDataGE 0x0043 + (0x102A << 16) //OB
 #define kEffectiveEchoSpacingGE 0x0043 + (0x102C << 16) //SS
@@ -6922,6 +6923,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			d.shimGradientZ = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kVasCollapseFlagGE: //SS issue 690 16=DiffusionDtiDicomValue
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			diffusionDirectionTypeGE = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kPrescanReuseString: //LO
 			if (d.manufacturer != kMANUFACTURER_GE)
