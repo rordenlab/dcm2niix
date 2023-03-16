@@ -78,7 +78,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
 	printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
 	printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
-	printf("  -c : comment stored in NIfTI aux_file (provide up to 24 characters e.g. '-c first_visit')\n");
+	printf("  -c : comment stored in NIfTI aux_file (up to 24 characters e.g. '-c VIP', empty to anonymize e.g. 0020,4000 e.g. '-c \"\"')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
 #ifdef myEnableJNIfTI
 	printf("  -e : export as NRRD (y) or MGH (o) or JSON/JNIfTI (j) or BJNIfTI (b) instead of NIfTI (y/n/o/j/b, default n)\n");
@@ -352,6 +352,8 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'c') && ((i + 1) < argc)) {
 				i++;
 				snprintf(opts.imageComments, 24, "%s", argv[i]);
+				if (strlen(opts.imageComments) == 0) //empty string is flag to anonymize DICOM image comments
+					snprintf(opts.imageComments, 24, "%s", "\t");
 			} else if ((argv[i][1] == 'd') && ((i + 1) < argc)) {
 				i++;
 				if ((argv[i][0] >= '0') && (argv[i][0] <= '9'))

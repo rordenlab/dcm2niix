@@ -705,8 +705,10 @@ int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_hea
 	// snprintf(h->descrip,80, "%s",txt);
 	memcpy(h->descrip, txt, 79);
 	h->descrip[79] = '\0';
-	if (strlen(d.imageComments) > 0)
+	if ((strlen(d.imageComments) > 0) && (h->aux_file[0] == 0)) //issue691
 		snprintf(h->aux_file, 24, "%.23s", d.imageComments);
+	if ((h->aux_file[0] == '\t') && (h->aux_file[1] == 0))
+		h->aux_file[0] = 0; //issue691
 	return headerDcm2NiiSForm(d, d2, h, isVerbose);
 } //headerDcm2Nii2()
 

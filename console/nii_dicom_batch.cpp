@@ -1387,8 +1387,11 @@ tse3d: T2*/
 	// if (d.acquisitionDate > 0.0) fprintf(fp, "\t\"AcquisitionDate\": %8.0f,\n", d.acquisitionDate );
 	if (d.acquNum > 0)
 		fprintf(fp, "\t\"AcquisitionNumber\": %d,\n", d.acquNum);
-	json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
-	json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
+	bool maskComments =  (strlen(opts.imageComments) == 1) && (opts.imageComments[0] == '\t');
+	if (!maskComments) {
+		json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
+		json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
+	}
 	//if conditionals: the following values are required for DICOM MRI, but not available for CT
 	json_Float(fp, "\t\"TriggerDelayTime\": %g,\n", d.triggerDelayTime);
 	if (d.RWVScale != 0) {
@@ -6678,7 +6681,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	mrifsStruct.tdicomData = dcmList[indx];  // first in sorted list dcmSort
 #endif 
 
-	struct nifti_1_header hdr0;
+	struct nifti_1_header hdr0 =  {0};
 	unsigned char *img = nii_loadImgXL(nameList->str[indx], &hdr0, dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose, dti4D);
 	if (strlen(opts.imageComments) > 0) {
 		for (int i = 0; i < 24; i++)
