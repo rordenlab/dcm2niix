@@ -59,6 +59,7 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+#define kSliceTolerance 0.2
 
 #if defined(_WIN64) || defined(_WIN32)
 const char kPathSeparator = '\\';
@@ -2809,12 +2810,35 @@ int compareTFloatSort(const void *a, const void *b) {
 	return 0;
 } // compareTFloatSort()
 
+
+int isSameFloatT(float a, float b, float tolerance) {
+	return (fabs(a - b) <= tolerance);
+}
+
 bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], int verbose) {
 	//ensure slice position is sequential: either ascending [1 2 3] or descending [3 2 1], not [1 3 2], [3 1 2] etc.
 	//n.b. as currently designed, this will force swapDim3Dim4() for 4D data
 	int nConvert = d3 * d4;
 	if (d3 < 3)
 		return true; //always consistent
+	//first pass: check order: issue 622
+	int i = 0;
+	bool isSequential = true;
+	for (int t = 0; t < d4; t++) { //for each volume
+		float dx = intersliceDistanceSigned(dcmList[dcmSort[i].indx], dcmList[dcmSort[i + 1].indx]);
+		for (int z = 0; z < d3; z++) { //for slice
+			if (z > 0) {
+				float dx2 = intersliceDistanceSigned(dcmList[dcmSort[i - 1].indx], dcmList[dcmSort[i].indx]);
+				if (!isSameFloatT(dx, dx2, kSliceTolerance))
+					isSequential = false;
+			} //if not 1st slice (which does not have prior slice)
+			i++;
+		} //for each slice
+	} //for each volume
+	if (isSequential)
+		return true;
+	//second pass: fix if required
+	printWarning("Instance Number (0020,0013) order is not spatial.\n");
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
@@ -5278,10 +5302,6 @@ int siemensCtKludge(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	return nConvert; //all images in sequential order
 } // siemensCtKludge()
 
-int isSameFloatT(float a, float b, float tolerance) {
-	return (fabs(a - b) <= tolerance);
-}
-
 void adjustOriginForNegativeTilt(struct nifti_1_header *hdr, float shiftPxY) {
 	if (hdr->sform_code > 0) {
 		// Adjust the srow_* offsets using srow_y
@@ -6908,17 +6928,15 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			} //if PET
 			//next: detect variable inter-slice distance
 			float dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
-#ifdef myInstanceNumberOrderIsNotSpatial
+//#ifdef myInstanceNumberOrderIsNotSpatial
 			if (!isSameFloat(dx, 0.0)) //only for XYZT, not TXYZ: perhaps run for swapDim3Dim4? Extremely rare anomaly
 				if (!ensureSequentialSlicePositions(hdr0.dim[3], hdr0.dim[4], dcmSort, dcmList, opts.isVerbose))
 					dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 			indx0 = dcmSort[0].indx;
-			//if (nConvert > 1)
-			//	indx1 = dcmSort[1].indx;
-#endif
+//#endif
 			bool dxVaries = false;
 			for (int i = 1; i < nConvert; i++)
-				if (!isSameFloatT(dx, intersliceDistance(dcmList[dcmSort[i - 1].indx], dcmList[dcmSort[i].indx]), 0.2))
+				if (!isSameFloatT(dx, intersliceDistance(dcmList[dcmSort[i - 1].indx], dcmList[dcmSort[i].indx]), kSliceTolerance))
 					dxVaries = true;
 			if (hdr0.dim[4] < 2) {
 				if (dxVaries) {
@@ -6966,7 +6984,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 						dxVaries = false;
 						dx = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 						for (int i = 1; i < nConvert; i++)
-							if (!isSameFloatT(dx, intersliceDistance(dcmList[dcmSort[i - 1].indx], dcmList[dcmSort[i].indx]), 0.2))
+							if (!isSameFloatT(dx, intersliceDistance(dcmList[dcmSort[i - 1].indx], dcmList[dcmSort[i].indx]), kSliceTolerance))
 								dxVaries = true;
 						for (int i = 1; i < nConvert; i++)
 							sliceMMarray[i] = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[i].indx]);

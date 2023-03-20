@@ -4385,7 +4385,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kParallelAcquisitionTechnique 0x0018 + uint32_t(0x9078 << 16) //CS: SENSE, SMASH
 #define kInversionTimes 0x0018 + uint32_t(0x9079 << 16) //FD
 #define kPartialFourier 0x0018 + uint32_t(0x9081 << 16) //CS
-const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16);
+const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD 
 //#define kDiffusionBFactorSiemens 0x0019+(0x100C<< 16 ) // 0019;000C;SIEMENS MR HEADER;B_value
 #define kDiffusion_bValue 0x0018 + uint32_t(0x9087 << 16) // FD
 #define kDiffusionOrientation 0x0018 + uint32_t(0x9089 << 16) // FD, seen in enhanced DICOM from Philips 5.* and Siemens XA10.
