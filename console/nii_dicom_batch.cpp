@@ -8280,7 +8280,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				free(dcmSort);
 			} //convert all images of this series
 		}
-#else //avoid bubble sort - dont check all images for match, only those with identical series instance UID
+#else //avoid bubble sort - don't check all images for match, only those with identical series instance UID
 	//3: stack DICOMs with the same Series
 	struct TWarnings warnings = setWarnings();
 	//sort by series instance UID ... avoids bubble-sort penalty

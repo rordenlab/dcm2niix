@@ -27,7 +27,7 @@ std::unique_ptr<T> make_unique(Args&&... args)
 #endif
 
 // Only use __forceinline for the Microsoft C++ compiler in release mode (verified scenario)
-// Use the build-in optimizer for all other C++ compilers.
+// Use the built-in optimizer for all other C++ compilers.
 // Note: usage of FORCE_INLINE may be reduced in the future as the latest generation of C++ compilers
 // can handle optimization by themselves.
 #ifndef FORCE_INLINE
@@ -136,7 +136,7 @@ struct Quad : Triplet<sample>
         v4(0)
         {}
 
-    WARNING_SUPPRESS(26495) // false warning that v4 is unintialized
+    WARNING_SUPPRESS(26495) // false warning that v4 is uninitialized
     Quad(Triplet<sample> triplet, int32_t alpha) noexcept
             :
         Triplet<sample>(triplet),

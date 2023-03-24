@@ -106,7 +106,7 @@ public:
     using PIXEL = typename Traits::PIXEL;
     using SAMPLE = typename Traits::SAMPLE;
 
-    WARNING_SUPPRESS(26495) // false warning that _contextRunmode is unintialized
+    WARNING_SUPPRESS(26495) // false warning that _contextRunmode is uninitialized
     JlsCodec(const Traits& inTraits, const JlsParameters& params) :
         Strategy(params),
         traits(inTraits),
