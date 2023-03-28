@@ -2209,7 +2209,6 @@ unsigned char *reorderVolumes(struct nifti_1_header *hdr, unsigned char *inImg, 
 	for (int i = 0; i < numVol; i++)
 		inPos[i] = i;
 	unsigned char *tempVol = (unsigned char *)malloc(numVolBytes);
-	int outPos = 0;
 	for (int o = 0; o < numVol; o++) {
 		int i = inPos[volOrderIndex[o]]; //input volume
 		if (i == o)
@@ -2218,7 +2217,6 @@ unsigned char *reorderVolumes(struct nifti_1_header *hdr, unsigned char *inImg, 
 		memcpy(&inImg[o * numVolBytes], &inImg[i * numVolBytes], numVolBytes); //copy volume to desire location dest, src, bytes
 		memcpy(&inImg[i * numVolBytes], &tempVol[0], numVolBytes); //copy unsorted volume
 		inPos[o] = i;
-		outPos += numVolBytes;
 	} //for each volume
 	free(inPos);
 	free(volOrderIndex);
@@ -8479,7 +8477,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				free(dcmSort);
 			} //convert all images of this series
 		}
-#else //avoid bubble sort - dont check all images for match, only those with identical series instance UID
+#else //avoid bubble sort - do not check all images for match, only those with identical series instance UID
 	//3: stack DICOMs with the same Series
 	struct TWarnings warnings = setWarnings();
 	//sort by series instance UID ... avoids bubble-sort penalty

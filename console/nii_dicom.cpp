@@ -2314,7 +2314,6 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 				}
 				isReal = true; //<- this is not correct, kludge for bug in ROGERS_20180526_WIP_B0_NS_8_1.PAR
 			}
-			int vx = vol;
 			if (isReal)
 				vol += num3DExpected;
 			if (isImaginary)
@@ -6025,6 +6024,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.isPlanarRGB = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kDim3:
+			if (lLength < 1) //issue 695
+				break;
 			d.xyzDim[3] = dcmStrInt(lLength, &buffer[lPos]);
 			numberOfFrames = d.xyzDim[3];
 			break;
@@ -7451,7 +7452,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.xyzMM[3] = d.zSpacing; //use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
 	//printMessage("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionNum,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
 	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3])) {
-		d.CSA.numDti = d.xyzDim[3];																																			//issue506
+		d.CSA.numDti = d.xyzDim[3]; //issue506
 		printMessage("Please check slice thicknesses: Philips R3.2.2 bug can disrupt estimation (%d positions reported for %d slices)\n", patientPositionNum, d.xyzDim[3]); //Philips reported different positions for each slice!
 	}
 	if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
@@ -7552,7 +7553,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((B0Philips >= 0) && (d.CSA.numDti == 0)) {
 		d.CSA.dtiV[0] = B0Philips;
 		d.CSA.numDti = 1;
-	}											//issue409 Siemens XA saved as classic 2D not enhanced
+	} //issue409 Siemens XA saved as classic 2D not enhanced
 	if (!isnan(patientPositionStartPhilips[1])) //for Philips data without
 		for (int k = 0; k < 4; k++)
 			d.patientPosition[k] = patientPositionStartPhilips[k];
@@ -7781,7 +7782,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.imageNum = abs((int)d.instanceUidCrc) % 2147483647; //INT_MAX;
 		if (d.imageNum == 0)
 			d.imageNum = 1; //https://github.com/rordenlab/dcm2niix/issues/341
-							//d.imageNum = 1; //not set
+		//d.imageNum = 1; //not set
 	}
 	if ((numDimensionIndexValues < 1) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (d.seriesNum > 99999) && (philMRImageDiffBValueNumber > 0)) {
 		//Ugly kludge to distinguish Philips classic DICOM dti

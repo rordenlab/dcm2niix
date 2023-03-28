@@ -111,7 +111,8 @@ unsigned char * base64_decode(const unsigned char *src, size_t len,
 	memset(dtable, 0x80, 256); //os_
 	for (i = 0; i < sizeof(base64_table) - 1; i++)
 		dtable[base64_table[i]] = (unsigned char) i;
-	dtable['='] = 0;
+	//next line rewritten to avoid warning -Wchar-subscripts
+	dtable[61] = 0; //dtable['='] = 0;
 
 	count = 0;
 	for (i = 0; i < len; i++) {
