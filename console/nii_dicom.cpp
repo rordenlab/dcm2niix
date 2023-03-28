@@ -5171,6 +5171,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			// d.isValid = false;
 			//return d;
 		}
+		if (lLength > 0) //issue694: skip empty tags, "gdcmanon --dumb --empty 0018,0089 good.dcm bad.dcm"
 		switch (groupElement) {
 		case kMediaStorageSOPClassUID: {
 			char mediaUID[kDICOMStr];
