@@ -7279,6 +7279,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		float c = cos(thetaRad);
 		if (!isSameFloatGE(c, 0.0)) {
 			mat33 shearMat;
+			hdr0.srow_y[2] = 0.0; //remove gantry tilt
+			hdr0.srow_z[2] = hdr0.pixdim[3]; //retain distance between slices
+			/*
 			LOAD_MAT33(shearMat, 1.0, 0.0, 0.0,
 					0.0, 1.0, sin(thetaRad) / c,
 					0.0, 0.0, 1.0);
@@ -7292,6 +7295,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 					s.m[1][0], s.m[1][1], s.m[1][2], hdr0.srow_y[3],
 					s.m[2][0], s.m[2][1], s.m[2][2], hdr0.srow_z[3]);
 			setQSForm(&hdr0, shearForm, true);
+			*/
 		} //avoid div/0: cosine not zero
 	} //if gantry tilt
 	//end: gantry tilt we need to save the shear in the transform

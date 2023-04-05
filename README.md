@@ -45,8 +45,7 @@ There are a couple ways to install dcm2niix
  - [Github Releases](https://github.com/rordenlab/dcm2niix/releases) provides the latest compiled executables. This is an excellent option for MacOS and Windows users. However, the provided Linux executable requires a recent version of Linux (e.g. Ubuntu 14.04 or later), so the provided Unix executable is not suitable for very old distributions. Specifically, it requires Glibc 2.19 (from 2014) or later. Users of older systems can compile their own copy of dcm2niix or download the compiled version included with MRIcroGL Glibc 2.12 (from 2011, see below).
  - Run the following command to get the latest release version for Linux, Macintosh or Windows:
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_lnx.zip`
-   * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac.zip`
-   * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac_arm.pkg`
+   * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/macos_dcm2niix.pkg`
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_win.zip`
  - Latest development version is available on [AppVeyor](https://ci.appveyor.com/project/neurolabusc/dcm2niix) for [Linux](https://ci.appveyor.com/api/projects/neurolabusc/dcm2niix/artifacts/dcm2niix_lnx.zip?job=linux), [Macintosh](https://ci.appveyor.com/api/projects/neurolabusc/dcm2niix/artifacts/dcm2niix_mac.zip?job=mac) or [Windows](https://ci.appveyor.com/api/projects/neurolabusc/dcm2niix/artifacts/dcm2niix_win.zip?job=win).
  - [MRIcroGL (NITRC)](https://www.nitrc.org/projects/mricrogl) or [MRIcroGL (GitHub)](https://github.com/rordenlab/MRIcroGL12/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a [holy build box](https://github.com/phusion/holy-build-box), so it should run on any Linux distribution.
@@ -120,7 +119,8 @@ If you have any problems with the cmake build script described above or want to 
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
  - [nanconvert](https://github.com/spinicist/nanconvert) uses the ITK library to convert DICOM from GE and proprietary Bruker to standard formats like DICOM.  
  - [PET CT viewer](http://petctviewer.org/index.php/feature/results-exports/nifti-export) for [Fiji](https://fiji.sc) can load DICOM images and export as NIfTI.
- - [Plastimatch](https://www.plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
+ - [Plastimatch](https://plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, 
+ statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [Simple Dicom Reader 2 (Sdr2)](http://ogles.sourceforge.net/sdr2-doc/index.html) uses [dcmtk](https://dicom.offis.de/dcmtk.php.en) to read DICOM images and convert them to the NIfTI format.
  - [SlicerHeart extension](https://github.com/SlicerHeart/SlicerHeart) is specifically designed to help 3D Slicer support ultra sound (US) images stored as DICOM.
  - [spec2nii](https://github.com/wexeee/spec2nii) converts MR spectroscopy to NIFTI.
