@@ -7279,8 +7279,19 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		float c = cos(thetaRad);
 		if (!isSameFloatGE(c, 0.0)) {
 			mat33 shearMat;
+			//gantry tilt formula changed with issue697
+			/*printf("a=[%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1];\n",
+				hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
+				hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3],
+				hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]
+			);*/
 			hdr0.srow_y[2] = 0.0; //remove gantry tilt
 			hdr0.srow_z[2] = hdr0.pixdim[3]; //retain distance between slices
+			/*printf("b=[%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1];\n",
+				hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
+				hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3],
+				hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]
+			);*/
 			/*
 			LOAD_MAT33(shearMat, 1.0, 0.0, 0.0,
 					0.0, 1.0, sin(thetaRad) / c,

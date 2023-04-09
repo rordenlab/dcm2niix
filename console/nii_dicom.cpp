@@ -4570,6 +4570,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kDiffusionDirectionRL 0x2005 + (0x10B0 << 16)
 #define kDiffusionDirectionAP 0x2005 + (0x10B1 << 16)
 #define kDiffusionDirectionFH 0x2005 + (0x10B2 << 16)
+#define kDeepLearningPhilips 0x2005 + (0x1110 << 16)
 #define kPrivatePerFrameSq 0x2005 + (0x140F << 16)
 #define kMRImageDiffBValueNumber 0x2005 + (0x1412 << 16) //IS
 #define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
@@ -6835,6 +6836,17 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			vFHPhilips = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
 			set_diffusion_directionPhilips(&volDiffusion, vFHPhilips, 2);
 			break;
+		case kDeepLearningPhilips: { //CS
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break;
+			char st[kDICOMStr];
+			//see dcm_qa_cs_dl reports `none` or `CS_SENSE_AI`
+			dcmStr(lLength, &buffer[lPos], st);
+			if (strstr(st, "_AI") != NULL) {
+				d.isDeepLearning = true;
+				dcmStr(lLength, &buffer[lPos], d.deepLearningText, true);
+			}
+		}
 		case kPrivatePerFrameSq:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
