@@ -112,13 +112,12 @@ If you have any problems with the cmake build script described above or want to 
  - [dicom2nifti](https://github.com/icometrix/dicom2nifti) uses the scriptable Python wrapper utilizes the [high performance  GDCMCONV](http://gdcm.sourceforge.net/wiki/index.php/Gdcmconv) executables.
  - [dicomtonifti](https://github.com/dgobbi/vtk-dicom/wiki/dicomtonifti) leverages [VTK](https://www.vtk.org/).
  - [dimon](https://afni.nimh.nih.gov/pub/dist/doc/program_help/Dimon.html) and [to3d](https://afni.nimh.nih.gov/pub/dist/doc/program_help/to3d.html) are included with AFNI.
- - [dinifti](http://as.nyu.edu/cbi/resources/Software/DINIfTI.html) is focused on conversion of Siemens data.
+ - [dinifti](https://as.nyu.edu/cbi/resources/Software/DINIfTI.html) is focused on conversion of classic Siemens DICOMs.
  - [DWIConvert](https://github.com/BRAINSia/BRAINSTools/tree/master/DWIConvert) converts DICOM images to NRRD and NIfTI formats.
- - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) has great support for various vendors.
+ - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) a great tool for classic DICOMs.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package. In my limited experience this tool works well for GE and Siemens data, but fails with Philips 4D datasets.
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
  - [nanconvert](https://github.com/spinicist/nanconvert) uses the ITK library to convert DICOM from GE and proprietary Bruker to standard formats like DICOM.  
- - [PET CT viewer](http://petctviewer.org/index.php/feature/results-exports/nifti-export) for [Fiji](https://fiji.sc) can load DICOM images and export as NIfTI.
  - [Plastimatch](https://plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, 
  statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [Simple Dicom Reader 2 (Sdr2)](http://ogles.sourceforge.net/sdr2-doc/index.html) uses [dcmtk](https://dicom.offis.de/dcmtk.php.en) to read DICOM images and convert them to the NIfTI format.

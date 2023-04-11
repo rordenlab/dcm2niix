@@ -1,6 +1,3 @@
-[![Build status](https://ci.appveyor.com/api/projects/status/yq0naf3v2m8nfa8r/branch/master?svg=true)](https://ci.appveyor.com/project/vbaderks/charls/branch/master)
-[![Build Status](https://travis-ci.org/team-charls/charls.svg?branch=master)](https://travis-ci.org/team-charls/charls)
-
 # CharLS
 
 CharLS is a C++ implementation of the JPEG-LS standard for lossless and near-lossless image compression and decompression.

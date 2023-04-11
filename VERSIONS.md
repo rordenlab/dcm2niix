@@ -1,4 +1,8 @@
-## Versions
+## Modern Releases
+
+ - [See Github releases for major release notes](https://github.com/rordenlab/dcm2niix/releases).
+
+## Legacy Releases
 
 14-November-2018
  - [GE images provide more BIDS tags](https://github.com/rordenlab/dcm2niix/issues/163).

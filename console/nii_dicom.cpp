@@ -4394,6 +4394,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kSARFD 0x0018 + uint32_t(0x9181 << 16) //FD
 #define kMRAcquisitionPhaseEncodingStepsInPlane 0x0018 + uint32_t(0x9231 << 16) //US
 #define kMRAcquisitionPhaseEncodingStepsOutOfPlane 0x0018 + uint32_t(0x9232 << 16) //US
+#define kGradientEchoTrainLength 0x0018 + uint32_t(0x9241 << 16) //US
 //#define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) //CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16) //UL
@@ -4611,7 +4612,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	bool overlayOK = true;
 	int userData11GE = 0;
 	int userData12GE = 0;
-	float userData15GE = 0;	
+	float userData15GE = 0;
+	float accelFactPE = 0.0;
 	int overlayRows = 0;
 	int overlayCols = 0;
 	bool isNeologica = false;
@@ -5668,9 +5670,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				isProspectiveSynced = true;
 			break;*/
 		case kParallelReductionFactorInPlane:
+			accelFactPE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
 				break;
-			d.accelFactPE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+			d.accelFactPE = accelFactPE;
 			break;
 		case kAcquisitionDuration:
 			//n.b. used differently by different vendors https://github.com/rordenlab/dcm2niix/issues/225
@@ -5726,6 +5729,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kMRAcquisitionPhaseEncodingStepsOutOfPlane:
 			d.phaseEncodingStepsOutOfPlane = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kGradientEchoTrainLength:
+			d.echoTrainLength = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kNumberOfImagesInMosaic:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
@@ -7911,6 +7917,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		else {
 			d.diffCyclingModeGE = kGE_DIFF_CYCLING_OFF;
 		}
+	}
+	if ((d.accelFactPE < accelFactPE) && (accelFactPE > 1.0)) {
+		d.accelFactPE = accelFactPE;
+		//printf("Determining accelFactPE from 0018,9069 not 0021,1009 or 0051,1011\n");
 	}
 	//detect pepolar https://github.com/nipy/heudiconv/issues/479
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 1))

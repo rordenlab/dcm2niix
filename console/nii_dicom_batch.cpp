@@ -1834,9 +1834,12 @@ tse3d: T2*/
 		json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", d.coilElements);
 		if (strcmp(d.coilElements, d.coilName) != 0)
 			json_Str(fp, "\t\"CoilString\": \"%s\",\n", d.coilName);
-		if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (!d.is3DAcq) && (d.phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 1)) {
+		int phaseEncodingLines = d.phaseEncodingLines;
+		if (phaseEncodingLines < 1) //support enhanced DICOM terminology
+			phaseEncodingLines = d.phaseEncodingSteps;
+		if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (!d.is3DAcq) && (phaseEncodingLines > d.echoTrainLength) && (d.echoTrainLength > 1)) {
 			//ETL is > 1, as some GE files list 1, as an example see series mr_0005 in dcm_qa_nih
-			float pf = (float)d.phaseEncodingLines;
+			float pf = (float)phaseEncodingLines;
 			if (d.accelFactPE > 1)
 				pf = (float)pf / (float)d.accelFactPE; //estimate: not sure if we round up or down
 			pf = (float)d.echoTrainLength / (float)pf;
