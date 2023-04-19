@@ -9,6 +9,7 @@ ExternalProject_Add(zlib
         -Wno-dev
         ${OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+        # Install directories
         -DCMAKE_INSTALL_PREFIX:PATH=${DEP_INSTALL_DIR}
 )
 
