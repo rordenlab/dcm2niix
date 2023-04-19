@@ -10,6 +10,9 @@ ExternalProject_Add(yaml-cpp
         --no-warn-unused-cli
         ${OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+        # Compiler settings
+        -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
+        -DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}
         # Install directories
         -DCMAKE_INSTALL_PREFIX:PATH=${DEP_INSTALL_DIR}
 )
