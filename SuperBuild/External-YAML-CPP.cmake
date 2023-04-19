@@ -8,8 +8,8 @@ ExternalProject_Add(yaml-cpp
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
+        ${EXTERNAL_PROJECT_BUILD_TYPE_CMAKE_ARGS}
         ${OSX_ARCHITECTURES}
-        -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         # Compiler settings
         -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
         -DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}

@@ -4,12 +4,8 @@ if(NOT GIT_FOUND)
     message(FATAL_ERROR "Cannot find Git. Git is required for Superbuild")
 endif()
 
-# Basic CMake build settings
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING
-        "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS  "Debug;Release;RelWithDebInfo;MinSizeRel")
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/dcm2niixInitializeBuildType.cmake)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 option(USE_STATIC_RUNTIME "Use static runtime" ON)
@@ -151,8 +147,8 @@ ExternalProject_Add(console
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
+        ${EXTERNAL_PROJECT_BUILD_TYPE_CMAKE_ARGS}
         ${OSX_ARCHITECTURES}
-        -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         # Install directories
         -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
         # Compiler settings
