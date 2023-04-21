@@ -2549,7 +2549,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
             // So, bvecs first column is reversed for FSL.
             // MGH conversion: not isFlipY, slice direction not flipped, determinant is negative, 
             // 1. we need to reverse bvecs column 1 back, 
-            // 2. also need to reverse bvecs collumn 3
+            // 2. also need to reverse bvecs column 3
             
             float tmp = vx[i].V[1];
             vx[i].V[1] = -vx[i].V[1];
