@@ -7526,9 +7526,9 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	printMessage("\t#\%d: %d %ld %s\n", i+1, dcmList[indx].seriesUidCrc, dcmList[indx].seriesNum, nameList->str[indx]);
     }
 #endif
-  }
 
-  return 0;
+    return 0;
+  }
 #endif
 	//this wrapper does nothing if all the images share the same echo time and scale
 	// however, it segments images when these properties vary
