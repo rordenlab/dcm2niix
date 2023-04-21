@@ -2539,6 +2539,82 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 				vx[i].V[1] = -vx[i].V[1];
 		} //for each direction
 	} //if not a mosaic
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+        // make adjustments for MGH bvecs output
+        for (int i = 0; i < (numDti); i++) {
+	  if (sliceDir < 0)
+	  {
+            // at this point, bvecs output is calculated as not isFlipY, assuming isFlipZ, determinant is positive.
+            // So, bvecs first column is reversed for FSL.
+            // MGH conversion: not isFlipY, slice direction not flipped, determinant is negative, 
+            // 1. we need to reverse bvecs column 1 back, 
+            // 2. also need to reverse bvecs collumn 3
+            
+            float tmp = vx[i].V[1];
+            vx[i].V[1] = -vx[i].V[1];
+            if (getenv("DCM2NIIXFSWRAPPER_DEBUG") != NULL && strcmp(getenv("DCM2NIIXFSWRAPPER_DEBUG"), "yes") == 0)
+	    {
+              if (i < 6)
+	        printf("nii_saveDTI() (BVECS_DEBUG) (mgh adj. sliceDir < 0) flip bvecs sign column 1: %f => %f\n", tmp, vx[i].V[1]);
+            }
+
+            if (fabs(vx[i].V[3]) > FLT_EPSILON)
+	    {
+              tmp = vx[i].V[3];
+	      vx[i].V[3] = -vx[i].V[3];
+              if (getenv("DCM2NIIXFSWRAPPER_DEBUG") != NULL && strcmp(getenv("DCM2NIIXFSWRAPPER_DEBUG"), "yes") == 0)
+	      {
+                if (i < 6)
+		  printf("nii_saveDTI() (BVECS_DEBUG) (mgh adj. sliceDir < 0) flip bvecs sign column 3: %f => %f\n", tmp, vx[i].V[3]);
+              }
+	    }
+          }
+	  else if (abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant)
+	  {
+            // swap signs for every column
+            for (int j = 1; j < 4; j++)
+	    {
+              if (fabs(vx[i].V[j]) > FLT_EPSILON)
+	      {
+                float tmp = vx[i].V[j];
+	        vx[i].V[j] = -vx[i].V[j];
+                if (getenv("DCM2NIIXFSWRAPPER_DEBUG") != NULL && strcmp(getenv("DCM2NIIXFSWRAPPER_DEBUG"), "yes") == 0)
+	        {
+                  if (i < 6)
+                    printf("nii_saveDTI() (BVECS_DEBUG) (mgh adj. abs(sliceDir) == kSliceOrientMosaicNegativeDeterminant) flip bvecs sign column j: %f => %f\n", tmp, vx[i].V[j]);
+                }
+	      }
+            }
+	  }
+          else  // sliceDir >= 0 && abs(sliceDir) != kSliceOrientMosaicNegativeDeterminant
+	  {	
+            // MGH conversion: not flip Y, image determinant is positive, bvecs first column is reversed for FSL.
+            // So, we need to flip bvecs first column.
+            if (fabs(vx[i].V[1]) > FLT_EPSILON)
+	    {
+              float tmp = vx[i].V[1];
+	      vx[i].V[1] = -vx[i].V[1];
+              if (getenv("DCM2NIIXFSWRAPPER_DEBUG") != NULL && strcmp(getenv("DCM2NIIXFSWRAPPER_DEBUG"), "yes") == 0)
+	      {
+                if (i < 6)
+		  printf("nii_saveDTI() (BVECS_DEBUG) (mgh adj. abs(sliceDir) != kSliceOrientMosaicNegativeDeterminant) flip bvecs sign column 1: %f => %f\n", tmp, vx[i].V[1]);
+              }
+	    }
+          }
+        } //for each direction
+
+        mrifsStruct.numDti = numDti;
+        mrifsStruct.tdti = (TDTI *)malloc(numDti * sizeof(TDTI));
+        for (int i = 0; i < numDti; i++)
+	{
+            mrifsStruct.tdti[i].V[0] = vx[i].V[0];
+            mrifsStruct.tdti[i].V[1] = vx[i].V[1];
+            mrifsStruct.tdti[i].V[2] = vx[i].V[2];
+            mrifsStruct.tdti[i].V[3] = vx[i].V[3];
+        }
+#endif
+
 	if (opts.isVerbose) {
 		for (int i = 0; i < (numDti); i++) {
 			printMessage("%d\tB=\t%g\tVec=\t%g\t%g\t%g\n", i, vx[i].V[0], vx[i].V[1], vx[i].V[2], vx[i].V[3]);
@@ -2564,12 +2640,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 				for (int v = 0; v < 4; v++) //for each vector+B-value
 					dti4D->S[i].V[v] = vx[i].V[v];
 		}
-#ifdef USING_DCM2NIIXFSWRAPPER
-		mrifsStruct.tdti = vx;
-		mrifsStruct.numDti = numDti;
-#else
 		free(vx);
-#endif
 		return volOrderIndex;
 	}
 
@@ -2594,12 +2665,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	fclose(fp);
 #endif
 	if (isIsotropic) { //issue 405: ISOTROPIC images have bval but not bvec
-#ifdef USING_DCM2NIIXFSWRAPPER
-		mrifsStruct.tdti = vx;
-		mrifsStruct.numDti = numDti;
-#else
 		free(vx);
-#endif
 		return volOrderIndex;
 	}
 
@@ -2629,12 +2695,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 #endif
 #endif
 
-#ifdef USING_DCM2NIIXFSWRAPPER
-	mrifsStruct.tdti = vx;
-	mrifsStruct.numDti = numDti;
-#else
 	free(vx);
-#endif
 	return volOrderIndex;
 } // nii_saveDTI()
 
@@ -7448,6 +7509,27 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 } // saveDcm2NiiCore()
 
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
+#ifdef USING_DCM2NIIXFSWRAPPER
+  if (opts.isDumpNotConvert) {
+    int indx0 = dcmSort[0].indx;
+    if (opts.isIgnoreSeriesInstanceUID)
+      printMessage("%d %s %s (total %d)\n", dcmList[indx0].seriesUidCrc, dcmList[indx0].protocolName, nameList->str[indx0], nConvert);
+    else
+      printMessage("%d %ld %s %s (total %d)\n", dcmList[indx0].seriesUidCrc, dcmList[indx0].seriesNum, dcmList[indx0].protocolName, nameList->str[indx0], nConvert);
+
+#if 1
+    for (int i = 0; i < nConvert; i++) {
+      int indx = dcmSort[i].indx;
+      if (opts.isIgnoreSeriesInstanceUID)
+	printMessage("\t#\%d: %d %s\n", i+1, dcmList[indx].seriesUidCrc, nameList->str[indx]);
+      else
+	printMessage("\t#\%d: %d %ld %s\n", i+1, dcmList[indx].seriesUidCrc, dcmList[indx].seriesNum, nameList->str[indx]);
+    }
+#endif
+  }
+
+  return 0;
+#endif
 	//this wrapper does nothing if all the images share the same echo time and scale
 	// however, it segments images when these properties vary
 	uint64_t indx = dcmSort[0].indx;
@@ -7772,7 +7854,18 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		//	*isMultiEcho = true;
 		//}
 #ifdef USING_DCM2NIIXFSWRAPPER
-		printf("isForceStackSameSeries = true, seriesNum %ld, %ld, seriesInstanceUidCrc %d, %d\n", d1.seriesNum, d2.seriesNum, d1.seriesUidCrc, d2.seriesUidCrc);
+               /* for mgh conversion set opts->isForceStackSameSeries = 1 by default, *isMultiEcho, *isNonParallelSlices, and *isCoilVaries remain unchanged.
+                *
+                * local variable isForceStackSeries is set to true if following condition met:
+	        *  if ((opts->isForceStackDCE) && (d1.isStackableSeries) && (d2.isStackableSeries) && (d1.seriesNum != d2.seriesNum)) {
+		*    if (!warnings->forceStackSeries)
+		*      printMessage("Volumes stacked despite varying series number (use '-m o' to turn off merging).\n");
+		*    warnings->forceStackSeries = true;
+		*    isForceStackSeries = true;
+                *  }
+                */
+
+	        //printf("isForceStackSameSeries = true, seriesNum %ld, %ld, seriesInstanceUidCrc %d, %d\n", d1.seriesNum, d2.seriesNum, d1.seriesUidCrc, d2.seriesUidCrc);
 #endif
 		return true; //we will stack these images, even if they differ in the following attributes
 	}
@@ -8466,7 +8559,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 						fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 						nConvert++;
 					} else {
-						if (isNonParallelSlices) {
+					       // ??? isMultiEcho, isCoilVaries, isNonParallelSlices are false here ???
+					       if (isNonParallelSlices) {
 							dcmList[i].isNonParallelSlices = true;
 							dcmList[j].isNonParallelSlices = true;
 						}
@@ -8535,6 +8629,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				nConvert++;
 			}
 		} //for all images with same seriesUID as first one
+
+                // MGH set Opts.isForceStackSameSeries = 1 by default, isMultiEcho, isNonParallelSlices, isCoilVaries remain false for MGH default run after isSameSet
 		if ((isNonParallelSlices) && (dcmList[ii].CSA.mosaicSlices > 1) && (nConvert > 0)) { //issue481: if ANY volumes are non-parallel, save ALL as 3D
 			printWarning("Saving mosaics with non-parallel slices as 3D (issue 481)\n");
 			for (int j = i; j < (int)nDcm; j++) {
@@ -8986,6 +9082,8 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	opts->numSeries = 0;
 	memset(opts->seriesNumber, 0, sizeof(opts->seriesNumber));
 	strcpy(opts->filename, "%f_%p_%t_%s");
+
+        opts->isDumpNotConvert = false;
 } // setDefaultOpts()
 
 #if defined(_WIN64) || defined(_WIN32)
