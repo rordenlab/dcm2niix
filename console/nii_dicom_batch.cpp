@@ -8559,7 +8559,6 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 						fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 						nConvert++;
 					} else {
-					       // ??? isMultiEcho, isCoilVaries, isNonParallelSlices are false here ???
 					       if (isNonParallelSlices) {
 							dcmList[i].isNonParallelSlices = true;
 							dcmList[j].isNonParallelSlices = true;
