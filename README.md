@@ -67,21 +67,7 @@ Ubuntu: `sudo apt-get install cmake pkg-config`
 
 MacOS: `brew install cmake pkg-config` or `sudo port install cmake pkgconfig`
 
-**Basic build:**
-```bash
-git clone https://github.com/rordenlab/dcm2niix.git
-cd dcm2niix
-mkdir build && cd build
-cmake ..
-make
-```
-`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install` instead of `make` - this will copy the executable to your path so you do not have to provide the full path to the executable.
-
-In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
-
-**Advanced build:**
-
-As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000, [JPEG-LS](https://github.com/team-charls/charls) (this option requires a  c++14 compiler), as well as using the high performance Cloudflare zlib library (this option requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
+Once these tools are available, you can compile with cmake:
 
 ```bash
 git clone https://github.com/rordenlab/dcm2niix.git
@@ -90,14 +76,20 @@ mkdir build && cd build
 cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
 make
 ```
+`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install` instead of `make` - this will copy the executable to your path so you do not have to provide the full path to the executable.
 
-**optional batch processing version:**
-
-The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` as well change the cmake command to `cmake -DBATCH_VERSION=ON ..`. This requires a compiler that supports c++11.
+In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
 
 ### Building the command line version without cmake
 
-If you have any problems with the cmake build script described above or want to customize the software see the [COMPILE.md file for details on manual compilation](./COMPILE.md).
+This is the simplest way to compile dcm2niix on a Linux or MacOS computer. Be warned that this minimal version will not be able to extract DICOM images compressed with the (rarely used) JPEG2000 or JPEG-LS formats.
+
+```bash
+git clone https://github.com/rordenlab/dcm2niix.git
+cd dcm2niix/console
+make
+./dcm2niix
+```
 
 ## Referencing
 
@@ -141,6 +133,7 @@ The following tools exploit dcm2niix
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [birc-bids](https://github.com/bircibrain/birc-bids) provides a Docker/Singularity container with various BIDS conversion utilities.
+  - [BMAT](https://github.com/ColinVDB/BMAT) translates data from MRI scanners to the BIDS structure.
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.
   - [boutiques-dcm2niix](https://github.com/lalet/boutiques-dcm2niix) is a dockerfile for installing and validating dcm2niix.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.

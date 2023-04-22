@@ -37,8 +37,7 @@ In contrast, Canon software [V6.1](https://github.com/neurolabusc/dcm_qa_canon_6
 The [BIDS format](https://bids.neuroimaging.io) can record several sequence properties that are useful for processing MRI data. The DICOM headers created by Toshiba scanners are very clean and minimalistic, and do not report several of these advanced properties. Therefore, dcm2niix is unable to populate these properties of the JSON file. This reflects a limitation of the DICOM images, not of dcm2niix.
 
  - SliceTiming is not recorded. This can be useful for slice time correction.
- - Phase encoding polarity is not record. This is useful for undistortion with [TOPUP](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup). Clément Debacker notes that this parameter can be encoded into a XML field called `<VG>` inserted in the private tag700D,1119. However, this requires the user to explicitly request these details and uses XML rather than DICOM so it is not easily parsed. To enable this, choose `Utility` > `Maintenance` > `Config.` > `DICOM management` > `Remote Node` > Select desired node > `Edit` > Beside Storage click on `Details` > `Advanced 1` > `Private tag for MRI image`.
-
+ - Phase encoding polarity is not recorded. This is useful for undistortion with [TOPUP](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup). Clément Debacker notes that this parameter can be encoded into a XML field called `<VG>` inserted in the private tag 700D,1119. However, this requires the user to explicitly request these details and uses XML rather than DICOM so it is not easily parsed. To enable this, you must have the option "Private tag for MRI image" activated on the scanner. You can ask your local clinical scientist/application specialist to enable it.
 
 ## Sample Datasets
 

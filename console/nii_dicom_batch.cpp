@@ -1897,7 +1897,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"MultibandAccelerationFactor\": %d,\n", d.CSA.multiBandFactor);
 	json_Float(fp, "\t\"PercentPhaseFOV\": %g,\n", d.phaseFieldofView);
 	json_Float(fp, "\t\"PercentSampling\": %g,\n", d.percentSampling);
-	if (d.echoTrainLength > 1)											//>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
+	if (d.echoTrainLength > 1) //>1 as for Siemens EPI this is 1, Siemens uses EPI factor http://mriquestions.com/echo-planar-imaging.html
 		fprintf(fp, "\t\"EchoTrainLength\": %d,\n", d.echoTrainLength); //0018,0091 Combination of partial fourier and in-plane parallel imaging
 	if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_PHASE)
 		fprintf(fp, "\t\"PartialFourierDirection\": \"PHASE\",\n");
