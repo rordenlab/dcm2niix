@@ -1,4 +1,3 @@
-[![Build Status](https://travis-ci.org/rordenlab/dcm2niix.svg?branch=master)](https://travis-ci.org/rordenlab/dcm2niix)
 [![Build status](https://ci.appveyor.com/api/projects/status/7o0xp2fgbhadkgn1?svg=true)](https://ci.appveyor.com/project/neurolabusc/dcm2niix)
 
 ## About
@@ -44,14 +43,15 @@ Command line usage is described in the [NITRC wiki](https://www.nitrc.org/plugin
 
 There are a couple ways to install dcm2niix
  - [Github Releases](https://github.com/rordenlab/dcm2niix/releases) provides the latest compiled executables. This is an excellent option for MacOS and Windows users. However, the provided Linux executable requires a recent version of Linux (e.g. Ubuntu 14.04 or later), so the provided Unix executable is not suitable for very old distributions. Specifically, it requires Glibc 2.19 (from 2014) or later. Users of older systems can compile their own copy of dcm2niix or download the compiled version included with MRIcroGL Glibc 2.12 (from 2011, see below).
- - Run the following command to get the latest version for Linux, Macintosh or Windows: 
+ - Run the following command to get the latest release version for Linux, Macintosh or Windows:
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_lnx.zip`
-   * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac.zip`
-   * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_mac_arm.pkg`
+   * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/macos_dcm2niix.pkg`
    * `curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_win.zip`
+ - Latest development version is available on [AppVeyor](https://ci.appveyor.com/project/neurolabusc/dcm2niix) for [Linux](https://ci.appveyor.com/api/projects/neurolabusc/dcm2niix/artifacts/dcm2niix_lnx.zip?job=linux), [Macintosh](https://ci.appveyor.com/api/projects/neurolabusc/dcm2niix/artifacts/dcm2niix_mac.zip?job=mac) or [Windows](https://ci.appveyor.com/api/projects/neurolabusc/dcm2niix/artifacts/dcm2niix_win.zip?job=win).
  - [MRIcroGL (NITRC)](https://www.nitrc.org/projects/mricrogl) or [MRIcroGL (GitHub)](https://github.com/rordenlab/MRIcroGL12/releases) includes dcm2niix that can be run from the command line or from the graphical user interface (select the Import menu item). The Linux version of dcm2niix is compiled on a [holy build box](https://github.com/phusion/holy-build-box), so it should run on any Linux distribution.
  - If you have a MacOS computer with Homebrew or MacPorts you can run `brew install dcm2niix` or `sudo port install dcm2niix`, respectively.
  - If you have Conda, [`conda install -c conda-forge dcm2niix`](https://anaconda.org/conda-forge/dcm2niix) on Linux, MacOS or Windows.
+ - If you have pip, `python -m pip install dcm2niix` on Linux, MacOS or Windows.
  - On Debian Linux computers you can run `sudo apt-get install dcm2niix`.
 
 
@@ -67,21 +67,7 @@ Ubuntu: `sudo apt-get install cmake pkg-config`
 
 MacOS: `brew install cmake pkg-config` or `sudo port install cmake pkgconfig`
 
-**Basic build:**
-```bash
-git clone https://github.com/rordenlab/dcm2niix.git
-cd dcm2niix
-mkdir build && cd build
-cmake ..
-make
-```
-`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install` instead of `make` - this will copy the executable to your path so you do not have to provide the full path to the executable.
-
-In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
-
-**Advanced build:**
-
-As noted in the `Image Conversion and Compression Support` section, the software provides many optional modules with enhanced features. A common choice might be to include support for JPEG2000, [JPEG-LS](https://github.com/team-charls/charls) (this option requires a  c++14 compiler), as well as using the high performance Cloudflare zlib library (this option requires a CPU built after 2008). To build with these options simply request them when configuring cmake:
+Once these tools are available, you can compile with cmake:
 
 ```bash
 git clone https://github.com/rordenlab/dcm2niix.git
@@ -90,14 +76,20 @@ mkdir build && cd build
 cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
 make
 ```
+`dcm2niix` will be created in the `bin` subfolder. To install on the system run `make install` instead of `make` - this will copy the executable to your path so you do not have to provide the full path to the executable.
 
-**optional batch processing version:**
-
-The batch processing binary `dcm2niibatch` is optional. To build `dcm2niibatch` as well change the cmake command to `cmake -DBATCH_VERSION=ON ..`. This requires a compiler that supports c++11.
+In rare case if cmake fails with the message like `"Generator: execution of make failed"`, it could be fixed by ``sudo ln -s `which make` /usr/bin/gmake``.
 
 ### Building the command line version without cmake
 
-If you have any problems with the cmake build script described above or want to customize the software see the [COMPILE.md file for details on manual compilation](./COMPILE.md).
+This is the simplest way to compile dcm2niix on a Linux or MacOS computer. Be warned that this minimal version will not be able to extract DICOM images compressed with the (rarely used) JPEG2000 or JPEG-LS formats.
+
+```bash
+git clone https://github.com/rordenlab/dcm2niix.git
+cd dcm2niix/console
+make
+./dcm2niix
+```
 
 ## Referencing
 
@@ -112,14 +104,14 @@ If you have any problems with the cmake build script described above or want to 
  - [dicom2nifti](https://github.com/icometrix/dicom2nifti) uses the scriptable Python wrapper utilizes the [high performance  GDCMCONV](http://gdcm.sourceforge.net/wiki/index.php/Gdcmconv) executables.
  - [dicomtonifti](https://github.com/dgobbi/vtk-dicom/wiki/dicomtonifti) leverages [VTK](https://www.vtk.org/).
  - [dimon](https://afni.nimh.nih.gov/pub/dist/doc/program_help/Dimon.html) and [to3d](https://afni.nimh.nih.gov/pub/dist/doc/program_help/to3d.html) are included with AFNI.
- - [dinifti](http://as.nyu.edu/cbi/resources/Software/DINIfTI.html) is focused on conversion of Siemens data.
+ - [dinifti](https://as.nyu.edu/cbi/resources/Software/DINIfTI.html) is focused on conversion of classic Siemens DICOMs.
  - [DWIConvert](https://github.com/BRAINSia/BRAINSTools/tree/master/DWIConvert) converts DICOM images to NRRD and NIfTI formats.
- - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) has great support for various vendors.
+ - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) a great tool for classic DICOMs.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package. In my limited experience this tool works well for GE and Siemens data, but fails with Philips 4D datasets.
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
  - [nanconvert](https://github.com/spinicist/nanconvert) uses the ITK library to convert DICOM from GE and proprietary Bruker to standard formats like DICOM.  
- - [PET CT viewer](http://petctviewer.org/index.php/feature/results-exports/nifti-export) for [Fiji](https://fiji.sc) can load DICOM images and export as NIfTI.
- - [Plastimatch](https://www.plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
+ - [Plastimatch](https://plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, 
+ statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [Simple Dicom Reader 2 (Sdr2)](http://ogles.sourceforge.net/sdr2-doc/index.html) uses [dcmtk](https://dicom.offis.de/dcmtk.php.en) to read DICOM images and convert them to the NIfTI format.
  - [SlicerHeart extension](https://github.com/SlicerHeart/SlicerHeart) is specifically designed to help 3D Slicer support ultra sound (US) images stored as DICOM.
  - [spec2nii](https://github.com/wexeee/spec2nii) converts MR spectroscopy to NIFTI.
@@ -141,14 +133,20 @@ The following tools exploit dcm2niix
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [birc-bids](https://github.com/bircibrain/birc-bids) provides a Docker/Singularity container with various BIDS conversion utilities.
+  - [BMAT](https://github.com/ColinVDB/BMAT) translates data from MRI scanners to the BIDS structure.
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.
   - [boutiques-dcm2niix](https://github.com/lalet/boutiques-dcm2niix) is a dockerfile for installing and validating dcm2niix.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
+  - [CardioNIfTI](https://github.com/UK-Digital-Heart-Project/CardioNIfTI) processes cardiac MR DICOM datasets and converts them to NIfTI.
   - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
+  - [clinical_dicom2bids_smk](https://github.com/greydongilmore/clinical_dicom2bids_smk) Snakemake workflow to convert a clinical dicom directory into BIDS structure.
   - [clpipe](https://github.com/cohenlabUNC/clpipe) uses dcm2bids for DICOM import.
   - [conversion](https://github.com/pnlbwh/conversion) is a Python library that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
+  - [convert_source](https://github.com/AdebayoBraimah/convert_source) to convert DICOM to BIDS directory layout.
+  - [CT-preprocess](https://github.com/GravO8/CT-preprocess) brain extract head CT scans.
+  - [d2b-dcm2niix](https://github.com/d2b-dev/d2b-dcm2niix) data to BIDS wrapper.
   - [DAC2BIDS](https://github.com/dangom/dac2bids) uses dcm2niibatch to create [BIDS](http://bids.neuroimaging.io/) datasets.
   - [Data2Bids](https://github.com/SIMEXP/Data2Bids) converts non-DICOM images with associated JSON files to BIDS. While this tool does not require dcm2niix, it can leverage dcm2niix output similar to niix2bids.
   - [Dcm2Bids](https://github.com/cbedetti/Dcm2Bids) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Here is a [tutorial](https://andysbrainbook.readthedocs.io/en/latest/OpenScience/OS/BIDS_Overview.html) describing usage.
@@ -162,23 +160,28 @@ The following tools exploit dcm2niix
   - [dicom2bids](https://github.com/Jolinda/lcnimodules) includes python modules for converting dicom files to nifti in a bids-compatible file structure that use dcm2niix.
   - [DICOM2BIDS](https://github.com/klsea/DICOM2BIDS) is a Python 2 script for creating BIDS files.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
+  - [dicomConversionToNifti](https://github.com/bsmarine/dicomConversionToNifti) converts, de-identifies and assigns standardized naming convention to medical imaging.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
+  - [DPABI Data Processing & Analysis for Brain Imaging](http://rfmri.org/dpabi) includes dcm2niix.
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
+  - [ExploreASL-GUI](https://github.com/MauricePasternak/ExploreASL-GUI) uses dcm2niix for image conversion.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a [web service](https://brainlife.io/ezbids/) for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
   - [fmrif tools](https://github.com/nih-fmrif/fmrif_tools) uses dcm2niix for its [oxy2bids](https://fmrif-tools.readthedocs.io/en/latest/#) tool.
   - [fMRIprep.dcm2niix](https://github.com/BrettNordin/fMRIprep.dcm2niix) is designed to convert DICOM format to the NIfTI format.
   - [FreeSurfer](https://github.com/freesurfer/freesurfer) includes dcm2niix for image conversion.
   - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
   - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
+  - [https://github.com/TamerGezici/HCF-bidser](https://github.com/TamerGezici/HCF-bidser) Jupyter notebook script for DICOM to BIDS format.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Data acquired using the [reproin](https://github.com/ReproNim/reproin) convention can be easily converted to BIDS.
   - [Horos (Osirix) Bids Output Extension](https://github.com/mslw/horos-bids-output) is a OsiriX / Horos plugin that uses dcm2niix for creating BIDS output.
   - [kipettools](https://github.com/mathesong/kipettools) uses dcm2niix to load PET data.
   - [LEAD-DBS](http://www.lead-dbs.org/) uses dcm2niix for [DICOM import](https://github.com/leaddbs/leaddbs/blob/master/ea_dicom_import.m).
   - [lin4neuro](http://www.lin4neuro.net/lin4neuro/18.04bionic/vm/) releases such as the English l4n-18.04.4-amd64-20200801-en.ova include MRIcroGL and dcm2niix pre-installed. This allows user with VirtualBox or VMWarePlayer to use these tools (and many other neuroimaging tools) in a graphical virtual machine.
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
+  - [MrPyConvert](https://github.com/Jolinda/mrpyconvert) Python library dicom to bids conversion.
+  - [Nekton](https://github.com/deepc-health/nekton) is a python package for DICOM to NifTi and NifTi to DICOM-SEG and GSPS conversion.
   - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a single, static Dockerfile.
   - [NeuroDebian](http://neuro.debian.net/pkgs/dcm2niix.html) provides up-to-date version of dcm2niix for Debian-based systems.
-  - [neurodocker](https://github.com/kaczmarj/neurodocker) generates [custom](https://github.com/rordenlab/dcm2niix/issues/138) Dockerfiles given specific versions of neuroimaging software.
   - [neurodocker](https://github.com/kaczmarj/neurodocker) includes dcm2niix as a lean, minimal install Dockerfile.
   - [NeuroElf](http://neuroelf.net) can use dcm2niix to convert DICOM images.
   - [Neuroinformatics Database (NiDB)](https://github.com/gbook/nidb) is designed to store, retrieve, analyze, and share neuroimaging data. It uses dcm2niix for image QA and handling some formats. 
@@ -186,9 +189,11 @@ The following tools exploit dcm2niix
   - [niix2bids](https://github.com/benoitberanger/niix2bids ) attempts to automatically convert Siemens MRI images converted by dcm2niix to BIDS.
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
   - [PET2BIDS](https://github.com/openneuropet/PET2BIDS) uses dcm2niix for DICOM images.
+  - [pl-dcm2niix](https://github.com/FNNDSC/pl-dcm2niix) is a ChRIS wrapper for dcm2niix.
   - [py2bids](https://github.com/Jolinda/py2bids) dcm2niix dicom to bids conversion wrapper.
   - [pyBIDSconv provides a graphical format for converting DICOM images to the BIDS format](https://github.com/DrMichaelLindner/pyBIDSconv). It includes clever default heuristics for identifying Siemens scans.
   - [pydcm2niix is a Python module for working with dcm2niix](https://github.com/jstutters/pydcm2niix).
+  - [pydra-dcm2bids](https://github.com/aramis-lab/pydra-dcm2bids) supports Pydra tasks for dcm2bids.
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
@@ -199,4 +204,5 @@ The following tools exploit dcm2niix
   - [tar2bids](https://github.com/khanlab/tar2bids) converts DICOM tarball(s) to BIDS using heudiconv which invokes dcm2niix.
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).
+  - [twice_exceptionality_repository](https://github.com/avery-water/twice_exceptionality_repository) converts DICOM to BIDS format, creates masks, and runs VBM.
   - [XNAT2BIDS](https://github.com/kamillipi/2bids) is a simple xnat pipeline to convert DICOM scans to BIDS-compatible output.

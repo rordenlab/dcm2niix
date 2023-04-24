@@ -140,8 +140,9 @@ Fields specific to MRI scans.
 | EstimatedEffectiveEchoSpacing      | s    |                                                                                         | D          |
 | EstimatedTotalReadoutTime          | s    |                                                                                         | D          |
 | FlipAngle                          | deg  | DICOM tag 0018,1314                                                                     | B          |
+| VariableFlipAngleFlag              | b    | DICOM tag 0018,1315                                                                     | D          |
 | ImageOrientationPatientDICOM       |      | DICOM tag 0020,0037                                                                     | D          |
-| ImagingFrequency                   | MHz  | DICOM tag 0018,0084                                                                     | D          |
+| ImagingFrequency                   | MHz  | DICOM tag 0018,0084 or 0018,9098                                                        | D          |
 | InPlanePhaseEncodingDirectionDICOM |      | DICOM tag 0018,1312                                                                     | D          |
 | InversionTime                      | s    | DICOM tag 0018,0082                                                                     | B          |
 | MagneticFieldStrength              | T    | DICOM tag 0018,0087                                                                     | B          |
@@ -151,19 +152,21 @@ Fields specific to MRI scans.
 | NumberOfAverages                   |      | DICOM tag 0018,0083                                                                     | D          |
 | ParallelAcquisitionTechnique       |      | DICOM tag 0018, 9078, aka `SENSE`, `GRAPPA`                                             | B          |
 | ParallelReductionFactorInPlane     |      | DICOM tag 0018,9069                                                                     | B          |
-| ParallelReductionOutOfPlane        |      | DICOM tag 0018,9155                                                                     | D          |
+| ParallelReductionFactorOutOfPlane  |      | DICOM tag 0018,9155                                                                     | B          |
 | PartialFourierDirection            |      | DICOM tag 0018,9036                                                                     | B          |
 | PercentPhaseFOV                    |      | DICOM tag 0018,0094                                                                     | D          |
 | PercentSampling                    |      | DICOM tag 0018,0093                                                                     | D          |
 | PhaseEncodingAxis                  |      | When polarity unknown                                                                   | B          |
 | PhaseEncodingDirection             |      | When polarity known                                                                     | B          |
-| PhaseEncodingSteps                 |      | DICOM tag 0018,0089                                                                     | D          |
+| FrequencyEncodingSteps             |      | DICOM tag 0018,9058                                                        | D          |
+| PhaseEncodingSteps                 |      | DICOM tag 0018,0089 or 0018,9231 aka PhaseEncodingStepsInPlane                          | D          |
+| PhaseEncodingStepsOutOfPlane       |      | DICOM tag 0018,9232                                                        | D          |
 | PixelBandwidth                     | Hz   | DICOM tag 0018,0095                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 | RepetitionTime                     | s    | DICOM tag 0018,0080                                                                     | B          |
 | RepetitionTimeExcitation           | s    | DICOM tag 0018, 0080 for some manufacturers                                             | B          |
 | RepetitionTimeInversion            | s    |                                                                                         | D          |
-| SAR                                |      | DICOM tag 0018,1316                                                                     | D          |
+| SAR                                |      | DICOM tag 0018,1316 or 0018,9181 defined by 0018,9179                                   | D          |
 | SliceThickness                     | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
 | SliceTiming                        | s    |                                                                                         | B          |
 | SpacingBetweenSlices               | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
@@ -228,6 +231,9 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | ASLContrastTechnique           |      | DICOM tag 0043,10A3      | D          |
 | ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
 | LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
+| SliceTiming                    | s    | [see notes](https://github.com/rordenlab/dcm2niix/tree/master/GE#slice-timing)  | B          |
+| CompressedSensingFactor        |      | DICOM tag 0043,10b7      | D          |
+| DeepLearningFactor             |      | DICOM tag 0043,10ca      | D          |
 
 ### Manufacturer Philips
 
@@ -298,6 +304,7 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | DelayTime                      | s                                               | Pause between EPI volumes, where TR is longer than required by TA (`sparse` imaging)                                                                                                                                                                                                                                                                                                                   | D          |
 | TxRefAmp                       | V                                               |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | ParallelReductionFactorInPlane |                                                 | DICOM tag 0021,1009                                                                                                                                                                                                                                                                                                                                                                                    | B          |
+| ParallelReductionFactorOutOfPlane |                                              | CSA `sPat.lAccelFact3D`                                                                                                                                                                                                                                                                                                                                                                                | B          |
 | PhaseResolution                | f                                               |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | PhaseOversampling              |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | MultibandAccelerationFactor    |                                                 | DICOM tag 0021,1009                                                                                                                                                                                                                                                                                                                                                                                    | B          |
@@ -308,7 +315,6 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | FmriExternalInfo               |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | WipMemBlock                    |                                                 |                                                                                                                                                                                                                                                                                                                                                                                                        | D          |
 | AveragesDouble                 |                                                 | CSA `dAveragesDouble`, fractions possible, independent of DICOM `NumberOfAverages` (0018,0083)                                                                                                                                                                                                                                                                                                         | D          |
-| AccelFact3D                    |                                                 | 3D Acquisitions (Parallel Reduction Factor Across Slices)                                                                                                                                                                                                                                                                                                                                              | D          |
 | ProtocolName                   |                                                 | Check SeriesDescription - they might be switched around                                                                                                                                                                                                                                                                                                                                                | D          |
 | RefLinesPE                     |                                                 | # of reference lines in the phase encoding direction for acceleration (GRAPPA)                                                                                                                                                                                                                                                                                                                         | D          |
 | ConsistencyInfo                |                                                 | The more complete software version, e.g. VE11C or VE11E instead of just VE11.                                                                                                                                                                                                                                                                                                                          | D          |
@@ -321,15 +327,19 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 
 ### Manufacturer Siemens Magnetic Resonance Imaging (XA)
 
-Fields specific to Siemens XA-series MRI systems (Sola, Vida).
+Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tree/master/Siemens#siemens-x-series) MRI systems (Sola, Vida).
 
-| Field                        | Unit | Comments               | Defined By |
-|------------------------------|------|------------------------|------------|
-| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F    | B          |
-| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153    | D          |
-| ScanningSequence             |      | DICOM tag 0021,105a    | D          |
-| PostLabelDelay               | s    | DICOM tag 0018,9258    | D          |
-| NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175 | B          |
+| Field                        | Unit | Comments                   | Defined By |
+|------------------------------|------|----------------------------|------------|
+| ReceiveCoilActiveElements    |      | DICOM tag 0021,114F        | B          |
+| BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153        | D          |
+| ScanningSequence             |      | DICOM tag 0021,105a        | D          |
+| PostLabelDelay               | s    | DICOM tag 0018,9258        | D          |
+| NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
+| PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
+| SpoilingState                |      | 0021,105B                  | B          |
+
+Siemens also includes some sequence information in the private MRPhoenixProtocol (0021,1019) tag. You can view this with [gdcmdump](https://gdcm.sourceforge.net/html/gdcmdump.html), e.g. `gdcmdump --mrprotocol img.dcm`. Fields that dcm2niix inspects include `sPat.lAccelFact3D `, `sPat.lAccelFactPE`, `sPat.lRefLinesPE` and `sPat.ucPATMode`. The behavior of dcm2niix will be more well documented as our understanding of this tag improves.
 
 ### Manufacturer UIH
 

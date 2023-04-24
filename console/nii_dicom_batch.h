@@ -25,15 +25,15 @@ extern "C" {
 
 typedef struct 
 {
-    struct nifti_1_header hdr0;
+  struct nifti_1_header hdr0;
 
-    size_t         imgsz;
-    unsigned char *imgM;
+  size_t         imgsz;
+  unsigned char *imgM;
 
-    struct TDICOMdata tdicomData;
+  struct TDICOMdata tdicomData;
 
-    struct TDTI *tdti;
-    int numDti;
+  struct TDTI *tdti;
+  int numDti;
 } MRIFSSTRUCT;
 
 MRIFSSTRUCT* nii_getMrifsStruct();
@@ -54,11 +54,13 @@ void nii_clrMrifsStruct();
 #define kSaveFormatBNII 4
 
 #define MAX_NUM_SERIES 16
+#define kOptsStr 512
 
     struct TDCMopts {
+        bool isDumpNotConvert;
         bool isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isGz, isPipedGz, isFlipY,  isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes,isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop;
-        int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, gzLevel; //support for compressed data 0=none,
-        char filename[512], outdir[512], indir[512], pigzname[512], optsname[512], indirParent[512], imageComments[24];
+        int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, onlySearchDirForDICOM, gzLevel, diffCyclingModeGE; //support for compressed data 0=none,
+        char filename[kOptsStr], outdir[kOptsStr], indir[kOptsStr], pigzname[kOptsStr], optsname[kOptsStr], indirParent[kOptsStr], imageComments[24];
         double seriesNumber[MAX_NUM_SERIES]; //requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
         long numSeries;
 #ifdef USING_R
@@ -77,7 +79,7 @@ void nii_clrMrifsStruct();
     void readIniFile (struct TDCMopts *opts, const char * argv[]);
     int nii_saveNIIx(char * niiFilename, struct nifti_1_header hdr, unsigned char* im, struct TDCMopts opts);
     int nii_loadDir(struct TDCMopts *opts);
-    int nii_loadDirCore(char *indir, struct TDCMopts* opts);
+  int nii_loadDirCore(char *indir, struct TDCMopts* opts);
     void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char * filename);
     int nii_createFilename(struct TDICOMdata dcm, char * niiFilename, struct TDCMopts opts);
     void  nii_createDummyFilename(char * niiFilename, struct TDCMopts opts);

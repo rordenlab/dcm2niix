@@ -1,6 +1,3 @@
-[![Build status](https://ci.appveyor.com/api/projects/status/yq0naf3v2m8nfa8r/branch/master?svg=true)](https://ci.appveyor.com/project/vbaderks/charls/branch/master)
-[![Build Status](https://travis-ci.org/team-charls/charls.svg?branch=master)](https://travis-ci.org/team-charls/charls)
-
 # CharLS
 
 CharLS is a C++ implementation of the JPEG-LS standard for lossless and near-lossless image compression and decompression.
@@ -75,7 +72,7 @@ The code is regularly compiled/tested on Windows and 64 bit Linux. Additionally,
 
 ## Users & Acknowledgements
 
-CharLS is being used by [GDCM DICOM toolkit](http://sourceforge.net/projects/gdcm/), thanks for [Mathieu Malaterre](http://sourceforge.net/users/malat) for getting CharLS started on Linux. [Kato Kanryu](http://knivez.homelinux.org/) wrote an initial version of the color transfroms and the DIB output format code, for an [irfanview](http://www.irfanview.com) plugin using CharLS. Thanks to Uli Schlachter, CharLS now finally runs correctly on big-endian architectures like Sun SPARC.
+CharLS is being used by [GDCM DICOM toolkit](http://sourceforge.net/projects/gdcm/), thanks for [Mathieu Malaterre](http://sourceforge.net/users/malat) for getting CharLS started on Linux. [Kato Kanryu](http://knivez.homelinux.org/) wrote an initial version of the color transforms and the DIB output format code, for an [irfanview](http://www.irfanview.com) plugin using CharLS. Thanks to Uli Schlachter, CharLS now finally runs correctly on big-endian architectures like Sun SPARC.
 
 ## Legal
 

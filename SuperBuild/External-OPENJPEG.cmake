@@ -1,14 +1,19 @@
 set(OPENJPEG_TAG  v2.1-static) # version v2.1-static
 
 ExternalProject_Add(openjpeg
-    GIT_REPOSITORY "${git_protocol}://github.com/ningfei/openjpeg.git"
+    GIT_REPOSITORY "https://github.com/ningfei/openjpeg.git"
     GIT_TAG "${OPENJPEG_TAG}"
     SOURCE_DIR openjpeg
     BINARY_DIR openjpeg-build
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
-        -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+        ${EXTERNAL_PROJECT_BUILD_TYPE_CMAKE_ARGS}
+        ${OSX_ARCHITECTURES}
+        # Compiler settings
+        -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
+        # Not used -DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}
+        # Install directories
         -DCMAKE_INSTALL_PREFIX:PATH=${DEP_INSTALL_DIR}
 )
 

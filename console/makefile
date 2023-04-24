@@ -4,6 +4,12 @@ CFLAGS=-s -O3
 # Debugging
 #CFLAGS=-g
 
+# issue659: increase stack to 16mb
+#For Linux linker stacksize ignored: we must use setrlimit 
+# LFLAGS=-Wl,-z -Wl,stack-size=16777216
+LFLAGS=
+
+
 #Leak tests:
 # https://clang.llvm.org/docs/AddressSanitizer.html
 # clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.c -o dcm2niix -DmyDisableOpenJPEG
@@ -34,7 +40,8 @@ ifneq ($(OS),Windows_NT)
 		# otool -l ./dcm2niix | grep info_plist -B1 -A10
 		# launchctl plist ./dcm2niix
 		#MacOS links g++ to clang++, for gcc install via homebrew and replace g++ with /usr/local/bin/gcc-9
+		LFLAGS=-Wl,-stack_size -Wl,0x1000000
 	endif
 endif
 all:
-	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG
+	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG

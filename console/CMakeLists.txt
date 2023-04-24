@@ -21,7 +21,7 @@ endif()
 if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     # using Clang
     add_definitions(-fno-caret-diagnostics)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip -Wl,-stack_size -Wl,0x1000000")
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     # using GCC
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 7.1.0))
@@ -47,7 +47,7 @@ elseif(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4800")   # 'uint32_t' : forcing value to bool 'true' or 'false'
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4819")   # The file contains a character that cannot be represented in the current code page
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4996")   # 'access': The POSIX name for this item is deprecated
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:8388608")  # set "Stack Reserve Size" to 8MB (default value is 1MB)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:16388608")  # set "Stack Reserve Size" to 16MB (default value is 1MB)
 endif()
 
 # Compiler dependent flags
@@ -114,8 +114,9 @@ if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
     if(MSVC)
         add_definitions(-DCHARLS_STATIC)
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
     set(CHARLS_SRCS
         charls/jpegls.cpp
@@ -210,6 +211,10 @@ if(BATCH_VERSION)
     set(YAML-CPP_DIR ${YAML-CPP_DIR} CACHE PATH "Path to yaml-cpp configuration file" FORCE)
 
     find_package(YAML-CPP REQUIRED)
+    if(YAML-CPP_FOUND AND NOT YAML_CPP_LIBRARIES)
+        # workaround for yaml-cpp-devel-0.7.0-1.fc38 on Fedora Rawhide
+        set(YAML_CPP_LIBRARIES yaml-cpp)
+    endif()
     target_include_directories(dcm2niibatch PRIVATE ${YAML_CPP_INCLUDE_DIR})
     target_link_libraries(dcm2niibatch ${YAML_CPP_LIBRARIES})
 
