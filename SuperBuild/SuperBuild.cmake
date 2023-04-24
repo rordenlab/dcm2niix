@@ -4,12 +4,8 @@ if(NOT GIT_FOUND)
     message(FATAL_ERROR "Cannot find Git. Git is required for Superbuild")
 endif()
 
-# Basic CMake build settings
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING
-        "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS  "Debug;Release;RelWithDebInfo;MinSizeRel")
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/dcm2niixInitializeBuildType.cmake)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 option(USE_STATIC_RUNTIME "Use static runtime" ON)
@@ -151,17 +147,23 @@ ExternalProject_Add(console
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
+        ${EXTERNAL_PROJECT_BUILD_TYPE_CMAKE_ARGS}
         ${OSX_ARCHITECTURES}
-        -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+        # Install directories
         -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
+        # Compiler settings
+        -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
         -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
+        -DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}
         -DCMAKE_CXX_FLAGS:STRING=${CMAKE_CXX_FLAGS}
+        # Options
         -DCMAKE_VERBOSE_MAKEFILE:BOOL=${CMAKE_VERBOSE_MAKEFILE}
         -DUSE_STATIC_RUNTIME:BOOL=${USE_STATIC_RUNTIME}
         -DUSE_TURBOJPEG:BOOL=${USE_TURBOJPEG}
         -DUSE_JASPER:BOOL=${USE_JASPER}
         -DUSE_JPEGLS:BOOL=${USE_JPEGLS}
         -DUSE_JNIFTI:BOOL=${USE_JNIFTI}
+        # ZLIB
         -DZLIB_IMPLEMENTATION:STRING=${ZLIB_IMPLEMENTATION}
         -DZLIB_ROOT:PATH=${ZLIB_ROOT}
          # OpenJPEG
