@@ -4529,6 +4529,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 // #define kSeriesType 0x0054+(0x1000 << 16 )
 #define kDoseCalibrationFactor 0x0054 + (0x1322 << 16)
 #define kPETImageIndex 0x0054 + (0x1330 << 16)
+#define kReferencedSegmentNumber 0x0062 + (0x000B << 16) //US
 #define kPEDirectionDisplayedUIH 0x0065 + (0x1005 << 16) //SH
 #define kDiffusion_bValueUIH 0x0065 + (0x1009 << 16) //FD
 #define kParallelInformationUIH 0x0065 + (0x100D << 16) //SH
@@ -4645,6 +4646,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int temporalPositionIndex = 0;
 	int minTemporalPositionIndex = 65535;
 	int maxTemporalPositionIndex = 0;
+	int minReferencedSegmentNumber = 65535;
+	int maxReferencedSegmentNumber = 0;
 	//int temporalPositionIdentifier = 0;
 	int locationsInAcquisitionPhilips = 0;
 	int imagesInAcquisition = 0;
@@ -4819,7 +4822,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			if (sqDepth < 0)
 				sqDepth = 0; //should not happen, but protect for faulty anonymization
 			//if we leave the folder MREchoSequence 0018,9114
-			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
+			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_UNKNOWN) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; //triggered
 				//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 				// d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
@@ -5590,6 +5593,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA30") != NULL))
 				d.isXA10A = true;
+			if ((slen > 4) && (strstr(d.softwareVersions, "XA31") != NULL))
+				d.isXA10A = true;
 			if ((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL))
 				break;
 			d.isXA10A = true;
@@ -5989,6 +5994,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				minTemporalPositionIndex = temporalPositionIndex;
 			break;
 		case kDimensionIndexPointer:
+			if (dimensionIndexPointerCounter >= MAX_NUMBER_OF_DIMENSIONS) break;
 			dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos], d.isLittleEndian);
 			break;
 		case kFrameContentSequence:
@@ -6189,6 +6195,14 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kPETImageIndex:
 			PETImageIndex = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
+		case kReferencedSegmentNumber: { //US issue706
+			int segn = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (segn < minReferencedSegmentNumber)
+				minReferencedSegmentNumber = segn;
+			if (segn > maxReferencedSegmentNumber)
+				maxReferencedSegmentNumber = segn;
+			break;
+		}
 		case kPEDirectionDisplayedUIH:
 			if (d.manufacturer != kMANUFACTURER_UIH)
 				break;
@@ -7553,6 +7567,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.xyzDim[3] = d.xyzDim[3] / numberOfDynamicScans;
 		d.xyzDim[4] = numberOfDynamicScans;
 	}
+	int nSegment = maxReferencedSegmentNumber - minReferencedSegmentNumber + 1;
+	if ((nSegment > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % nSegment) == 0)) { //issue706
+		d.xyzDim[3] = d.xyzDim[3] / nSegment;
+		d.xyzDim[4] = nSegment;
+	}
 	if ((maxInStackPositionNumber > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % maxInStackPositionNumber) == 0)) {
 		d.xyzDim[4] = d.xyzDim[3] / maxInStackPositionNumber;
 		d.xyzDim[3] = maxInStackPositionNumber;
@@ -7664,7 +7683,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		int stackPositionItem = 0;
 		if (dimensionIndexPointerCounter > 0)
 			for (size_t i = 0; i < dimensionIndexPointerCounter; i++)
-				if (dimensionIndexPointer[i] == kInStackPositionNumber)
+				if ((dimensionIndexPointer[i] == kInStackPositionNumber) || (dimensionIndexPointer[i] == kImagePositionPatient)) //issue706
 					stackPositionItem = i;
 		if ((d.manufacturer == kMANUFACTURER_CANON) && (nVariableItems == 1) && (d.xyzDim[4] > 1)) {
 			//WARNING: Canon CANON V6.0SP2001* (0018,9005) = "AX fMRI" strangely sets TemporalPositionIndex(0020,9128) as 1 for all volumes: (0020,9157) and (0020,9128) are INCORRECT!
