@@ -5735,9 +5735,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kMRAcquisitionPhaseEncodingStepsOutOfPlane:
 			d.phaseEncodingStepsOutOfPlane = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kGradientEchoTrainLength:
-			d.echoTrainLength = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+		case kGradientEchoTrainLength: {
+			int etl = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (etl < 2) //issue 717
+				break;
+			d.echoTrainLength = etl;
 			break;
+		}
 		case kNumberOfImagesInMosaic:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
 				numberOfImagesInMosaic = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
