@@ -4975,14 +4975,15 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 				nDimIndxVal = -1; //we need DimensionIndexValues
 			} //record dimensionIndexValues slice information
 		} //groupElement == kItemDelimitationTag : delimit item exits folder
+		uint32_t itemTagLength = 0;
 		if (groupElement == kItemTag) {
-			uint32_t slen = dcmInt(4, &buffer[lPos], d.isLittleEndian);
+			itemTagLength = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			uint32_t kUndefinedLen = 0xFFFFFFFF;
-			if (slen != kUndefinedLen) {
+			if (itemTagLength != kUndefinedLen) {
 				nNestPos++;
 				if (nNestPos >= kMaxNestPost)
 					nNestPos = kMaxNestPost - 1;
-				nestPos[nNestPos] = slen + lFileOffset + lPos;
+				nestPos[nNestPos] = itemTagLength + lFileOffset + lPos;
 			}
 			lLength = 4;
 			sqDepth++;
@@ -5037,6 +5038,9 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
 		} //if explicit else implicit VR
+		if ((lLength == 0xFFFFFFFF) && (vr[0] == 'O') && (vr[1] == 'B') && (isIconImageSequence)) {
+			lLength = 0; //encapuslated data of unspecified length
+		} //issue713
 		if (lLength == 0xFFFFFFFF) {
 			lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
 				//09032018 - do not count these as SQs: Horos does not count even groups
@@ -5047,6 +5051,9 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			vr[1] = 'Q';
 			//}
 		}
+		if ((groupElement == kItemTag) && (vr[0] == 'O') && (vr[1] == 'B') && (isIconImageSequence))
+			lLength += itemTagLength; //issue713
+		//printf("issue713::%c%c %04x,%04x %d@%lu\n", vr[0], vr[1], groupElement & 65535, groupElement >> 16, lLength, lPos);
 		if ((groupElement == kItemTag) && (isEncapsulatedData)) { //use this to find image fragment for compressed datasets, e.g. JPEG transfer syntax
 			d.imageBytes = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			lPos = lPos + 4;
