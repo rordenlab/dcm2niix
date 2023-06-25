@@ -994,7 +994,7 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 	// <?xml version="1.0" encoding="UTF-8"?>
 	if ((pUnCmp[0] == '<') && (pUnCmp[1] == '?'))
 		printWarning("New XML-based GE Protocol Block is not yet supported: please report issue on dcm2niix Github page\n");
-	char keyStrSO[] = "SLICEORDER";
+	char keyStrSO[] = "\nSLICEORDER";
 	*sliceOrder = readKeyN1(keyStrSO, (char *)pUnCmp, unCmpSz);
 	char keyStrVO[] = "VIEWORDER";
 	*viewOrder = readKey(keyStrVO, (char *)pUnCmp, unCmpSz);
