@@ -2001,10 +2001,16 @@ tse3d: T2*/
 		float roundFactor = 2.0;
 		if (d.isPartialFourier)
 			roundFactor = 4.0;
-		float totalReadoutTime = ((ceil(1 / roundFactor * d.phaseEncodingLines / d.accelFactPE) * roundFactor) - 1.0) * d.effectiveEchoSpacingGE * 0.000001;
-		//printf("ASSET= %g PE_AcquisitionMatrix= %d ESP= %d TotalReadoutTime= %g\n", d.accelFactPE, d.phaseEncodingLines, d.effectiveEchoSpacingGE, totalReadoutTime);
+		float NotPhysicalNumberOfAcquiredPELinesGE = (ceil(1 / roundFactor * d.phaseEncodingLines / d.accelFactPE) * roundFactor);
+		float NotPhysicalTotalReadOutTimeGE = ( NotPhysicalNumberOfAcquiredPELinesGE - 1.0) * d.effectiveEchoSpacingGE * 0.000001;
+		// printf("ASSET= %g PE_AcquisitionMatrix= %d ESP= %d TotalReadoutTimeGE= %g NumKyLineGE= %d\n", 
+		//	d.accelFactPE, d.phaseEncodingLines, d.effectiveEchoSpacingGE, NotPhysicalTotalReadOutTimeGE, (int)NotPhysicalNumberOfAcquiredPELinesGE);
 		//json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
-		effectiveEchoSpacing = totalReadoutTime / (reconMatrixPE - 1);
+		effectiveEchoSpacing = NotPhysicalTotalReadOutTimeGE / (d.phaseEncodingLines - 1);
+		// if this is considered acceptable, meaningful intermediate variables can be written, this might help the end-user. 
+		fprintf(fp, "\t\"EchoSpacingMicroSecondsGE\": %d,\n", d.effectiveEchoSpacingGE);
+		fprintf(fp, "\t\"NotPhysicalNumberOfAcquiredPELinesGE\": %d,\n", (int)(NotPhysicalNumberOfAcquiredPELinesGE));
+		json_Float(fp, "\t\"NotPhysicalTotalReadOutTimeGE\": %g,\n", NotPhysicalTotalReadOutTimeGE);
 	}
 	json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
