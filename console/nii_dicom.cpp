@@ -37,7 +37,9 @@
 #include <string.h>
 #include <sys/stat.h> // discriminate files from folders
 #include <sys/types.h>
+#ifndef USING_DCM2NIIXFSWRAPPER
 #include <algorithm>
+#endif
 
 #ifdef USING_R
 #undef isnan
@@ -2042,6 +2044,9 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 				strcat(d.seriesDescription, Comment[6]);
 				strcat(d.seriesDescription, Comment[7]);
 				cleanStr(d.seriesDescription);
+#ifdef USING_DCM2NIIXFSWRAPPER
+				remove_specialchars(d.seriesDescription);
+#endif
 			}
 			if ((strcmp(Comment[0], "Examination") == 0) && (strcmp(Comment[1], "date/time") == 0)) {
 				if ((strlen(Comment[3]) >= 10) && (strlen(Comment[5]) >= 8)) {
@@ -2362,7 +2367,12 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			//offset images by type: mag+0,real+1, imag+2,phase+3
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
-			maxSlice2D = std::max(slice, maxSlice2D);
+#ifdef USING_DCM2NIIXFSWRAPPER
+			// fix ubuntu18 compiler error
+			maxSlice2D = (slice > maxSlice2D) ? slice : maxSlice2D;
+#else
+                        maxSlice2D = std::max(slice, maxSlice2D);
+#endif
 			if ((slice >= 0) && (slice < kMaxSlice2D) && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice - 1] = numSlice2D;
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
@@ -2428,7 +2438,12 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	if (d.isHasImaginary) nType ++;
 	if (d.isHasPhase) nType ++;
 	if (d.isHasReal) nType ++;
-	nType = std::max(nType, 1);
+#ifdef USING_DCM2NIIXFSWRAPPER
+        // fix ubuntu18 compiler error
+	nType = (nType > 1) ? nType : 1;
+#else
+        nType = std::max(nType, 1);
+#endif
 	if (slice != numSlice2D) {
 		printError("Catastrophic error: found %d but expected %d slices. %s\n", slice, numSlice2D, parname);
 		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels*types = %d*%d*%d*%d*%d*%d*%d*%d*%d\n",
@@ -5223,6 +5238,9 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			char transferSyntax[kDICOMStr];
 			strcpy(transferSyntax, "");
 			dcmStr(lLength, &buffer[lPos], transferSyntax);
+#ifdef USING_DCM2NIIXFSWRAPPER
+                        strcpy(d.transferSyntax, transferSyntax);
+#endif
 			if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
 				; //default isExplicitVR=true; //d.isLittleEndian=true
 			else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
@@ -5572,6 +5590,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kSeriesDescription:
 			dcmStr(lLength, &buffer[lPos], d.seriesDescription);
+#ifdef USING_DCM2NIIXFSWRAPPER
+			remove_specialchars(d.seriesDescription);
+#endif
 			break;
 		case kInstitutionalDepartmentName:
 			dcmStr(lLength, &buffer[lPos], d.institutionalDepartmentName);
@@ -8070,3 +8091,32 @@ struct TDICOMdata readDICOM(char *fname) {
 	free(dti4D);
 	return ret;
 } // readDICOM()
+
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+// remove spaces, '[', ']' in given buf
+// ??? also remove <, >, &
+void remove_specialchars(char *buf)
+{
+  if (strchr(buf, ' ') == NULL)
+    return;
+  
+  int buflen = strlen(buf)+1;
+  char *newbuf = new char[buflen];
+  memset(newbuf, '\0' , buflen);
+
+  char *ptr_newbuf = &newbuf[0];
+  for (int i = 0; i < buflen; i++)
+  {
+    // skip spaces, '[', ']'
+    if (buf[i] == ' ' || buf[i] == '[' || buf[i] == ']')
+      continue;
+
+    *ptr_newbuf = buf[i];
+    ptr_newbuf++;
+  }
+
+  memcpy(buf, newbuf, ptr_newbuf-newbuf);
+  free(newbuf);
+}
+#endif
