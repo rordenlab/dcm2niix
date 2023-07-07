@@ -60,6 +60,7 @@ NotPhysicalNumberOfAcquiredPELinesGE = (ceil((1/Round_factor) * PE_AcquisitionMa
 NotPhysicalTotalReadOutTimeGE = (NotPhysicalNumberOfAcquiredPELinesGE - 1) * EchoSpacing * 0.000001
 ```
 
+with `EchoSpacing` referring to the GE private DICOM field "(0043,102C) Effective Echo Spacing". 
 Then, the formula for FSL's definition of `EffectiveEchoSpacing` and `TotalReadoutTime` (in seconds) are:
 
 ```
