@@ -2008,9 +2008,11 @@ tse3d: T2*/
 		//json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", totalReadoutTime);
 		effectiveEchoSpacing = NotPhysicalTotalReadOutTimeGE / (d.phaseEncodingLines - 1);
 		// if this is considered acceptable, meaningful intermediate variables can be written, this might help the end-user. 
+#ifdef MY_DEBUG
 		fprintf(fp, "\t\"EchoSpacingMicroSecondsGE\": %d,\n", d.effectiveEchoSpacingGE);
 		fprintf(fp, "\t\"NotPhysicalNumberOfAcquiredPELinesGE\": %d,\n", (int)(NotPhysicalNumberOfAcquiredPELinesGE));
 		json_Float(fp, "\t\"NotPhysicalTotalReadOutTimeGE\": %g,\n", NotPhysicalTotalReadOutTimeGE);
+#endif 
 	}
 	json_Float(fp, "\t\"EffectiveEchoSpacing\": %g,\n", effectiveEchoSpacing);
 	// Calculate true echo spacing (should match what Siemens reports on the console)
