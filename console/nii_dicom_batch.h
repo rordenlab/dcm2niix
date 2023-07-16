@@ -4,6 +4,38 @@
 #ifndef MRIpro_nii_batch_h
 #define MRIpro_nii_batch_h
 
+#ifdef USING_DCM2NIIXFSWRAPPER
+#include "nifti1.h"
+#include "nii_dicom.h"
+#include <vector>
+
+struct MRIFSSTRUCT
+{
+  struct nifti_1_header hdr0;
+
+  size_t         imgsz;
+  unsigned char *imgM;
+
+  struct TDICOMdata tdicomData;
+  char namePostFixes[256];
+  char *dicomfile;
+
+  int nDcm;
+  char **dicomlst;
+
+  struct TDTI *tdti;
+  int numDti;
+};
+
+MRIFSSTRUCT* nii_getMrifsStruct();
+void nii_clrMrifsStruct();
+
+std::vector<MRIFSSTRUCT>* nii_getMrifsStructVector();
+void nii_clrMrifsStructVector();
+
+void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts);
+#endif
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -22,22 +54,6 @@ extern "C" {
         std::vector<std::string> files;
     };
 #endif
-
-typedef struct 
-{
-  struct nifti_1_header hdr0;
-
-  size_t         imgsz;
-  unsigned char *imgM;
-
-  struct TDICOMdata tdicomData;
-
-  struct TDTI *tdti;
-  int numDti;
-} MRIFSSTRUCT;
-
-MRIFSSTRUCT* nii_getMrifsStruct();
-void nii_clrMrifsStruct();
 
 #define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
 #define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
