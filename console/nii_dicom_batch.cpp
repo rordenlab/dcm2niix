@@ -297,8 +297,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
 	if ((toupper(d->patientOrient[0]) == 'H') && (toupper(d->patientOrient[1]) == 'F') && (toupper(d->patientOrient[2]) == 'S'))
 		; //participant was head first supine
 	else {
-		printMessage("GE DTI directions require head first supine acquisition\n");
-		return;
+		printWarning("Limited validation for non-HFS (Head first supine) GE DTI: confirm gradient vector transformation\n");
 	}
 	bool col = false;
 	if (d->phaseEncodingRC == 'C')
