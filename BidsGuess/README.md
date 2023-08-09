@@ -51,7 +51,7 @@ The `BidsGuess` will typically include a [`_run-` entity](https://bids-specifica
 
 ## The dir entity
 
-The `BidsGuess` will typically include a [`_dir-` entity](https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#dir) for modalities when required by the BIDS validator. This field is redunant with the JSON `PhaseEncodingDirection` field. Note that the JSON uses the values `j`, `j-`, `k` and `k-` to specify row versus column and polarity. In contrast, the BidsGuess will use the `AP`, `PA`, `LR`, and `RL` tags though note these tags will only be correct for axial acquisitions. Note that it is impossible to infer phase encoding polarity for Philips data, so this entity will not be populated leading to errors from the bids-validator.
+The `BidsGuess` will typically include a [`_dir-` entity](https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#dir) for modalities when required by the BIDS validator. This field is redundant with the JSON `PhaseEncodingDirection` field. Note that the JSON uses the values `j`, `j-`, `k` and `k-` to specify row versus column and polarity. In contrast, the BidsGuess will use the `AP`, `PA`, `LR`, and `RL` tags though note these tags will only be correct for axial acquisitions. Note that it is impossible to infer phase encoding polarity for Philips data, so this entity will not be populated leading to errors from the bids-validator.
 
 ## Limitations
 

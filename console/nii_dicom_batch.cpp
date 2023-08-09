@@ -6564,7 +6564,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "angio");
 	} else if (strstr(seqDetails, "ep_seg_fid") != NULL) {
-		//n.b. large echoTrainLength even for single echo acquition
+		//n.b. large echoTrainLength even for single echo acquisition
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
 		isPart = true;
