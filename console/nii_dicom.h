@@ -50,7 +50,7 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20230706"
+#define kDCMdate "v1.0.20230731"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -230,6 +230,8 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         float sliceTiming[kMaxEPI3D], dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
         int coilNumber, numDti, SeriesHeader_offset, SeriesHeader_length, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices, protocolSliceNumber1, phaseEncodingDirectionPositive;
         bool isPhaseMap;
+        char bidsDataType[kDICOMStr]; //anat, func, dwi
+        char bidsEntitySuffix[kDICOMStrLarge]; //anat, func, dwi
     };
     struct TDICOMdata {
         long seriesNum;

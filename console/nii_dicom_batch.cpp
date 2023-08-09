@@ -683,7 +683,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 #define kMaxWipFree 64
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
-	int phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
+	int lInvContrasts, lContrasts ,phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
 		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D;
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
@@ -709,6 +709,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->interp = 0;
 	csaAscii->partialFourier = 0;
 	csaAscii->echoSpacing = 0;
+	csaAscii->lInvContrasts = 0;
+	csaAscii->lContrasts = 0;
 	csaAscii->difBipolar = 0; //0=not assigned,1=bipolar,2=monopolar
 	csaAscii->parallelReductionFactorInPlane = 0;
 	csaAscii->accelFact3D = 0;//lAccelFact3D
@@ -758,7 +760,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	char keyStr[] = "### ASCCONV BEGIN"; //skip to start of ASCII often "### ASCCONV BEGIN ###" but also "### ASCCONV BEGIN object=MrProtDataImpl@MrProtocolData"
 	char *keyPos = (char *)memmem(bufferTrim, csaLengthTrim, keyStr, strlen(keyStr));
 	if (keyPos) {
-		//We could detect multi-echo MPRAGE here, e.g. "lContrasts = 4"- but ideally we want an earlier detection
+		//We can detect multi-echo MPRAGE here, e.g. "lContrasts = 4"- but ideally we want an earlier detection
 		csaLengthTrim -= (keyPos - bufferTrim);
 //FmriExternalInfo listed AFTER AscConvEnd and uses different delimiter ||
 // char keyStrExt[] = "FmriExternalInfo";
@@ -772,7 +774,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 #endif
 		char keyStrLns[] = "sKSpace.lPhaseEncodingLines";
 		csaAscii->phaseEncodingLines = readKey(keyStrLns, keyPos, csaLengthTrim);
-		char keyStrUcImg[] = "sSliceArray.ucImageNumb";
+		char keyStrUcImg[] = "sSliceArray.ucImageNumb"; //some non-mosaics like ToF include "sSliceArray.ucImageNumbSag"
 		csaAscii->existUcImageNumb = readKey(keyStrUcImg, keyPos, csaLengthTrim);
 		char keyStrUcMode[] = "sSliceArray.ucMode";
 		csaAscii->ucMode = readKeyN1(keyStrUcMode, keyPos, csaLengthTrim);
@@ -784,6 +786,10 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		csaAscii->echoSpacing = readKey(keyStrES, keyPos, csaLengthTrim);
+		char keyStrNumInv[] = "lInvContrasts";
+		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
+		char keyStrNumEcho[] = "lContrasts";
+		csaAscii->lContrasts = readKey(keyStrNumEcho, keyPos, csaLengthTrim);
 		char keyStrDS[] = "sDiffusion.dsScheme";
 		csaAscii->difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
 		if (csaAscii->difBipolar == 0) {
@@ -946,7 +952,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 #define myReadGeProtocolBlock
 #endif
 #ifdef myReadGeProtocolBlock
-int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerbose, int *sliceOrder, int *viewOrder, int *mbAccel, int *nSlices, float *groupDelay, char ioptGE[]) {
+int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerbose, int *sliceOrder, int *viewOrder, int *mbAccel, int *nSlices, float *groupDelay, char ioptGE[], char seqStr[]) {
 	*sliceOrder = -1;
 	*viewOrder = 0;
 	*mbAccel = 0;
@@ -1038,6 +1044,9 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 	readKeyStr(keyStrDELACQ, (char *)pUnCmp, unCmpSz, DELACQ);
 	char keyStrGD[] = "DELACQNOAV";
 	*groupDelay = readKeyFloat(keyStrGD, (char *)pUnCmp, unCmpSz);
+
+	char keyStrPSEQ[] = "PSEQ";
+	readKeyStr(keyStrPSEQ, (char *)pUnCmp, unCmpSz, seqStr);
 	char keyStrIOPT[] = "IOPT";
 	readKeyStr(keyStrIOPT, (char *)pUnCmp, unCmpSz, ioptGE);
 	char PHASEDELAYS1[10000];
@@ -1615,7 +1624,7 @@ tse3d: T2*/
 		if (csaAscii.dAveragesDouble > 1.0) //*spcR_44ns fractional and independent of (0018,0083) DS NumberOfAverages, e.g. 0018,0083=2, dAveragesDouble = 1.4?
 			json_Float(fp, "\t\"AveragesDouble\": %g,\n", csaAscii.dAveragesDouble);
 		phaseOversampling = csaAscii.phaseOversampling;
-		if (csaAscii.existUcImageNumb > 0) {
+		if ((d.CSA.mosaicSlices > 1) && (csaAscii.existUcImageNumb > 0)) {
 			if (d.CSA.protocolSliceNumber1 < 2) {
 				printWarning("Assuming mosaics saved in reverse order due to 'sSliceArray.ucImageNumb'\n");
 				//never seen such an image in the wild.... sliceDir may need to be reversed
@@ -2148,6 +2157,10 @@ tse3d: T2*/
 		fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"COL\",\n");
 	if (d.phaseEncodingRC == 'R')
 		fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n");
+	if ((opts.isGuessBidsFilename) && (strlen(d.CSA.bidsDataType)) && (strlen(d.CSA.bidsDataType)))
+		fprintf(fp, "\t\"BidsGuess\": [\"%s\",\"%s\"],\n",d.CSA.bidsDataType, d.CSA.bidsEntitySuffix);
+	//json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);
+
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMdate);
@@ -3214,6 +3227,51 @@ void cleanISO8859(char *cString) {
 				cString[i] = 'y';
 		}
 }
+
+void createDummyBidsBoilerplate(char *pth, bool isFunc) {
+	//https://remi-gau.github.io/bids_cookbook/#starters
+	char pathSep[2] = {"a"};
+	pathSep[0] = kPathSeparator;
+	char descfnm[PATH_MAX] = {""};
+	char taskfnm[PATH_MAX] = {""};
+	char fnm[PATH_MAX] = {""};
+	strcat(fnm, pth);
+	strcat(fnm, pathSep);
+	strcat(taskfnm, fnm);
+	strcat(descfnm, fnm);
+	snprintf(fnm + strlen(fnm), PATH_MAX - strlen(fnm), "%s", "README.md");
+	if (!is_fileexists(fnm)) {
+		FILE *fp = fopen(fnm, "w");
+		static const char readmePre[] = "Generated using dcm2niix (";
+		static const char readmePost[] = ")\n\nDescribe your dataset here. This file was generated by dcm2niix in a single pass. Details like IntendedFor, Subject ID, Session and tasks are not defined.";
+
+		if (fp != NULL)
+			fprintf(fp, readmePre);
+			fprintf(fp, kDCMdate);
+			fprintf(fp, readmePost);
+		fclose(fp);
+	}
+	snprintf(descfnm + strlen(descfnm), PATH_MAX - strlen(descfnm), "%s", "dataset_description.json");
+	if (!is_fileexists(descfnm)) {
+		FILE *fp = fopen(descfnm, "w");
+		static const char readme[] = "{\n    \"Name\": \"dcm2niix dummy dataset\",\n    \"Authors\": [\"Chris Rorden\", \"Alex Teghipco\"],\n    \"BIDSVersion\": \"1.6.0\"\n}\n";
+		if (fp != NULL)
+			fprintf(fp, readme);
+		fclose(fp);
+	}
+	if (!isFunc)
+		return; //only functional data gets a task file
+	snprintf(taskfnm + strlen(taskfnm), PATH_MAX - strlen(taskfnm), "%s", "task-rest_bold.json");
+	if (!is_fileexists(taskfnm)) {
+		FILE *fp = fopen(taskfnm, "w");
+		static const char taskRest[] = "{\n\"TaskName\": \"rest\",\n\"CogAtlasID\": \"https://www.cognitiveatlas.org/task/id/trm_4c8a834779883/\"\n}\n";
+		if (fp != NULL)
+			fprintf(fp, taskRest);
+		fclose(fp);
+	}
+
+}
+
 int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts opts) {
 	char pth[PATH_MAX] = {""};
 	if (strlen(opts.outdir) > 0) {
@@ -3249,6 +3307,8 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 		strcpy(inname, "T%t_N%n_S%s");
 	}
 	const char kTempPathSeparator = '\a';
+	char pathSep[2] = {"a"};
+	pathSep[0] = kTempPathSeparator;
 	for (size_t pos = 0; pos < strlen(inname); pos++)
 		if ((inname[pos] == '\\') || (inname[pos] == '/'))
 			inname[pos] = kTempPathSeparator;
@@ -3291,6 +3351,30 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				strcat(outname, opts.indirParent);
 			if (f == 'G')
 				strcat(outname, dcm.accessionNumber);
+			if (f == 'H') {
+				printWarning("hazardous (%%h) bids naming experimental\n");
+				createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL));
+				if (strlen(dcm.CSA.bidsDataType) < 1) {
+					strcat(outname, "Unknown");
+					snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
+					strcat(outname, newstr);
+					snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
+					strcat(outname, newstr);
+					strcat(outname, "_");
+					strcat(outname, dcm.protocolName);
+					
+				} else {
+					isAddNamePostFixes = false;
+					strcat(outname, "sub-1");
+					strcat(outname, pathSep);
+					strcat(outname, dcm.CSA.bidsDataType);
+					strcat(outname, pathSep);
+					strcat(outname, "sub-1");
+					if (strstr(dcm.CSA.bidsDataType, "func") != NULL)
+						strcat(outname, "_task-rest");
+					strcat(outname, dcm.CSA.bidsEntitySuffix);
+				}
+			}
 			if (f == 'I')
 				strcat(outname, dcm.patientID);
 			if (f == 'J')
@@ -3369,16 +3453,22 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 			if (f == 'V') {
 				if (dcm.manufacturer == kMANUFACTURER_BRUKER)
 					strcat(outname, "Bruker");
+				else if (dcm.manufacturer == kMANUFACTURER_CANON)
+					strcat(outname, "Canon");
 				else if (dcm.manufacturer == kMANUFACTURER_GE)
 					strcat(outname, "GE");
+				else if (dcm.manufacturer == kMANUFACTURER_HYPERFINE)
+					strcat(outname, "Hyperfine");
+				else if (dcm.manufacturer == kMANUFACTURER_MEDISO)
+					strcat(outname, "Mediso");
+				else if (dcm.manufacturer == kMANUFACTURER_MRSOLUTIONS)
+					strcat(outname, "MRsolutions");
 				else if (dcm.manufacturer == kMANUFACTURER_PHILIPS)
 					strcat(outname, "Philips");
 				else if (dcm.manufacturer == kMANUFACTURER_SIEMENS)
 					strcat(outname, "Siemens");
 				else if (dcm.manufacturer == kMANUFACTURER_TOSHIBA)
 					strcat(outname, "Toshiba");
-				else if (dcm.manufacturer == kMANUFACTURER_CANON)
-					strcat(outname, "Canon");
 				else if (dcm.manufacturer == kMANUFACTURER_UIH)
 					strcat(outname, "UIH");
 				else
@@ -6320,18 +6410,647 @@ void sliceTimingGE_Testx0021x105E(struct TDICOMdata *d, struct TDCMopts opts, st
 		printMessage("\t%g\t%g\n", d->CSA.sliceTiming[v], sliceTiming[v]);
 }
 
-void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename) {
+void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename, int isVerbose) {
 #ifdef myReadGeProtocolBlock
-	if ((d->manufacturer != kMANUFACTURER_GE) || (d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19))
+	if ((d->manufacturer != kMANUFACTURER_GE) || (d->modality != kMODALITY_MR))
+		return; 
+	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) {
+		//if (isVerbose)
+		printWarning("Missing GE protocol data block (0025,101B)\n");
 		return;
+	}
 	int viewOrderGE = -1;
 	int sliceOrderGE = -1;
 	int mbAccel = -1;
 	int nSlices = -1;
 	float groupDelay = 0.0;
 	char ioptGE[3000] = "";
-	geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, 2, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
+	char seqName[kDICOMStr] = "";
+	geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE, seqName);
+	if (strlen(d->procedureStepDescription) < 2)
+		strcpy(d->procedureStepDescription, seqName);
 #endif
+} //bidsGE
+
+void bidsStr() { //
+
+}
+
+void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const char *filename) {
+	char seqDetails[kDICOMStrLarge] = "";
+	float inv1 = NAN;
+	float inv2 = NAN;
+	bool isDualTI = false;
+	int lContrasts = 0; //detect me-mprage
+	#ifdef myReadAsciiCsa
+	if ((d->CSA.SeriesHeader_offset > 0) && (d->CSA.SeriesHeader_length > 0)) {
+		float pf = 1.0f; //partial fourier
+		float shimSetting[8];
+		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+		TCsaAscii csaAscii;
+		siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, seqDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		inv1 = csaAscii.alTI[0] / 1000.0;
+		inv2 = csaAscii.alTI[1] / 1000.0;
+		lContrasts = csaAscii.lContrasts;
+		//If parameter lInvContrasts exists in the protocol, a value of 1 indicates MPRAGE and a value of 2 MP2RAGE. Note that lInvContrasts is different from lContrasts and that only lInvContrasts must be considered.
+		//If parameter lInvContrasts does not exist, then the presence of alTI[1] indicates that this is an MP2RAGE protocol. An MPRAGE protocol will only contain alTI[0].
+		if (csaAscii.lInvContrasts == 1) //explicitly reports one TI
+			inv2 = NAN;
+		if ((!isnan(inv1)) && (!isnan(inv2)) && (inv1 > 0.0) && (inv2 > 0.0))
+			isDualTI = true;
+
+	}
+	#endif // myReadAsciiCsa
+	char *dataTypeBIDS = d->CSA.bidsDataType;
+	strcpy(dataTypeBIDS, "");
+	char *suffixBIDS = d->CSA.bidsEntitySuffix;
+	strcpy(suffixBIDS, "");
+	char modalityBIDS[kDICOMStrLarge]  = ""; //T1w, bold, dwi
+	char recBIDS[kDICOMStrLarge]  = ""; //_desc-preproc
+	if (d->manufacturer != kMANUFACTURER_SIEMENS)
+		return;
+	bool isReportEcho = true; //do not report _echo for PD/T2 pair or fieldmap
+	bool isMultiEcho = false;
+	bool isDerived = d->isDerived; //report phase encoding direction
+	bool isDirLabel = false;
+	bool isPart = false;
+	bool isAddSeriesToRun = true; //except phasemap, where phasediff and magnitude have different series numbers but must share acq 
+	char seqName[kDICOMStrLarge];
+	strcpy(seqName, d->sequenceName);
+	if (strlen(d->sequenceName) < 2) //e.g. XA uses 0018,9005 while VE uses 0018,0024
+		strcpy(seqName, d->pulseSequenceName);
+	if (strlen(seqDetails) < 2)
+		strcpy(seqDetails, seqName);
+	if (strstr(d->imageType, "DERIVED") != NULL) {
+		isDerived = true; //to do: respond to derived images
+	}
+	if (d->modality != kMODALITY_MR)
+		return;
+	if (((d->xyzDim[3] < 2) && (nConvert < 1)) || (d->isLocalizer)) { //need nConvert or nifti header
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "localizer");
+	} else if ((strstr(seqDetails, "tfl") != NULL) || (strstr(seqDetails, "mp2rage") != NULL) || (strstr(seqDetails, "wip925") != NULL)) { //prog_mprage
+		strcpy(dataTypeBIDS, "anat");
+		if (isDualTI)
+			strcpy(modalityBIDS, "MP2RAGE");
+		else { //bizarrely mprage can populate both alTI[0] alTI[1] see dcm_qa_xa30
+			strcpy(modalityBIDS, "T1w");
+			//bork inv2 = NAN;
+		}
+		if (strstr(d->imageType, "T1 MAP") != NULL)
+			strcpy(modalityBIDS, "T1map");
+		if (strstr(d->imageType, "_UNI") != NULL) {
+			strcpy(modalityBIDS, "UNIT1");
+			if (strstr(d->imageComments, "DENOISED IMAGE") != NULL)
+				strcat(recBIDS, "denoise");
+		}
+	} else if ((d->CSA.numDti > 0) || (strstr(seqDetails, "_diff") != NULL) || (strstr(seqDetails, "resolve") != NULL) || (strstr(seqDetails, "PtkSmsVB13ADwDualSpinEchoEpi") != NULL) || (strstr(seqDetails, "ep2d_stejskal_386") != NULL)) { //prog_diff
+		strcpy(dataTypeBIDS, "dwi");
+		strcpy(modalityBIDS, "dwi");
+		if (strstr(d->seriesDescription, "_SBRef") != NULL)
+			strcpy(modalityBIDS, "sbref");
+		//if seriesDesc trace", "fa", "adc"  isDerived = true;
+		isDirLabel = true;
+	} else if ((strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { //prog_asl
+		strcpy(dataTypeBIDS, "perf");
+		strcpy(modalityBIDS, "asl");
+		if (strstr(d->seriesDescription, "_m0") != NULL)
+			strcpy(modalityBIDS, "m0scan");
+	} else if (strstr(d->pulseSequenceName, "spcR") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2w");
+	} else if (strstr(seqDetails, "tse_vfl") != NULL) { //prog_tse_vfl
+		strcpy(dataTypeBIDS, "anat");
+		if ((strstr(seqDetails, "spcir") != NULL) || (strstr(d->sequenceName, "spcir") != NULL))
+			strcpy(modalityBIDS, "FLAIR");
+		else
+			strcpy(modalityBIDS, "T2w");
+	} else if (strstr(seqDetails, "tse") != NULL) { //prog_tse
+		isReportEcho = false; //do not report _echo for T2/PDw pair
+		strcpy(dataTypeBIDS, "anat");
+		if (strstr(d->sequenceName, "tir") != NULL)
+			strcpy(modalityBIDS, "FLAIR");
+		if ((strstr(d->sequenceName, "tse2d") != NULL) || (strstr(d->pulseSequenceName, "tse2d") != NULL)) {
+			if (d->TE < 50)
+				strcpy(modalityBIDS, "PDw");
+			else
+				strcpy(modalityBIDS, "T2w");
+		}
+	} else if ((strstr(seqDetails, "ep2d_ase") != NULL)) { //prog_ep2d_se
+		// oxygen extraction fraction(OEF) Asymmetric Spin Echo (ASE)
+		//printWarning("BIDS does not yet specify `ase` data\n");
+		//n.b. we do not specify dataTypeBIDS as not yet defined
+		strcpy(modalityBIDS, "oef_ase");
+	} else if ((strstr(seqDetails, "ep2d_se") != NULL)) { //prog_ep2d_se
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "epi");
+		isDirLabel = true;
+	} else if ((strstr(seqDetails, "gre_field_mapping") != NULL)) { //prog_fmap
+		isReportEcho = false; //echo encoded in "_magnitude"
+		isAddSeriesToRun = false;
+		strcpy(dataTypeBIDS, "fmap");
+		if (d->isHasPhase)
+			strcpy(modalityBIDS, "phasediff");
+		if (d->isHasMagnitude)
+			snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "magnitude%d", d->echoNum);
+		//printf("magnitude%d\n", d->echoNum);
+	//} else if (( seqName,"_tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1"
+	} else if ((strstr(seqDetails, "\\trufi") != NULL) || (strstr(seqName, "fl3d1_ns") != NULL) || (strstr(seqName, "fl2d1") != NULL) || (strstr(seqName, "tfl2d1") != NULL)) { //localizers
+	//seqDetails borg
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "localizer");
+	} else if ((strstr(seqName, "fl3d1r") != NULL) || (strstr(seqName, "fl2d1") != NULL) || (strstr(seqName, "tfl2d1") != NULL)) { //localizers
+		//nb ToF fl3d1r_ts fl3d1r_t70 fl3d1r7t but check for fl3d1r SWI
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "angio");
+	} else if (strstr(seqDetails, "ep_seg_fid") != NULL) {
+		//n.b. large echoTrainLength even for single echo acquition
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2starw");
+		isPart = true;
+		if (strstr(d->seriesDescription, "mIP") != NULL) { //derived minimum intensity
+			strcpy(dataTypeBIDS, "discard");
+			strcpy(modalityBIDS, "mIP");
+		}
+		if (strstr(d->seriesDescription, "SWI_Images") != NULL) { //derived SWI
+			strcpy(dataTypeBIDS, "discard");
+			strcpy(modalityBIDS, "SWI_Images");
+		}
+	} else if (strstr(seqDetails, "gre") != NULL) { //prog_gre
+		//printf("GRE T2starw or if MEGRE\n");
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2starw");
+		if ((d->echoNum > 1) || (lContrasts > 1)) {
+			//borg: ETL is not a good way to detect echoes: 
+			strcpy(modalityBIDS, "MEGRE");
+			isMultiEcho = true;
+		}
+		isPart = true;
+	} else if ((strstr(seqDetails, "AALScout") != NULL) || (strstr(seqDetails, "haste") != NULL)) { //localizer: unused
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "localizer");
+	} else if ((strstr(seqDetails, "_bold") != NULL) || (strstr(seqDetails, "pace") != NULL)){ //prog_bold
+		//n.b. "Space" is not "pace"
+		strcpy(dataTypeBIDS, "func");
+		strcpy(modalityBIDS, "bold");
+		isDirLabel = true;
+		if (strstr(d->seriesDescription, "_SBRef") != NULL)
+			strcpy(modalityBIDS, "sbref");
+	} else if ((strstr(d->imageType, "FMRI") != NULL) || (strstr(seqDetails, "ep2d_fid") != NULL)) {
+		//Hail mary: one Skyra XA30 ADNI rsfMRI_LR 20230109 has no CSA
+		strcpy(dataTypeBIDS, "func");
+		strcpy(modalityBIDS, "bold");
+		isDirLabel = true;
+	} else if (strstr(d->sequenceName, "*epse2d") != NULL) {
+		//pepolar?
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "epi");
+		isDirLabel = true;
+	}
+	char acqStr[kDICOMStrLarge] = "";
+	strcat(acqStr, "_acq-");
+	int len = strlen(seqName);
+	if (len > 0) {
+		for (int i = 0; i < len; i++) {
+			char ch = seqName[i];
+			if (ch == '*') continue;
+			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				strncat(acqStr, &ch, 1);
+			if (isdigit(ch)) break;
+		}
+	} //len > 0
+	if (d->accelFactPE > 1)
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "p%d", (int)round(d->accelFactPE));
+	if (d->CSA.multiBandFactor > 1)
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "m%d", (int)round(d->CSA.multiBandFactor));
+	strcat(suffixBIDS, acqStr);
+	//add _rec
+	// https://bids-specification.readthedocs.io/en/stable/05-derivatives/02-common-data-types.html#common-file-level-metadata-fields
+	if (strlen(recBIDS) > 0) {
+		strcat(suffixBIDS, "_rec-");
+		strcat(suffixBIDS, recBIDS);
+	}
+	//add dir
+	//nb for func dir comes before echo
+	if (isDirLabel) {
+		char dirLabel[kDICOMStrLarge]  = "_dir-";
+		if (d->phaseEncodingRC == 'C') {
+			if (d->CSA.phaseEncodingDirectionPositive)
+				strcat(dirLabel, "AP"); 
+			else
+				strcat(dirLabel, "PA"); 
+		} else {
+			if (d->CSA.phaseEncodingDirectionPositive)
+				strcat(dirLabel, "RL");
+			else
+				strcat(dirLabel, "LR");
+		}
+		strcat(suffixBIDS, dirLabel);
+	}
+	//add run
+	if (isAddSeriesToRun)
+		snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_run-%ld", d->seriesNum);
+	//add echo
+	if (isReportEcho)
+		if ((d->echoNum > 1) || (isMultiEcho) || ((d->isMultiEcho) && (d->echoNum > 0)))
+			snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_echo-%d", d->echoNum);
+	//add inv
+	// https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#inv
+	if (isDualTI) {
+		//n.b. Siemens uses alTI[0]/alTI[1] for inversion times: alTI[2] used by ASL
+		int invIdx = 1;
+		if (isSameFloatGE(d->TI, inv2))
+			invIdx = 2;
+		snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_inv-%d", invIdx);
+	}
+	//add part
+	if (isPart) {
+		if (d->isHasPhase)
+			strcat(suffixBIDS, "_part-phase");
+		if (d->isHasMagnitude)
+			strcat(suffixBIDS, "_part-mag");
+	}
+	if (strlen(modalityBIDS) > 0) {
+		strcat(suffixBIDS, "_");
+		strcat(suffixBIDS, modalityBIDS);
+	}
+	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
+		printf("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n", 
+			seqDetails, d->pulseSequenceName, d->sequenceName);
+	if (isDerived)
+		strcpy(dataTypeBIDS, "derived");
+} // setBidsSiemens()
+
+void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
+	if (d->manufacturer != kMANUFACTURER_PHILIPS)
+		return;
+	char *dataTypeBIDS = d->CSA.bidsDataType;
+	strcpy(dataTypeBIDS, "");
+	char *suffixBIDS = d->CSA.bidsEntitySuffix;
+	strcpy(suffixBIDS, "");
+	if (d->modality != kMODALITY_MR)
+		return;
+	char seqName[kDICOMStr] = "";
+	strcpy(seqName, d->sequenceVariant);
+	char modalityBIDS[kDICOMStrLarge]  = ""; //_acq-FL3p2m2
+	bool isReportEcho = true;
+	bool isDirLabel = false; //report phase encoding direction
+	bool isDerived = d->isDerived; //report phase encoding direction
+	bool isAddSeriesToRun = true;
+	bool isPart = false;
+	//d->pulseSequenceName, d->scanningSequence, d->sequenceVariant)
+	if (((d->xyzDim[3] < 4) && (nConvert < 4)) || (d->isLocalizer)) {
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "localizer");
+	} else if (strstr(seqName, "MP") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T1w");
+	} else if ((d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL) ) {
+		strcpy(dataTypeBIDS, "dwi");
+		strcpy(modalityBIDS, "dwi");
+	} else if (strstr(d->imageType, "PERFUSION") != NULL) {
+		//scanSeq:'GR' seqVariant:'SK'
+		strcpy(dataTypeBIDS, "perf");
+		strcpy(modalityBIDS, "asl");
+	} else if ((strstr(d->pulseSequenceName, "SEEPI") != NULL) && (!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL) )  {
+		//pepolar? d->pulseSequenceName
+		isAddSeriesToRun = false;
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "epi");
+		printWarning("Unable to estimate BIDS `_dir` for fmap epi as Philips DICOMs do not report phase encoding polarity\n");
+		isDirLabel = true;
+	} else if ((!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL) ) {
+		strcpy(dataTypeBIDS, "anat");
+		if (false)//((strstr(d->scanningSequence, "IR") != NULL))
+			strcpy(modalityBIDS, "FLAIR");
+		else if (d->TE < 40)
+			strcpy(modalityBIDS, "PDw");
+		else
+			strcpy(modalityBIDS, "T2w");
+	} else if ((strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "IR") != NULL) ) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "FLAIR");
+	} else if ((strstr(d->imageType, "PERFUSION") != NULL) && (strstr(d->pulseSequenceName, "FEEPI") != NULL) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "GR") != NULL) ) {
+		strcpy(dataTypeBIDS, "perf");
+		strcpy(modalityBIDS, "asl");
+	} else if (((d->rawDataRunNumber >= 1)  || (strstr(d->pulseSequenceName, "FEEPI") != NULL)) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "GR") != NULL) ) {
+		//nb older Philips data does not record EPI so use 2005,1063 fMRIStatusIndication
+		strcpy(dataTypeBIDS, "func");
+		strcpy(modalityBIDS, "bold");
+		isDirLabel = true;
+	} else if ((strstr(seqName, "SS") != NULL) && (strstr(d->scanningSequence, "GR") != NULL) ) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2starw");
+		isPart = true;
+	} else if ((d->isRealIsPhaseMapHz) && (strstr(seqName, "SS") != NULL) && (strstr(d->scanningSequence, "RM") != NULL)) {
+		//https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#expressing-the-mr-protocol-intent-for-fieldmaps
+		//isRealIsPhaseMapHz for 'Case 3: Direct field mapping'
+		//sub-<label>[_ses-<label>][_acq-<label>][_run-<index>]_fieldmap.nii[.gz]
+		//sub-<label>[_ses-<label>][_acq-<label>][_run-<index>]_magnitude.nii[.gz]
+		isReportEcho = false;
+		strcpy(dataTypeBIDS, "fmap");
+		if (d->isHasReal)
+			strcpy(modalityBIDS, "fieldmap");
+		else
+			strcpy(modalityBIDS, "magnitude");
+	} else if ((strstr(seqName, "SP") != NULL) && (strstr(d->scanningSequence, "GR") != NULL)) {
+		isReportEcho = false;
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "phasediff");
+		if (d->echoTrainLength > 1) {
+			isReportEcho = false;
+			if (d->isHasPhase)
+				snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "phase%d", d->echoNum);
+			else if (d->isHasImaginary)
+				snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "imaginary%d", d->echoNum);
+			else if (d->isHasReal)
+				snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "real%d", d->echoNum);
+			else
+				snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "magnitude%d", d->echoNum);
+		}
+	}
+	//add acq- 
+	char acqStr[kDICOMStrLarge] = "";
+	strcat(acqStr, "_acq-");
+	int len = strlen(seqName);
+	if (len > 0) {
+		for (int i = 0; i < len; i++) {
+			char ch = seqName[i];
+			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				strncat(acqStr, &ch, 1);
+		}
+	} //len > 0
+	len = strlen(d->scanningSequence);
+	if (len > 0) {
+		for (int i = 0; i < len; i++) {
+			char ch = d->scanningSequence[i];
+			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				strncat(acqStr, &ch, 1);
+		}
+	} //len > 0
+	len = strlen(d->pulseSequenceName);
+	if (len > 0) {
+		for (int i = 0; i < len; i++) {
+			char ch = d->pulseSequenceName[i];
+			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				strncat(acqStr, &ch, 1);
+		}
+	} //len > 0
+	if (d->triggerDelayTime > 1.0) //report post-label delays for MultiPhase ASL
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "t%d", (int)roundf(d->triggerDelayTime));
+	if (d->accelFactPE > 1.0) //n.b. Philips can have fractional sense, so multiply by 10 so x2.3 -> "p23"
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "p%d", (int)round(10.0 * d->accelFactPE));
+	if (d->CSA.multiBandFactor > 1)
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "m%d", (int)round(d->CSA.multiBandFactor));
+	//snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "s%ld", d->seriesNum);
+	strcat(suffixBIDS, acqStr);
+	//add run
+	if (isAddSeriesToRun)
+		snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_run-%ld", d->seriesNum);
+	//add echo
+	if (isReportEcho)
+		if ((d->echoNum > 1) || ((d->isMultiEcho) && (d->echoNum > 0)))
+			snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_echo-%d", d->echoNum);
+	//add part
+	if (isPart) {
+		if (d->isHasPhase)
+			strcat(suffixBIDS, "_part-phase");
+		if (d->isHasMagnitude)
+			strcat(suffixBIDS, "_part-mag");
+	}
+	//finish suffix
+	if (strlen(modalityBIDS) > 0) {
+		strcat(suffixBIDS,"_");
+		strcat(suffixBIDS,modalityBIDS);
+	}
+	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
+		printf("::autoBids:Philips pulseSeq:'%s' scanSeq:'%s' seqVariant:'%s'\n", 
+			d->pulseSequenceName, d->scanningSequence, d->sequenceVariant);
+	if (isDerived)
+		strcpy(dataTypeBIDS, "derived");
+} //setBidsPhilips
+
+void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *filename) {
+	char seqName[kDICOMStr] = "";
+	#ifdef myReadGeProtocolBlock
+	if (strlen(d->procedureStepDescription) < 2)
+		reportProtocolBlockGE(d, filename, isVerbose);
+	strcpy(seqName, d->procedureStepDescription);
+	#endif
+	char *dataTypeBIDS = d->CSA.bidsDataType;
+	strcpy(dataTypeBIDS, "");
+	char *suffixBIDS = d->CSA.bidsEntitySuffix;
+	strcpy(suffixBIDS, "");
+	char modalityBIDS[kDICOMStrLarge]  = ""; //T1w, bold, dwi
+	bool isDirLabel = false; //report phase encoding direction
+	bool isDerived = d->isDerived; //report phase encoding direction
+	bool isAddSeriesToRun = true;
+	bool isPart = false;
+	if (strlen(seqName) < 2) //e.g. XA uses 0018,9005 while VE uses 0018,0024
+		strcpy(seqName, d->procedureStepDescription);
+	int nVol = 1;
+	if (d->locationsInAcquisition > 0)
+		nVol = nConvert / d->locationsInAcquisition;
+	if (((d->xyzDim[3] < 2) && (nConvert < 4)) || (d->isLocalizer)) {
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "localizer");
+	} else if (strstr(d->seriesDescription, "3 Plane Loc") != NULL) {
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "localizer");
+	} else if ((strstr(d->scanningSequence, "GR\\IR") != NULL) || (strstr(seqName, "SPGR") != NULL) || (strstr(seqName, "MP-RAGE") != NULL)) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T1w");
+	} else if ((strstr(d->seriesDescription, "T2") != NULL) && (strstr(d->seriesDescription, "STAR") != NULL)) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2starw");
+		isPart = true;
+	} else if ((strstr(seqName, "FLAIR") != NULL) || (strstr(seqName, "flair") != NULL)) { //CubeT2FLAIR T2flair
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "FLAIR");
+	} else if ((d->CSA.numDti > 0) && (strstr(seqName, "Spin Echo") != NULL) && (strstr(d->scanningSequence, "EP\\SE") != NULL)) {
+		strcpy(dataTypeBIDS, "dwi");
+		strcpy(modalityBIDS, "dwi");
+	} else if ((d->CSA.numDti > 0) && (strstr(seqName, "Spin Echo") != NULL) && (strstr(d->scanningSequence, "EP\\RM") != NULL)) {
+		//RM research mode might be either spin or gradient echo
+		strcpy(dataTypeBIDS, "dwi");
+		strcpy(modalityBIDS, "dwi");
+	} else if (strstr(seqName, "FSE-XL") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		if ((strstr(d->scanningSequence, "IR") != NULL))
+			strcpy(modalityBIDS, "FLAIR");
+		else if (d->TE < 40)
+			strcpy(modalityBIDS, "PDw");
+		else
+			strcpy(modalityBIDS, "T2w");
+	} else if (strstr(d->seriesDescription, "MPRAGE T1") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T1w");
+	} else if (strstr(d->seriesDescription, "MP2RAGE") != NULL) {
+		//to do report inv1/inv2
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "MP2RAGE");
+	} else if (strstr(d->seriesDescription, "T2 FLAIR") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "FLAIR");
+	} else if (strstr(d->seriesDescription, "CUBE T2") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2w");
+	} else if (strstr(d->seriesDescription, "PD FS") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "PDw");
+	} else if (strstr(d->seriesDescription, "T2 FSE FS") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2w");
+	} else if (strstr(d->seriesDescription, "CUBE FS") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		//todo: check TE to decide if PD or T2w?
+		strcpy(modalityBIDS, "T2w");
+	} else if (((strstr(d->scanningSequence, "EP\\RM") != NULL) || (strstr(d->scanningSequence, "EP\\GR") != NULL)) && ((nVol > 2) || (strstr(seqName, "Gradient Echo")) != NULL)) {
+			//n.b. test BEFORE fieldmap to detect EPI
+			strcpy(dataTypeBIDS, "func");
+			strcpy(modalityBIDS, "bold");
+			isDirLabel = true;
+	} else if ((strstr(d->scanningSequence, "RM") != NULL) && (strstr(seqName, "Gradient Echo") != NULL)) {
+		isAddSeriesToRun = false;
+		strcpy(dataTypeBIDS, "fmap");
+		if (d->isRealIsPhaseMapHz)
+			strcpy(modalityBIDS, "fieldmap");
+		else if (d->isHasPhase)
+			strcpy(modalityBIDS, "phasediff");
+		else if (d->isHasMagnitude)
+			snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "magnitude");
+	} else if ((strstr(d->seriesDescription, "STAGE") != NULL) || (strstr(seqName, "Gradient Echo") != NULL)) {
+		//n.b. ALL unassigned gradient echos end here... 
+		if ((strstr(d->seriesDescription, "STAGE") != NULL) || (strstr(d->seriesDescription, "Star") != NULL)) {
+			strcpy(dataTypeBIDS, "anat");
+			strcpy(modalityBIDS, "T2starw");
+			if (d->isHasPhase)
+				strcpy(suffixBIDS, "_part-phase");
+			if (d->isHasMagnitude)
+				strcpy(suffixBIDS, "_part-mag");
+		}
+		if ((nConvert > d->locationsInAcquisition) && (strstr(d->scanningSequence, "EP") != NULL)) {
+			//see dcm_qa_stc for various scanningSequence names
+			// EPRM EPGR
+			strcpy(dataTypeBIDS, "func");
+			strcpy(modalityBIDS, "bold");
+			isDirLabel = true;
+		}
+	} else if ((d->CSA.numDti > 0) && ((strstr(d->seriesDescription, "DWI MultiShell") != NULL) || (strstr(seqName, "DWI") != NULL))) {
+		strcpy(dataTypeBIDS, "dwi");
+		strcpy(modalityBIDS, "dwi");
+		isDirLabel = true;
+	} else if (strstr(seqName, "ASL") != NULL) {
+		strcpy(dataTypeBIDS, "perf");
+		strcpy(modalityBIDS, "asl");
+	} else if ((strstr(d->scanningSequence, "GR") != NULL) && (strstr(d->seriesDescription, "TOF") != NULL)) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "angio");
+	} else if ((strstr(d->scanningSequence, "EP\\RM") != NULL) && ((strstr(seqName, "Spin Echo") != NULL) ||  (strstr(d->procedureStepDescription, "Spin Echo") != NULL))) { //see dcm_qa_polar 
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "epi");
+		isDirLabel = true;
+		isAddSeriesToRun = false;
+	} else if ((strstr(d->scanningSequence, "SE") != NULL) && (d->TE >= 40)) {
+		strcpy(dataTypeBIDS, "anat");
+		//todo: check TE to decide if PD or T2w?
+		strcpy(modalityBIDS, "T2w");
+	} else if (((d->locationsInAcquisition *3) >= nConvert) && (strstr(d->scanningSequence, "EP\\GR") != NULL)) {
+		//default to "bold" for multivolume gradient echo data
+		strcpy(dataTypeBIDS, "func");
+		strcpy(modalityBIDS, "bold");
+	}
+	if ((strstr(d->scanningSequence, "EP\\SE") != NULL) || (strstr(d->scanningSequence, "EP\\RM") != NULL))
+		isDirLabel = true;
+	//add _acq-
+	char acqStr[kDICOMStrLarge] = "";
+	strcat(acqStr, "_acq-");
+	//ScanningSequence discriminates tagged and untagged ASL (RM vs RMIR)
+	int len = strlen(d->scanningSequence);
+	if (len > 0) {
+		for (int i = 0; i < len; i++) {
+			char ch = d->scanningSequence[i];
+			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				strncat(acqStr, &ch, 1);
+		}
+	} //len > 0
+	len = strlen(seqName);
+	if (len > 0) {
+		for (int i = 0; i < len; i++) {
+			char ch = seqName[i];
+			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				strncat(acqStr, &ch, 1);
+			if (ch == '_')
+				break; //0008,1030 = "GE_USAGE"
+		}
+	} //len > 0
+	if (d->accelFactPE > 1) //if in-plane acceleration
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "p%d", (int)round(d->accelFactPE));
+	if (d->CSA.multiBandFactor > 1) //if multiband
+		snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "m%d", (int)round(d->CSA.multiBandFactor));
+	//snprintf(acqStr + strlen(acqStr), kDICOMStrLarge - strlen(acqStr), "s%ld", d->seriesNum);
+	if (strlen(acqStr) > 4)
+		strcat(suffixBIDS, acqStr);
+	//add _dir-
+	if (isDirLabel) {
+		char dirLabel[kDICOMStrLarge]  = "_dir-";
+		if (d->phaseEncodingRC == 'C') {
+			if (d->phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+				strcat(dirLabel, "AP"); 
+			else
+				strcat(dirLabel, "PA"); 
+		} else {
+			if (d->phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+				strcat(dirLabel, "LR");
+			else
+				strcat(dirLabel, "RL");
+		}
+		strcat(suffixBIDS, dirLabel);
+	}
+	//add run
+	if (isAddSeriesToRun)
+		snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_run-%ld", d->seriesNum);
+	//add _echo-
+	if ((d->echoNum > 1) || ((d->isMultiEcho) && (d->echoNum > 0)))
+		snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_echo-%d", d->echoNum);
+	//add part
+	if (isPart) {
+		if (d->isHasPhase)
+			strcat(suffixBIDS, "_part-phase");
+		if (d->isHasMagnitude)
+			strcat(suffixBIDS, "_part-mag");
+	}
+	//finish suffix
+	if (strlen(modalityBIDS) > 0) {
+		strcat(suffixBIDS,"_");
+		strcat(suffixBIDS,modalityBIDS);
+	}
+	//subject
+	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
+		printf("::autoBids:GE seriesDesc:'%s' scanSeq:'%s' seqName:'%s' stepDesc:'%s'\n", 
+			d->seriesDescription, d->scanningSequence, seqName, d->procedureStepDescription);
+	if (isDerived)
+		strcpy(dataTypeBIDS, "derived");
+} // setBidsGE()
+
+void setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVerbose) {
+	if (d->modality == kMODALITY_PT) {
+		strcpy(d->CSA.bidsDataType, "PET");
+		strcpy(d->CSA.bidsEntitySuffix, "PET");
+		return;
+	}
+	if (d->modality == kMODALITY_CT) {
+		strcpy(d->CSA.bidsDataType, "CT");
+		strcpy(d->CSA.bidsEntitySuffix, "CT");
+		return;
+	}
+	if (d->manufacturer == kMANUFACTURER_SIEMENS)
+		setBidsSiemens(d, nConvert, isVerbose, filename);
+	if (d->manufacturer == kMANUFACTURER_PHILIPS)
+		setBidsPhilips(d, nConvert, isVerbose);
+	if (d->manufacturer == kMANUFACTURER_GE)
+		setBidsGE(d, nConvert, isVerbose, filename);
+	//printf("%s\\%s\n", d->CSA.bidsDataType, d->CSA.bidsEntitySuffix);
 }
 
 void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts opts, struct nifti_1_header *hdr, struct TDCMsort *dcmSort, struct TDICOMdata *dcmList) {
@@ -6380,9 +7099,10 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	int mbAccel = -1;
 	int nSlices = -1;
 	float groupDelay = 0.0;
+	char seqStr[kDICOMStr] = "";
 	char ioptGE[3000] = "";
 	//printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
-	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, 0, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE);
+	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, 0, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE, seqStr);
 	if (ok != EXIT_SUCCESS) {
 		d->CSA.sliceTiming[0] = -1;
 		printWarning("Unable to estimate slice times: issue decoding GE protocol block.\n");
@@ -6816,6 +7536,10 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		printMessage("Ignoring localizer (sequence '%s') of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum, nameList->str[indx]);
 		return EXIT_SUCCESS;
 	}
+	if ((opts.isIgnoreDerivedAnd2D) && ((strcmp(dcmList[indx].sequenceName, "*tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "*fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "*fl2d1") == 0))) {
+		printMessage("Ignoring localizer (sequence '%s') of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum, nameList->str[indx]);
+		return EXIT_SUCCESS;
+	} //issue398 old versions of dcm2niix converted "*" to "_" as it is an illegal filename, modern versions preserve
 	if ((opts.isIgnoreDerivedAnd2D) && (nConvert < 2) && (dcmList[indx].CSA.mosaicSlices < 2) && (dcmList[indx].xyzDim[3] < 2)) {
 		printMessage("Ignoring 2D image of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
 		return EXIT_SUCCESS;
@@ -7233,8 +7957,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
 			checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert - 1].indx]);
 	}
-	if (opts.isVerbose > 1)
-		reportProtocolBlockGE(&dcmList[indx0], nameList->str[dcmSort[0].indx]);
+	setBids(&dcmList[indx0], nameList->str[dcmSort[0].indx], nConvert, opts.isVerbose);
 	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert, opts);
 #ifdef myReportSliceFilenames
 	if (sliceDir < 0) {
@@ -9113,6 +9836,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
 	opts->isOneDirAtATime = false;
 	opts->isRenameNotConvert = false;
+	opts->isGuessBidsFilename = true;
 	opts->isForceStackSameSeries = 2; //automatic: stack CTs, do not stack MRI
 	opts->isForceStackDCE = true;
 	opts->isIgnoreSeriesInstanceUID = false;

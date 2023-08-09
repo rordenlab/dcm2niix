@@ -141,7 +141,6 @@ The following tools exploit dcm2niix
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
   - [CardioNIfTI](https://github.com/UK-Digital-Heart-Project/CardioNIfTI) processes cardiac MR DICOM datasets and converts them to NIfTI.
   - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
-  - [clinical_dicom2bids_smk](https://github.com/greydongilmore/clinical_dicom2bids_smk) Snakemake workflow to convert a clinical dicom directory into BIDS structure.
   - [clpipe](https://github.com/cohenlabUNC/clpipe) uses dcm2bids for DICOM import.
   - [conversion](https://github.com/pnlbwh/conversion) is a Python library that can convert dcm2niix created NIfTI files to the popular NRRD format (including DWI gradient tables). Note, recent versions of dcm2niix can directly convert DICOM images to NRRD.
   - [convert_source](https://github.com/AdebayoBraimah/convert_source) to convert DICOM to BIDS directory layout.
@@ -196,6 +195,7 @@ The following tools exploit dcm2niix
   - [pydra-dcm2bids](https://github.com/aramis-lab/pydra-dcm2bids) supports Pydra tasks for dcm2bids.
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
+  - [QSMxT](https://github.com/QSMxT/QSMxT) is an end-to-end software toolbox for Quantitative Susceptibility Mapping.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [Retina_OCT_dcm2nii](https://github.com/Choupan/Retina_OCT_dcm2nii) converts optical coherence tomography (OCT) data to NIfTI.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).

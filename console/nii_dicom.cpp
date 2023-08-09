@@ -953,6 +953,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.CSA.SeriesHeader_offset = 0;
 	d.CSA.SeriesHeader_length = 0;
 	d.CSA.coilNumber = -1;
+	strcpy(d.CSA.bidsDataType, "");
+	strcpy(d.CSA.bidsEntitySuffix, "");
 	return d;
 } //clear_dicom_data()
 
@@ -1464,7 +1466,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 				CSA->coilNumber = csaICEdims(&buff[lPos]);
 			else if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
 				CSA->mosaicSlices = (int)round(csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK));
-			else if (strcmp(tagCSA.name, "B_value") == 0) {
+			 else if (strcmp(tagCSA.name, "B_value") == 0) {
 				CSA->dtiV[0] = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
 				if (CSA->dtiV[0] < 0.0) {
 					printWarning("(Corrupt) CSA reports negative b-value! %g\n", CSA->dtiV[0]);
@@ -4401,6 +4403,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPartialFourier 0x0018 + uint32_t(0x9081 << 16) //CS
 const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD 
 //#define kDiffusionBFactorSiemens 0x0019+(0x100C<< 16 ) // 0019;000C;SIEMENS MR HEADER;B_value
+#define kDiffusionGradientDirectionSQ 0x0018 + uint32_t(0x9076 << 16) // SQ
 #define kDiffusion_bValue 0x0018 + uint32_t(0x9087 << 16) // FD
 #define kDiffusionOrientation 0x0018 + uint32_t(0x9089 << 16) // FD, seen in enhanced DICOM from Philips 5.* and Siemens XA10.
 #define kImagingFrequencyFD 0x0018 + uint32_t(0x9098 << 16) //FD
@@ -5048,6 +5051,11 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
 			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+				vr[0] = 'S';
+				vr[1] = 'Q';
+				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
+			}
+			if (groupElement == kDiffusionGradientDirectionSQ) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
@@ -5894,6 +5902,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			dcmStr(lLength, &buffer[lPos], d.pulseSequenceName);
 			if (strstr( d.pulseSequenceName, "epi_pepolar") != NULL) {
+			//if ((strstr( d.pulseSequenceName, "epi_pepolar") != NULL) || (strstr( d.pulseSequenceName, "epi2_pepolar") != NULL)){
 				d.epiVersionGE = kGE_EPI_PEPOLAR_FWD; //n.b. combine with 0019,10B3
 			} else if (strstr( d.pulseSequenceName, "epi2") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
@@ -7116,6 +7125,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer == kMANUFACTURER_GE) {
 				d.CSA.dtiV[0] = (float)set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
 				d.CSA.numDti = 1;
+				d.isDiffusion = true;
 			}
 			break;
 		case kEpiRTGroupDelayGE: //FL
@@ -7500,9 +7510,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		}
 		if (isGEfieldMap) { //issue501 : to do check zip factor
 			//Volume 1) derived phase field map [Hz] and 2) magnitude volume.
-			d.isDerived = (d.imageNum <= locationsInAcquisitionGE); //first volume
-			d.isRealIsPhaseMapHz = d.isDerived;
-			d.isHasReal = d.isDerived;
+			//issue 777 while a fieldmap is technically derived, do not exclude with -i y
+			bool isDerived = (d.imageNum <= locationsInAcquisitionGE); //first volume
+			d.isRealIsPhaseMapHz = isDerived;
+			d.isHasReal = isDerived;
 		}
 		/* SAH.end */
 		if (locationsInAcquisitionGE < d.locationsInAcquisition) {
@@ -7935,8 +7946,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		}
 		d.seriesUidCrc = mz_crc32X((unsigned char *)&d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
-		d.isLocalizer = true;
+	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
+		if (strstr(d.seriesDescription, "AAHScout") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.protocolName, "AAHScout") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.sequenceName, "fl2d1") != NULL)
+			d.isLocalizer = true;
 	}
 	// detect GE diffusion gradient cycling mode (see issue 635)
 	// GE diffusion epi
@@ -7984,6 +8000,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV_FWD_FLIP;
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV) && (volumeNumber > 0) && ((volumeNumber % 2) == 0))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_FWD_REV_FLIP;
+
 	#ifndef myDisableGEPEPolarFlip //e.g. to disable patch for issue 532 "make CFLAGS=-DmyDisableGEPEPolarFlip" 
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_REV) || (d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP)  || (d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
 		if (d.epiVersionGE != kGE_EPI_PEPOLAR_REV) d.seriesNum += 1000;
@@ -7997,7 +8014,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (strstr(d.sequenceName, "gre_fsp") != NULL))
 		d.echoTrainLength = 0;
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
-	// Andrey Fedorov has requested keeping GE bvalues, see issue 264
+	// Andrey Fedorov has requested keeping GE bvaecues, see issue 264
 	//if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
 	//	d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
 	if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
