@@ -6989,23 +6989,18 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 	//add _acq-
 	char acqStr[kDICOMStrLarge] = "";
 	strcat(acqStr, "_acq-");
+	char seqName2[kDICOMStrLarge] = "";
+	strcat(seqName2, d->phaseEncodingDirectionDisplayedUIH); //prefer InternalPulseSequenceName (0019,109e) 
+	if (strlen(seqName2) < 1) //fall back PulseSequenceName (0019,109c)
+		strcat(seqName2, d->pulseSequenceName);
 	//ScanningSequence discriminates tagged and untagged ASL (RM vs RMIR)
-	int len = strlen(d->scanningSequence);
+	int len = strlen(seqName2);
 	if (len > 0) {
 		for (int i = 0; i < len; i++) {
-			char ch = d->scanningSequence[i];
+			char ch = seqName2[i];
 			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
 				strncat(acqStr, &ch, 1);
-		}
-	} //len > 0
-	len = strlen(seqName);
-	if (len > 0) {
-		for (int i = 0; i < len; i++) {
-			char ch = seqName[i];
-			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
-				strncat(acqStr, &ch, 1);
-			if (ch == '_')
-				break; //0008,1030 = "GE_USAGE"
+			//if (isdigit(ch)) break; // do not use, unlike Siemens digit can come at start 3DFSE or end EFGRE3D
 		}
 	} //len > 0
 	if (d->accelFactPE > 1) //if in-plane acceleration
@@ -7051,8 +7046,8 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcat(suffixBIDS,modalityBIDS);
 	}
 	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
-		printf("::autoBids:GE seriesDesc:'%s' scanSeq:'%s' seqName:'%s' stepDesc:'%s' bidsData:'%s' bidsSuffix:'%s'\n", 
-			d->seriesDescription, d->scanningSequence, seqName, d->procedureStepDescription, dataTypeBIDS, suffixBIDS);
+		printf("::autoBids:GE seqName:'%s' internalSeqName:'%s' seriesDesc:'%s' scanSeq:'%s' seqName:'%s' stepDesc:'%s' bidsData:'%s' bidsSuffix:'%s'\n", 
+			d->pulseSequenceName, d->phaseEncodingDirectionDisplayedUIH, d->seriesDescription, d->scanningSequence, seqName, d->procedureStepDescription, dataTypeBIDS, suffixBIDS);
 	if (isDerived)
 		strcpy(dataTypeBIDS, "derived");
 } // setBidsGE()

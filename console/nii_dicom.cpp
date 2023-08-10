@@ -5921,6 +5921,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			char epiStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], epiStr);
+			strcat(d.phaseEncodingDirectionDisplayedUIH, epiStr); //overload
 			if ((d.epiVersionGE < kGE_EPI_PEPOLAR_FWD) && (strcmp(epiStr, "EPI") == 0)) {
 				d.internalepiVersionGE = 1; //-1 = not EPI, 1 = EPI, 2 = EPI2
 				if (d.epiVersionGE != 1) {	// 1 = epiRT by kEpiRTGroupDelayGE or kPulseSequenceNameGE
