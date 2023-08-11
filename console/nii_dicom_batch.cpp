@@ -1446,7 +1446,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"UsePhilipsFloatNotDisplayScaling\": %d,\n", opts.isPhilipsFloatNotDisplayScaling);
 	}
 	//https://bids-specification--622.org.readthedocs.build/en/622/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#case-3-direct-field-mapping
-	if ((d.isRealIsPhaseMapHz) && (d.isHasReal))
+	if ((d.isRealIsPhaseMapHz) && ((d.manufacturer == kMANUFACTURER_GE) || (d.isHasReal)))
 		fprintf(fp, "\t\"Units\": \"Hz\",\n"); //
 	//PET ISOTOPE MODULE ATTRIBUTES
 	json_Str(fp, "\t\"Radiopharmaceutical\": \"%s\",\n", d.radiopharmaceutical);
@@ -4130,7 +4130,7 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	//add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer; // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_FINISH); 
+	deflate(&strm, Z_FINISH);
 	//add footer
 	strm.avail_in = (unsigned int)sizeof(footer); // size of input
 	strm.next_in = (uint8_t *) &footer.TR;
@@ -4263,7 +4263,7 @@ int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 	#endif
 	if (isGz) {
 		strcat(fname, ".mgz");
-		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel); 
+		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel);
 	} else {
 		strcat(fname, ".mgh");
 		FILE *fp = fopen(fname, "wb");
@@ -6413,7 +6413,7 @@ void sliceTimingGE_Testx0021x105E(struct TDICOMdata *d, struct TDCMopts opts, st
 void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename, int isVerbose) {
 #ifdef myReadGeProtocolBlock
 	if ((d->manufacturer != kMANUFACTURER_GE) || (d->modality != kMODALITY_MR))
-		return; 
+		return;
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19)) {
 		//if (isVerbose)
 		printWarning("Missing GE protocol data block (0025,101B)\n");
@@ -6636,9 +6636,9 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		char dirLabel[kDICOMStrLarge]  = "_dir-";
 		if (d->phaseEncodingRC == 'C') {
 			if (d->CSA.phaseEncodingDirectionPositive)
-				strcat(dirLabel, "AP"); 
+				strcat(dirLabel, "AP");
 			else
-				strcat(dirLabel, "PA"); 
+				strcat(dirLabel, "PA");
 		} else {
 			if (d->CSA.phaseEncodingDirectionPositive)
 				strcat(dirLabel, "RL");
@@ -6831,12 +6831,10 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 } //setBidsPhilips
 
 void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *filename) {
-	char seqName[kDICOMStr] = "";
-	#ifdef myReadGeProtocolBlock
-	if (strlen(d->procedureStepDescription) < 2)
-		reportProtocolBlockGE(d, filename, isVerbose);
-	strcpy(seqName, d->procedureStepDescription);
-	#endif
+	char seqName[kDICOMStrLarge] = "";
+	strcat(seqName, d->phaseEncodingDirectionDisplayedUIH); //prefer InternalPulseSequenceName (0019,109e) 
+	if (strlen(seqName) < 1) //fall back PulseSequenceName (0019,109c)
+		strcat(seqName, d->pulseSequenceName);
 	char *dataTypeBIDS = d->CSA.bidsDataType;
 	strcpy(dataTypeBIDS, "");
 	char *suffixBIDS = d->CSA.bidsEntitySuffix;
@@ -6847,157 +6845,115 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 	bool isAddSeriesToRun = true;
 	bool isReportEcho = true; //fieldmaps do not include _echo-
 	bool isPart = false;
+	bool isEPSE = strstr(d->scanningSequence, "EP\\SE") != NULL;
 	bool isEPGR = strstr(d->scanningSequence, "EP\\GR") != NULL;
-	bool isT2 =  strstr(d->seriesDescription, "T2") != NULL; //warning T2STAR 
-	if (strlen(seqName) < 2) //e.g. XA uses 0018,9005 while VE uses 0018,0024
-		strcpy(seqName, d->procedureStepDescription);
+	bool isGR = isEPGR || (strstr(seqName, "GRE"));
+
+	#ifdef myReadGeProtocolBlock
+	//research mode EP\RM does not discriminate between SE and GE (EP\SE and EP||GR)
+	//solution: check procedureStepDescription
+	//if (strstr(d->scanningSequence, "EP\\RM")) {
+	reportProtocolBlockGE(d, filename, isVerbose);
+	if (strstr(d->procedureStepDescription, "Gradient Echo")) {
+		isGR = true;
+		if (strstr(d->scanningSequence, "EP\\RM"))
+			isEPGR = true;
+	}
+	if (strstr(d->procedureStepDescription, "Spin Echo")) {
+		if (strstr(d->scanningSequence, "EP\\RM"))
+			isEPSE = true;
+	}
+	#endif
 	int nVol = 1;
 	if (d->locationsInAcquisition > 0)
 		nVol = nConvert / d->locationsInAcquisition;
 	if (((d->xyzDim[3] < 2) && (nConvert < 4)) || (d->isLocalizer)) {
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
-	} else if (strstr(d->seriesDescription, "3 Plane Loc") != NULL) {
+	} else if (strstr(d->seriesDescription, "3 Plane Loc")) {
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
 		isReportEcho = false;
 	} else if (d->isRealIsPhaseMapHz) {
 		isReportEcho = false;
+		//isAddSeriesToRun = false;
 		strcpy(dataTypeBIDS, "fmap");
 		strcpy(modalityBIDS, "fieldmap");
-	} else if (strcmp( d->pulseSequenceName, "3db0map") == 0) {
+	} else if (strstr( d->pulseSequenceName, "3db0map")) {
 		isReportEcho = false;
 		strcpy(dataTypeBIDS, "fmap");
 		strcpy(modalityBIDS, "magnitude");
-	} else if ((strstr(d->seriesDescription, "fieldmap") != NULL) && (strstr(d->scanningSequence, "EP\\") != NULL)) { 
-		//this is typically just a EP\SE b=0 DWI scan, so we need to rely on series description
-		//https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#case-4-multiple-phase-encoded-directions-pepolar
-		strcpy(dataTypeBIDS, "fmap");
-		strcpy(modalityBIDS, "epi");
-		isDirLabel = true;
-	} else if ((strstr(d->scanningSequence, "GR\\IR") != NULL) || (strstr(seqName, "SPGR") != NULL) || (strstr(seqName, "MP-RAGE") != NULL)) {
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "T1w");
-	} else if ((d->TE < 20.0) && ((strstr(d->scanningSequence, "RM\\IR") != NULL) || (strstr(seqName, "MPRAGE") != NULL))) {
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "T1w");
-	} else if ((strstr(d->seriesDescription, "T2") != NULL) && (strstr(d->seriesDescription, "STAR") != NULL)) {
+		if (strstr( d->imageType, "OTHER")) //NOT magnitude
+			strcpy(modalityBIDS, "fieldmap");
+	} else if ((d->isMultiEcho) && (!isEPGR) && (isGR)) {
+		//detect EFGRE3D "STAGE 24" sequence, see 7T 29.1 example
+		// not sure if STAGE is always multiecho: strstr(d->seriesDescription, "STAGE")
+		// bids validator 8/2023 complains about multi-echo T2star
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
 		isPart = true;
-	} else if ((strstr(seqName, "FLAIR") != NULL) || (strstr(seqName, "flair") != NULL)) { //CubeT2FLAIR T2flair
+	} else if (strcmp( seqName, "EFGRE3D") == 0) { 
+		//3D gradient echo
 		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "FLAIR");
-	//} else if ((d->CSA.numDti > 0) && (strstr(seqName, "Spin Echo") != NULL) && (strstr(d->scanningSequence, "EP\\SE") != NULL)) {
-	//	strcpy(dataTypeBIDS, "dwi");
-	//	strcpy(modalityBIDS, "dwi");
-	//} else if ((d->CSA.numDti > 0) && (strstr(seqName, "Spin Echo") != NULL) && (strstr(d->scanningSequence, "EP\\RM") != NULL)) {
-		//RM research mode might be either spin or gradient echo
-	//	strcpy(dataTypeBIDS, "dwi");
-	//	strcpy(modalityBIDS, "dwi");
-	} else if (strstr(seqName, "FSE-XL") != NULL) {
+		strcpy(modalityBIDS, "T1w");
+	} else if (strstr( seqName, "3dradial") && strstr( d->scanningSequence, "GR\\IR")) { 
+		//Silenz anatomical
 		strcpy(dataTypeBIDS, "anat");
-		if ((strstr(d->scanningSequence, "IR") != NULL))
+		strcpy(modalityBIDS, "T1w");
+
+	} else if (strstr( seqName, "FSE")) { 
+		//"3DFSE" or "FSE" fast spin echo
+		strcpy(dataTypeBIDS, "anat");
+		if (strstr(d->scanningSequence, "IR"))
 			strcpy(modalityBIDS, "FLAIR");
 		else if (d->TE < 40)
 			strcpy(modalityBIDS, "PDw");
 		else
 			strcpy(modalityBIDS, "T2w");
-	} else if (strstr(d->seriesDescription, "MPRAGE T1") != NULL) {
+		//BIDS validator does not allow "_echo-2", rather PDw/T2w
+		isReportEcho = false;
+	} else if ((strcmp( seqName, "2DFAST") == 0) && (strstr(d->seriesDescription, "STAR"))) { 
 		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "T1w");
-	} else if (strstr(d->seriesDescription, "MP2RAGE") != NULL) {
-		//to do report inv1/inv2
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "MP2RAGE");
-	} else if (isT2 && (strstr(d->seriesDescription, "FLAIR") != NULL)) {
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "FLAIR");
-	} else if (isT2 && (strstr(d->seriesDescription, "CUBE") != NULL)) {
-		//nb before isDiffusion test: 40003_ORIG_Sag_CUBE_T2 does report b=0 like a DWI
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "T2w");
-	} else if (isT2 && (strstr(d->seriesDescription, "FSE FS") != NULL)) {
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "T2w");
-	} else if (strstr(d->seriesDescription, "PD FS") != NULL) {
-		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "PDw");
-	} else if (strstr(d->seriesDescription, "CUBE FS") != NULL) {
-		strcpy(dataTypeBIDS, "anat");
-		//todo: check TE to decide if PD or T2w?
-		strcpy(modalityBIDS, "T2w");
-	//} else if ((d->isDiffusion) || ((d->CSA.numDti > 0) && ((strstr(d->seriesDescription, "DWI MultiShell") != NULL) || (strstr(seqName, "DWI") != NULL)))) {
-	} else if ((!isEPGR) && (d->isDiffusion)) {
+		strcpy(modalityBIDS, "T2starw");
+		isPart = true;
+	} else if (strstr(seqName, "asl")) {
+		strcpy(dataTypeBIDS, "perf");
+		strcpy(modalityBIDS, "asl");
+	} else if (((isEPSE) && (!d->isDiffusion)) || ((strstr(d->seriesDescription, "fieldmap")) && (strstr(seqName, "EPI")))) { 
+		//this is typically just a EP\SE b=0 DWI scan, so we need to rely on series description
+		//https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#case-4-multiple-phase-encoded-directions-pepolar
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "epi");
+		isDirLabel = true;
+	} else if (strstr(seqName, "LoopingStar")) {
+		//silent fMRI
+		d->is3DAcq = true; //bold without slicetiming
+		strcpy(dataTypeBIDS, "func");
+		strcpy(modalityBIDS, "bold");
+	} else if (isEPGR) {
+		//n.b. test BEFORE fieldmap to detect EPI
+		strcpy(dataTypeBIDS, "func");
+		strcpy(modalityBIDS, "bold");
+		isDirLabel = true;
+	} else if ((strstr(seqName, "EPI")) && (d->isDiffusion)) { 
 		//nb Gradient Echo images can report b=0: scanSeq:'EP\GR' seqName:'29.1 fMRI/DTI' stepDesc:'29.1 fMRI/DTI' 
 		strcpy(dataTypeBIDS, "dwi");
 		strcpy(modalityBIDS, "dwi");
 		isDirLabel = true;
-	} else if (((strstr(d->scanningSequence, "EP\\RM") != NULL) || (strstr(d->scanningSequence, "EP\\GR") != NULL)) && ((nVol > 2) || (strstr(seqName, "Gradient Echo")) != NULL)) {
-			//n.b. test BEFORE fieldmap to detect EPI
-			strcpy(dataTypeBIDS, "func");
-			strcpy(modalityBIDS, "bold");
-			isDirLabel = true;
-	} else if ((strstr(d->scanningSequence, "RM") != NULL) && (strstr(seqName, "Gradient Echo") != NULL)) {
-		isAddSeriesToRun = false;
-		strcpy(dataTypeBIDS, "fmap");
-		if (d->isRealIsPhaseMapHz)
-			strcpy(modalityBIDS, "fieldmap");
-		else if (d->isHasPhase)
-			strcpy(modalityBIDS, "phasediff");
-		else if (d->isHasMagnitude)
-			snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "magnitude");
-	} else if ((strstr(d->seriesDescription, "STAGE") != NULL) || (strstr(seqName, "Gradient Echo") != NULL)) {
-		//n.b. ALL unassigned gradient echos end here... 
-		if ((strstr(d->seriesDescription, "STAGE") != NULL) || (strstr(d->seriesDescription, "Star") != NULL)) {
-			strcpy(dataTypeBIDS, "anat");
-			strcpy(modalityBIDS, "T2starw");
-			if (d->isHasPhase)
-				strcpy(suffixBIDS, "_part-phase");
-			if (d->isHasMagnitude)
-				strcpy(suffixBIDS, "_part-mag");
-		}
-		if ((nConvert > d->locationsInAcquisition) && (strstr(d->scanningSequence, "EP") != NULL)) {
-			//see dcm_qa_stc for various scanningSequence names
-			// EPRM EPGR
-			strcpy(dataTypeBIDS, "func");
-			strcpy(modalityBIDS, "bold");
-			isDirLabel = true;
-		}
-	} else if (strstr(seqName, "ASL") != NULL) {
-		strcpy(dataTypeBIDS, "perf");
-		strcpy(modalityBIDS, "asl");
-	} else if ((strstr(d->scanningSequence, "GR") != NULL) && (strstr(d->seriesDescription, "TOF") != NULL)) {
+	} else if (strstr(seqName, "tof")) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "angio");
-	} else if ((strstr(d->scanningSequence, "EP\\RM") != NULL) && ((strstr(seqName, "Spin Echo") != NULL) ||  (strstr(d->procedureStepDescription, "Spin Echo") != NULL))) { //see dcm_qa_polar 
-		strcpy(dataTypeBIDS, "fmap");
-		strcpy(modalityBIDS, "epi");
-		isDirLabel = true;
-		isAddSeriesToRun = false;
-	} else if ((strstr(d->scanningSequence, "SE") != NULL) && (d->TE >= 40)) {
-		strcpy(dataTypeBIDS, "anat");
-		//todo: check TE to decide if PD or T2w?
-		strcpy(modalityBIDS, "T2w");
-	} else if (((d->locationsInAcquisition *3) >= nConvert) && (strstr(d->scanningSequence, "EP\\GR") != NULL)) {
-		//default to "bold" for multivolume gradient echo data
-		strcpy(dataTypeBIDS, "func");
-		strcpy(modalityBIDS, "bold");
 	}
-	if ((strstr(d->scanningSequence, "EP\\SE") != NULL) || (strstr(d->scanningSequence, "EP\\RM") != NULL))
+	if ((strstr(d->scanningSequence, "EP\\SE")) || (strstr(d->scanningSequence, "EP\\RM")))
 		isDirLabel = true;
 	//add _acq-
 	char acqStr[kDICOMStrLarge] = "";
 	strcat(acqStr, "_acq-");
-	char seqName2[kDICOMStrLarge] = "";
-	strcat(seqName2, d->phaseEncodingDirectionDisplayedUIH); //prefer InternalPulseSequenceName (0019,109e) 
-	if (strlen(seqName2) < 1) //fall back PulseSequenceName (0019,109c)
-		strcat(seqName2, d->pulseSequenceName);
 	//ScanningSequence discriminates tagged and untagged ASL (RM vs RMIR)
-	int len = strlen(seqName2);
+	int len = strlen(seqName);
 	if (len > 0) {
 		for (int i = 0; i < len; i++) {
-			char ch = seqName2[i];
+			char ch = seqName[i];
 			if ((ch >= '0' & ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
 				strncat(acqStr, &ch, 1);
 			//if (isdigit(ch)) break; // do not use, unlike Siemens digit can come at start 3DFSE or end EFGRE3D
@@ -7015,9 +6971,9 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		char dirLabel[kDICOMStrLarge]  = "_dir-";
 		if (d->phaseEncodingRC == 'C') {
 			if (d->phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
-				strcat(dirLabel, "AP"); 
+				strcat(dirLabel, "AP");
 			else
-				strcat(dirLabel, "PA"); 
+				strcat(dirLabel, "PA");
 		} else {
 			if (d->phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
 				strcat(dirLabel, "LR");
@@ -7035,6 +6991,10 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 			snprintf(suffixBIDS + strlen(suffixBIDS), kDICOMStrLarge - strlen(suffixBIDS), "_echo-%d", d->echoNum);
 	//add part
 	if (isPart) {
+		if (d->isHasImaginary)
+			strcat(suffixBIDS, "_part-imag");
+		if (d->isHasReal)
+			strcat(suffixBIDS, "_part-real");
 		if (d->isHasPhase)
 			strcat(suffixBIDS, "_part-phase");
 		if (d->isHasMagnitude)
@@ -7046,8 +7006,8 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcat(suffixBIDS,modalityBIDS);
 	}
 	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
-		printf("::autoBids:GE seqName:'%s' internalSeqName:'%s' seriesDesc:'%s' scanSeq:'%s' seqName:'%s' stepDesc:'%s' bidsData:'%s' bidsSuffix:'%s'\n", 
-			d->pulseSequenceName, d->phaseEncodingDirectionDisplayedUIH, d->seriesDescription, d->scanningSequence, seqName, d->procedureStepDescription, dataTypeBIDS, suffixBIDS);
+		printf("::autoBids:GE usedSeqName:'%s' seqName:'%s' internalSeqName:'%s' seriesDesc:'%s' scanSeq:'%s' stepDesc:'%s' bidsData:'%s' bidsSuffix:'%s'\n", 
+			seqName, d->pulseSequenceName, d->phaseEncodingDirectionDisplayedUIH, d->seriesDescription, d->scanningSequence, d->procedureStepDescription, dataTypeBIDS, suffixBIDS);
 	if (isDerived)
 		strcpy(dataTypeBIDS, "derived");
 } // setBidsGE()
@@ -9746,7 +9706,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	if (hModule != NULL) {
 		// https://stackoverflow.com/questions/1528298/get-path-of-executable
 		char exepth[PATH_MAX];
-		GetModuleFileName(hModule, exepth, (sizeof(exepth))); 
+		GetModuleFileName(hModule, exepth, (sizeof(exepth)));
 		dropFilenameFromPath(exepth); //, opts.pigzname);
 		char appendChar[2] = {"a"};
 		appendChar[0] = kPathSeparator;

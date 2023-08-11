@@ -5943,7 +5943,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
 			break;
 		case kSeriesInstanceUID: // 0020,000E
-		    if (sqDepth > seriesInstanceUIDsqDepth) break; //issue655
+			if (sqDepth > seriesInstanceUIDsqDepth) break; //issue655
 			seriesInstanceUIDsqDepth = sqDepth;
 			dcmStr(lLength, &buffer[lPos], d.seriesInstanceUID);
 			d.seriesUidCrc = mz_crc32X((unsigned char *)&d.seriesInstanceUID, strlen(d.seriesInstanceUID));
@@ -7990,6 +7990,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.accelFactPE = accelFactPE;
 		//printf("Determining accelFactPE from 0018,9069 not 0021,1009 or 0051,1011\n");
 	}
+	//avoid false positives: non-EPI GE scans can report b-value = 0
+	if ((d.isDiffusion) && (d.manufacturer == kMANUFACTURER_GE))
+		d.isDiffusion = ((d.internalepiVersionGE == kGE_EPI_EPI2) || (d.epiVersionGE == kGE_EPI_EPI2));
+	if ((d.manufacturer == kMANUFACTURER_GE) && (strstr( d.pulseSequenceName, "3db0map")) && strstr(d.imageType, "OTHER"))
+		d.isRealIsPhaseMapHz = true;
 	//detect pepolar https://github.com/nipy/heudiconv/issues/479
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 1))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV;
@@ -8001,7 +8006,6 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV_FWD_FLIP;
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV) && (volumeNumber > 0) && ((volumeNumber % 2) == 0))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_FWD_REV_FLIP;
-
 	#ifndef myDisableGEPEPolarFlip //e.g. to disable patch for issue 532 "make CFLAGS=-DmyDisableGEPEPolarFlip" 
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_REV) || (d.epiVersionGE == kGE_EPI_PEPOLAR_FWD_REV_FLIP)  || (d.epiVersionGE == kGE_EPI_PEPOLAR_REV_FWD_FLIP)) {
 		if (d.epiVersionGE != kGE_EPI_PEPOLAR_REV) d.seriesNum += 1000;
