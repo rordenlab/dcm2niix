@@ -5911,7 +5911,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			} else if (strstr( d.pulseSequenceName, "epi") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI; //-1 = not epi, 0 = epi, 1 = epiRT
 			}
-			if (strcmp( d.pulseSequenceName, "3db0map") == 0) {
+			if (strstr( d.pulseSequenceName, "b0map")) {
 				isGEfieldMap = true; //issue501
 			}
 			break;
@@ -7993,13 +7993,6 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//avoid false positives: non-EPI GE scans can report b-value = 0
 	if ((d.isDiffusion) && (d.manufacturer == kMANUFACTURER_GE))
 		d.isDiffusion = ((d.internalepiVersionGE == kGE_EPI_EPI2) || (d.epiVersionGE == kGE_EPI_EPI2));
-	//GE 3db0map does not set ImageTypeGE 0043,102F for fieldmaps
-	if ((d.manufacturer == kMANUFACTURER_GE) && (strstr( d.pulseSequenceName, "b0map")) && strstr(d.imageType, "OTHER")) {
-		if (d.imageNum <= d.locationsInAcquisition) {
-			d.isRealIsPhaseMapHz = true;
-			d.seriesNum += 1000;
-		}
-	}
 	//detect pepolar https://github.com/nipy/heudiconv/issues/479
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 1))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV;
