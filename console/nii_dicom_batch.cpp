@@ -6873,16 +6873,13 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
 		isReportEcho = false;
-	} else if (d->isRealIsPhaseMapHz) {
+	} else if ((d->isRealIsPhaseMapHz) || (strstr(seqName, "B0map")) || (strstr( d->pulseSequenceName, "3db0map"))) {
+		//case sensitivity: B0Map vs 3db0map
 		isReportEcho = false;
-		//isAddSeriesToRun = false;
-		strcpy(dataTypeBIDS, "fmap");
-		strcpy(modalityBIDS, "fieldmap");
-	} else if (strstr( d->pulseSequenceName, "3db0map")) {
-		isReportEcho = false;
+		isAddSeriesToRun = false;
 		strcpy(dataTypeBIDS, "fmap");
 		strcpy(modalityBIDS, "magnitude");
-		if (strstr( d->imageType, "OTHER")) //NOT magnitude
+		if (d->isRealIsPhaseMapHz)
 			strcpy(modalityBIDS, "fieldmap");
 	} else if ((d->isMultiEcho) && (!isEPGR) && (isGR)) {
 		//detect EFGRE3D "STAGE 24" sequence, see 7T 29.1 example
