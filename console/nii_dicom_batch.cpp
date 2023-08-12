@@ -6873,7 +6873,8 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
 		isReportEcho = false;
-	} else if ((d->isRealIsPhaseMapHz) || (strstr( d->pulseSequenceName, "3db0map"))) {
+	} else if ((d->isRealIsPhaseMapHz) || (strstr(seqName, "B0map")) || (strstr( d->pulseSequenceName, "3db0map"))) {
+		//case sensitivity: B0Map vs 3db0map
 		isReportEcho = false;
 		isAddSeriesToRun = false;
 		strcpy(dataTypeBIDS, "fmap");

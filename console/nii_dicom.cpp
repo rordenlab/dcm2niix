@@ -7994,7 +7994,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((d.isDiffusion) && (d.manufacturer == kMANUFACTURER_GE))
 		d.isDiffusion = ((d.internalepiVersionGE == kGE_EPI_EPI2) || (d.epiVersionGE == kGE_EPI_EPI2));
 	//GE 3db0map does not set ImageTypeGE 0043,102F for fieldmaps
-	if ((d.manufacturer == kMANUFACTURER_GE) && (strstr( d.pulseSequenceName, "3db0map")) && strstr(d.imageType, "OTHER")) {
+	if ((d.manufacturer == kMANUFACTURER_GE) && (strstr( d.pulseSequenceName, "b0map")) && strstr(d.imageType, "OTHER")) {
 		if (d.imageNum <= d.locationsInAcquisition) {
 			d.isRealIsPhaseMapHz = true;
 			d.seriesNum += 1000;
