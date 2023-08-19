@@ -4479,6 +4479,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 //#define kPATModeText2 0x0021 + (0x1156 << 16) //LO, always same as 0021,1009 
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
 #define kCoilElements 0x0021 + (0x114F << 16) //LO
+#define kICE_dimsLong 0x0021 + (0x118e << 16)
 #define kAcquisitionMatrixText21 0x0021 + (0x1158 << 16) //SH
 #define kImageTypeText 0x0021 + (0x1175 << 16) //CS
 #define kDeepLearningText 0x0021 + (0x1176 << 16) //LO
@@ -4675,6 +4676,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int volumeNumber = -1;
 	int gradientOrientationNumberPhilips = -1;
 	int numberOfFrames = 0;
+	int numberOfFramesICEdims = 0;
 	//int MRImageGradientOrientationNumber = 0;
 	//int minGradNum = kMaxDTI4D + 1;
 	//int maxGradNum = -1;
@@ -6171,7 +6173,22 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//printMessage("%d:%d:'%s'\n", d.echoNum, echo, iceStr);
 			if (iceStr != end)
 				d.echoNum = echo;
-			//printMessage("%d:'%s'\n", echo, echoStr);
+			break;
+		}
+		case kICE_dimsLong: { //issue568: LO (0021,1106) [X_4_1_1_1_1_160_1_1_1_1_1_277]
+			if ((d.manufacturer != kMANUFACTURER_SIEMENS) || (numberOfFramesICEdims > 0))
+				break;
+			char iceStr[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], iceStr);
+			int idx = 0;
+			char * pch = strtok (iceStr,"_");
+			char *end;
+			while (pch != NULL) {
+				if (idx ==20)
+					numberOfFramesICEdims = (int)strtol(pch, &end, 10);
+				idx ++;
+				pch = strtok (NULL, "_");
+			}
 			break;
 		}
 		case kPhaseEncodingDirectionPositiveSiemens: {
@@ -7877,6 +7894,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
 	//	uint_32t timeCRC = mz_crc32X((unsigned char*) &contentTime, sizeof(double));
 	//}
+	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] != numberOfFramesICEdims)) {
+		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
+		d.seriesNum += 1000;
+		d.isDerived = true;
+	}
 	//if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d.sequenceName, "fldyn3d1")== 0)) {
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fldyn3d1") != NULL)) {
 		//combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
