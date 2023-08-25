@@ -599,7 +599,7 @@ void readKeyStr(const char *key, char *buffer, int remLength, char *outStr) {
 	tmpstr[1] = 0;
 	bool isQuote = false;
 	while ((i < remLength) && (keyPos[i] != 0x0A)) {
-		if ((isQuote) && (keyPos[i] != '"') && (outLen < kDICOMStrLarge)) {
+		if ((isQuote) && (keyPos[i] != '"') && (outLen < (kDICOMStrLarge-1))) {
 			tmpstr[0] = keyPos[i];
 			strcat(outStr, tmpstr);
 			outLen++;
