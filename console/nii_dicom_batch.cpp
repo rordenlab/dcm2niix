@@ -587,7 +587,7 @@ float readKeyFloat(const char *key, char *buffer, int remLength) { //look for te
 	return atof(str);
 } //readKeyFloat()
 
-void readKeyStr(const char *key, char *buffer, int remLength, char *outStr) {
+void readKeyStr(const char *key, char *buffer, int remLength, char *outStr, int outStrLen) {
 	//if key is CoilElementID.tCoilID the string 'CoilElementID.tCoilID = 	""Head_32""' returns 'Head32'
 	strcpy(outStr, "");
 	char *keyPos = (char *)memmem(buffer, remLength, key, strlen(key));
@@ -599,7 +599,7 @@ void readKeyStr(const char *key, char *buffer, int remLength, char *outStr) {
 	tmpstr[1] = 0;
 	bool isQuote = false;
 	while ((i < remLength) && (keyPos[i] != 0x0A)) {
-		if ((isQuote) && (keyPos[i] != '"') && (outLen < (kDICOMStrLarge-1))) {
+		if ((isQuote) && (keyPos[i] != '"') && (outLen < (outStrLen-1))) {
 			tmpstr[0] = keyPos[i];
 			strcat(outStr, tmpstr);
 			outLen++;
@@ -612,6 +612,12 @@ void readKeyStr(const char *key, char *buffer, int remLength, char *outStr) {
 		i++;
 	}
 } //readKeyStr()
+
+void readKeyStr(const char *key, char *buffer, int remLength, char *outStr) {
+    readKeyStr(key, buffer, remLength, outStr, kDICOMStrLarge);
+    
+} //readKeyStr()
+
 
 int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 	//returns offset to ASCII Phoenix data
@@ -796,7 +802,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		char keyStrSeq[] = "tSequenceFileName";
 		readKeyStr(keyStrSeq, keyPos, csaLengthTrim, pulseSequenceDetails);
 		char keyStrWipMemBlock[] = "sWipMemBlock.tFree";
-		readKeyStr(keyStrWipMemBlock, keyPos, csaLengthTrim, wipMemBlock);
+        readKeyStr(keyStrWipMemBlock, keyPos, csaLengthTrim, wipMemBlock, kDICOMStrExtraLarge);
 		char keyStrPn[] = "tProtocolName";
 		readKeyStr(keyStrPn, keyPos, csaLengthTrim, protocolName);
 		char keyStrTE0[] = "alTE[0]";
@@ -1129,7 +1135,7 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 		return;
 #ifdef myReadAsciiCsa
 	float shimSetting[8];
-	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
 	TCsaAscii csaAscii;
 	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	if (strlen(protocolName) >= kDICOMStr)
@@ -1568,7 +1574,7 @@ tse3d: T2*/
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
 		float pf = 1.0f; //partial fourier
 		float shimSetting[8];
-		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
 		TCsaAscii csaAscii;
 		siemensCsaAscii(filename, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		if ((d.phaseEncodingLines < 1) && (csaAscii.phaseEncodingLines > 0))
@@ -1747,7 +1753,23 @@ tse3d: T2*/
 		// https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#common-metadata-fields-applicable-to-both-pcasl-and-pasl
 		if (((isPASL) || (isPCASL)) && (csaAscii.interp <= 0))
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.xyzMM[1], d.xyzMM[2], d.zThick);
-		//general properties
+		
+        // lund free waveform sequence
+        if (strstr(pulseSequenceDetails, "ep2d_diff_fwf") != 0)
+        {
+            for (int i = 0; i < kMaxWipFree; i++) {
+                printMessage("adFree[%i] = %g\n", i, csaAscii.adFree[i]);
+                if (!isnan(csaAscii.adFree[i]))
+                    fprintf(fp, "\t\"FWF_adFree[%i]\": %g,\n", i, csaAscii.adFree[i]);
+            }
+            
+            for (int i = 0; i < kMaxWipFree; i++) {
+                if (!isnan(csaAscii.alFree[i]))
+                    fprintf(fp, "\t\"FWF_alFree[%i]\": %g,\n", i, csaAscii.alFree[i]);
+            }
+        }
+        
+        //general properties
 		if ((csaAscii.partialFourier > 0) && ((d.modality == kMODALITY_MR))) { //check MR, e.g. do not report for Siemens PET
 			//https://github.com/ismrmrd/siemens_to_ismrmrd/blob/master/parameter_maps/IsmrmrdParameterMap_Siemens_EPI_FLASHREF.xsl
 			if (csaAscii.partialFourier == 1)
@@ -6461,7 +6483,7 @@ void rescueSliceTimingSiemens(struct TDICOMdata *d, int verbose, int nSL, const 
 		return;
 #ifdef myReadAsciiCsa
 	float shimSetting[8];
-	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
 	TCsaAscii csaAscii;
 	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 	int ucMode = csaAscii.ucMode;

@@ -64,6 +64,7 @@ static const int kMaxDTI4D = kMaxSlice2D; //issue460: maximum number of DTI dire
 
 #define kDICOMStr 66 //64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
 #define kDICOMStrLarge 256
+#define kDICOMStrExtraLarge 65536
 
 #define kMANUFACTURER_UNKNOWN  0
 #define kMANUFACTURER_SIEMENS  1
