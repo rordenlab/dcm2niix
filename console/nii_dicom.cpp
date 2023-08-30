@@ -895,6 +895,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isValid = false;
 	d.isXRay = false;
 	d.isMultiEcho = false;
+	d.numberOfTR = 1;
 	d.isSigned = false; //default is unsigned!
 	d.isFloat = false; //default is for integers, not single or double precision
 	d.isResampled = false; //assume data not resliced to remove gantry tilt problems
@@ -3980,6 +3981,13 @@ void dcmMultiFloatDouble(size_t lByteLength, unsigned char lBuffer[], size_t lnF
 		lFloats[i] = dcmFloatDouble((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
 } //dcmMultiFloatDouble()
 
+void dcmMultiFloatSingle(size_t lByteLength, unsigned char lBuffer[], size_t lnFloats, float *lFloats, bool isLittleEndian) {
+// dcmFloat kTRArray
+	size_t floatlen = lByteLength / lnFloats;
+	for (size_t i = 0; i < lnFloats; ++i)
+		lFloats[i] = dcmFloat((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
+} //dcmMultiFloatSingle()
+
 void set_orientation0018_9089(struct TVolumeDiffusion *ptvd, int lLength, unsigned char *inbuf, bool isLittleEndian) {
 	if (ptvd->_isPhilipsNonDirectional) {
 		for (int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
@@ -4117,7 +4125,7 @@ void _update_tvd(struct TVolumeDiffusion *ptvd) {
 struct TDCMdim { //DimensionIndexValues
 	uint32_t dimIdx[MAX_NUMBER_OF_DIMENSIONS];
 	uint32_t diskPos;
-	float triggerDelayTime, TE, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
+	float triggerDelayTime, TE, TR, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
 	float V[4];
 	bool isPhase;
 	bool isReal;
@@ -4355,7 +4363,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kTI 0x0018 + (0x0082 << 16) // Inversion time
 #define kNumberOfAverages 0x0018 + (0x0083 << 16) //DS
 #define kImagingFrequency 0x0018 + (0x0084 << 16) //DS
-//#define kEffectiveTE 0x0018+(0x9082 << 16 )
 #define kEchoNum 0x0018 + (0x0086 << 16) //IS
 #define kMagneticFieldStrength 0x0018 + (0x0087 << 16) //DS
 #define kZSpacing 0x0018 + (0x0088 << 16) //'DS' 'SpacingBetweenSlices'
@@ -4578,6 +4585,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 //#define kStackSliceNumber 0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define kNumberOfDynamicScans 0x2001 + (0x1081 << 16) //'2001' '1081' 'IS' 'NumberOfDynamicScans'
 //#define kTRPhilips 0x2005 + (0x1030 << 16) //(2005,1030) FL 30\150
+#define kTRArray 0x2005 + (0x1030 << 16) //FL Array, e.g. "15\75", see issue 743
 #define kMRfMRIStatusIndicationPhilips 0x2005 + (0x1063 << 16)
 #define kMRAcquisitionTypePhilips 0x2005 + (0x106F << 16) //SS
 #define kAngulationAP 0x2005 + (0x1071 << 16) //'2005' '1071' 'FL' 'MRStackAngulationAP'
@@ -4907,7 +4915,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 					for (int i = 0; i < ndim; i++)
 						dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
 				}
-				dcmDim[numDimensionIndexValues].TE = TE;
+				dcmDim[numDimensionIndexValues].TE = d.TE;
+				dcmDim[numDimensionIndexValues].TR = d.TR;
 				dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
 				dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
 				dcmDim[numDimensionIndexValues].isPhase = isPhase;
@@ -6648,6 +6657,18 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			dcmStr(lLength, &buffer[lPos], d.sequenceName);
 			break;
 		}
+		case kTRArray: {
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break;
+			const int kMax = 4;
+			//float v[kMax] = { 0.0 };
+			//v[0] = dcmFloat(4, &buffer[lPos], d.isLittleEndian);
+			int nFloat32 = (lLength / 4);
+			d.numberOfTR = nFloat32;
+			//if (nFloat32 > kMax)
+			//	nFloat32 = kMax;
+			//dcmMultiFloatSingle(nFloat32 * 4,  &buffer[lPos], nFloat32, v, d.isLittleEndian);
+		}
 		case kMRfMRIStatusIndicationPhilips: {//fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
@@ -7814,6 +7835,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				int slice = j + (i * d.xyzDim[3]);
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
 				dti4D->TE[i] = dcmDim[slice].TE;
+				dti4D->TR[i] = dcmDim[slice].TR;
 				dti4D->isPhase[i] = dcmDim[slice].isPhase;
 				dti4D->isReal[i] = dcmDim[slice].isReal;
 				dti4D->isImaginary[i] = dcmDim[slice].isImaginary;

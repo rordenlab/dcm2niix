@@ -3523,6 +3523,10 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 		sprintf(mrifsStruct.namePostFixes, "%s_c%s", mrifsStruct.namePostFixes, dcm.coilName);
 #endif
 	}
+	if ((isAddNamePostFixes) && (dcm.numberOfTR > 1) && (dcm.TR > 0)) {
+		snprintf(newstr, PATH_MAX, "_r%g", dcm.TR);
+		strcat(outname, newstr);
+	}
 // myMultiEchoFilenameSkipEcho1 https://github.com/rordenlab/dcm2niix/issues/237
 #ifdef myMultiEchoFilenameSkipEcho1
 	if ((isAddNamePostFixes) && (!isEchoReported) && (dcm.isMultiEcho)) { //multiple echoes saved as same series
@@ -6822,7 +6826,8 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		strcat(suffixBIDS,"_");
 		strcat(suffixBIDS,modalityBIDS);
 	}
-	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
+	//if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
+	if (isVerbose > 0)
 		printf("::autoBids:Philips pulseSeq:'%s' scanSeq:'%s' seqVariant:'%s'\n", 
 			d->pulseSequenceName, d->scanningSequence, d->sequenceVariant);
 	if (isDerived)
@@ -8393,6 +8398,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 				//dti4D->gradDynVol[i] = s;
 				//nVol ++;
 				dcmList[indx].TE = dti4D->TE[i];
+				dcmList[indx].TR = dti4D->TR[i];
 				//dcmList[indx].intenScale = dti4D->intenScale[i];
 				//dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
 				//dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
@@ -8654,6 +8660,8 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		return false;
 	}
 	if (!(isSameFloat(d1.TR, d2.TR))) {
+		if (d1.numberOfTR > 1)
+			return false;
 		if (!warnings->echoVaries)
 		printMessage("Slices not stacked: TR varies (%g, %g, issue 641). Use 'merge 2D slices' option to force stacking\n", d1.TR, d2.TR);
 		*isMultiEcho = true;
@@ -9337,7 +9345,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 						fillTDCMsort(dcmSort[nConvert], j, dcmList[j]);
 						nConvert++;
 					} else {
-					       if (isNonParallelSlices) {
+						if (isNonParallelSlices) {
 							dcmList[i].isNonParallelSlices = true;
 							dcmList[j].isNonParallelSlices = true;
 						}
@@ -9407,7 +9415,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 			}
 		} //for all images with same seriesUID as first one
 
-                // MGH set Opts.isForceStackSameSeries = 1 by default, isMultiEcho, isNonParallelSlices, isCoilVaries remain false for MGH default run after isSameSet
+		// MGH set Opts.isForceStackSameSeries = 1 by default, isMultiEcho, isNonParallelSlices, isCoilVaries remain false for MGH default run after isSameSet
 		if ((isNonParallelSlices) && (dcmList[ii].CSA.mosaicSlices > 1) && (nConvert > 0)) { //issue481: if ANY volumes are non-parallel, save ALL as 3D
 			printWarning("Saving mosaics with non-parallel slices as 3D (issue 481)\n");
 			for (int j = i; j < (int)nDcm; j++) {
