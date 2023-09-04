@@ -4051,15 +4051,19 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	strcat(command, opts.pigzname);
 	if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 		char newstr[256];
-		snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
+		//snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
+		snprintf(newstr, 256, "\"%s -n -f -%d '", blockSize, opts.gzLevel);
 		strcat(command, newstr);
 	} else {
 		char newstr[256];
-		snprintf(newstr, 256, "\"%s -n \"", blockSize);
+		//snprintf(newstr, 256, "\"%s -n \"", blockSize);
+		snprintf(newstr, 256, "\"%s -n '", blockSize);
 		strcat(command, newstr);
 	}
 	strcat(command, fname);
-	strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+	//issue749 use single quote to prevent expansion of $
+	strcat(command, "'"); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+	//strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
 #if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
 	DWORD exitCode;
 	PROCESS_INFORMATION ProcessInfo = {0};
@@ -5246,15 +5250,18 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		strcat(command, opts.pigzname);
 		if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 			char newstr[256];
-			snprintf(newstr, 256, "\" -n -f -%d > \"", opts.gzLevel);
+			snprintf(newstr, 256, "\" -n -f -%d > '", opts.gzLevel);
 			strcat(command, newstr);
 		} else
-			strcat(command, "\" -n -f > \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+			strcat(command, "\" -n -f > '"); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
 		strcat(command, fname);
-		strcat(command, ".gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+		//issue749 single not double quotes so $ character does not cause issues
+		strcat(command, ".gz'"); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+		//strcat(command, ".gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
 		//strcat(command, "x.gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
 		if (opts.isVerbose)
 			printMessage("Compress: %s\n", command);
+		printMessage("Compress: %s\n", command);
 		FILE *pigzPipe;
 		if ((pigzPipe = popen(command, "w")) == NULL) {
 			printError("Unable to open pigz pipe\n");
@@ -6559,7 +6566,6 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		//printf("magnitude%d\n", d->echoNum);
 	//} else if (( seqName,"_tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1"
 	} else if ((strstr(seqDetails, "\\trufi") != NULL) || (strstr(seqName, "fl3d1_ns") != NULL) || (strstr(seqName, "fl2d1") != NULL) || (strstr(seqName, "tfl2d1") != NULL)) { //localizers
-	//seqDetails borg
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
 	} else if ((strstr(seqName, "fl3d1r") != NULL) || (strstr(seqName, "fl2d1") != NULL) || (strstr(seqName, "tfl2d1") != NULL)) { //localizers
@@ -6584,7 +6590,6 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
 		if ((d->echoNum > 1) || (lContrasts > 1)) {
-			//borg: ETL is not a good way to detect echoes: 
 			strcpy(modalityBIDS, "MEGRE");
 			isMultiEcho = true;
 		}
