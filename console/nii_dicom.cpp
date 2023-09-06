@@ -6660,14 +6660,19 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kTRArray: {
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
+			//support multiple TRs: issue 743
 			const int kMax = 4;
-			//float v[kMax] = { 0.0 };
-			//v[0] = dcmFloat(4, &buffer[lPos], d.isLittleEndian);
+			float v[kMax] = { 0.0 };
 			int nFloat32 = (lLength / 4);
-			d.numberOfTR = nFloat32;
-			//if (nFloat32 > kMax)
-			//	nFloat32 = kMax;
-			//dcmMultiFloatSingle(nFloat32 * 4,  &buffer[lPos], nFloat32, v, d.isLittleEndian);
+			if (nFloat32 < 2) break;
+			if (nFloat32 > kMax)
+				nFloat32 = kMax;
+			dcmMultiFloatSingle(nFloat32 * 4,  &buffer[lPos], nFloat32, v, d.isLittleEndian);
+			d.numberOfTR = 0;
+			//count number of TRs > 0, see issue 749
+			for(int i = 0; i< nFloat32; i++)
+				if (v[i] > 0.0)
+					d.numberOfTR ++;
 		}
 		case kMRfMRIStatusIndicationPhilips: {//fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
