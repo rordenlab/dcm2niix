@@ -7921,6 +7921,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
 	//	uint_32t timeCRC = mz_crc32X((unsigned char*) &contentTime, sizeof(double));
 	//}
+	if (numberOfFramesICEdims < 2) //issue751: icedims[20] frames for EPI only
+		numberOfFramesICEdims = 0;
 	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] != numberOfFramesICEdims)) {
 		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
 		d.seriesNum += 1000;
@@ -8136,6 +8138,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.isValid = false;
 	}
 	//printf("%g\t%g\t%s\n", d.intenIntercept, d.intenScale, fname);
+	if ((d.isLocalizer) && (strstr(d.seriesDescription, "b1map"))) //issue751 b1map uses same base as scout
+			d.isLocalizer = false;
 	return d;
 } // readDICOMx()
 

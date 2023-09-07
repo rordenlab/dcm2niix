@@ -6442,12 +6442,10 @@ void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename, int isVer
 #endif
 } //bidsGE
 
-void bidsStr() { //
-
-}
-
 void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const char *filename) {
 	char seqDetails[kDICOMStrLarge] = "";
+	char acqStr[kDICOMStrLarge] = "";
+	char preAcqStr[kDICOMStrLarge] = "";
 	float inv1 = NAN;
 	float inv2 = NAN;
 	bool isDualTI = false;
@@ -6499,6 +6497,15 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	if (((d->xyzDim[3] < 2) && (nConvert < 1)) || (d->isLocalizer)) { //need nConvert or nifti header
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
+	} else if (strstr(seqDetails,"b1map")) {
+		//issue 751 nb both T1 and b1map can use tfl base
+		//https://bids-specification.readthedocs.io/en/stable/appendices/qmri.html#tb1tfl-and-tb1rfm-specific-notes
+		strcpy(dataTypeBIDS, "fmap");
+		strcpy(modalityBIDS, "TB1TFL");
+		if ((strstr(d->imageType, "FLIP ANGLE MAP")) || (strstr(d->imageType, "FLIP ANGLE MAP")))
+			strcpy(preAcqStr, "famp");
+		else
+			strcpy(preAcqStr, "anat");
 	} else if ((strstr(seqDetails, "tfl") != NULL) || (strstr(seqDetails, "mp2rage") != NULL) || (strstr(seqDetails, "wip925") != NULL)) { //prog_mprage
 		strcpy(dataTypeBIDS, "anat");
 		if (isDualTI)
@@ -6615,8 +6622,8 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcpy(modalityBIDS, "epi");
 		isDirLabel = true;
 	}
-	char acqStr[kDICOMStrLarge] = "";
-	strcat(acqStr, "_acq-");
+	strcpy(acqStr, "_acq-");
+	strcat(acqStr, preAcqStr);
 	int len = strlen(seqName);
 	if (len > 0) {
 		for (int i = 0; i < len; i++) {
