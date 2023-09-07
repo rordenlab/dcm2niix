@@ -6489,7 +6489,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcpy(seqName, d->pulseSequenceName);
 	if (strlen(seqDetails) < 2)
 		strcpy(seqDetails, seqName);
-	if (strstr(d->imageType, "DERIVED") != NULL) {
+	if (strstr(d->imageType, "DERIVED")) {
 		isDerived = true; //to do: respond to derived images
 	}
 	if (d->modality != kMODALITY_MR)
@@ -6514,13 +6514,17 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(modalityBIDS, "T1w");
 			//bork inv2 = NAN;
 		}
-		if (strstr(d->imageType, "T1 MAP") != NULL)
+		if (strstr(d->imageType, "T1 MAP") != NULL) {
 			strcpy(modalityBIDS, "T1map");
+			isDualTI = false; //issue 750 derived from two images
+		}
 		if (strstr(d->imageType, "_UNI") != NULL) {
+			isDualTI = false; //issue 750 derived from two images
 			strcpy(modalityBIDS, "UNIT1");
 			if (strstr(d->imageComments, "DENOISED IMAGE") != NULL)
 				strcat(recBIDS, "denoise");
 		}
+		isDerived = false; //issue750 Siemens E11 considers UNIT1 derived, but BIDS does not
 	} else if ((d->CSA.numDti > 0) || (strstr(seqDetails, "_diff") != NULL) || (strstr(seqDetails, "resolve") != NULL) || (strstr(seqDetails, "PtkSmsVB13ADwDualSpinEchoEpi") != NULL) || (strstr(seqDetails, "ep2d_stejskal_386") != NULL)) { //prog_diff
 		strcpy(dataTypeBIDS, "dwi");
 		strcpy(modalityBIDS, "dwi");
