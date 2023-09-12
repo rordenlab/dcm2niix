@@ -263,7 +263,7 @@ Note that [many of the fields listed by BIDS](https://bids-specification.readthe
 |---------------------------------|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
 | ArterialSpinLabelingType        |                    | `PASL` or `PCASL`                                                                                                                                                                              | B          |
 | LabelOffset                     |                    | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | D          |
-| PostLabelDelay                  | s                  | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org), [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                          | D          |
+| PostLabelingDelay               | s                  | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org), [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                          | B          |
 | PostInversionDelay              | s                  | 2D [FAIREST](https://pubmed.ncbi.nlm.nih.gov/11746944/) (`ep2d_fairest`)                                                                                                                       | D          |
 | NumRFBlocks                     |                    | 2D pCASL [ep2d_pcasl](http://www.loft-lab.org)                                                                                                                                                 | D          |
 | RFGap                           |                    | 2,3D pCASL [ep2d_pcasl, tgse_pcasl](http://www.loft-lab.org)                                                                                                                                   | D          |
@@ -334,7 +334,7 @@ Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tre
 | ReceiveCoilActiveElements    |      | DICOM tag 0021,114F        | B          |
 | BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153        | D          |
 | ScanningSequence             |      | DICOM tag 0021,105a        | D          |
-| PostLabelDelay               | s    | DICOM tag 0018,9258        | D          |
+| PostLabelingDelay            | s    | DICOM tag 0018,9258        | B          |
 | NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
 | PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
 | SpoilingState                |      | 0021,105B                  | B          |
@@ -349,3 +349,7 @@ Fields specific to United Imaging Healthcare systems (e.g. uMR 770).
 |--------------------------------|------|--------------------------|------------|
 | BandwidthPerPixelPhaseEncode   | Hz   | DICOM tag 0019,1028      | B          |
 | ParallelReductionFactorInPlane |      | DICOM tag 0065,100D      | B          |
+
+### Notes
+
+ - Prior to v1.0.20230411, dcm2niix created the internal tag `PostLabelDelay`, subsequent versions use the newly introduced BIDS tag `PostLabelingDelay`

@@ -1649,12 +1649,16 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", csaAscii.ulLabelingDuration * (1.0 / 1000000.0)); //usec->sec
 			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.sPostLabelingDelay * (1.0 / 1000000.0)); //usec -> sec
 		}
+		//ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
 		if ((strstr(pulseSequenceDetails, "ep2d_pcasl")) || (strstr(pulseSequenceDetails, "ep2d_pcasl_UI_PHC"))) {
 			isPCASL = true;
 			repetitionTimePreparation = d.TR;
 			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
-			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
-			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
+			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
+			float num_RF_Block = csaAscii.adFree[3];
+			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
+			// Sep 5, 2023, at 7:56 PM, Danny JJ Wang the labeling duration is (0.92*20*Num_RF_Block) ms
+			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", (0.92 *20.0 *num_RF_Block)/1000.0); //in seconds
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);
 			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", csaAscii.adFree[11]);				// percent
@@ -1666,6 +1670,10 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);				// mT/m
 			json_FloatNotNan(fp, "\t\"T1\": %g,\n", csaAscii.adFree[12] * (1.0 / 1000000.0));	//usec -> sec
+			float num_RF_Block = csaAscii.adFree[3];
+			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
+			// Sep 5, 2023, at 7:56 PM, Danny JJ Wang the labeling duration is (0.92*20*Num_RF_Block) ms
+			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", (0.92 *20.0 *num_RF_Block)/1000.0); //in seconds
 		}
 		//ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails, "ep2d_pasl")) {
@@ -1684,7 +1692,7 @@ tse3d: T2*/
 		if (strstr(pulseSequenceDetails, "ep2d_fairest")) {
 			isPASL = true;
 			json_FloatNotNan(fp, "\t\"PostInversionDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000.0)); //usec->sec
-			json_FloatNotNan(fp, "\t\"PostLabelDelay\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000.0)); //usec -> sec
+			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000.0)); //usec -> sec
 		}
 		//ASL specific tags - Oxford (Thomas OKell)
 		bool isOxfordASL = false;
@@ -1917,7 +1925,7 @@ tse3d: T2*/
 	*/
 	//generic public ASL tags
 	if (d.postLabelDelay > 0)
-		json_Float(fp, "\t\"PostLabelDelay\": %g,\n", float(d.postLabelDelay) / 1000.0);
+		json_Float(fp, "\t\"PostLabelingDelay\": %g,\n", float(d.postLabelDelay) / 1000.0);
 	//ASL BIDS tags
 	if ((d.aslFlags & kASL_FLAG_GE_CONTINUOUS) || (d.aslFlags & kASL_FLAG_GE_3DCASL))
 		fprintf(fp, "\t\"ArterialSpinLabelingType\": \"CASL\",\n");
@@ -1927,7 +1935,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"ArterialSpinLabelingType\": \"PASL\",\n");
 	if (d.durationLabelPulseGE > 0) {
 		json_Float(fp, "\t\"LabelingDuration\": %g,\n", d.durationLabelPulseGE / 1000.0);
-		json_Float(fp, "\t\"PostLabelDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime -> Post-label delay
+		json_Float(fp, "\t\"PostLabelingDelay\": %g,\n", d.TI / 1000.0); //For GE ASL: InversionTime -> Post-label delay
 		json_Float(fp, "\t\"NumberOfPointsPerArm\": %g,\n", d.numberOfPointsPerArm);
 		json_Float(fp, "\t\"NumberOfArms\": %g,\n", d.numberOfArms);
 	}
@@ -6482,6 +6490,8 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	bool isDerived = d->isDerived; //report phase encoding direction
 	bool isDirLabel = false;
 	bool isPart = false;
+	if (d->isHasPhase)
+		isPart = true;
 	bool isAddSeriesToRun = true; //except phasemap, where phasediff and magnitude have different series numbers but must share acq 
 	char seqName[kDICOMStrLarge];
 	strcpy(seqName, d->sequenceName);
@@ -6569,6 +6579,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	} else if ((strstr(seqDetails, "gre_field_mapping") != NULL)) { //prog_fmap
 		isReportEcho = false; //echo encoded in "_magnitude"
 		isAddSeriesToRun = false;
+		isPart = false;
 		strcpy(dataTypeBIDS, "fmap");
 		if (d->isHasPhase)
 			strcpy(modalityBIDS, "phasediff");
@@ -6608,18 +6619,17 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	} else if ((strstr(seqDetails, "AALScout") != NULL) || (strstr(seqDetails, "haste") != NULL)) { //localizer: unused
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
-	} else if ((strstr(seqDetails, "_bold") != NULL) || (strstr(seqDetails, "pace") != NULL)){ //prog_bold
+	} else if ((strstr(seqDetails, "_bold")) || (strstr(seqDetails, "pace"))
+		|| (strstr(d->imageType, "FMRI")) || (strstr(seqDetails, "ep2d_fid"))) { //prog_bold
 		//n.b. "Space" is not "pace"
 		strcpy(dataTypeBIDS, "func");
 		strcpy(modalityBIDS, "bold");
 		isDirLabel = true;
+		char* p = strstr(d->protocolName, "func_");
+		if (p == d->protocolName)
+		//todo issue753 infer task from d->protocolName
 		if (strstr(d->seriesDescription, "_SBRef") != NULL)
 			strcpy(modalityBIDS, "sbref");
-	} else if ((strstr(d->imageType, "FMRI") != NULL) || (strstr(seqDetails, "ep2d_fid") != NULL)) {
-		//Hail mary: one Skyra XA30 ADNI rsfMRI_LR 20230109 has no CSA
-		strcpy(dataTypeBIDS, "func");
-		strcpy(modalityBIDS, "bold");
-		isDirLabel = true;
 	} else if (strstr(d->sequenceName, "*epse2d") != NULL) {
 		//pepolar?
 		strcpy(dataTypeBIDS, "fmap");
@@ -6848,7 +6858,7 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 			d->pulseSequenceName, d->scanningSequence, d->sequenceVariant);
 	if (isDerived)
 		strcpy(dataTypeBIDS, "derived");
-} //setBidsPhilips
+} //setBidsPhilips()
 
 void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *filename) {
 	char seqName[kDICOMStrLarge] = "";
