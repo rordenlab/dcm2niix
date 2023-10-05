@@ -6,7 +6,7 @@ dcm2niix version v1.0.20230731 and later will insert the field `BidsGuess` into 
 
 ## Compiling the development branch
 
-The BidsGuess feature is currently only available in the development branch, so you will need to comile and run this version (v1.0.20230731 and later).
+The BidsGuess feature is currently only available in the development branch, so you will need to compile and run this version (v1.0.20230731 and later).
 
 ```
 git clone --branch development https://github.com/rordenlab/dcm2niix.git

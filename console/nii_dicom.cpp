@@ -7262,7 +7262,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				isIconImageSequence = true;
 				if (sqDepthIcon < 0)
 					sqDepthIcon = sqDepth;
-				//geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not re-use pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
+				//geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not reuse pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
 			}
 			break;
 		case kStudyComments: {
