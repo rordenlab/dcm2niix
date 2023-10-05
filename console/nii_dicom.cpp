@@ -2608,7 +2608,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	y.v[2] = (float)d.xyzDim[3] - 1.0f;
 	y.v[3] = 1.0f;
 	y = nifti_vect44mat44_mul(y, R44);
-	int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
+	int iOri = 2; //for axial, slices are 3rd dimension (indexed from 0) (k)
 	if (d.sliceOrient == kSliceOrientSag)
 		iOri = 0; //for sagittal, slices are 1st dimension (i)
 	if (d.sliceOrient == kSliceOrientCor)
