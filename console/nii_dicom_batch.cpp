@@ -2094,16 +2094,20 @@ tse3d: T2*/
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
+/*
+following logic now occurs earlier to aid bids guess
 	int phPos = d.CSA.phaseEncodingDirectionPositive;
 	//next two conditionals updated: make GE match Siemens
 	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
 		phPos = 1;
 	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
 		phPos = 0;
+*/
 	//if ((phPos >= 0) && (d.phaseEncodingRC == 'R') && (d.manufacturer == kMANUFACTURER_UIH)) phPos = 1 - phPos; //issue410
 	bool isSkipPhaseEncodingAxis = d.is3DAcq;
 	if (d.echoTrainLength > 1)
 		isSkipPhaseEncodingAxis = false; //issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
+	int phPos = d.CSA.phaseEncodingDirectionPositive;
 	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
 		//when phase encoding axis is known but we do not know phase encoding polarity
 		// https://github.com/rordenlab/dcm2niix/issues/163
@@ -6661,15 +6665,16 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	}
 	//add dir
 	//nb for func dir comes before echo
+	int phPos = d->CSA.phaseEncodingDirectionPositive;
 	if (isDirLabel) {
 		char dirLabel[kDICOMStrLarge]  = "_dir-";
 		if (d->phaseEncodingRC == 'C') {
-			if (d->CSA.phaseEncodingDirectionPositive)
+			if (phPos)
 				strcat(dirLabel, "AP");
 			else
 				strcat(dirLabel, "PA");
 		} else {
-			if (d->CSA.phaseEncodingDirectionPositive)
+			if (phPos)
 				strcat(dirLabel, "RL");
 			else
 				strcat(dirLabel, "LR");
@@ -6783,11 +6788,17 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		else
 			strcpy(modalityBIDS, "magnitude");
 	} else if ((strstr(seqName, "SP") != NULL) && (strstr(d->scanningSequence, "GR") != NULL)) {
+		//issue 753 need to distinguish different types of phase map see Levitas example B0_DTI_MED_RES
+		// https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#case-3-direct-field-mapping
+		printWarning("Unable to distinguish Philips fieldmaps: phase difference, two phase/magnitude, direct fieldmapping.");
 		isReportEcho = false;
 		strcpy(dataTypeBIDS, "fmap");
-		strcpy(modalityBIDS, "phasediff");
+		if (d->isHasPhase)
+			strcpy(modalityBIDS, "phasediff");
+		else if (d->echoTrainLength < 2) 
+			snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "magnitude%d", d->echoNum);
+
 		if (d->echoTrainLength > 1) {
-			isReportEcho = false;
 			if (d->isHasPhase)
 				snprintf(modalityBIDS, kDICOMStrLarge - strlen(modalityBIDS), "phase%d", d->echoNum);
 			else if (d->isHasImaginary)
@@ -6853,7 +6864,7 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		strcat(suffixBIDS,modalityBIDS);
 	}
 	//if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
-	if (isVerbose > 0)
+	//if (isVerbose > 0)
 		printf("::autoBids:Philips pulseSeq:'%s' scanSeq:'%s' seqVariant:'%s'\n", 
 			d->pulseSequenceName, d->scanningSequence, d->sequenceVariant);
 	if (isDerived)

@@ -4340,6 +4340,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kReferencedImageEvidenceSQ (uint32_t)0x0008 + (0x9092 << 16)
 #define kComplexImageComponent (uint32_t)0x0008 + (0x9208 << 16) //'0008' '9208' 'CS' 'ComplexImageComponent'
 #define kAcquisitionContrast (uint32_t)0x0008 + (0x9209 << 16) //'0008' '9209' 'CS' 'AcquisitionContrast'
+#define kIconSQ 0x0009 + (0x1110 << 16)
 #define kPatientName 0x0010 + (0x0010 << 16)
 #define kPatientID 0x0010 + (0x0020 << 16)
 #define kAccessionNumber 0x0008 + (0x0050 << 16)
@@ -5557,6 +5558,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (strlen(d.studyTime) < 2)
 				dcmStr(lLength, &buffer[lPos], d.studyTime);
 			break;
+		case kIconSQ: {//issue760 GEIIS icon strikes again
+			if ((vr[0] != 'S') || (vr[1] != 'Q') || (lLength != 8)) break; //only risk kludge for explicit VR with length
+			isIconImageSequence = true;
+			if (sqDepthIcon < 0)
+				sqDepthIcon = sqDepth;
+			break;
+		}
 		case kPatientName:
 			dcmStr(lLength, &buffer[lPos], d.patientName);
 			break;
@@ -7711,7 +7719,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		qsort(objects, numberOfFrames, sizeof(struct fidx), fcmp);
 		numDimensionIndexValues = numberOfFrames;
 		for (int i = 0; i < numberOfFrames; i++) {
-			//	printf("%d > %g\n", objects[i].index, objects[i].value);
+			//printf("%d > %g\n", objects[i].index, objects[i].value);
 			dcmDim[objects[i].index].dimIdx[0] = i;
 		}
 		for (int i = 0; i < 4; i++) {
@@ -7830,7 +7838,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0])
 				d.isScaleVariesEnh = true;
 		}
-		if (!(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		//Revert Bruker change as new Bruker data uses DimensionIndexValues 0020,9157 for diffusion vectors
+		// https://github.com/rordenlab/dcm2niix/commit/8207877de984dab59e0374906c7ad212756f85a6#diff-120bb215d28dcbddeca8ea56dbb97e237501901ac2dfa1fbe4182282a8dd2b75
+		//if (!(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		if ((d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;
@@ -8121,6 +8132,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.rawDataRunNumber = philMRImageDiffVolumeNumber;
 		d.phaseNumber  = 0; 
 	}
+	// Phase encoding polarity
+	//next conditionals updated: make GE match Siemens
+	// it also rescues Siemens XA20 images without CSA header but with 0021,111C
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+		d.CSA.phaseEncodingDirectionPositive = 1;
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
+		d.CSA.phaseEncodingDirectionPositive = 0;
 	//issue 668: several SAR levels for different regions (IEC_HEAD, IEC_LOCAL, etc)
 	d.SAR = fmax(maxSAR, d.SAR);
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
