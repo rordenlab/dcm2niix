@@ -684,6 +684,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 } //phoenixOffsetCSASeriesHeader()
 
 #define kMaxWipFree 64
+#define freeDiffusionMaxN 256
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
 	int lInvContrasts, lContrasts ,phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
@@ -692,6 +693,8 @@ typedef struct {
 	float adFree[kMaxWipFree];
 	float alTI[kMaxWipFree];
 	float sPostLabelingDelay, ulLabelingDuration, dAveragesDouble, dThickness, ulShape, sPositionDTra, sNormalDTra;
+    int freeDiffusionN;
+    vec3 freeDiffusionVec[freeDiffusionMaxN];
 } TCsaAscii;
 
 void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, int csaLength, float *shimSetting, char *coilID, char *consistencyInfo, char *coilElements, char *pulseSequenceDetails, char *fmriExternalInfo, char *protocolName, char *wipMemBlock) {
@@ -721,7 +724,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->refLinesPE = 0;
 	csaAscii->combineMode = 0;
 	csaAscii->patMode = 0;
-	csaAscii->ucMTC = 0;
+    csaAscii->ucMTC = 0;
+    csaAscii->freeDiffusionN = 0;
 	for (int i = 0; i < 8; i++)
 		shimSetting[i] = 0.0;
 	strcpy(coilID, "");
@@ -943,6 +947,30 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		shimSetting[6] = readKeyFloat(keyStrSh6, keyPos, csaLengthTrim);
 		char keyStrSh7[] = "sGRADSPEC.alShimCurrent[4]";
 		shimSetting[7] = readKeyFloat(keyStrSh7, keyPos, csaLengthTrim);
+        
+        // pull out the directions in the DVI
+        char keyStrDVIn[] = "sDiffusion.sFreeDiffusionData.lDiffDirections";
+        int nDiffDir = readKey(keyStrDVIn, keyPos, csaLengthTrim);
+        csaAscii->freeDiffusionN = min(nDiffDir, freeDiffusionMaxN);
+        
+        printMessage("Free diffusion: %i\n", csaAscii->freeDiffusionN);
+        
+        for (int k = 0; k < csaAscii->freeDiffusionN; k++) {
+            char txt[128];
+            
+            snprintf(txt, 128, "sDiffusion.sFreeDiffusionData.asDiffDirVector[%i].dSag", k);
+            float x = readKeyFloat(txt, keyPos, csaLengthTrim);
+            
+            snprintf(txt, 128, "sDiffusion.sFreeDiffusionData.asDiffDirVector[%i].dCor", k);
+            float y = readKeyFloat(txt, keyPos, csaLengthTrim);
+
+            snprintf(txt, 128, "sDiffusion.sFreeDiffusionData.asDiffDirVector[%i].dTra", k);
+            float z = readKeyFloat(txt, keyPos, csaLengthTrim);
+
+            csaAscii->freeDiffusionVec[k].v[0] = x;
+            csaAscii->freeDiffusionVec[k].v[1] = y;
+            csaAscii->freeDiffusionVec[k].v[2] = z;
+        }
 	}
 	free(buffer);
 	return;
@@ -1791,18 +1819,35 @@ tse3d: T2*/
 		if (((isPASL) || (isPCASL)) && (csaAscii.interp <= 0))
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.xyzMM[1], d.xyzMM[2], d.zThick);
 		
-        // lund free waveform sequence
+        // lund free waveform sequence, see https://github.com/filip-szczepankiewicz/fwf_sequence_tools
         if (strstr(pulseSequenceDetails, "ep2d_diff_fwf") != 0)
         {
             for (int i = 0; i < kMaxWipFree; i++) {
                 if (!isnan(csaAscii.adFree[i]))
                     fprintf(fp, "\t\"FWF_adFree[%i]\": %g,\n", i, csaAscii.adFree[i]);
             }
-
+            
             for (int i = 0; i < kMaxWipFree; i++) {
                 if (!isnan(csaAscii.alFree[i]))
                     fprintf(fp, "\t\"FWF_alFree[%i]\": %g,\n", i, csaAscii.alFree[i]);
             }
+            
+            for (int d = 0; d < 3; d++)
+            {
+                char str [4096];
+                strcpy(str, "");
+                for (int i = 0; i < csaAscii.freeDiffusionN;i++) {
+                    char tmp[10];
+                    snprintf(tmp, 10, "%1.4f", csaAscii.freeDiffusionVec[i].v[d]);
+                    strcat(str, tmp);
+                    if ( (i+1) < csaAscii.freeDiffusionN)
+                        strcat(str, ", ");
+                }
+                char dchar = 'x' + d;
+                fprintf(fp, "\t\"FWF_DVS%c\": [ %s ],\n", dchar, str);
+            }
+
+            
         }
         
         //general properties
@@ -2590,6 +2635,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	fprintf(fp, "\n");
 	fclose(fp);
 #endif
+
 	dcmList[indx0].CSA.numDti = numDti; //warning structure not changed outside scope!
 	geCorrectBvecs(&dcmList[indx0], sliceDir, vx, opts.isVerbose);
 	siemensPhilipsCorrectBvecs(&dcmList[indx0], sliceDir, vx, opts.isVerbose);
