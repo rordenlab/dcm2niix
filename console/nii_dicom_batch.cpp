@@ -1820,7 +1820,7 @@ tse3d: T2*/
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.xyzMM[1], d.xyzMM[2], d.zThick);
 		
         // lund free waveform sequence, see https://github.com/filip-szczepankiewicz/fwf_sequence_tools
-        if (strstr(pulseSequenceDetails, "ep2d_diff_fwf") != 0)
+        if ( (strstr(pulseSequenceDetails, "ep2d_diff_fwf") != 0) || (strstr(pulseSequenceDetails, "ep2d_diff_sms_fwf_simple") != 0))
         {
             for (int i = 0; i < kMaxWipFree; i++) {
                 if (!isnan(csaAscii.adFree[i]))
