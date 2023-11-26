@@ -1333,6 +1333,14 @@ tse3d: T2*/
 		json_Float(fp, "\t\"PatientWeight\": %g,\n", d.patientWeight);
 		//d.patientBirthDate //convert from DICOM YYYYMMDD to JSON
 		//d.patientAge //4-digit Age String: nnnD, nnnW, nnnM, nnnY;
+		//issue 763 following BIDS standard, unit for Age is YEARS
+		int ageLen = strlen(d.patientAge);
+		if ((ageLen > 1) && (d.patientAge[ageLen-1] == 'Y')) {
+			char ageStr[kDICOMStr];
+			strcpy(ageStr, d.patientAge);
+			ageStr[ageLen -1] = '\0';
+			fprintf(fp, "\t\"PatientAge\": %d,\n", atoi(ageStr));
+		}
 	}
 	if (d.isQuadruped)
 		json_Bool(fp, "\t\"Quadruped\": %s,\n", true); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
@@ -2330,8 +2338,13 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		allB0 = false;
 	if (numDti > 1)
 		allB0 = false;
-	if (nConvert > 1)
-		allB0 = false;
+	if (nConvert > 1) {
+		for (int i = 0; i < nConvert; i++) { //for each image
+			float b0 = dcmList[dcmSort[i].indx].CSA.dtiV[0];
+			if (!isSameFloat(b0, 0.0))
+				allB0 = false;
+		}
+	}
 	if ((numDti == 1) && (dti4D->S[0].V[0] > 50.0))
 		allB0 = false;
 	if (allB0) {
@@ -3364,6 +3377,16 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				strcat(outname, dcm.accessionNumber);
 			if (f == 'H') {
 				printWarning("hazardous (%%h) bids naming experimental\n");
+				char bidsSubject[kOptsStr] = "sub-";
+				if (strlen(opts.bidsSubject) <= 0)
+					strcat(bidsSubject, "1");
+				else
+					strcat(bidsSubject, opts.bidsSubject);
+				char bidsSession[kOptsStr] = "ses-";
+				if (strlen(opts.bidsSession) <= 0)
+					strcat(bidsSession, "1");
+				else
+					strcat(bidsSession, opts.bidsSession);
 				createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL));
 				if (strlen(dcm.CSA.bidsDataType) < 1) {
 					strcat(outname, "Unknown");
@@ -3376,13 +3399,22 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					
 				} else {
 					isAddNamePostFixes = false;
-					strcat(outname, "sub-1");
+					strcat(outname, bidsSubject);
+					strcat(outname, pathSep);
+					strcat(outname, bidsSession);
 					strcat(outname, pathSep);
 					strcat(outname, dcm.CSA.bidsDataType);
 					strcat(outname, pathSep);
-					strcat(outname, "sub-1");
-					if (strstr(dcm.CSA.bidsDataType, "func") != NULL)
-						strcat(outname, "_task-rest");
+					strcat(outname, bidsSubject);
+					strcat(outname, "_");
+					strcat(outname, bidsSession);
+					if (strstr(dcm.CSA.bidsDataType, "func") != NULL) {
+						strcat(outname, "_task-");
+						if (strlen(dcm.CSA.bidsTask) > 0)
+							strcat(outname, dcm.CSA.bidsTask);
+						else
+							strcat(outname, "rest");
+					}
 					strcat(outname, dcm.CSA.bidsEntitySuffix);
 				}
 			}
@@ -3484,6 +3516,16 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "UIH");
 				else
 					strcat(outname, "NA");
+			}
+			if (f == 'W') {//Weird includes personal data in filename patientWeight
+				snprintf(newstr, PATH_MAX, "dob%sg%cwt%d", dcm.patientBirthDate, dcm.patientSex, (int)round(dcm.patientWeight));
+				if (strstr(dcm.institutionName, "Richland"))
+					strcat(newstr, "R");
+				strcat(outname, newstr);
+			}
+			if ((f == 'Y') && (dcm.rawDataRunNumber >= 0)) {
+				snprintf(newstr, PATH_MAX, "%d", dcm.rawDataRunNumber); //GE (0019,10A2) else (0020,0100)
+				strcat(outname, newstr);
 			}
 			if (f == 'X')
 				strcat(outname, dcm.studyID);
@@ -3629,6 +3671,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	for (size_t pos = 0; pos < strlen(outname); pos++)
 		if ((outname[pos] == '\\') || (outname[pos] == '/') || (outname[pos] == ' ') || (outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':') || (outname[pos] == ';') || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
 			//|| (outname[pos] == '^') issue398
+			|| (outname[pos] == '$') //issue749
 			|| (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
 			outname[pos] = '_';
 #else
@@ -4063,19 +4106,19 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	strcat(command, opts.pigzname);
 	if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 		char newstr[256];
-		//snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
-		snprintf(newstr, 256, "\"%s -n -f -%d '", blockSize, opts.gzLevel);
+		snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
+		//749 snprintf(newstr, 256, "\"%s -n -f -%d '", blockSize, opts.gzLevel);
 		strcat(command, newstr);
 	} else {
 		char newstr[256];
-		//snprintf(newstr, 256, "\"%s -n \"", blockSize);
-		snprintf(newstr, 256, "\"%s -n '", blockSize);
+		snprintf(newstr, 256, "\"%s -n \"", blockSize);
+		//749 snprintf(newstr, 256, "\"%s -n '", blockSize);
 		strcat(command, newstr);
 	}
 	strcat(command, fname);
 	//issue749 use single quote to prevent expansion of $
-	strcat(command, "'"); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
-	//strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+	//749 strcat(command, "'"); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+	strcat(command, "\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
 #if defined(_WIN64) || defined(_WIN32) //using CreateProcess instead of system to run in background (avoids screen flicker)
 	DWORD exitCode;
 	PROCESS_INFORMATION ProcessInfo = {0};
@@ -5262,18 +5305,18 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		strcat(command, opts.pigzname);
 		if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 			char newstr[256];
-			snprintf(newstr, 256, "\" -n -f -%d > '", opts.gzLevel);
+			snprintf(newstr, 256, "\" -n -f -%d > \"", opts.gzLevel);
+			//749 snprintf(newstr, 256, "\" -n -f -%d > '", opts.gzLevel);
 			strcat(command, newstr);
 		} else
-			strcat(command, "\" -n -f > '"); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+			strcat(command, "\" -n -f > \""); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+			//749 strcat(command, "\" -n -f > '"); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
 		strcat(command, fname);
 		//issue749 single not double quotes so $ character does not cause issues
-		strcat(command, ".gz'"); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
-		//strcat(command, ".gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
-		//strcat(command, "x.gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+		//749 strcat(command, ".gz'"); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
+		strcat(command, ".gz\""); //add quotes in case spaces in filename 'pigz "c:\my dir\img.nii"'
 		if (opts.isVerbose)
 			printMessage("Compress: %s\n", command);
-		printMessage("Compress: %s\n", command);
 		FILE *pigzPipe;
 		if ((pigzPipe = popen(command, "w")) == NULL) {
 			printError("Unable to open pigz pipe\n");
@@ -6546,7 +6589,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(modalityBIDS, "sbref");
 		//if seriesDesc trace", "fa", "adc"  isDerived = true;
 		isDirLabel = true;
-	} else if ((strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { //prog_asl
+	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { //prog_asl
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 		if (strstr(d->seriesDescription, "_m0") != NULL)
@@ -6713,6 +6756,28 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			seqDetails, d->pulseSequenceName, d->sequenceName);
 	if (isDerived)
 		strcpy(dataTypeBIDS, "derived");
+	//bork - ARC data follows
+	/*
+	if (strstr(dataTypeBIDS, "dwi")) {
+		if (strstr(d->protocolName, "12 dirs"))
+			strcpy(dataTypeBIDS, "discard");
+	}
+	if (strstr(dataTypeBIDS, "fmap"))
+		strcpy(dataTypeBIDS, "discard");
+	if (strstr(dataTypeBIDS, "perf"))
+		strcpy(dataTypeBIDS, "discard");
+	if (strstr(dataTypeBIDS, "func")) {
+		if (d->TR > 9999) {
+			if (nConvert < 60)
+				strcpy(dataTypeBIDS, "discard");
+			strcpy(d->CSA.bidsTask, "naming40");
+		} else {
+			if (!strcasestr(d->protocolName, "REST"))
+				strcpy(dataTypeBIDS, "discard");
+		}
+		if (nConvert < 10)
+			strcpy(dataTypeBIDS, "discard");
+	}*/
 } // setBidsSiemens()
 
 void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
@@ -7050,16 +7115,16 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "derived");
 } // setBidsGE()
 
-void setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVerbose) {
+bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVerbose) {
 	if (d->modality == kMODALITY_PT) {
 		strcpy(d->CSA.bidsDataType, "PET");
 		strcpy(d->CSA.bidsEntitySuffix, "PET");
-		return;
+		return true;
 	}
 	if (d->modality == kMODALITY_CT) {
 		strcpy(d->CSA.bidsDataType, "CT");
 		strcpy(d->CSA.bidsEntitySuffix, "CT");
-		return;
+		return true;
 	}
 	if (d->manufacturer == kMANUFACTURER_SIEMENS)
 		setBidsSiemens(d, nConvert, isVerbose, filename);
@@ -7067,6 +7132,7 @@ void setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVer
 		setBidsPhilips(d, nConvert, isVerbose);
 	if (d->manufacturer == kMANUFACTURER_GE)
 		setBidsGE(d, nConvert, isVerbose, filename);
+	return ((!strstr(d->CSA.bidsDataType, "discard")) && (!strstr(d->CSA.bidsDataType, "derived")));
 	//printf("%s\\%s\n", d->CSA.bidsDataType, d->CSA.bidsEntitySuffix);
 }
 
@@ -7974,7 +8040,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		if (hdr0.dim[4] > 1) //for 4d datasets, last volume should be acquired before first
 			checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert - 1].indx]);
 	}
-	setBids(&dcmList[indx0], nameList->str[dcmSort[0].indx], nConvert, opts.isVerbose);
+	bool ok = setBids(&dcmList[indx0], nameList->str[dcmSort[0].indx], nConvert, opts.isVerbose);
+	
+	if (opts.isIgnoreDerivedAnd2D && !ok) {
+		printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
+		return EXIT_SUCCESS;
+	}
 	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert, opts);
 #ifdef myReportSliceFilenames
 	if (sliceDir < 0) {
@@ -9850,9 +9921,14 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 #endif
 #endif
 	//printMessage("%d %s\n",opts->compressFlag, opts->compressname);
-	strcpy(opts->indir, "");
 	strcpy(opts->outdir, "");
+	strcpy(opts->indir, "");
+	strcpy(opts->pigzname, "");
+	strcpy(opts->optsname, "");
+	strcpy(opts->indirParent, "");
 	strcpy(opts->imageComments, "");
+	strcpy(opts->bidsSubject, "");
+	strcpy(opts->bidsSession, "");
 	opts->isOnlySingleFile = false; //convert all files in a directory, not just a single file
 	opts->isOneDirAtATime = false;
 	opts->isRenameNotConvert = false;
@@ -9905,8 +9981,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { //either "setDe
 	opts->numSeries = 0;
 	memset(opts->seriesNumber, 0, sizeof(opts->seriesNumber));
 	strcpy(opts->filename, "%f_%p_%t_%s");
-
-        opts->isDumpNotConvert = false;
+	opts->isDumpNotConvert = false;
 } // setDefaultOpts()
 
 #if defined(_WIN64) || defined(_WIN32)

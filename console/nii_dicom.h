@@ -50,7 +50,7 @@ extern "C" {
     #define kCPUsuf " " //unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20231005"
+#define kDCMdate "v1.0.20231111"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; //maximum number of EPI images in Siemens Mosaic
@@ -232,6 +232,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         bool isPhaseMap;
         char bidsDataType[kDICOMStr]; //anat, func, dwi
         char bidsEntitySuffix[kDICOMStrLarge]; //anat, func, dwi
+        char bidsTask[kDICOMStr]; //rest, naming40
     };
     struct TDICOMdata {
         long seriesNum;

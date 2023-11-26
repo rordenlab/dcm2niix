@@ -956,6 +956,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.CSA.coilNumber = -1;
 	strcpy(d.CSA.bidsDataType, "");
 	strcpy(d.CSA.bidsEntitySuffix, "");
+	strcpy(d.CSA.bidsTask, "");
 	return d;
 } //clear_dicom_data()
 
@@ -4327,6 +4328,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kSeriesTime 0x0008 + (0x0031 << 16)
 #define kAcquisitionTime 0x0008 + (0x0032 << 16) //TM
 //#define kContentTime 0x0008+(0x0033 << 16 ) //TM
+#define kAccessionNumber 0x0008 + (0x0050 << 16)
 #define kModality 0x0008 + (0x0060 << 16) //CS
 #define kManufacturer 0x0008 + (0x0070 << 16)
 #define kInstitutionName 0x0008 + (0x0080 << 16)
@@ -4343,7 +4345,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kIconSQ 0x0009 + (0x1110 << 16)
 #define kPatientName 0x0010 + (0x0010 << 16)
 #define kPatientID 0x0010 + (0x0020 << 16)
-#define kAccessionNumber 0x0008 + (0x0050 << 16)
 #define kPatientBirthDate 0x0010 + (0x0030 << 16)
 #define kPatientSex 0x0010 + (0x0040 << 16)
 #define kPatientAge 0x0010 + (0x1010 << 16)
@@ -4480,6 +4481,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16) //CS Siemens ONLY
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
 #define kCSASeriesHeaderInfoXA 0x0021 + (0x1019 << 16)
+#define kCSASeriesHeaderInfoXA2 0x0021 + (0x11FE << 16)
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
 #define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
@@ -4871,7 +4873,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
-					printf("%d\t%f\n", inStackPositionNumber, acquisitionTimePhilips);
+					//printf("%d\t%f\n", inStackPositionNumber, acquisitionTimePhilips);
 					acquisitionTimePhilips = - 1.0;
 				}
 				int ndim = nDimIndxVal;
@@ -6145,6 +6147,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//printMessage("p%gs%d\n", d.accelFactPE, multiBandFactor);
 			break;
 		}
+//		case kCSASeriesHeaderInfoXA2:
+//			printf("do something profound\n");
 		case kCSASeriesHeaderInfoXA:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;

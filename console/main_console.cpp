@@ -347,6 +347,12 @@ int main(int argc, const char *argv[]) {
 						opts.isAnonymizeBIDS = false;
 					else
 						opts.isAnonymizeBIDS = true;
+				} else if (argv[i][2] == 'i') { //"-bi M2022" provide BIDS subject ID
+					i++;
+					snprintf(opts.bidsSubject, kOptsStr-1, "%s", argv[i]);
+				} else if (argv[i][2] == 'v') { //"-bv 1222" provide BIDS subject visit
+					i++;
+					snprintf(opts.bidsSession, kOptsStr-1, "%s", argv[i]);
 				} else
 					printf("Error: Unknown command line argument: '%s'\n", argv[i]);
 			} else if ((argv[i][1] == 'c') && ((i + 1) < argc)) {
