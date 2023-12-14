@@ -1500,7 +1500,7 @@ tse3d: T2*/
 		}
 		else
 			fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0);
-	}	
+	}
 	//if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	if (dti4D->frameDuration[0] < 0.0) //e.g. PET scans can have variable TR
 		json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0);
@@ -2547,10 +2547,10 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	  {
             // at this point, bvecs output is calculated as not isFlipY, assuming isFlipZ, determinant is positive.
             // So, bvecs first column is reversed for FSL.
-            // MGH conversion: not isFlipY, slice direction not flipped, determinant is negative, 
-            // 1. we need to reverse bvecs column 1 back, 
+            // MGH conversion: not isFlipY, slice direction not flipped, determinant is negative,
+            // 1. we need to reverse bvecs column 1 back,
             // 2. also need to reverse bvecs column 3
-            
+
             float tmp = vx[i].V[1];
             vx[i].V[1] = -vx[i].V[1];
             if (getenv("DCM2NIIXFSWRAPPER_DEBUG") != NULL && strcmp(getenv("DCM2NIIXFSWRAPPER_DEBUG"), "yes") == 0)
@@ -2588,7 +2588,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
             }
 	  }
           else  // sliceDir >= 0 && abs(sliceDir) != kSliceOrientMosaicNegativeDeterminant
-	  {	
+	  {
             // MGH conversion: not flip Y, image determinant is positive, bvecs first column is reversed for FSL.
             // So, we need to flip bvecs first column.
             if (fabs(vx[i].V[1]) > FLT_EPSILON)
@@ -3386,7 +3386,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 		newstr[pos - start] = '\0';
 		strcat(outname, newstr);
 	}
-	if ((isAddNamePostFixes) && (!isCoilReported) && (dcm.isCoilVaries)) {
+	if ((isAddNamePostFixes) && (!isCoilReported) && (dcm.isCoilVaries) && strlen(dcm.coilName)>0) {
 		//snprintf(newstr, PATH_MAX, "_c%d", dcm.coilNum);
 		//strcat (outname,newstr);
 		strcat(outname, "_c");
@@ -3974,7 +3974,7 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	//add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer; // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_FINISH); 
+	deflate(&strm, Z_FINISH);
 	//add footer
 	strm.avail_in = (unsigned int)sizeof(footer); // size of input
 	strm.next_in = (uint8_t *) &footer.TR;
@@ -4107,7 +4107,7 @@ int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 	#endif
 	if (isGz) {
 		strcat(fname, ".mgz");
-		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel); 
+		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel);
 	} else {
 		strcat(fname, ".mgh");
 		FILE *fp = fopen(fname, "wb");
@@ -4477,7 +4477,7 @@ int zmat_run(const size_t inputsize, unsigned char *inputstr, size_t *outputsize
 	return 0;
 }
 
-#endif //Z_DEFLATED 
+#endif //Z_DEFLATED
 
 int jnifti_lookup(int *keyid, int keylen, int val){
 	for(int i=0;i<keylen;i++){
@@ -5202,7 +5202,7 @@ void nii_mask12bit(unsigned char *img, struct nifti_1_header *hdr, bool isSigned
 	if (isSigned) {
 		for (int i = 0; i < nVox; i++)
 			img16[i] = int12toint16(img16[i]); //signed 12 bit data ranges from 0..4095, any other values are overflow
-	
+
 	} else {
 		for (int i = 0; i < nVox; i++)
 			img16[i] = img16[i] & 4095; //12 bit data ranges from 0..4095, any other values are overflow
@@ -6761,7 +6761,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 
 #ifdef USING_DCM2NIIXFSWRAPPER
 	mrifsStruct.tdicomData = dcmList[indx];  // first in sorted list dcmSort
-#endif 
+#endif
 
 	struct nifti_1_header hdr0 =  {0};
 	unsigned char *img = nii_loadImgXL(nameList->str[indx], &hdr0, dcmList[indx], iVaries, opts.compressFlag, opts.isVerbose, dti4D);
@@ -6868,8 +6868,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			for (int i = 0; i < nConvert; i++) { //make sure 1st volume describes shared features
 				if (dcmList[dcmSort[i].indx].isHasOverlay)
 					isHasOverlay = true;
-				if (dcmList[dcmSort[i].indx].isCoilVaries)
+				if (dcmList[dcmSort[i].indx].isCoilVaries){
 					dcmList[indx0].isCoilVaries = true;
+					if(opts.isForceStackDCE)
+						strcpy(dcmList[indx0].coilName, "");  // see #766
+					}
 				if (dcmList[dcmSort[i].indx].isMultiEcho)
 					dcmList[indx0].isMultiEcho = true;
 				if (dcmList[dcmSort[i].indx].isNonParallelSlices)
@@ -7500,7 +7503,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	mrifsStruct.hdr0 = hdr0;
 	mrifsStruct.imgsz = nii_ImgBytes(hdr0);
 	mrifsStruct.imgM = imgM;
-#else  
+#else
 	free(imgM);
 #endif
 	if (dcmList[dcmSort[0].indx].xyzDim[0] > 1)
@@ -8906,7 +8909,7 @@ int findpathof(char *pth, const char *exe) {
 void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 #if defined(_WIN64) || defined(_WIN32)
 	strcpy(opts->pigzname, "pigz.exe");
-	if (is_exe(opts->pigzname)) 
+	if (is_exe(opts->pigzname))
 		return;
 	if (!is_exe(opts->pigzname)) {
 		char exepth[PATH_MAX];
@@ -8918,13 +8921,13 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		strcat(exepth, opts->pigzname);
 		strcpy(opts->pigzname, exepth);
 	}
-	if (is_exe(opts->pigzname)) 
+	if (is_exe(opts->pigzname))
 		return;
 	HMODULE hModule = GetModuleHandle(NULL);
 	if (hModule != NULL) {
 		// https://stackoverflow.com/questions/1528298/get-path-of-executable
 		char exepth[PATH_MAX];
-		GetModuleFileName(hModule, exepth, (sizeof(exepth))); 
+		GetModuleFileName(hModule, exepth, (sizeof(exepth)));
 		dropFilenameFromPath(exepth); //, opts.pigzname);
 		char appendChar[2] = {"a"};
 		appendChar[0] = kPathSeparator;
@@ -8933,7 +8936,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		strcat(exepth, opts->pigzname);
 		strcpy(opts->pigzname, exepth);
 	}
-	if (is_exe(opts->pigzname)) 
+	if (is_exe(opts->pigzname))
 		return;
 #ifdef myDisableZLib
 		printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
