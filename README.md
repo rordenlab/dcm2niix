@@ -161,7 +161,7 @@ The following tools exploit dcm2niix
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [dicomConversionToNifti](https://github.com/bsmarine/dicomConversionToNifti) converts, de-identifies and assigns standardized naming convention to medical imaging.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
-  - [DPABI Data Processing & Analysis for Brain Imaging](http://rfmri.org/dpabi) includes dcm2niix.
+  - [DPABI](https://github.com/Chaogan-Yan/DPABI) [Data Processing & Analysis for Brain Imaging](https://rfmri.org/DPABI) includes dcm2niix.
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
   - [ExploreASL-GUI](https://github.com/MauricePasternak/ExploreASL-GUI) uses dcm2niix for image conversion.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a [web service](https://brainlife.io/ezbids/) for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
