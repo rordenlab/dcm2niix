@@ -4040,7 +4040,13 @@ void _update_tvd(struct TVolumeDiffusion *ptvd) {
 		return; //no B=0
 	if (isReady) {
 		for (int i = 1; i < 4; ++i) {
-			if (ptvd->_dtiV[i] > 1) {
+                        // Check that _dtiV is not still at its default of [-1, 2, 2, 2] from
+                        // clear_volume(struct TVolumeDiffusion *ptvd). This is mostly avoided
+                        // because of the ptvd->_dtiV[0] >= 0 check above, but was supposedly
+                        // needed at some point.
+                        // issue 769: some bvec components may be slightly (~5%) > 1. AFAIK,
+                        //            the relevant value to guard against would be +2.
+			if (ptvd->_dtiV[i] > 1.5) {
 				isReady = false;
 				break;
 			}
