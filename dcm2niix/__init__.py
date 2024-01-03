@@ -19,9 +19,9 @@ bin_path = Path(__file__).resolve().parent / "dcm2niix"
 bin = str(bin_path)
 
 
-def main(args=None):
+def main(args=None, **run_kwargs):
     if args is None:
         import sys
         args = sys.argv[1:]
     from subprocess import run
-    run([bin] + args)
+    return run([bin] + args, **run_kwargs)
