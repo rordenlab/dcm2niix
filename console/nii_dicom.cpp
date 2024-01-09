@@ -3820,14 +3820,19 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	return img;
 } //nii_loadImgXL()
 
-int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
+int isSQ(uint32_t groupElement, bool isPhilips) { //Detect sequence VR ("SQ") for implicit tags
 	static const int array_size = 35;
-	uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
+	uint32_t array[array_size] = {0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
+	//uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
 	for (int i = 0; i < array_size; i++) {
 		//if (array[i] == groupElement) printMessage(" implicitSQ %04x,%04x\n",  groupElement & 65535,groupElement>>16);
 		if (array[i] == groupElement)
 			return 1;
 	}
+	//issue 775: Canon/Toshiba use 2005,140f but not as a SQ?
+	uint32_t kPhilipsSQ = 0x2005 + (uint32_t(0x140F) << 16);
+	if ((isPhilips) && (kPhilipsSQ == groupElement))
+		return 1;
 	return 0;
 } //isSQ()
 
@@ -5065,12 +5070,12 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			else
 				lLength = buffer[lPos + 3] | (buffer[lPos + 2] << 8) | (buffer[lPos + 1] << 16) | (buffer[lPos] << 24);
 			lPos += 4; //we have loaded the 32-bit length
-			if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+			if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement, true))) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
-			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement, false))) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
