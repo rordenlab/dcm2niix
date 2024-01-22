@@ -4734,6 +4734,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	char imageType1st[kDICOMStr] = "";
 	bool isEncapsulatedData = false;
 	int diffusionDirectionTypeGE = 0; //issue690
+	int seriesdiffusionDirectionTypeGE = 0; //issue690, 777
 	int multiBandFactor = 0;
 	int frequencyRows = 0;
 	int numberOfImagesInMosaic = 0;
@@ -6660,8 +6661,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kScanningSequenceSiemens:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS) 
 				dcmStr(lLength, &buffer[lPos], scanningSequenceSiemens);
-			if (d.manufacturer == kMANUFACTURER_GE) //issue690
-				diffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (d.manufacturer == kMANUFACTURER_GE) //issue690, series-level 16=DFAXDTI
+				seriesdiffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
@@ -7068,7 +7069,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			d.shimGradientZ = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kVasCollapseFlagGE: //SS issue 690 16=DiffusionDtiDicomValue
+		case kVasCollapseFlagGE: //SS issue 690 image-level 16=DiffusionDtiDicomValue or 14=DiffusionT2DicomValue (initial b0)
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			diffusionDirectionTypeGE = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
@@ -8126,8 +8127,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
-	//issue690
-	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16))
+	//issue690, 777 
+	// detect non-DTI for GE 
+	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16) && (diffusionDirectionTypeGE != 14))
+		d.numberOfDiffusionDirectionGE = 0;
+	if ((d.manufacturer == kMANUFACTURER_GE) && (seriesdiffusionDirectionTypeGE > 0) && (seriesdiffusionDirectionTypeGE != 16))
 		d.numberOfDiffusionDirectionGE = 0;
 	//issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )

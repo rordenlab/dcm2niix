@@ -2534,7 +2534,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	*numADC = 0;
 	bvals = (float *)malloc(numDti * sizeof(float));
 	int numGEwarn = 0;
-	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0);
+	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0); // GE non-DTI
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
 		//printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
@@ -2556,8 +2556,9 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		}
 		bvals[i] = bvals[i] + (0.5 * i / numDti); //add a small bias so ties are kept in sequential order
 	}
-	if (numGEwarn > 0)
-		printWarning("Some images had bval>0 but bvec=0 (either Trace or b=0, see issue 245)\n");
+	// See issue 777: removed the warning because GE DTI b=0 with bval>0 but bvec=0 (prior to version 29.1) will be handled by geCorrectBvecs()
+	// if (numGEwarn > 0)
+	//	printWarning("Some images had bval>0 but bvec=0 (either Trace or b=0, see issue 245)\n");
 	/*if ((*numADC == numDti) || (numGEwarn == numDti)) { //issue 405: we now save bvals file for isotropic series
 		//all isotropic/ADC images - no valid bvecs
 		*numADC = 0;
@@ -7225,7 +7226,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 		}
 	}*/
 	//end: version check
-	if (d->maxEchoNumGE > 0)
+	if ((d->maxEchoNumGE > 0) && (d->internalepiVersionGE != 2)) // GE non-Diffusion only
 		printWarning("GE sequence with %d echoes. See issue 359\n", d->maxEchoNumGE);
 	if ((d->protocolBlockStartGE < 1) || (d->protocolBlockLengthGE < 19))
 		return;
