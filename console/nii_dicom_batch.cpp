@@ -1603,7 +1603,8 @@ tse3d: T2*/
 	bool interp = false; //2D interpolation
 	float phaseOversampling = 0.0;
 	//n.b. https://neurostars.org/t/getting-missing-ge-information-required-by-bids-for-common-preprocessing/1357/7
-	json_Str(fp, "\t\"PhaseEncodingDirectionDisplayed\": \"%s\",\n", d.phaseEncodingDirectionDisplayedUIH);
+	if (d.manufacturer == kMANUFACTURER_UIH)
+		json_Str(fp, "\t\"PhaseEncodingDirectionDisplayed\": \"%s\",\n", d.phaseEncodingDirectionDisplayedUIH);
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.phaseEncodingGE != kGE_PHASE_ENCODING_POLARITY_UNKNOWN)) { //only set for GE
 		if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
 			fprintf(fp, "\t\"PhaseEncodingPolarityGE\": \"Unflipped\",\n");
