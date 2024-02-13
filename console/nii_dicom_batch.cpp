@@ -3465,6 +3465,11 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 		if (outname[pos] == ':') //not allowed by MacOS
 			outname[pos] = '_';
 #endif
+#if !defined(_WIN64) || !defined(_WIN32)
+	for (size_t pos = 0; pos < strlen(outname); pos++)
+		if (outname[pos] == '`' || outname[pos] == '$') // unix shell expansion characters
+			outname[pos] = '_';
+#endif
 	cleanISO8859(outname);
 	//re-insert explicit path separators: -f %t/%s_%p will have folder for time, but will not segment a protocol named "fMRI\bold"
 	for (int pos = 0; pos < (int)strlen(outname); pos++) {
