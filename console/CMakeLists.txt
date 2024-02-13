@@ -91,9 +91,9 @@ set(DCM2NIIX_SRCS
     nii_dicom_batch.cpp)
 
 
-option(USE_JNIfTI "Build with JNIfTI support" ON)
+option(USE_JNIFTI "Build with JNIfTI support" ON)
 if(USE_JNIFTI)
-    add_definitions(-DmyEnableJNIfTI)
+    add_definitions(-DmyEnableJNIFTI)
     set(DCM2NIIX_SRCS ${DCM2NIIX_SRCS} cJSON.cpp base64.cpp)
 endif()
 

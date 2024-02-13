@@ -4,7 +4,7 @@ dcm2niix is primarily designed to convert DICOM images into NIfTI images. Howeve
 
 ## Limitation
 
-dcm2niix renames and copies the DICOM images, but the current version does not copy or create a new [DICOMDIR](http://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_F.2.2.2.html) file. Most users ignore these files. However, you should not use this featire if you wish to preserve your DICOMDIR files.
+dcm2niix renames and copies the DICOM images, but the current version does not copy or create a new [DICOMDIR](http://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_F.2.2.2.html) file. Most users ignore these files. However, you should not use this feature if you wish to preserve your DICOMDIR files.
 
 Note that this feature only copies your DICOM images with a new filename. It does not modify the contents of the DICOM header. This means it will not compress or anonymize your files. Free tools for these functions include [dcmcjpeg](https://dicom.offis.de/dcmtk.php.en), [gdcmanon](http://gdcm.sourceforge.net/html/gdcmanon.html) and [gdcmconv](http://gdcm.sourceforge.net/html/gdcmconv.html).
 
