@@ -3152,12 +3152,25 @@ unsigned char *nii_byteswap(unsigned char *img, struct nifti_1_header *hdr) {
 
 #ifdef myEnableJasper
 unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 3
+	jas_conf_clear();
+	jas_conf_set_debug_level(0);
+	jas_conf_set_max_mem_usage(1 << 30); 	// 1 GiB
+	if (jas_init_library()) {
+		return NULL;
+	}
+	if (jas_init_thread()) {
+		jas_cleanup_library();
+		return NULL;
+	}
+#else
 	if (jas_init()) {
 		return NULL;
 	}
+	jas_setdbglevel(0);
+#endif
 	jas_stream_t *in;
 	jas_image_t *image;
-	jas_setdbglevel(0);
 	if (!(in = jas_stream_fopen(imgname, "rb"))) {
 		printError("Cannot open input image file %s\n", imgname);
 		return NULL;
@@ -3284,6 +3297,10 @@ unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, s
 	jas_matrix_destroy(data);
 	jas_image_destroy(image);
 	jas_image_clearfmts();
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 3
+	jas_cleanup_thread();
+	jas_cleanup_library();
+#endif
 	return img;
 } //nii_loadImgCoreJasper()
 #endif

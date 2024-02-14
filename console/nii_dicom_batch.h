@@ -80,7 +80,7 @@ extern "C" {
         double seriesNumber[MAX_NUM_SERIES]; //requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
         long numSeries;
 #ifdef USING_R
-        bool isScanOnly;
+        bool isScanOnly, isImageInMemory;
         void *imageList;
         std::vector<TDicomSeries> series;
 
