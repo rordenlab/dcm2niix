@@ -7514,7 +7514,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		dti4D->frameReferenceTime[0] = -1;
 	}
 	if (strlen(dcmList[indx0].patientOrient) < 3)
-		printWarning("PatientOrient (0018,5100) not specified (issue 642).\n");
+		printWarning("Patient Position (0018,5100) not specified (issue 642).\n");
 	if (dcmList[indx0].isQuadruped)
 		printWarning("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly (issue 642)\n");
 #ifdef newTilt //see issue 254
