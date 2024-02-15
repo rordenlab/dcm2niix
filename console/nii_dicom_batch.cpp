@@ -2914,7 +2914,7 @@ float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int i
 	float dotX = dotProduct(slice_vector90, slice_vector);
 	float cosX = dotX / (len * len90);
 	float degX = acos(cosX) * (180.0 / M_PI); //arccos, radian -> degrees
-	if (!isSameFloat(cosX, 1.0))
+	if (!(isSameFloat(cosX, 1.0) || cosX > 1.0))
 		ret = degX;
 	if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)))
 		return 0.0;
