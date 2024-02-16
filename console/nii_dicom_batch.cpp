@@ -2879,73 +2879,13 @@ void vecRep(vec3 v) { //normalize vector length
 	printMessage("[%g %g %g]\n", v.v[0], v.v[1], v.v[2]);
 }
 
-
-float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int isVerbose) {
-	float ret = 0.0;
-	if (isNanPosition(d1))
-		return ret;
-	vec3 slice_vector = setVec3(d2.patientPosition[1] - d1.patientPosition[1],
-		d2.patientPosition[2] - d1.patientPosition[2],
-		d2.patientPosition[3] - d1.patientPosition[3]);
-	float len = vec3Length(slice_vector);
-	if (isSameFloat(len, 0.0)) {
-		slice_vector = setVec3(d1.patientPositionLast[1] - d1.patientPosition[1],
-			d1.patientPositionLast[2] - d1.patientPosition[2],
-			d1.patientPositionLast[3] - d1.patientPosition[3]);
-		len = vec3Length(slice_vector);
-		if (isSameFloat(len, 0.0))
-			return ret;
-	}
-	if (isnan(slice_vector.v[0]))
-		return ret;
-	slice_vector = makePositive(slice_vector);
-	vec3 read_vector = setVec3(d1.orient[1], d1.orient[2], d1.orient[3]);
-	vec3 phase_vector = setVec3(d1.orient[4], d1.orient[5], d1.orient[6]);
-	vec3 slice_vector90 = crossProduct(read_vector, phase_vector); //perpendicular
-	slice_vector90 = makePositive(slice_vector90);
-	float len90 = vec3Length(slice_vector90);
-	if (isSameFloat(len90, 0.0))
-		return ret;
-	float dotX = dotProduct(slice_vector90, slice_vector);
-	float cosX = dotX / (len * len90);
-	float degX = acos(cosX) * (180.0 / M_PI); //arccos, radian -> degrees
-	if (!isSameFloatGE(cosX, 1.0))
-		ret = degX;
-	if ((isSameFloat(ret, 0.0)) && (isSameFloat(ret, d1.gantryTilt)))
-		return 0.0;
-	//determine if gantry tilt is positive or negative
-	vec3 signv = crossProduct(slice_vector, slice_vector90);
-	float sign = vec3maxMag(signv);
-	if (isSameFloatGE(ret, 0.0))
-		return 0.0; //parallel vectors
-	if (sign > 0.0)
-		ret = -ret; //the length of len90 was negative, negative gantry tilt
-					//while (ret >= 89.99) ret -= 90;
-					//while (ret <= -89.99) ret += 90;
-	if (isSameFloatGE(ret, 0.0))
-		return 0.0;
-	if ((isVerbose) || (isnan(ret))) {
-		printMessage("Gantry Tilt Parameters (see issue 253)\n");
-		printMessage(" Read =");
-		vecRep(read_vector);
-		printMessage(" Phase =");
-		vecRep(phase_vector);
-		printMessage(" CrossReadPhase =");
-		vecRep(slice_vector90);
-		printMessage(" Slice =");
-		vecRep(slice_vector);
-	}
-	printMessage("Gantry Tilt based on 0018,1120 %g, estimated from slice vector %g\n", d1.gantryTilt, ret);
-	return ret;
-}
-
 //Precise method for determining gantry tilt
 // rationale:
 // gantry tilt (0018,1120) is optional
 // some tools may correct gantry tilt but not reset 0018,1120
 // 0018,1120 might be saved at low precision (though patientPosition, orient might be as well)
 //https://github.com/rordenlab/dcm2niix/issues/253
-float computeGantryTiltPreciseX(struct TDICOMdata d1, struct TDICOMdata d2, int isVerbose) {
+float computeGantryTiltPrecise(struct TDICOMdata d1, struct TDICOMdata d2, int isVerbose) {
 	float ret = 0.0;
 	if (isNanPosition(d1))
 		return ret;
