@@ -3,11 +3,13 @@
 #ifndef _NII_FOREIGN_
 #define _NII_FOREIGN_
 
+#include "nii_dicom_batch.h"
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
 
-#include "nii_dicom_batch.h"
+//#include "nii_dicom_batch.h"
 
 //int  open_foreign (const char *fn);
 int  convert_foreign (const char *fn, struct TDCMopts opts);

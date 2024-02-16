@@ -78,8 +78,8 @@ for:
       - mkdir -p build/bin
       - lipo -create -output build/bin/dcm2niix intel/bin/dcm2niix apple/bin/dcm2niix
       - strip -Sx build/bin/*
-      - 7z a dcm2niix_macos.zip ./build/bin/* &>/dev/null
-      - appveyor PushArtifact dcm2niix_macos.zip
+      - 7z a dcm2niix_mac.zip ./build/bin/* &>/dev/null
+      - appveyor PushArtifact dcm2niix_mac.zip
 
 deploy:
   - provider: GitHub

@@ -25,7 +25,7 @@ endif
 #run "JNIfTI=0 make" to disable JNIFTI build
 JSFLAGS=
 ifneq "$(JNIfTI)" "0"
-	JSFLAGS=-DmyEnableJNIfTI base64.cpp cJSON.cpp
+	JSFLAGS=-DmyEnableJNIFTI base64.cpp cJSON.cpp
 endif
 
 ifneq ($(OS),Windows_NT)

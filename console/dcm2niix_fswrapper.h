@@ -17,7 +17,7 @@ class dcm2niix_fswrapper
 {
 public:
   // set TDCMopts defaults, overwrite settings to output in mgz orientation.
-  static void setOpts(const char* dcmindir, const char* niioutdir=NULL, bool createBIDS=false);
+  static void setOpts(const char* dcmindir, const char* niioutdir=NULL, bool createBIDS=false, int ForceStackSameSeries=1);
 
   // interface to isDICOMfile() in nii_dicom.cpp
   static bool isDICOM(const char* file);
@@ -32,10 +32,18 @@ public:
   // return nifti header saved in MRIFSSTRUCT 
   static nifti_1_header* getNiiHeader(void);
 
+  // interface to nii_getMrifsStructVector()
+  static std::vector<MRIFSSTRUCT>* getMrifsStructVector(void);
+
   // return image data saved in MRIFSSTRUCT
   static const unsigned char* getMRIimg(void);
 
-  static void dicomDump(const char* dicomdir);
+  static void dicomDump(const char* dicomdir, const char *series_info, bool max=false, bool extrainfo=false);
+
+  //
+  static void seriesInfoDump(FILE *fpdump, const MRIFSSTRUCT *pmrifsStruct);
+
+  static const char *mfrCode2Str(int code);
 
 private:
   static struct TDCMopts tdcmOpts;

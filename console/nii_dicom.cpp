@@ -37,7 +37,9 @@
 #include <string.h>
 #include <sys/stat.h> // discriminate files from folders
 #include <sys/types.h>
+#ifndef USING_DCM2NIIXFSWRAPPER
 #include <algorithm>
+#endif
 
 #ifdef USING_R
 #undef isnan
@@ -893,6 +895,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isValid = false;
 	d.isXRay = false;
 	d.isMultiEcho = false;
+	d.numberOfTR = 1;
 	d.isSigned = false; //default is unsigned!
 	d.isFloat = false; //default is for integers, not single or double precision
 	d.isResampled = false; //assume data not resliced to remove gantry tilt problems
@@ -951,6 +954,9 @@ struct TDICOMdata clear_dicom_data() {
 	d.CSA.SeriesHeader_offset = 0;
 	d.CSA.SeriesHeader_length = 0;
 	d.CSA.coilNumber = -1;
+	strcpy(d.CSA.bidsDataType, "");
+	strcpy(d.CSA.bidsEntitySuffix, "");
+	strcpy(d.CSA.bidsTask, "");
 	return d;
 } //clear_dicom_data()
 
@@ -1462,7 +1468,7 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 				CSA->coilNumber = csaICEdims(&buff[lPos]);
 			else if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
 				CSA->mosaicSlices = (int)round(csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK));
-			else if (strcmp(tagCSA.name, "B_value") == 0) {
+			 else if (strcmp(tagCSA.name, "B_value") == 0) {
 				CSA->dtiV[0] = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
 				if (CSA->dtiV[0] < 0.0) {
 					printWarning("(Corrupt) CSA reports negative b-value! %g\n", CSA->dtiV[0]);
@@ -1798,7 +1804,7 @@ void cleanStr(char *lOut) {
 
 int isSameFloatGE(float a, float b) {
 	//Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
-	//return (a == b); //niave approach does not have any tolerance for rounding errors
+	//return (a == b); //naive approach does not have any tolerance for rounding errors
 	return (fabs(a - b) <= 0.0001);
 }
 
@@ -2042,6 +2048,9 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 				strcat(d.seriesDescription, Comment[6]);
 				strcat(d.seriesDescription, Comment[7]);
 				cleanStr(d.seriesDescription);
+#ifdef USING_DCM2NIIXFSWRAPPER
+				remove_specialchars(d.seriesDescription);
+#endif
 			}
 			if ((strcmp(Comment[0], "Examination") == 0) && (strcmp(Comment[1], "date/time") == 0)) {
 				if ((strlen(Comment[3]) >= 10) && (strlen(Comment[5]) >= 8)) {
@@ -2362,7 +2371,12 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			//offset images by type: mag+0,real+1, imag+2,phase+3
 			//if (cols[kImageType] != 0) //yikes - phase maps!
 			//	slice = slice + numExpected;
-			maxSlice2D = std::max(slice, maxSlice2D);
+#ifdef USING_DCM2NIIXFSWRAPPER
+			// fix ubuntu18 compiler error
+			maxSlice2D = (slice > maxSlice2D) ? slice : maxSlice2D;
+#else
+                        maxSlice2D = std::max(slice, maxSlice2D);
+#endif
 			if ((slice >= 0) && (slice < kMaxSlice2D) && (numSlice2D < kMaxSlice2D) && (numSlice2D >= 0)) {
 				dti4D->sliceOrder[slice - 1] = numSlice2D;
 				//printMessage("%d\t%d\t%d\n", numSlice2D, slice, (int)cols[kSlice],(int)vol);
@@ -2428,7 +2442,12 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	if (d.isHasImaginary) nType ++;
 	if (d.isHasPhase) nType ++;
 	if (d.isHasReal) nType ++;
-	nType = std::max(nType, 1);
+#ifdef USING_DCM2NIIXFSWRAPPER
+        // fix ubuntu18 compiler error
+	nType = (nType > 1) ? nType : 1;
+#else
+        nType = std::max(nType, 1);
+#endif
 	if (slice != numSlice2D) {
 		printError("Catastrophic error: found %d but expected %d slices. %s\n", slice, numSlice2D, parname);
 		printMessage("  slices*grad*bval*cardiac*echo*dynamic*mix*labels*types = %d*%d*%d*%d*%d*%d*%d*%d*%d\n",
@@ -2590,7 +2609,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	y.v[2] = (float)d.xyzDim[3] - 1.0f;
 	y.v[3] = 1.0f;
 	y = nifti_vect44mat44_mul(y, R44);
-	int iOri = 2; //for axial, slices are 3rd dimenson (indexed from 0) (k)
+	int iOri = 2; //for axial, slices are 3rd dimension (indexed from 0) (k)
 	if (d.sliceOrient == kSliceOrientSag)
 		iOri = 0; //for sagittal, slices are 1st dimension (i)
 	if (d.sliceOrient == kSliceOrientCor)
@@ -3133,12 +3152,25 @@ unsigned char *nii_byteswap(unsigned char *img, struct nifti_1_header *hdr) {
 
 #ifdef myEnableJasper
 unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 3
+	jas_conf_clear();
+	jas_conf_set_debug_level(0);
+	jas_conf_set_max_mem_usage(1 << 30); 	// 1 GiB
+	if (jas_init_library()) {
+		return NULL;
+	}
+	if (jas_init_thread()) {
+		jas_cleanup_library();
+		return NULL;
+	}
+#else
 	if (jas_init()) {
 		return NULL;
 	}
+	jas_setdbglevel(0);
+#endif
 	jas_stream_t *in;
 	jas_image_t *image;
-	jas_setdbglevel(0);
 	if (!(in = jas_stream_fopen(imgname, "rb"))) {
 		printError("Cannot open input image file %s\n", imgname);
 		return NULL;
@@ -3265,6 +3297,10 @@ unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, s
 	jas_matrix_destroy(data);
 	jas_image_destroy(image);
 	jas_image_clearfmts();
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 3
+	jas_cleanup_thread();
+	jas_cleanup_library();
+#endif
 	return img;
 } //nii_loadImgCoreJasper()
 #endif
@@ -3801,14 +3837,19 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	return img;
 } //nii_loadImgXL()
 
-int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
+int isSQ(uint32_t groupElement, bool isPhilips) { //Detect sequence VR ("SQ") for implicit tags
 	static const int array_size = 35;
-	uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
+	uint32_t array[array_size] = {0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
+	//uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
 	for (int i = 0; i < array_size; i++) {
 		//if (array[i] == groupElement) printMessage(" implicitSQ %04x,%04x\n",  groupElement & 65535,groupElement>>16);
 		if (array[i] == groupElement)
 			return 1;
 	}
+	//issue 775: Canon/Toshiba use 2005,140f but not as a SQ?
+	uint32_t kPhilipsSQ = 0x2005 + (uint32_t(0x140F) << 16);
+	if ((isPhilips) && (kPhilipsSQ == groupElement))
+		return 1;
 	return 0;
 } //isSQ()
 
@@ -3963,6 +4004,13 @@ void dcmMultiFloatDouble(size_t lByteLength, unsigned char lBuffer[], size_t lnF
 		lFloats[i] = dcmFloatDouble((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
 } //dcmMultiFloatDouble()
 
+void dcmMultiFloatSingle(size_t lByteLength, unsigned char lBuffer[], size_t lnFloats, float *lFloats, bool isLittleEndian) {
+// dcmFloat kTRArray
+	size_t floatlen = lByteLength / lnFloats;
+	for (size_t i = 0; i < lnFloats; ++i)
+		lFloats[i] = dcmFloat((int)floatlen, lBuffer + i * floatlen, isLittleEndian);
+} //dcmMultiFloatSingle()
+
 void set_orientation0018_9089(struct TVolumeDiffusion *ptvd, int lLength, unsigned char *inbuf, bool isLittleEndian) {
 	if (ptvd->_isPhilipsNonDirectional) {
 		for (int i = 1; i < 4; ++i) // Deliberately ignore inbuf; it might be nonsense.
@@ -4014,7 +4062,13 @@ void _update_tvd(struct TVolumeDiffusion *ptvd) {
 		return; //no B=0
 	if (isReady) {
 		for (int i = 1; i < 4; ++i) {
-			if (ptvd->_dtiV[i] > 1) {
+                        // Check that _dtiV is not still at its default of [-1, 2, 2, 2] from
+                        // clear_volume(struct TVolumeDiffusion *ptvd). This is mostly avoided
+                        // because of the ptvd->_dtiV[0] >= 0 check above, but was supposedly
+                        // needed at some point.
+                        // issue 769: some bvec components may be slightly (~5%) > 1. AFAIK,
+                        //            the relevant value to guard against would be +2.
+			if (ptvd->_dtiV[i] > 1.5) {
 				isReady = false;
 				break;
 			}
@@ -4100,7 +4154,7 @@ void _update_tvd(struct TVolumeDiffusion *ptvd) {
 struct TDCMdim { //DimensionIndexValues
 	uint32_t dimIdx[MAX_NUMBER_OF_DIMENSIONS];
 	uint32_t diskPos;
-	float triggerDelayTime, TE, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
+	float triggerDelayTime, TE, TR, intenScale, intenIntercept, intenScalePhilips, RWVScale, RWVIntercept;
 	float V[4];
 	bool isPhase;
 	bool isReal;
@@ -4302,6 +4356,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kSeriesTime 0x0008 + (0x0031 << 16)
 #define kAcquisitionTime 0x0008 + (0x0032 << 16) //TM
 //#define kContentTime 0x0008+(0x0033 << 16 ) //TM
+#define kAccessionNumber 0x0008 + (0x0050 << 16)
 #define kModality 0x0008 + (0x0060 << 16) //CS
 #define kManufacturer 0x0008 + (0x0070 << 16)
 #define kInstitutionName 0x0008 + (0x0080 << 16)
@@ -4315,9 +4370,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kReferencedImageEvidenceSQ (uint32_t)0x0008 + (0x9092 << 16)
 #define kComplexImageComponent (uint32_t)0x0008 + (0x9208 << 16) //'0008' '9208' 'CS' 'ComplexImageComponent'
 #define kAcquisitionContrast (uint32_t)0x0008 + (0x9209 << 16) //'0008' '9209' 'CS' 'AcquisitionContrast'
+#define kIconSQ 0x0009 + (0x1110 << 16)
 #define kPatientName 0x0010 + (0x0010 << 16)
 #define kPatientID 0x0010 + (0x0020 << 16)
-#define kAccessionNumber 0x0008 + (0x0050 << 16)
 #define kPatientBirthDate 0x0010 + (0x0030 << 16)
 #define kPatientSex 0x0010 + (0x0040 << 16)
 #define kPatientAge 0x0010 + (0x1010 << 16)
@@ -4338,7 +4393,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kTI 0x0018 + (0x0082 << 16) // Inversion time
 #define kNumberOfAverages 0x0018 + (0x0083 << 16) //DS
 #define kImagingFrequency 0x0018 + (0x0084 << 16) //DS
-//#define kEffectiveTE 0x0018+(0x9082 << 16 )
 #define kEchoNum 0x0018 + (0x0086 << 16) //IS
 #define kMagneticFieldStrength 0x0018 + (0x0087 << 16) //DS
 #define kZSpacing 0x0018 + (0x0088 << 16) //'DS' 'SpacingBetweenSlices'
@@ -4386,6 +4440,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPartialFourier 0x0018 + uint32_t(0x9081 << 16) //CS
 const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD 
 //#define kDiffusionBFactorSiemens 0x0019+(0x100C<< 16 ) // 0019;000C;SIEMENS MR HEADER;B_value
+#define kDiffusionGradientDirectionSQ 0x0018 + uint32_t(0x9076 << 16) // SQ
 #define kDiffusion_bValue 0x0018 + uint32_t(0x9087 << 16) // FD
 #define kDiffusionOrientation 0x0018 + uint32_t(0x9089 << 16) // FD, seen in enhanced DICOM from Philips 5.* and Siemens XA10.
 #define kImagingFrequencyFD 0x0018 + uint32_t(0x9098 << 16) //FD
@@ -4454,6 +4509,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16) //CS Siemens ONLY
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
 #define kCSASeriesHeaderInfoXA 0x0021 + (0x1019 << 16)
+#define kCSASeriesHeaderInfoXA2 0x0021 + (0x11FE << 16)
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
 #define kICE_dims 0x0021 + (0x1106 << 16) //LO [X_4_1_1_1_1_160_1_1_1_1_1_277]
 #define kPhaseEncodingDirectionPositiveSiemens 0x0021 + (0x111C << 16) //IS
@@ -4461,6 +4517,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 //#define kPATModeText2 0x0021 + (0x1156 << 16) //LO, always same as 0021,1009 
 #define kBandwidthPerPixelPhaseEncode21 0x0021 + (0x1153 << 16) //FD
 #define kCoilElements 0x0021 + (0x114F << 16) //LO
+#define kICE_dimsLong 0x0021 + (0x118e << 16)
 #define kAcquisitionMatrixText21 0x0021 + (0x1158 << 16) //SH
 #define kImageTypeText 0x0021 + (0x1175 << 16) //CS
 #define kDeepLearningText 0x0021 + (0x1176 << 16) //LO
@@ -4529,6 +4586,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 // #define kSeriesType 0x0054+(0x1000 << 16 )
 #define kDoseCalibrationFactor 0x0054 + (0x1322 << 16)
 #define kPETImageIndex 0x0054 + (0x1330 << 16)
+#define kReferencedSegmentNumber 0x0062 + (0x000B << 16) //US
 #define kPEDirectionDisplayedUIH 0x0065 + (0x1005 << 16) //SH
 #define kDiffusion_bValueUIH 0x0065 + (0x1009 << 16) //FD
 #define kParallelInformationUIH 0x0065 + (0x100D << 16) //SH
@@ -4558,6 +4616,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 //#define kStackSliceNumber 0x2001+(0x1035 << 16 )//? Potential way to determine slice order for Philips?
 #define kNumberOfDynamicScans 0x2001 + (0x1081 << 16) //'2001' '1081' 'IS' 'NumberOfDynamicScans'
 //#define kTRPhilips 0x2005 + (0x1030 << 16) //(2005,1030) FL 30\150
+#define kTRArray 0x2005 + (0x1030 << 16) //FL Array, e.g. "15\75", see issue 743
 #define kMRfMRIStatusIndicationPhilips 0x2005 + (0x1063 << 16)
 #define kMRAcquisitionTypePhilips 0x2005 + (0x106F << 16) //SS
 #define kAngulationAP 0x2005 + (0x1071 << 16) //'2005' '1071' 'FL' 'MRStackAngulationAP'
@@ -4645,6 +4704,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int temporalPositionIndex = 0;
 	int minTemporalPositionIndex = 65535;
 	int maxTemporalPositionIndex = 0;
+	int minReferencedSegmentNumber = 65535;
+	int maxReferencedSegmentNumber = 0;
 	//int temporalPositionIdentifier = 0;
 	int locationsInAcquisitionPhilips = 0;
 	int imagesInAcquisition = 0;
@@ -4654,6 +4715,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int volumeNumber = -1;
 	int gradientOrientationNumberPhilips = -1;
 	int numberOfFrames = 0;
+	int numberOfFramesICEdims = 0;
 	//int MRImageGradientOrientationNumber = 0;
 	//int minGradNum = kMaxDTI4D + 1;
 	//int maxGradNum = -1;
@@ -4689,6 +4751,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	char imageType1st[kDICOMStr] = "";
 	bool isEncapsulatedData = false;
 	int diffusionDirectionTypeGE = 0; //issue690
+	int seriesdiffusionDirectionTypeGE = 0; //issue690, 777
 	int multiBandFactor = 0;
 	int frequencyRows = 0;
 	int numberOfImagesInMosaic = 0;
@@ -4819,7 +4882,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			if (sqDepth < 0)
 				sqDepth = 0; //should not happen, but protect for faulty anonymization
 			//if we leave the folder MREchoSequence 0018,9114
-			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
+			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_UNKNOWN) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; //triggered
 				//printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 				// d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
@@ -4839,7 +4902,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
-					printf("%d\t%f\n", inStackPositionNumber, acquisitionTimePhilips);
+					//printf("%d\t%f\n", inStackPositionNumber, acquisitionTimePhilips);
 					acquisitionTimePhilips = - 1.0;
 				}
 				int ndim = nDimIndxVal;
@@ -4884,7 +4947,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 					for (int i = 0; i < ndim; i++)
 						dcmDim[numDimensionIndexValues].dimIdx[i] = d.dimensionIndexValues[dimensionIndexOrder[i]];
 				}
-				dcmDim[numDimensionIndexValues].TE = TE;
+				dcmDim[numDimensionIndexValues].TE = d.TE;
+				dcmDim[numDimensionIndexValues].TR = d.TR;
 				dcmDim[numDimensionIndexValues].intenScale = d.intenScale;
 				dcmDim[numDimensionIndexValues].intenIntercept = d.intenIntercept;
 				dcmDim[numDimensionIndexValues].isPhase = isPhase;
@@ -4972,14 +5036,15 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 				nDimIndxVal = -1; //we need DimensionIndexValues
 			} //record dimensionIndexValues slice information
 		} //groupElement == kItemDelimitationTag : delimit item exits folder
+		uint32_t itemTagLength = 0;
 		if (groupElement == kItemTag) {
-			uint32_t slen = dcmInt(4, &buffer[lPos], d.isLittleEndian);
+			itemTagLength = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			uint32_t kUndefinedLen = 0xFFFFFFFF;
-			if (slen != kUndefinedLen) {
+			if (itemTagLength != kUndefinedLen) {
 				nNestPos++;
 				if (nNestPos >= kMaxNestPost)
 					nNestPos = kMaxNestPost - 1;
-				nestPos[nNestPos] = slen + lFileOffset + lPos;
+				nestPos[nNestPos] = itemTagLength + lFileOffset + lPos;
 			}
 			lLength = 4;
 			sqDepth++;
@@ -5023,17 +5088,25 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			else
 				lLength = buffer[lPos + 3] | (buffer[lPos + 2] << 8) | (buffer[lPos + 1] << 16) | (buffer[lPos] << 24);
 			lPos += 4; //we have loaded the 32-bit length
-			if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+			if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement, true))) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
-			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement, false))) { //https://github.com/rordenlab/dcm2niix/issues/144
+				vr[0] = 'S';
+				vr[1] = 'Q';
+				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
+			}
+			if (groupElement == kDiffusionGradientDirectionSQ) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
 		} //if explicit else implicit VR
+		if ((lLength == 0xFFFFFFFF) && (vr[0] == 'O') && (vr[1] == 'B') && (isIconImageSequence)) {
+			lLength = 0; //encapuslated data of unspecified length
+		} //issue713
 		if (lLength == 0xFFFFFFFF) {
 			lLength = 8; //SQ (Sequences) use 0xFFFFFFFF [4294967295] to denote unknown length
 				//09032018 - do not count these as SQs: Horos does not count even groups
@@ -5044,6 +5117,9 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			vr[1] = 'Q';
 			//}
 		}
+		if ((groupElement == kItemTag) && (vr[0] == 'O') && (vr[1] == 'B') && (isIconImageSequence))
+			lLength += itemTagLength; //issue713
+		//printf("issue713::%c%c %04x,%04x %d@%lu\n", vr[0], vr[1], groupElement & 65535, groupElement >> 16, lLength, lPos);
 		if ((groupElement == kItemTag) && (isEncapsulatedData)) { //use this to find image fragment for compressed datasets, e.g. JPEG transfer syntax
 			d.imageBytes = dcmInt(4, &buffer[lPos], d.isLittleEndian);
 			lPos = lPos + 4;
@@ -5213,6 +5289,9 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			char transferSyntax[kDICOMStr];
 			strcpy(transferSyntax, "");
 			dcmStr(lLength, &buffer[lPos], transferSyntax);
+#ifdef USING_DCM2NIIXFSWRAPPER
+                        strcpy(d.transferSyntax, transferSyntax);
+#endif
 			if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
 				; //default isExplicitVR=true; //d.isLittleEndian=true
 			else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
@@ -5510,6 +5589,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (strlen(d.studyTime) < 2)
 				dcmStr(lLength, &buffer[lPos], d.studyTime);
 			break;
+		case kIconSQ: {//issue760 GEIIS icon strikes again
+			if ((vr[0] != 'S') || (vr[1] != 'Q') || (lLength != 8)) break; //only risk kludge for explicit VR with length
+			isIconImageSequence = true;
+			if (sqDepthIcon < 0)
+				sqDepthIcon = sqDepth;
+			break;
+		}
 		case kPatientName:
 			dcmStr(lLength, &buffer[lPos], d.patientName);
 			break;
@@ -5562,6 +5648,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kSeriesDescription:
 			dcmStr(lLength, &buffer[lPos], d.seriesDescription);
+#ifdef USING_DCM2NIIXFSWRAPPER
+			remove_specialchars(d.seriesDescription);
+#endif
 			break;
 		case kInstitutionalDepartmentName:
 			dcmStr(lLength, &buffer[lPos], d.institutionalDepartmentName);
@@ -5589,6 +5678,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA20") != NULL))
 				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA30") != NULL))
+				d.isXA10A = true;
+			if ((slen > 4) && (strstr(d.softwareVersions, "XA31") != NULL))
 				d.isXA10A = true;
 			if ((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL))
 				break;
@@ -5730,9 +5821,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kMRAcquisitionPhaseEncodingStepsOutOfPlane:
 			d.phaseEncodingStepsOutOfPlane = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kGradientEchoTrainLength:
-			d.echoTrainLength = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+		case kGradientEchoTrainLength: {
+			int etl = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (etl < 2) //issue 717
+				break;
+			d.echoTrainLength = etl;
 			break;
+		}
 		case kNumberOfImagesInMosaic:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS)
 				numberOfImagesInMosaic = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
@@ -5857,6 +5952,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			dcmStr(lLength, &buffer[lPos], d.pulseSequenceName);
 			if (strstr( d.pulseSequenceName, "epi_pepolar") != NULL) {
+			//if ((strstr( d.pulseSequenceName, "epi_pepolar") != NULL) || (strstr( d.pulseSequenceName, "epi2_pepolar") != NULL)){
 				d.epiVersionGE = kGE_EPI_PEPOLAR_FWD; //n.b. combine with 0019,10B3
 			} else if (strstr( d.pulseSequenceName, "epi2") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI2; //-1 = not epi, 0 = epi, 1 = epiRT, 2 = epi2
@@ -5865,7 +5961,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			} else if (strstr( d.pulseSequenceName, "epi") != NULL) {
 				d.epiVersionGE = kGE_EPI_EPI; //-1 = not epi, 0 = epi, 1 = epiRT
 			}
-			if (strcmp( d.pulseSequenceName, "3db0map") == 0) {
+			if (strstr( d.pulseSequenceName, "b0map")) {
 				isGEfieldMap = true; //issue501
 			}
 			break;
@@ -5875,6 +5971,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			char epiStr[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], epiStr);
+			strcat(d.phaseEncodingDirectionDisplayedUIH, epiStr); //overload
 			if ((d.epiVersionGE < kGE_EPI_PEPOLAR_FWD) && (strcmp(epiStr, "EPI") == 0)) {
 				d.internalepiVersionGE = 1; //-1 = not EPI, 1 = EPI, 2 = EPI2
 				if (d.epiVersionGE != 1) {	// 1 = epiRT by kEpiRTGroupDelayGE or kPulseSequenceNameGE
@@ -5896,7 +5993,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
 			break;
 		case kSeriesInstanceUID: // 0020,000E
-		    if (sqDepth > seriesInstanceUIDsqDepth) break; //issue655
+			if (sqDepth > seriesInstanceUIDsqDepth) break; //issue655
 			seriesInstanceUIDsqDepth = sqDepth;
 			dcmStr(lLength, &buffer[lPos], d.seriesInstanceUID);
 			d.seriesUidCrc = mz_crc32X((unsigned char *)&d.seriesInstanceUID, strlen(d.seriesInstanceUID));
@@ -5989,6 +6086,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				minTemporalPositionIndex = temporalPositionIndex;
 			break;
 		case kDimensionIndexPointer:
+			if (dimensionIndexPointerCounter >= MAX_NUMBER_OF_DIMENSIONS) break;
 			dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos], d.isLittleEndian);
 			break;
 		case kFrameContentSequence:
@@ -6078,6 +6176,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//printMessage("p%gs%d\n", d.accelFactPE, multiBandFactor);
 			break;
 		}
+//		case kCSASeriesHeaderInfoXA2:
+//			printf("do something profound\n");
 		case kCSASeriesHeaderInfoXA:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;
@@ -6123,7 +6223,22 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//printMessage("%d:%d:'%s'\n", d.echoNum, echo, iceStr);
 			if (iceStr != end)
 				d.echoNum = echo;
-			//printMessage("%d:'%s'\n", echo, echoStr);
+			break;
+		}
+		case kICE_dimsLong: { //issue568: LO (0021,1106) [X_4_1_1_1_1_160_1_1_1_1_1_277]
+			if ((d.manufacturer != kMANUFACTURER_SIEMENS) || (numberOfFramesICEdims > 0))
+				break;
+			char iceStr[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], iceStr);
+			int idx = 0;
+			char * pch = strtok (iceStr,"_");
+			char *end;
+			while (pch != NULL) {
+				if (idx ==20)
+					numberOfFramesICEdims = (int)strtol(pch, &end, 10);
+				idx ++;
+				pch = strtok (NULL, "_");
+			}
 			break;
 		}
 		case kPhaseEncodingDirectionPositiveSiemens: {
@@ -6189,6 +6304,14 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kPETImageIndex:
 			PETImageIndex = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
+		case kReferencedSegmentNumber: { //US issue706
+			int segn = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (segn < minReferencedSegmentNumber)
+				minReferencedSegmentNumber = segn;
+			if (segn > maxReferencedSegmentNumber)
+				maxReferencedSegmentNumber = segn;
+			break;
+		}
 		case kPEDirectionDisplayedUIH:
 			if (d.manufacturer != kMANUFACTURER_UIH)
 				break;
@@ -6555,8 +6678,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kScanningSequenceSiemens:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS) 
 				dcmStr(lLength, &buffer[lPos], scanningSequenceSiemens);
-			if (d.manufacturer == kMANUFACTURER_GE) //issue690
-				diffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (d.manufacturer == kMANUFACTURER_GE) //issue690, series-level 16=DFAXDTI
+				seriesdiffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
@@ -6574,6 +6697,23 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kSequenceName: {
 			dcmStr(lLength, &buffer[lPos], d.sequenceName);
 			break;
+		}
+		case kTRArray: {
+			if (d.manufacturer != kMANUFACTURER_PHILIPS)
+				break;
+			//support multiple TRs: issue 743
+			const int kMax = 4;
+			float v[kMax] = { 0.0 };
+			int nFloat32 = (lLength / 4);
+			if (nFloat32 < 2) break;
+			if (nFloat32 > kMax)
+				nFloat32 = kMax;
+			dcmMultiFloatSingle(nFloat32 * 4,  &buffer[lPos], nFloat32, v, d.isLittleEndian);
+			d.numberOfTR = 0;
+			//count number of TRs > 0, see issue 749
+			for(int i = 0; i< nFloat32; i++)
+				if (v[i] > 0.0)
+					d.numberOfTR ++;
 		}
 		case kMRfMRIStatusIndicationPhilips: {//fmri volume number
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -6946,7 +7086,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			d.shimGradientZ = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kVasCollapseFlagGE: //SS issue 690 16=DiffusionDtiDicomValue
+		case kVasCollapseFlagGE: //SS issue 690 image-level 16=DiffusionDtiDicomValue or 14=DiffusionT2DicomValue (initial b0)
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			diffusionDirectionTypeGE = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
@@ -7070,6 +7210,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer == kMANUFACTURER_GE) {
 				d.CSA.dtiV[0] = (float)set_bValGE(&volDiffusion, lLength, &buffer[lPos]);
 				d.CSA.numDti = 1;
+				d.isDiffusion = true;
 			}
 			break;
 		case kEpiRTGroupDelayGE: //FL
@@ -7154,7 +7295,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				isIconImageSequence = true;
 				if (sqDepthIcon < 0)
 					sqDepthIcon = sqDepth;
-				//geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not re-use pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
+				//geiisBug = true; //compressed thumbnails do not follow transfer syntax! GE should not reuse pulbic tags for these proprietary images http://sonca.kasshin.net/gdcm/Doc/GE_ImageThumbnails
 			}
 			break;
 		case kStudyComments: {
@@ -7454,9 +7595,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		}
 		if (isGEfieldMap) { //issue501 : to do check zip factor
 			//Volume 1) derived phase field map [Hz] and 2) magnitude volume.
-			d.isDerived = (d.imageNum <= locationsInAcquisitionGE); //first volume
-			d.isRealIsPhaseMapHz = d.isDerived;
-			d.isHasReal = d.isDerived;
+			//issue 777 while a fieldmap is technically derived, do not exclude with -i y
+			bool isDerived = (d.imageNum <= locationsInAcquisitionGE); //first volume
+			d.isRealIsPhaseMapHz = isDerived;
+			d.isHasReal = isDerived;
 		}
 		/* SAH.end */
 		if (locationsInAcquisitionGE < d.locationsInAcquisition) {
@@ -7553,6 +7695,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.xyzDim[3] = d.xyzDim[3] / numberOfDynamicScans;
 		d.xyzDim[4] = numberOfDynamicScans;
 	}
+	int nSegment = maxReferencedSegmentNumber - minReferencedSegmentNumber + 1;
+	if ((nSegment > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % nSegment) == 0)) { //issue706
+		d.xyzDim[3] = d.xyzDim[3] / nSegment;
+		d.xyzDim[4] = nSegment;
+	}
 	if ((maxInStackPositionNumber > 1) && (d.xyzDim[4] < 2) && (d.xyzDim[3] > 1) && ((d.xyzDim[3] % maxInStackPositionNumber) == 0)) {
 		d.xyzDim[4] = d.xyzDim[3] / maxInStackPositionNumber;
 		d.xyzDim[3] = maxInStackPositionNumber;
@@ -7605,7 +7752,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		qsort(objects, numberOfFrames, sizeof(struct fidx), fcmp);
 		numDimensionIndexValues = numberOfFrames;
 		for (int i = 0; i < numberOfFrames; i++) {
-			//	printf("%d > %g\n", objects[i].index, objects[i].value);
+			//printf("%d > %g\n", objects[i].index, objects[i].value);
 			dcmDim[objects[i].index].dimIdx[0] = i;
 		}
 		for (int i = 0; i < 4; i++) {
@@ -7664,7 +7811,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		int stackPositionItem = 0;
 		if (dimensionIndexPointerCounter > 0)
 			for (size_t i = 0; i < dimensionIndexPointerCounter; i++)
-				if (dimensionIndexPointer[i] == kInStackPositionNumber)
+				if ((dimensionIndexPointer[i] == kInStackPositionNumber) || (dimensionIndexPointer[i] == kImagePositionPatient)) //issue706
 					stackPositionItem = i;
 		if ((d.manufacturer == kMANUFACTURER_CANON) && (nVariableItems == 1) && (d.xyzDim[4] > 1)) {
 			//WARNING: Canon CANON V6.0SP2001* (0018,9005) = "AX fMRI" strangely sets TemporalPositionIndex(0020,9128) as 1 for all volumes: (0020,9157) and (0020,9128) are INCORRECT!
@@ -7724,7 +7871,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (dti4D->intenScalePhilips[i] != dti4D->intenScalePhilips[0])
 				d.isScaleVariesEnh = true;
 		}
-		if (!(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		//Revert Bruker change as new Bruker data uses DimensionIndexValues 0020,9157 for diffusion vectors
+		// https://github.com/rordenlab/dcm2niix/commit/8207877de984dab59e0374906c7ad212756f85a6#diff-120bb215d28dcbddeca8ea56dbb97e237501901ac2dfa1fbe4182282a8dd2b75
+		//if (!(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
+		if ((d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;
@@ -7734,6 +7884,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				int slice = j + (i * d.xyzDim[3]);
 				//dti4D->gradDynVol[i] = 0; //only PAR/REC
 				dti4D->TE[i] = dcmDim[slice].TE;
+				dti4D->TR[i] = dcmDim[slice].TR;
 				dti4D->isPhase[i] = dcmDim[slice].isPhase;
 				dti4D->isReal[i] = dcmDim[slice].isReal;
 				dti4D->isImaginary[i] = dcmDim[slice].isImaginary;
@@ -7814,6 +7965,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
 	//	uint_32t timeCRC = mz_crc32X((unsigned char*) &contentTime, sizeof(double));
 	//}
+	if (numberOfFramesICEdims < 2) //issue751: icedims[20] frames for EPI only
+		numberOfFramesICEdims = 0;
+	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] != numberOfFramesICEdims)) {
+		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
+		d.seriesNum += 1000;
+		d.isDerived = true;
+	}
 	//if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strcmp(d.sequenceName, "fldyn3d1")== 0)) {
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fldyn3d1") != NULL)) {
 		//combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
@@ -7884,8 +8042,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		}
 		d.seriesUidCrc = mz_crc32X((unsigned char *)&d.seriesInstanceUID, strlen(d.seriesInstanceUID));
 	}
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strstr(d.sequenceName, "fl2d1") != NULL)) {
-		d.isLocalizer = true;
+	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
+		if (strstr(d.seriesDescription, "AAHScout") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.protocolName, "AAHScout") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.sequenceName, "fl2d1") != NULL)
+			d.isLocalizer = true;
 	}
 	// detect GE diffusion gradient cycling mode (see issue 635)
 	// GE diffusion epi
@@ -7922,6 +8085,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.accelFactPE = accelFactPE;
 		//printf("Determining accelFactPE from 0018,9069 not 0021,1009 or 0051,1011\n");
 	}
+	//avoid false positives: non-EPI GE scans can report b-value = 0
+	if ((d.isDiffusion) && (d.manufacturer == kMANUFACTURER_GE))
+		d.isDiffusion = ((d.internalepiVersionGE == kGE_EPI_EPI2) || (d.epiVersionGE == kGE_EPI_EPI2));
 	//detect pepolar https://github.com/nipy/heudiconv/issues/479
 	if ((d.epiVersionGE == kGE_EPI_PEPOLAR_FWD) && (userData12GE == 1))
 		d.epiVersionGE = kGE_EPI_PEPOLAR_REV;
@@ -7946,7 +8112,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (strstr(d.sequenceName, "gre_fsp") != NULL))
 		d.echoTrainLength = 0;
 	//printf(">>%s\n", d.sequenceName); d.isValid = false;
-	// Andrey Fedorov has requested keeping GE bvalues, see issue 264
+	// Andrey Fedorov has requested keeping GE bvaecues, see issue 264
 	//if ((d.CSA.numDti > 0) && (d.manufacturer == kMANUFACTURER_GE) && (d.numberOfDiffusionDirectionGE < 1))
 	//	d.CSA.numDti = 0; //https://github.com/rordenlab/dcm2niix/issues/264
 	if ((!d.isLocalizer) && (isInterpolated) && (d.imageNum <= 1))
@@ -7978,8 +8144,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
-	//issue690
-	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16))
+	//issue690, 777 
+	// detect non-DTI for GE 
+	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16) && (diffusionDirectionTypeGE != 14))
+		d.numberOfDiffusionDirectionGE = 0;
+	if ((d.manufacturer == kMANUFACTURER_GE) && (seriesdiffusionDirectionTypeGE > 0) && (seriesdiffusionDirectionTypeGE != 16))
 		d.numberOfDiffusionDirectionGE = 0;
 	//issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
@@ -7999,6 +8168,13 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.rawDataRunNumber = philMRImageDiffVolumeNumber;
 		d.phaseNumber  = 0; 
 	}
+	// Phase encoding polarity
+	//next conditionals updated: make GE match Siemens
+	// it also rescues Siemens XA20 images without CSA header but with 0021,111C
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_UNFLIPPED)
+		d.CSA.phaseEncodingDirectionPositive = 1;
+	if (d.phaseEncodingGE == kGE_PHASE_ENCODING_POLARITY_FLIPPED)
+		d.CSA.phaseEncodingDirectionPositive = 0;
 	//issue 668: several SAR levels for different regions (IEC_HEAD, IEC_LOCAL, etc)
 	d.SAR = fmax(maxSAR, d.SAR);
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
@@ -8016,6 +8192,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		d.isValid = false;
 	}
 	//printf("%g\t%g\t%s\n", d.intenIntercept, d.intenScale, fname);
+	if ((d.isLocalizer) && (strstr(d.seriesDescription, "b1map"))) //issue751 b1map uses same base as scout
+			d.isLocalizer = false;
 	return d;
 } // readDICOMx()
 
@@ -8040,3 +8218,32 @@ struct TDICOMdata readDICOM(char *fname) {
 	free(dti4D);
 	return ret;
 } // readDICOM()
+
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+// remove spaces, '[', ']' in given buf
+// ??? also remove <, >, &
+void remove_specialchars(char *buf)
+{
+  if (strchr(buf, ' ') == NULL)
+    return;
+  
+  int buflen = strlen(buf)+1;
+  char *newbuf = new char[buflen];
+  memset(newbuf, '\0' , buflen);
+
+  char *ptr_newbuf = &newbuf[0];
+  for (int i = 0; i < buflen; i++)
+  {
+    // skip spaces, '[', ']'
+    if (buf[i] == ' ' || buf[i] == '[' || buf[i] == ']')
+      continue;
+
+    *ptr_newbuf = buf[i];
+    ptr_newbuf++;
+  }
+
+  memcpy(buf, newbuf, ptr_newbuf-newbuf);
+  free(newbuf);
+}
+#endif

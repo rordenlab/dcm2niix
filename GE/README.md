@@ -50,14 +50,24 @@ Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 6
 
 ## Total Readout Time
 
-One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Specifically, we are interested in FSL's definition of total read-out time, which may differ from the actual read-out time. FSL expects “the time from the middle of the first echo to the middle of the last echo, as it would have been had partial k-space not been used”. So total read-out time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, but not partial Fourier. For GE data we can use the Acquisition Matrix (0018,1310) in the phase-encoding direction, the in-plane acceleration ASSET R factor (the reciprocal of this is stored as the first element of 0043,1083) and the Effective Echo Spacing (0043,102C). While GE does not tell us the [partial Fourier fraction](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html), is does reveal if it is present with the ScanOptions (0018,1022) reporting [PFF](http://dicomlookup.com/lookup.asp?sw=Ttable&q=C.8-4) (in my experience, GE does not populate [(0018,9081)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9081))). While partial Fourier does not impact FSL's totalReadoutTime directly, it can interact with the number of lines acquired when combined with parallel imaging (the `Round_factor` 2 (Full Fourier) or 4 (Partial Fourier)).
+One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Specifically, we are interested in FSL's definition of total read-out time, which may differ from the actual read-out time. FSL expects “the time from the middle of the first echo to the middle of the last echo, as it would have been had partial k-space not been used”. So total read-out time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, but not partial Fourier. For GE data we can use the Acquisition Matrix (0018,1310) in the phase-encoding direction, the in-plane acceleration ASSET R factor (the reciprocal of this is stored as the first element of 0043,1083) and the Effective Echo Spacing (0043,102C). Note that the Effective Echo Spacing (0043,102C) in GE DICOMS is defined as the time between two consecutives acquired phase encoding lines divided by the number of shots (usually, this is equal to 1 for fMRI and Diffusion). 
+While GE does not tell us the [partial Fourier fraction](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html), is does reveal if it is present with the ScanOptions (0018,1022) reporting [PFF](http://dicomlookup.com/lookup.asp?sw=Ttable&q=C.8-4) (in my experience, GE does not populate [(0018,9081)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9081))). While partial Fourier does not impact FSL's totalReadoutTime directly, it can interact with the number of lines acquired when combined with parallel imaging (the `Round_factor` 2 (Full Fourier) or 4 (Partial Fourier)).
 
-The formula for FSL's definition of TotalReadoutTime (in seconds) is:
+Let `NotPhysicalNumberOfAcquiredPELinesGE` be the number of acquired phase encoding lines if there was no partial Fourier and `NotPhysicalTotalReadOutTimeGE` be the physical total read-out time if there was no partial Fourier. Please, note that these two intermediate variables do not take partial Fourier into account. These two variables can be computed as
 
 ```
-TotalReadoutTime = ( ( ceil ((1/Round_factor) * PE_AcquisitionMatrix / Asset_R_factor ) * Round_factor) - 1 ] * EchoSpacing * 0.000001
-EffectiveEchoSpacing = TotalReadoutTime/ (reconMatrixPE - 1)
+NotPhysicalNumberOfAcquiredPELinesGE = (ceil((1/Round_factor) * PE_AcquisitionMatrix / Asset_R_factor) * Round_factor)
+NotPhysicalTotalReadOutTimeGE = (NotPhysicalNumberOfAcquiredPELinesGE - 1) * EchoSpacing * 0.000001
 ```
+
+with `EchoSpacing` referring to the GE private DICOM field "(0043,102C) Effective Echo Spacing". 
+Then, the formula for FSL's definition of `EffectiveEchoSpacing` and `TotalReadoutTime` (in seconds) are:
+
+```
+EffectiveEchoSpacing = NotPhysicalTotalReadOutTimeGE / (PE_AcquisitionMatrix - 1)
+TotalReadoutTime = EffectiveEchoSpacing * (ReconMatrixPE - 1)
+```
+When there is no image interpolation (i.e. `ReconMatrixPE = PE_AcquisitionMatrix`) the `TotalReadoutTime` has the same value as `NotPhysicalTotalReadOutTimeGE`. In other words, `NotPhysicalTotalReadOutTimeGE` is the `TotalReadoutTime` without any image interpolation. 
 
 Consider an example:
 
@@ -73,6 +83,7 @@ From this we can derive:
 ```
 ASSET= 1.5 PE_AcquisitionMatrix= 128 EchoSpacing= 636 Round_Factor= 4 TotalReadoutTime= 0.055332
 ```
+For debugging purposes, the intermediate variables `NotPhysicalTotalReadOutTimeGE`, `NotPhysicalNumberOfAcquiredPELinesGE` and `EchoSpacing` (renamed `EchoSpacingMicroSecondsGE`) are written to the BIDS-sidecar JSON file when dcm2niix is compiled with the flag `MY_DEBUG`. 
 
 ## Image Acceleration
 

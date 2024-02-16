@@ -17,7 +17,7 @@ UIH supports two ways of archiving the DWI/DTI and fMRI data. One way is one DIC
 |0065,1002  | ImageOrientationDisplayed | SH | 1 | Image Orientation Displayed | Sag or Sag>Cor|
 |0065,1003  | ReceiveCoil | LO | 1 | Receive Coil Information | H 8|
 |0065,1004  | Interpolation | SH | 1 | Interpolation | I|
-|0065,1005  | PE Direction Displayed | SH | 1 | Phase encoding diretion displayed | A->P or H->F|
+|0065,1005  | PE Direction Displayed | SH | 1 | Phase encoding direction displayed | A->P or H->F|
 |0065,1006  | Slice Group ID | IS | 1 | Slice Group ID | 1|
 |0065,1007  | Uprotocol | OB | 1 | Uprotocol value |  |
 |0065,1009  | BActualValue | FD | 1 | Actual B-Value from sequence | 1000.0|

@@ -64,7 +64,7 @@ According to preliminary test results published on http://imagecompression.info/
 * No support for (optional) JPEG restart markers (RST). These markers are rarely used in practice.
 * No support for the SPIFF file header.
 * No support for oversize image dimension. Maximum supported image dimensions are [1, 65535] by [1, 65535].
-* After releasing the original baseline standrd 14495-1:1999, ISO released an extension to the JPEG-LS standard called ISO/IEC 14495-2:2003: "Lossless and near-lossless compression of continuous-tone still images: Extensions". CharLS doesn't support these extensions.
+* After releasing the original baseline standard 14495-1:1999, ISO released an extension to the JPEG-LS standard called ISO/IEC 14495-2:2003: "Lossless and near-lossless compression of continuous-tone still images: Extensions". CharLS doesn't support these extensions.
 
 ## Supported platforms
 

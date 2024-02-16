@@ -80,7 +80,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
 	printf("  -c : comment stored in NIfTI aux_file (up to 24 characters e.g. '-c VIP', empty to anonymize e.g. 0020,4000 e.g. '-c \"\"')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
-#ifdef myEnableJNIfTI
+#ifdef myEnableJNIFTI
 	printf("  -e : export as NRRD (y) or MGH (o) or JSON/JNIfTI (j) or BJNIfTI (b) instead of NIfTI (y/n/o/j/b, default n)\n");
 #else
 	printf("  -e : export as NRRD (y) or MGH (o) instead of NIfTI (y/n/o/j/b, default n)\n");
@@ -347,6 +347,12 @@ int main(int argc, const char *argv[]) {
 						opts.isAnonymizeBIDS = false;
 					else
 						opts.isAnonymizeBIDS = true;
+				} else if (argv[i][2] == 'i') { //"-bi M2022" provide BIDS subject ID
+					i++;
+					snprintf(opts.bidsSubject, kOptsStr-1, "%s", argv[i]);
+				} else if (argv[i][2] == 'v') { //"-bv 1222" provide BIDS subject visit
+					i++;
+					snprintf(opts.bidsSession, kOptsStr-1, "%s", argv[i]);
 				} else
 					printf("Error: Unknown command line argument: '%s'\n", argv[i]);
 			} else if ((argv[i][1] == 'c') && ((i + 1) < argc)) {
@@ -370,7 +376,7 @@ int main(int argc, const char *argv[]) {
 					opts.saveFormat = kSaveFormatJNII;
 				if ((argv[i][0] == 'b') || (argv[i][0] == 'B') || (argv[i][0] == '4'))
 					opts.saveFormat = kSaveFormatBNII;
-				#ifndef myEnableJNIfTI
+				#ifndef myEnableJNIFTI
 				if ((opts.saveFormat == kSaveFormatJNII) || (opts.saveFormat == kSaveFormatBNII)) {
 					printf("Recompile for JNIfTI support.\n");
 					return EXIT_SUCCESS;
