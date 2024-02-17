@@ -1804,7 +1804,7 @@ void cleanStr(char *lOut) {
 
 int isSameFloatGE(float a, float b) {
 	//Kludge for bug in 0002,0016="DIGITAL_JACKET", 0008,0070="GE MEDICAL SYSTEMS" DICOM data: Orient field (0020:0037) can vary 0.00604261 == 0.00604273 !!!
-	//return (a == b); //niave approach does not have any tolerance for rounding errors
+	//return (a == b); //naive approach does not have any tolerance for rounding errors
 	return (fabs(a - b) <= 0.0001);
 }
 
@@ -3152,12 +3152,25 @@ unsigned char *nii_byteswap(unsigned char *img, struct nifti_1_header *hdr) {
 
 #ifdef myEnableJasper
 unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int compressFlag) {
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 3
+	jas_conf_clear();
+	jas_conf_set_debug_level(0);
+	jas_conf_set_max_mem_usage(1 << 30); 	// 1 GiB
+	if (jas_init_library()) {
+		return NULL;
+	}
+	if (jas_init_thread()) {
+		jas_cleanup_library();
+		return NULL;
+	}
+#else
 	if (jas_init()) {
 		return NULL;
 	}
+	jas_setdbglevel(0);
+#endif
 	jas_stream_t *in;
 	jas_image_t *image;
-	jas_setdbglevel(0);
 	if (!(in = jas_stream_fopen(imgname, "rb"))) {
 		printError("Cannot open input image file %s\n", imgname);
 		return NULL;
@@ -3284,6 +3297,10 @@ unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, s
 	jas_matrix_destroy(data);
 	jas_image_destroy(image);
 	jas_image_clearfmts();
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 3
+	jas_cleanup_thread();
+	jas_cleanup_library();
+#endif
 	return img;
 } //nii_loadImgCoreJasper()
 #endif
@@ -3820,14 +3837,19 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	return img;
 } //nii_loadImgXL()
 
-int isSQ(uint32_t groupElement) { //Detect sequence VR ("SQ") for implicit tags
+int isSQ(uint32_t groupElement, bool isPhilips) { //Detect sequence VR ("SQ") for implicit tags
 	static const int array_size = 35;
-	uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
+	uint32_t array[array_size] = {0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
+	//uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
 	for (int i = 0; i < array_size; i++) {
 		//if (array[i] == groupElement) printMessage(" implicitSQ %04x,%04x\n",  groupElement & 65535,groupElement>>16);
 		if (array[i] == groupElement)
 			return 1;
 	}
+	//issue 775: Canon/Toshiba use 2005,140f but not as a SQ?
+	uint32_t kPhilipsSQ = 0x2005 + (uint32_t(0x140F) << 16);
+	if ((isPhilips) && (kPhilipsSQ == groupElement))
+		return 1;
 	return 0;
 } //isSQ()
 
@@ -4729,6 +4751,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	char imageType1st[kDICOMStr] = "";
 	bool isEncapsulatedData = false;
 	int diffusionDirectionTypeGE = 0; //issue690
+	int seriesdiffusionDirectionTypeGE = 0; //issue690, 777
 	int multiBandFactor = 0;
 	int frequencyRows = 0;
 	int numberOfImagesInMosaic = 0;
@@ -5065,12 +5088,12 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			else
 				lLength = buffer[lPos + 3] | (buffer[lPos + 2] << 8) | (buffer[lPos + 1] << 16) | (buffer[lPos] << 24);
 			lPos += 4; //we have loaded the 32-bit length
-			if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+			if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (isSQ(groupElement, true))) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
-			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement))) { //https://github.com/rordenlab/dcm2niix/issues/144
+			if ((d.manufacturer != kMANUFACTURER_PHILIPS) && (isSQ(groupElement, false))) { //https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; //Do not skip kItemTag - required to determine nesting of Philips Enhanced
@@ -6655,8 +6678,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kScanningSequenceSiemens:
 			if (d.manufacturer == kMANUFACTURER_SIEMENS) 
 				dcmStr(lLength, &buffer[lPos], scanningSequenceSiemens);
-			if (d.manufacturer == kMANUFACTURER_GE) //issue690
-				diffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (d.manufacturer == kMANUFACTURER_GE) //issue690, series-level 16=DFAXDTI
+				seriesdiffusionDirectionTypeGE = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
@@ -7063,7 +7086,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 				break;
 			d.shimGradientZ = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kVasCollapseFlagGE: //SS issue 690 16=DiffusionDtiDicomValue
+		case kVasCollapseFlagGE: //SS issue 690 image-level 16=DiffusionDtiDicomValue or 14=DiffusionT2DicomValue (initial b0)
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			diffusionDirectionTypeGE = dcmIntSS(lLength, &buffer[lPos], d.isLittleEndian);
@@ -8121,8 +8144,11 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//in practice 0020,0110 not used
 		//https://github.com/bids-standard/bep001/blob/repetitiontime/Proposal_RepetitionTime.md
 	}
-	//issue690
-	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16))
+	//issue690, 777 
+	// detect non-DTI for GE 
+	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE > 0) && (diffusionDirectionTypeGE != 16) && (diffusionDirectionTypeGE != 14))
+		d.numberOfDiffusionDirectionGE = 0;
+	if ((d.manufacturer == kMANUFACTURER_GE) && (seriesdiffusionDirectionTypeGE > 0) && (seriesdiffusionDirectionTypeGE != 16))
 		d.numberOfDiffusionDirectionGE = 0;
 	//issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f)) ) )
