@@ -16,6 +16,7 @@ struct MRIFSSTRUCT
   size_t         imgsz;
   unsigned char *imgM;
 
+  char pulseSequenceDetails[kDICOMStr];
   struct TDICOMdata tdicomData;
   char namePostFixes[256];
   char *dicomfile;

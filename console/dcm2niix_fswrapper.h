@@ -17,7 +17,7 @@ class dcm2niix_fswrapper
 {
 public:
   // set TDCMopts defaults, overwrite settings to output in mgz orientation.
-  static void setOpts(const char* dcmindir, const char* niioutdir=NULL, bool createBIDS=false, int ForceStackSameSeries=1);
+  static void setOpts(const char* dcmindir, const char* dcm2niixopts=NULL);
 
   // interface to isDICOMfile() in nii_dicom.cpp
   static bool isDICOM(const char* file);
@@ -47,6 +47,9 @@ public:
 
 private:
   static struct TDCMopts tdcmOpts;
+
+  //
+  static void __setDcm2niixOpts(const char *dcm2niixopts);
 };
 
 #endif
