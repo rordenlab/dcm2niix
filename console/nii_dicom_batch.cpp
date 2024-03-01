@@ -6859,7 +6859,7 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		strcat(suffixBIDS,modalityBIDS);
 	}
 	//if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
-	//if (isVerbose > 0)
+	if (isVerbose > 0)
 		printf("::autoBids:Philips pulseSeq:'%s' scanSeq:'%s' seqVariant:'%s'\n", 
 			d->pulseSequenceName, d->scanningSequence, d->sequenceVariant);
 	if (isDerived)
