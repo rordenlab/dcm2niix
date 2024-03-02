@@ -5166,6 +5166,10 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			privateCreatorRemap = 0;
 			char privateCreator[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], privateCreator);
+			//
+			int s_len = strlen(privateCreator);
+			for (int i = 0; i < s_len; i++)
+				privateCreator[i] = toupper(privateCreator[i]); 
 			//next lines determine remapping, append as needed
 			//Siemens https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl
 			if (strstr(privateCreator, "SIEMENS MR HEADER") != NULL)
@@ -5194,18 +5198,30 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			if ((grp == 0x07a3) && (strstr(privateCreator, "ELSCINT1") != NULL))
 				privateCreatorRemap = 0x07a3 + (0x1000 << 16);
 			//Philips https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/philips.tpl
-			if (strstr(privateCreator, "PHILIPS IMAGING DD 001") != NULL)
-				privateCreatorRemap = 0x2001 + (0x1000 << 16);
-			if (strstr(privateCreator, "Philips Imaging DD 001") != NULL)
-				privateCreatorRemap = 0x2001 + (0x1000 << 16);
-			if (strstr(privateCreator, "PHILIPS MR IMAGING DD 001") != NULL)
-				privateCreatorRemap = 0x2005 + (0x1000 << 16);
-			if (strstr(privateCreator, "Philips MR Imaging DD 001") != NULL)
-				privateCreatorRemap = 0x2005 + (0x1000 << 16);
-			if (strstr(privateCreator, "PHILIPS MR IMAGING DD 005") != NULL)
-				privateCreatorRemap = 0x2005 + (0x1400 << 16);
-			if (strstr(privateCreator, "Philips MR Imaging DD 005") != NULL)
-				privateCreatorRemap = 0x2005 + (0x1400 << 16);
+			if (strstr(privateCreator, "PHILIPS IMAGING") != NULL) {
+				if (strstr(privateCreator, "DD 001") != NULL)
+					privateCreatorRemap = 0x2001 + (0x1000 << 16);
+				if (strstr(privateCreator, "DD 002") != NULL)
+					privateCreatorRemap = 0x2001 + (0x1100 << 16);
+				if (strstr(privateCreator, "DD 003") != NULL)
+					privateCreatorRemap = 0x2001 + (0x1200 << 16);
+				if (strstr(privateCreator, "DD 004") != NULL)
+					privateCreatorRemap = 0x2001 + (0x1300 << 16);
+				if (strstr(privateCreator, "DD 005") != NULL)
+					privateCreatorRemap = 0x2001 + (0x1400 << 16);
+			}
+			if (strstr(privateCreator, "PHILIPS MR IMAGING") != NULL) {
+				if (strstr(privateCreator, "DD 001") != NULL)
+					privateCreatorRemap = 0x2005 + (0x1000 << 16);
+				if (strstr(privateCreator, "DD 002") != NULL)
+					privateCreatorRemap = 0x2005 + (0x1100 << 16);
+				if (strstr(privateCreator, "DD 003") != NULL)
+					privateCreatorRemap = 0x2005 + (0x1200 << 16);
+				if (strstr(privateCreator, "DD 004") != NULL)
+					privateCreatorRemap = 0x2005 + (0x1300 << 16);
+				if (strstr(privateCreator, "DD 005") != NULL)
+					privateCreatorRemap = 0x2005 + (0x1400 << 16);
+			}
 			//UIH https://github.com/neurolabusc/dcm_qa_uih
 			if (strstr(privateCreator, "Image Private Header") != NULL)
 				privateCreatorRemap = 0x0065 + (0x1000 << 16);
@@ -6392,8 +6408,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kTE:
 			TE = dcmStrFloat(lLength, &buffer[lPos]);
-			if (d.TE <= 0.0)
-				d.TE = TE;
+			//20240229 if (d.TE <= 0.0)
+			d.TE = TE;
 			break;
 		case kNumberOfAverages:
 			d.numberOfAverages = dcmStrFloat(lLength, &buffer[lPos]);
@@ -8058,7 +8074,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		// cycling systems: Premier, UHP, 7.0T
 		if ((strstr(d.manufacturersModelName, "Premier") != NULL) || (strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) {
 			// cycling special OFF mode
-			if (isSameFloatGE(userData15GE, 0.72))
+			if (((strstr(d.manufacturersModelName, "Premier") != NULL) && (isSameFloatGE(userData15GE, 0.72))) || 
+			(((strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) && (userData15GE > 0.5) && (userData15GE < 1))) //issue 796
 				d.diffCyclingModeGE = kGE_DIFF_CYCLING_SPOFF;
 			// 2TR cycling mode
 			else if (userData12GE == 2) {

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <libgen.h>
 
 #include "nii_dicom.h"
@@ -53,15 +54,13 @@ numSeries = 0
  */
 
 // set TDCMopts defaults, overwrite settings to output in mgz orientation
-void dcm2niix_fswrapper::setOpts(const char* dcmindir, const char* niioutdir, bool createBIDS, int ForceStackSameSeries)
+void dcm2niix_fswrapper::setOpts(const char* dcmindir, const char* dcm2niixopts)
 {
   memset(&tdcmOpts, 0, sizeof(tdcmOpts));
   setDefaultOpts(&tdcmOpts, NULL);
 
   if (dcmindir != NULL)
     strcpy(tdcmOpts.indir, dcmindir);
-  if (niioutdir != NULL)
-    strcpy(tdcmOpts.outdir, niioutdir);
 
   // dcmunpack actually uses seriesDescription, set FName = `printf %04d.$descr $series`
   // change it from "%4s.%p" to "%4s.%d"
@@ -71,11 +70,136 @@ void dcm2niix_fswrapper::setOpts(const char* dcmindir, const char* niioutdir, bo
   tdcmOpts.isRotate3DAcq = false;
   tdcmOpts.isFlipY = false;
   tdcmOpts.isIgnoreSeriesInstanceUID = true;
-  tdcmOpts.isCreateBIDS = createBIDS;
+  tdcmOpts.isCreateBIDS = false;
   tdcmOpts.isGz = false;
-  tdcmOpts.isForceStackSameSeries = ForceStackSameSeries; // merge 2D slice '-m y', tdcmOpts.isForceStackSameSeries = 1
+  tdcmOpts.isForceStackSameSeries = 1; // merge 2D slice '-m y', tdcmOpts.isForceStackSameSeries = 1
   tdcmOpts.isForceStackDCE = false;
   //tdcmOpts.isForceOnsetTimes = false;
+
+  if (dcm2niixopts != NULL)
+    __setDcm2niixOpts(dcm2niixopts);
+}
+
+/* set user dcm2niix conversion options in struct TDCMopts tdcmOpts
+ * only subset of dcm2niix command line options are recognized: (https://manpages.ubuntu.com/manpages/jammy/en/man1/dcm2niix.1.html)
+ *     -b <y/i/n>
+ *            Save  additional  BIDS  metadata  to  a  side-car  .json  file  (default  y).
+ *            The "i"nput-only option reads DICOMs but saves neither BIDS nor NIfTI.
+ *
+ *     -ba <y/n> anonymize BIDS (default y).
+ *            If "n"o, side-car may report patient name, age and weight.
+ *
+ *     -f <format>
+ *            Format string for the output filename(s). 
+ *
+ *     -i <y/n>
+ *            Ignore derived, localizer and 2D images (default n)
+ *
+ *     -m <y/n/2>
+ *            Merge slices from the same series regardless of study time, echo, coil, orientation, etc. (default 2).
+ *            If "2", automatic based on image modality.
+ *
+ *     -v <2/y/n>
+ *            Enable verbose output. "n" for succinct, "y" for verbose, "2" for high verbosity
+ *
+ *     -o <path>
+ *            Output directory where the converted files should be saved.
+ *
+ *     -t <y/n>
+ *            Save patient details as text notes.
+ *
+ *     -p <y/n>
+ *            Use Philips precise float (rather than display) scaling.
+ *
+ *     -x <y/n/i>
+ *            Crop images. This will attempt to remove excess neck from 3D acquisitions.
+ *            If "i", images are neither cropped nor rotated to canonical space.
+ */
+void dcm2niix_fswrapper::__setDcm2niixOpts(const char *dcm2niixopts)
+{
+  //printf("[DEBUG] dcm2niix_fswrapper::__setDcm2niixOpts(%s)\n", dcm2niixopts);
+
+  char *restOpts = (char*)malloc(strlen(dcm2niixopts)+1);
+  memset(restOpts, 0, strlen(dcm2niixopts)+1);
+  memcpy(restOpts, dcm2niixopts, strlen(dcm2niixopts));
+
+  char *nextOpt = strtok_r((char*)dcm2niixopts, ",", &restOpts);
+  while (nextOpt != NULL)
+  {
+    char *k = nextOpt;
+    char *v = strchr(nextOpt, '=');
+    if (v != NULL)
+      *v = '\0';
+    v++;  // move past '='
+
+    // skip leading white spaces
+    while (*k == ' ')
+      k++;
+    
+    if (strcmp(k, "b") == 0)
+    {
+      if (*v == 'n' || *v == 'N' || *v == '0')
+	tdcmOpts.isCreateBIDS = false;
+      else if (*v == 'i' || *v == 'I')
+      {
+	tdcmOpts.isCreateBIDS = false;
+        tdcmOpts.isOnlyBIDS = true;
+      }
+      else if (*v == 'y' || *v == 'Y')
+	tdcmOpts.isCreateBIDS = true;
+    }
+    else if (strcmp(k, "ba") == 0)
+      tdcmOpts.isAnonymizeBIDS = (*v == 'n' || *v == 'N') ? false : true;
+    else if (strcmp(k, "f") == 0)
+      strcpy(tdcmOpts.filename, v);
+    else if (strcmp(k, "i") == 0)
+      tdcmOpts.isIgnoreDerivedAnd2D = (*v == 'y' || *v == 'Y') ? true : false;
+    else if (strcmp(k, "m") == 0)
+    {
+      if (*v == 'n' || *v == 'N' || *v == '0')
+	tdcmOpts.isForceStackSameSeries = 0;
+      else if (*v == 'y' || *v == 'Y' || *v == '1')
+	tdcmOpts.isForceStackSameSeries = 1;
+      else if (*v == '2')
+	tdcmOpts.isForceStackSameSeries = 2;
+      else if (*v == 'o' || *v == 'O')
+	tdcmOpts.isForceStackDCE = false;
+    }
+    else if (strcmp(k, "v") == 0)
+    {
+      if (*v == 'n' || *v == 'N' || *v == '0')
+	tdcmOpts.isVerbose = 0;
+      else if (*v == 'h' || *v == 'H' || *v == '2')
+	tdcmOpts.isVerbose = 2;
+      else
+	tdcmOpts.isVerbose = 1;
+    }
+    else if (strcmp(k, "o") == 0)
+      strcpy(tdcmOpts.outdir, v);
+    else if (strcmp(k, "t") == 0)
+      tdcmOpts.isCreateText = (*v == 'y' || *v == 'Y') ? true : false;
+    else if (strcmp(k, "p") == 0)
+    {
+      if (*v == 'n' || *v == 'N' || *v == '0')
+        tdcmOpts.isPhilipsFloatNotDisplayScaling = false;
+    }
+    else if (strcmp(k, "x") ==0)
+    {
+      if (*v == 'y' || *v == 'Y')
+	tdcmOpts.isCrop = true;
+      else if (*v == 'i' || *v == 'I')
+      {
+	tdcmOpts.isRotate3DAcq = false;
+	tdcmOpts.isCrop = false;
+      }
+    }
+    else
+    {
+      printf("[WARN] dcm2niix option %s=%s skipped\n", k, v);
+    }
+    
+    nextOpt = strtok_r(NULL, ",", &restOpts);
+  }
 }
 
 // interface to isDICOMfile() in nii_dicom.cpp
@@ -157,10 +281,10 @@ void dcm2niix_fswrapper::dicomDump(const char* dicomdir, const char *series_info
     fclose(fp_dcmLst);
 
     // output series_info
-    fprintf(fpout, "%ld %s %f %f %f %f\\%f %c %f %s %s", 
+    fprintf(fpout, "%ld %s %f %f %f %f\\%f %c %f %s %s %s", 
                    tdicomData->seriesNum, tdicomData->seriesDescription,
                    tdicomData->TE, tdicomData->TR, tdicomData->flipAngle, tdicomData->xyzMM[1], tdicomData->xyzMM[2],
-                   tdicomData->phaseEncodingRC, tdicomData->pixelBandwidth, (*mrifsStruct_vector)[n].dicomfile, tdicomData->imageType);
+	           tdicomData->phaseEncodingRC, tdicomData->pixelBandwidth, (*mrifsStruct_vector)[n].dicomfile, tdicomData->imageType, (*mrifsStruct_vector)[n].pulseSequenceDetails);
 #if 0
     if (max)
     {
