@@ -786,6 +786,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.convolutionKernel, "");
 	strcpy(d.parallelAcquisitionTechnique, "");
 	strcpy(d.imageOrientationText, "");
+	strcpy(d.tracerRadionuclide, "");
 	strcpy(d.unitsPT, "");
 	strcpy(d.decayCorrection, "");
 	strcpy(d.attenuationCorrectionMethod, "");
@@ -833,6 +834,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.shimGradientZ = -33333;//impossible value for UINT16
 	strcpy(d.prescanReuseString, "");
 	d.decayFactor = 0.0;
+	d.scatterFraction = 0.0;
 	d.percentSampling = 0.0;
 	d.phaseFieldofView = 0.0;
 	d.dwellTime = 0;
@@ -936,6 +938,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.numberOfImagesInGridUIH = 0;
 	d.phaseEncodingRC = '?';
 	d.patientSex = '?';
+	d.patientSize = 0.0;
 	d.patientWeight = 0.0;
 	strcpy(d.patientBirthDate, "");
 	strcpy(d.patientAge, "");
@@ -4362,6 +4365,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kInstitutionName 0x0008 + (0x0080 << 16)
 #define kInstitutionAddress 0x0008 + (0x0081 << 16)
 #define kReferringPhysicianName 0x0008 + (0x0090 << 16)
+#define kTracerRadionuclide1 0x0008 + (0x0100 << 16) //SH
+#define kTracerRadionuclide2 0x0008 + (0x0104 << 16) //LO
 #define kStationName 0x0008 + (0x1010 << 16)
 #define kSeriesDescription 0x0008 + (0x103E << 16) // '0008' '103E' 'LO' 'SeriesDescription'
 #define kInstitutionalDepartmentName 0x0008 + (0x1040 << 16)
@@ -4376,6 +4381,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPatientBirthDate 0x0010 + (0x0030 << 16)
 #define kPatientSex 0x0010 + (0x0040 << 16)
 #define kPatientAge 0x0010 + (0x1010 << 16)
+#define kPatientSize 0x0010 + (0x1020 << 16) //DS
 #define kPatientWeight 0x0010 + (0x1030 << 16)
 #define kAnatomicalOrientationType 0x0010 + (0x2210 << 16)
 #define kDeidentificationMethod 0x0012 + (0x0063 << 16) //[DICOMANON, issue 383
@@ -4581,6 +4587,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kReconstructionMethod 0x0054 + (0x1103 << 16) //LO
 #define kFrameReferenceTime 0x0054 + (0x1300 << 16) //DS
 #define kDecayFactor 0x0054 + (0x1321 << 16) //DS
+#define kScatterFraction 0x0054 + (0x1323 << 16) //DS
 //ftp://dicom.nema.org/MEDICAL/dicom/2014c/output/chtml/part03/sect_C.8.9.4.html
 //If ImageType is REPROJECTION we slice direction is reversed - need example to test
 // #define kSeriesType 0x0054+(0x1000 << 16 )
@@ -5656,9 +5663,35 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kPatientAge:
 			dcmStr(lLength, &buffer[lPos], d.patientAge);
 			break;
+		case kPatientSize:
+			d.patientSize = dcmStrFloat(lLength, &buffer[lPos]);
+			break;
 		case kPatientWeight:
 			d.patientWeight = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
+/* n.b. check GeneralElectricAdvance-NIMH example dataset: need to speficy SQ
+    (0018,0031) LO [FDG -- fluorodeoxyglucose ]                   # 26,1 Radiopharmaceutical
+    (0018,1071) DS [0 ]                                           # 2,1 Radiopharmaceutical Volume
+    (0018,1072) TM [092345.00 ]                                   # 10,1 Radiopharmaceutical Start Time
+    (0018,1074) DS [      75850000]                               # 14,1 Radionuclide Total Dose
+    (0018,1075) DS [6588]                                         # 4,1 Radionuclide Half Life
+    (0018,1076) DS [0.97000002861023]                             # 16,1 Radionuclide Positron Fraction
+    (0054,0300) SQ (Sequence with undefined length)               # u/l,1 Radionuclide Code Sequence
+      (fffe,e000) na (Item with defined length)
+        (0008,0100) SH [C-111A1 ]                                 # 8,1 Code Value
+        (0008,0102) SH [99SDM ]                                   # 6,1 Coding Scheme Designator
+        (0008,0104) LO [18F ]                                     # 4,1 Code Meaning
+    (fffe,e0dd)
+    (0054,0304) SQ (Sequence with undefined length)               # u/l,1 Radiopharmaceutical Code Sequence
+      (fffe,e000) na (Item with defined length)
+        (0008,0100) SH [Y-X1743 ]                                 # 8,1 Code Value
+        (0008,0102) SH [99SDM ]                                   # 6,1 Coding Scheme Designator
+        (0008,0104) LO [FDG -- fluorodeoxyglucose ]               # 26,1 Code Meaning
+    (fffe,e0dd)
+		case kTracerRadionuclide1:
+		case kTracerRadionuclide2:
+			dcmStr(lLength, &buffer[lPos], d.tracerRadionuclide);
+			break;*/
 		case kStationName:
 			dcmStr(lLength, &buffer[lPos], d.stationName);
 			break;
@@ -6644,6 +6677,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kDecayFactor:
 			d.decayFactor = dcmStrFloat(lLength, &buffer[lPos]);
+			break;
+		case kScatterFraction:
+			d.scatterFraction = dcmStrFloat(lLength, &buffer[lPos]);
+			printf("SF%g\n", d.scatterFraction); //for each slice?
 			break;
 		case kIconImageSequence:
 			if (lLength > 8)

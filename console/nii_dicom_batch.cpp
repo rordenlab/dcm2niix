@@ -1371,6 +1371,7 @@ tse3d: T2*/
 		}
 		if (d.patientSex != '?')
 			fprintf(fp, "\t\"PatientSex\": \"%c\",\n", d.patientSex);
+		json_Float(fp, "\t\"PatientSize\": %g,\n", d.patientSize);
 		json_Float(fp, "\t\"PatientWeight\": %g,\n", d.patientWeight);
 		//d.patientBirthDate //convert from DICOM YYYYMMDD to JSON
 		//d.patientAge //4-digit Age String: nnnD, nnnW, nnnM, nnnY;
@@ -1385,7 +1386,7 @@ tse3d: T2*/
 	}
 	if (d.isQuadruped)
 		json_Bool(fp, "\t\"Quadruped\": %s,\n", true); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
-	json_Str(fp, "\t\"BodyPartExamined\": \"%s\",\n", d.bodyPartExamined);
+	json_Str(fp, "\t\"BodyPart\": \"%s\",\n", d.bodyPartExamined); //renamed to match BIDS https://bids-specification.readthedocs.io/en/stable/modality-specific-files/positron-emission-tomography.html
 	json_Str(fp, "\t\"PatientPosition\": \"%s\",\n", d.patientOrient); // 0018,5100 = PatientPosition in DICOM
 	json_Str(fp, "\t\"ProcedureStepDescription\": \"%s\",\n", d.procedureStepDescription);
 	json_Str(fp, "\t\"SoftwareVersions\": \"%s\",\n", d.softwareVersions);
@@ -1497,19 +1498,20 @@ tse3d: T2*/
 	if ((d.isRealIsPhaseMapHz) && ((d.manufacturer == kMANUFACTURER_GE) || (d.isHasReal)))
 		fprintf(fp, "\t\"Units\": \"Hz\",\n"); //
 	//PET ISOTOPE MODULE ATTRIBUTES
+	json_Str(fp, "\t\"TracerRadionuclide\": \"%s\",\n", d.tracerRadionuclide);
 	json_Str(fp, "\t\"Radiopharmaceutical\": \"%s\",\n", d.radiopharmaceutical);
 	json_Float(fp, "\t\"RadionuclidePositronFraction\": %g,\n", d.radionuclidePositronFraction);
-	json_Float(fp, "\t\"RadionuclideTotalDose\": %g,\n", d.radionuclideTotalDose);
+	json_Float(fp, "\t\"InjectedRadioactivity\": %g,\n", d.radionuclideTotalDose); //renamed https://bids-specification.readthedocs.io/en/stable/glossary.html#objects.metadata.InjectedRadioactivity
 	json_Float(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife);
 	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor);
 	json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
 	json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
 	json_Str(fp, "\t\"ConvolutionKernel\": \"%s\",\n", d.convolutionKernel);
 	json_Str(fp, "\t\"Units\": \"%s\",\n", d.unitsPT); //https://github.com/bids-standard/bids-specification/pull/773
-	json_Str(fp, "\t\"DecayCorrection\": \"%s\",\n", d.decayCorrection);
+	json_Str(fp, "\t\"DecayCorrectionFactor\": \"%s\",\n", d.decayCorrection); //renamed https://bids-specification.readthedocs.io/en/stable/glossary.html#objects.metadata.DecayCorrectionFactor
 	json_Str(fp, "\t\"AttenuationCorrectionMethod\": \"%s\",\n", d.attenuationCorrectionMethod);
 	json_Str(fp, "\t\"ReconstructionMethod\": \"%s\",\n", d.reconstructionMethod);
-	//json_Float(fp, "\t\"DecayFactor\": %g,\n", d.decayFactor);
+	json_Float(fp, "\t\"ScatterFraction\": %g,\n", d.scatterFraction);
 	if (dti4D->decayFactor[0] >= 0.0) { //see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"DecayFactor\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
