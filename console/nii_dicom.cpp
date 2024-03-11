@@ -5669,7 +5669,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kPatientWeight:
 			d.patientWeight = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
-/* n.b. check GeneralElectricAdvance-NIMH example dataset: need to speficy SQ
+/* n.b. check GeneralElectricAdvance-NIMH example dataset: need to specify SQ
     (0018,0031) LO [FDG -- fluorodeoxyglucose ]                   # 26,1 Radiopharmaceutical
     (0018,1071) DS [0 ]                                           # 2,1 Radiopharmaceutical Volume
     (0018,1072) TM [092345.00 ]                                   # 10,1 Radiopharmaceutical Start Time
