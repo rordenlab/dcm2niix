@@ -6680,7 +6680,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		case kScatterFraction:
 			d.scatterFraction = dcmStrFloat(lLength, &buffer[lPos]);
-			printf("SF%g\n", d.scatterFraction); //for each slice?
+			//printf("SF%g\n", d.scatterFraction); //for each slice?
 			break;
 		case kIconImageSequence:
 			if (lLength > 8)
