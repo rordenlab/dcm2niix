@@ -8112,7 +8112,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		if ((strstr(d.manufacturersModelName, "Premier") != NULL) || (strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) {
 			// cycling special OFF mode
 			if (((strstr(d.manufacturersModelName, "Premier") != NULL) && (isSameFloatGE(userData15GE, 0.72))) || 
-			(((strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) && (userData15GE > 0.5) && (userData15GE <= 1.0))) //issue 796
+			(((strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) && (userData15GE >= 0.5) && (userData15GE <= 1.0))) //issue 796
 				d.diffCyclingModeGE = kGE_DIFF_CYCLING_SPOFF;
 			// 2TR cycling mode
 			else if (userData12GE == 2) {
