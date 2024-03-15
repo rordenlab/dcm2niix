@@ -1810,6 +1810,7 @@ tse3d: T2*/
 		if (strstr(pulseSequenceDetails, "tgse_pcasl")) {
 			isPCASL = true;
 			repetitionTimePreparation = d.TR;
+			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); //usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);				// mT/m
 			json_FloatNotNan(fp, "\t\"T1\": %g,\n", csaAscii.adFree[12] * (1.0 / 1000000.0));	//usec -> sec
