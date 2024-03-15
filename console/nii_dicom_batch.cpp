@@ -1796,7 +1796,7 @@ tse3d: T2*/
 		if ((strstr(pulseSequenceDetails, "ep2d_pcasl")) || (strstr(pulseSequenceDetails, "ep2d_pcasl_UI_PHC"))) {
 			isPCASL = true;
 			repetitionTimePreparation = d.TR;
-			json_FloatNotNan(fp, "\t\"LabelOffset\": %g,\n", csaAscii.adFree[1]); //mm
+			json_FloatNotNan(fp, "\t\"LabelingDistance\": %g,\n", csaAscii.adFree[1]); //mm, renamed for BIDS https://bids-specification.readthedocs.io/en/stable/glossary.html#labelingdistance-metadata
 			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); //usec -> sec
 			float num_RF_Block = csaAscii.adFree[3];
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
