@@ -82,6 +82,7 @@ These fields are present regardless of modality (e.g. MR, CT, PET).
 | PatientPosition          |      | DICOM tag 0020,0032 | D          |
 | ProcedureStepDescription |      | DICOM tag 0040,0254 | D          |
 | SoftwareVersions         |      | DICOM tag 0020,1020 | B          |
+| StudyDescription         |      | DICOM tag 0008,1030 | D          |
 | SeriesDescription        |      | DICOM tag 0008,103E | D          |
 | ProtocolName             |      | DICOM tag 0018,1030 | D          |
 | ScanningSequence         |      | DICOM tag 0018,0020 | B          |

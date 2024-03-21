@@ -772,6 +772,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.deviceSerialNumber, "");
 	strcpy(d.softwareVersions, "");
 	strcpy(d.stationName, "");
+	strcpy(d.studyDescription, "");
 	strcpy(d.scanOptions, "");
 	//strcpy(d.mrAcquisitionType, "");
 	strcpy(d.seriesInstanceUID, "");
@@ -4368,6 +4369,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kTracerRadionuclide1 0x0008 + (0x0100 << 16) //SH
 #define kTracerRadionuclide2 0x0008 + (0x0104 << 16) //LO
 #define kStationName 0x0008 + (0x1010 << 16)
+#define kStudyDescription 0x0008 + (0x1030 << 16) //LO
 #define kSeriesDescription 0x0008 + (0x103E << 16) // '0008' '103E' 'LO' 'SeriesDescription'
 #define kInstitutionalDepartmentName 0x0008 + (0x1040 << 16)
 #define kManufacturersModelName 0x0008 + (0x1090 << 16)
@@ -5694,6 +5696,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;*/
 		case kStationName:
 			dcmStr(lLength, &buffer[lPos], d.stationName);
+			break;
+		case kStudyDescription:
+			dcmStr(lLength, &buffer[lPos], d.studyDescription);
 			break;
 		case kSeriesDescription:
 			dcmStr(lLength, &buffer[lPos], d.seriesDescription);

@@ -1395,6 +1395,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"MRAcquisitionType\": \"2D\",\n");
 	if (d.is3DAcq)
 		fprintf(fp, "\t\"MRAcquisitionType\": \"3D\",\n");
+	json_Str(fp, "\t\"StudyDescription\": \"%s\",\n", d.studyDescription);
 	json_Str(fp, "\t\"SeriesDescription\": \"%s\",\n", d.seriesDescription);
 	json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName);
 	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
@@ -3416,6 +3417,66 @@ void cleanISO8859(char *cString) {
 		}
 }
 
+void heudiconvStrPth(char *cString) {
+	int len = strlen(cString);
+	int j = 0;
+	int i = 0;
+	bool hasCaret = false;
+	while (i < len) {
+		if (cString[i] == '^') {
+			cString[j++] = kPathSeparator;
+			hasCaret = true;
+		} else if ((!hasCaret) && (cString[i] == '_') ) {
+			cString[j++] = kPathSeparator;
+		} else if (cString[i] != '-') {
+			cString[j] = cString[i];
+			j ++;
+		}
+		i++;
+	}
+	cString[j] = '\0';
+}
+
+void heudiconvStr(char *cString) {
+	int len = strlen(cString);
+	int j = 0;
+	int i = 0;
+	const char kTempPathSeparator = '\a';
+	bool hasCaret = false;
+	while (i < len) {
+		if (cString[i] != '-') {
+			cString[j] = cString[i];
+			j ++;
+		}
+		i++;
+	}
+	cString[j] = '\0';
+}
+
+void mkDirs(char *pth) {
+	if (strlen(pth) < 1) return;
+	char newdir[2048] = {""};
+	for (size_t pos = 0; pos < strlen(pth); pos++) {
+		if (pth[pos] == kPathSeparator) {
+			if (!is_dir(newdir, true))
+#if defined(_WIN64) || defined(_WIN32)
+				mkdir(newdir);
+#else
+				mkdir(newdir, 0700);
+#endif
+		}
+		char ch[128] = {""};
+		snprintf(ch, 128, "%c", pth[pos]);
+		strcat(newdir, ch);
+	}
+	if (!is_dir(newdir, true))
+#if defined(_WIN64) || defined(_WIN32)
+		mkdir(newdir);
+#else
+		mkdir(newdir, 0700);
+#endif
+} //mkDirs()
+
 void createDummyBidsBoilerplate(char *pth, bool isFunc) {
 	//https://remi-gau.github.io/bids_cookbook/#starters
 	char pathSep[2] = {"a"};
@@ -3539,13 +3600,30 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				strcat(outname, opts.indirParent);
 			if (f == 'G')
 				strcat(outname, dcm.accessionNumber);
-			if (f == 'H') {
-				printWarning("hazardous (%%h) bids naming experimental\n");
+			if ((f == 'H') || (f == 'V')) {
+				printWarning("hazardous (%%h) or volatile (%%v) bids naming experimental\n");
+				bool isReproin = (f == 'V');
+				if (isReproin) {
+					//https://dbic-handbook.readthedocs.io/en/latest/mri/reproin.html
+					//reproin convention is hard for one-pass, as `ses` may only be reported in one series in the session (e.g. localizer)
+					//printf("study %s\n", dcm.studyDescription);
+					//printf("series %s\n", dcm.seriesDescription);
+					//printf("id %s\n", dcm.patientID);
+					snprintf(newstr, PATH_MAX, "%s", dcm.studyDescription);
+					heudiconvStrPth(newstr);
+					if ((strlen(pth) > 0) && (pth[strlen(pth)-1] != kPathSeparator))
+						strcat(pth, kFileSep);//kPathSeparator);
+					strcat(pth, newstr);
+					mkDirs(pth);
+					strcpy(opts.bidsSubject, dcm.patientID);
+					heudiconvStr(opts.bidsSubject);
+				}
 				char bidsSubject[kOptsStr] = "sub-";
 				if (strlen(opts.bidsSubject) <= 0)
 					strcat(bidsSubject, "1");
 				else
 					strcat(bidsSubject, opts.bidsSubject);
+				printf("%s<<<:::\n", bidsSubject);
 				char bidsSession[kOptsStr] = "ses-";
 				if (strlen(opts.bidsSession) <= 0)
 					strcat(bidsSession, "1");
@@ -3626,13 +3704,13 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				if (strlen(dcm.protocolName) < 1)
 					printWarning("Unable to append protocol name (0018,1030) to filename (it is empty).\n");
 			}
+			if (f == 'Q')
+				strcat(outname, dcm.scanningSequence);
 			if (f == 'R') {
 				snprintf(newstr, PATH_MAX, "%d", dcm.imageNum);
 				strcat(outname, newstr);
 				isImageNumReported = true;
 			}
-			if (f == 'Q')
-				strcat(outname, dcm.scanningSequence);
 			if (f == 'S') {
 				snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
 				strcat(outname, newstr);
