@@ -4675,7 +4675,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	bool isHasBMatrix = false;
 	bool isHasBVec = false;
 	bool is2005140FSQ = false;
-	bool is4000561SQ = false; //Original Attributes SQ
+	int sqDepth04000561 = -1;
 	bool is00089092SQ = false; //Referenced Image Evidence SQ
 	bool overlayOK = true;
 	int userData11GE = 0;
@@ -4863,6 +4863,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 		} //transfer syntax requests switching VR after group 0001
 		//uint32_t group = (groupElement & 0xFFFF);
 		lPos += 4;
+		uint32_t realGroupElement = groupElement;
 		//issue409 - icons can have their own sub-sections... keep reading until we get to the icon image?
 		//if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
 		//if (groupElement == kItemTag) sqDepth++;
@@ -4885,8 +4886,10 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			}
 		}
 		if (unNest) {
+			if ((groupElement != kItemTag) && (sqDepth <= sqDepth04000561)) {
+				sqDepth04000561 = -1; //unlatch
+			}
 			is2005140FSQ = false;
-			is4000561SQ = false;
 			is00089092SQ = false;
 			if (sqDepth < 0)
 				sqDepth = 0; //should not happen, but protect for faulty anonymization
@@ -5144,7 +5147,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 					encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
 			}
 		}
-		if ((is4000561SQ) || (is00089092SQ))
+		if ((sqDepth04000561 >= 0) || (is00089092SQ))
 			groupElement = kUnused; //ignore Original Attributes
 		if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028))
 			groupElement = kUnused; //ignore icon dimensions
@@ -5311,6 +5314,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			break;
 		}
 		case kTransferSyntax: {
+			//if (sqDepth04000561 >= 0) break;
 			char transferSyntax[kDICOMStr];
 			strcpy(transferSyntax, "");
 			dcmStr(lLength, &buffer[lPos], transferSyntax);
@@ -7084,7 +7088,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kOriginalAttributesSq:
 			if (lLength > 8)
 				break; //issue639: we will skip entire icon if there is an explicit length
-			is4000561SQ = true;
+			sqDepth04000561 = sqDepth;
 			break;
 		case kWaveformSq:
 			d.imageStart = 1; //abort!!!
@@ -7496,9 +7500,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			// this section will report very little for implicit data
 			//if (d.isHasReal) printf("r");else printf("m");
 			char str[kDICOMStr];
-			snprintf(str, kDICOMStr, "%*c%04x,%04x %u@%zu ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
+			char realCh = ' ';
+			if (realGroupElement != groupElement)
+				realCh = '~'; //indicate we are ignoring this tag (e.g. wrapped in 0400,0561)
+			snprintf(str, kDICOMStr, "%*c%04x,%04x%c %u@%zu ", sqDepth + 1, ' ', realGroupElement & 65535, realGroupElement >> 16, realCh, lLength, lFileOffset + lPos);
 			bool isStr = false;
-			if (d.isExplicitVR) {
+			if ((d.isExplicitVR) && (realGroupElement != kItemTag)) {
 				//snprintf(str, kDICOMStr, "%s%c%c ", str, vr[0], vr[1]);
 				//if (snprintf(str2, kDICOMStr-1, "%s%c%c", str, vr[0], vr[1]) < 0) exit(EXIT_FAILURE);
 				strncat(str, &vr[0], 1);
