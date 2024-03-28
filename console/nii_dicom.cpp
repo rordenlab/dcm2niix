@@ -4477,6 +4477,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kLastScanLoc 0x0019 + (0x101B << 16)
 #define kBandwidthPerPixelPhaseEncode 0x0019 + (0x1028 << 16) //FD
 #define kSliceTimeSiemens 0x0019 + (0x1029 << 16) ///FD
+#define kAcquisitionDurationGE 0x0019 + (0x105a << 16) //FL Acquisition Duration in microsecond, Duration of Scan (series)
 #define kPulseSequenceNameGE 0x0019 + (0x109C << 16) //LO 'epiRT' or 'epi'
 #define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
 #define kRawDataRunNumberGE 0x0019 + (0x10A2 << 16)//SL
@@ -5838,6 +5839,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			printf("%s\t FrameAcquisitionDateTime %0.4f \n", dateTime, dTime);
 			//d.triggerDelayTime = dTime;
 		}*/
+		case kAcquisitionDurationGE: // issue 808
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.acquisitionDuration = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
+			d.acquisitionDuration /= 1000000.0; //convert microsec to sec
+			break;
 		case kDiffusionDirectionality: { // 0018, 9075
 			set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
 			if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 10))
