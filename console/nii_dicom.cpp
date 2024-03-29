@@ -5826,6 +5826,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.accelFactPE = accelFactPE;
 			break;
 		case kAcquisitionDuration:
+			if (!isSameFloatGE(d.acquisitionDuration, 0.0))
+				break; //issue 808: give precedence to more precise measures, e.g kAcquisitionDurationGE (0019,105a)
 			//n.b. used differently by different vendors https://github.com/rordenlab/dcm2niix/issues/225
 			d.acquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;

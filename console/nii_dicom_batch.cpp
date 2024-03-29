@@ -2256,11 +2256,6 @@ tse3d: T2*/
 	// FSL definition is start of first line until start of last line.
 	// Other than the use of (n-1), the value is basically just 1.0/bandwidthPerPixelPhaseEncode.
 	// https://github.com/rordenlab/dcm2niix/issues/130
-	if (d.manufacturer == kMANUFACTURER_GE){ //issue808
-		char acquisitionDurationbuffer[50];
-		sprintf(acquisitionDurationbuffer, "%02d:%02d",(int)round(d.acquisitionDuration)/60,(int)round(d.acquisitionDuration)%60);
-		json_Str(fp, "\t\"AcquisitionDurationGE\": \"%s\",\n", acquisitionDurationbuffer);
-	}
 	if (d.manufacturer != kMANUFACTURER_UIH) //issue606
 		json_Float(fp, "\t\"AcquisitionDuration\": %g,\n", d.acquisitionDuration);
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (effectiveEchoSpacing <= 0.0)) //issue225, issue531
