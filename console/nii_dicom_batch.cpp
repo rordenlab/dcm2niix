@@ -1447,6 +1447,24 @@ tse3d: T2*/
 			fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
+	json_Str(fp, "\t\"DeidentificationMethod\": \"%s\",\n", d.deidentificationMethod);
+if(d.deID_CS_n>0)
+{
+	fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
+	for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++)
+	{
+		fprintf(fp, "\t  { \n");
+		json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d.deID_CS[i].CodeValue);
+		json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d.deID_CS[i].CodingSchemeDesignator);
+		json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d.deID_CS[i].CodingSchemeVersion);
+		json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d.deID_CS[i].CodeMeaning);
+		if(i+1 < d.deID_CS_n)
+			fprintf(fp, "\t  },\n");
+		else
+			fprintf(fp, "\t  }\n");
+	}
+	fprintf(fp, "\t],\n");
+}
 	if (d.seriesNum > 0)
 		fprintf(fp, "\t\"SeriesNumber\": %ld,\n", d.seriesNum);
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
