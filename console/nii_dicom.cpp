@@ -4379,6 +4379,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPatientWeight 0x0010 + (0x1030 << 16)
 #define kAnatomicalOrientationType 0x0010 + (0x2210 << 16)
 #define kDeidentificationMethod 0x0012 + (0x0063 << 16) //[DICOMANON, issue 383
+#define kDeidentificationMethodCodeSequence 0x0012 + (0x0064 << 16)
+#define kCodeValue 0x0008 + (0x0100 << 16)
+#define kCodingSchemeDesignator 0x0008 + (0x0102 << 16)
+#define kCodingSchemeVersion 0x0008 + (0x0103 << 16)
+#define kCodeMeaning 0x0008 + (0x0104 << 16)
 #define kBodyPartExamined 0x0018 + (0x0015 << 16)
 #define kBodyPartExamined 0x0018 + (0x0015 << 16)
 #define kScanningSequence 0x0018 + (0x0020 << 16)
@@ -4764,6 +4769,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	bool isPaletteColor = false;
 	bool isInterpolated = false;
 	bool isIconImageSequence = false;
+	bool isDeidentificationMethodCodeSequence = false;
 	int sqDepthIcon = -1;
 	bool isSwitchToImplicitVR = false;
 	bool isSwitchToBigEndian = false;
@@ -5251,6 +5257,8 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			//return d;
 		}
 		if (lLength > 0) //issue695: skip empty tags, "gdcmanon --dumb --empty 0018,0089 good.dcm bad.dcm"
+		if(sqDepth < 1 )
+			isDeidentificationMethodCodeSequence = false;
 		switch (groupElement) {
 		case kMediaStorageSOPClassUID: {
 			char mediaUID[kDICOMStr];
@@ -5610,13 +5618,39 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			break;
 		}
 		case kDeidentificationMethod: { //issue 383
-			char anonTxt[kDICOMStr];
-			dcmStr(lLength, &buffer[lPos], anonTxt);
-			int slen = (int)strlen(anonTxt);
-			if ((slen < 10) || (strstr(anonTxt, "DICOMANON") == NULL))
+			dcmStr(lLength, &buffer[lPos], d.deidentificationMethod);
+			int slen = (int)strlen(d.deidentificationMethod);
+			if ((slen < 10) || (strstr(d.deidentificationMethod, "DICOMANON") == NULL))
 				break;
 			isDICOMANON = true;
 			printWarning("Matlab DICOMANON can scramble SeriesInstanceUID (0020,000e) and remove crucial data (see issue 383). \n");
+			break;
+		}
+		case kDeidentificationMethodCodeSequence: {
+			isDeidentificationMethodCodeSequence = true;
+			break;
+		}
+		case kCodeValue: {
+			if(isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodeValue);
+			break;
+		}
+		case kCodingSchemeDesignator: {
+			if(isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeDesignator);
+			break;
+		}
+		case kCodingSchemeVersion: {
+			if(isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeVersion);
+			break;
+		}
+		case kCodeMeaning: {
+			if(isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
+			{
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodeMeaning);
+				d.deID_CS_n++;
+			}
 			break;
 		}
 		case kPatientID:
