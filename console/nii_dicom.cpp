@@ -772,6 +772,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.deviceSerialNumber, "");
 	strcpy(d.softwareVersions, "");
 	strcpy(d.stationName, "");
+	strcpy(d.studyDescription, "");
 	strcpy(d.scanOptions, "");
 	//strcpy(d.mrAcquisitionType, "");
 	strcpy(d.seriesInstanceUID, "");
@@ -786,6 +787,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.convolutionKernel, "");
 	strcpy(d.parallelAcquisitionTechnique, "");
 	strcpy(d.imageOrientationText, "");
+	strcpy(d.tracerRadionuclide, "");
 	strcpy(d.unitsPT, "");
 	strcpy(d.decayCorrection, "");
 	strcpy(d.attenuationCorrectionMethod, "");
@@ -833,6 +835,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.shimGradientZ = -33333;//impossible value for UINT16
 	strcpy(d.prescanReuseString, "");
 	d.decayFactor = 0.0;
+	d.scatterFraction = 0.0;
 	d.percentSampling = 0.0;
 	d.phaseFieldofView = 0.0;
 	d.dwellTime = 0;
@@ -936,6 +939,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.numberOfImagesInGridUIH = 0;
 	d.phaseEncodingRC = '?';
 	d.patientSex = '?';
+	d.patientSize = 0.0;
 	d.patientWeight = 0.0;
 	strcpy(d.patientBirthDate, "");
 	strcpy(d.patientAge, "");
@@ -4362,7 +4366,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kInstitutionName 0x0008 + (0x0080 << 16)
 #define kInstitutionAddress 0x0008 + (0x0081 << 16)
 #define kReferringPhysicianName 0x0008 + (0x0090 << 16)
+#define kTracerRadionuclide1 0x0008 + (0x0100 << 16) //SH
+#define kTracerRadionuclide2 0x0008 + (0x0104 << 16) //LO
 #define kStationName 0x0008 + (0x1010 << 16)
+#define kStudyDescription 0x0008 + (0x1030 << 16) //LO
 #define kSeriesDescription 0x0008 + (0x103E << 16) // '0008' '103E' 'LO' 'SeriesDescription'
 #define kInstitutionalDepartmentName 0x0008 + (0x1040 << 16)
 #define kManufacturersModelName 0x0008 + (0x1090 << 16)
@@ -4376,6 +4383,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPatientBirthDate 0x0010 + (0x0030 << 16)
 #define kPatientSex 0x0010 + (0x0040 << 16)
 #define kPatientAge 0x0010 + (0x1010 << 16)
+#define kPatientSize 0x0010 + (0x1020 << 16) //DS
 #define kPatientWeight 0x0010 + (0x1030 << 16)
 #define kAnatomicalOrientationType 0x0010 + (0x2210 << 16)
 #define kDeidentificationMethod 0x0012 + (0x0063 << 16) //[DICOMANON, issue 383
@@ -4469,6 +4477,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kLastScanLoc 0x0019 + (0x101B << 16)
 #define kBandwidthPerPixelPhaseEncode 0x0019 + (0x1028 << 16) //FD
 #define kSliceTimeSiemens 0x0019 + (0x1029 << 16) ///FD
+#define kAcquisitionDurationGE 0x0019 + (0x105a << 16) //FL Acquisition Duration in microsecond, Duration of Scan (series)
 #define kPulseSequenceNameGE 0x0019 + (0x109C << 16) //LO 'epiRT' or 'epi'
 #define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
 #define kRawDataRunNumberGE 0x0019 + (0x10A2 << 16)//SL
@@ -4581,6 +4590,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kReconstructionMethod 0x0054 + (0x1103 << 16) //LO
 #define kFrameReferenceTime 0x0054 + (0x1300 << 16) //DS
 #define kDecayFactor 0x0054 + (0x1321 << 16) //DS
+#define kScatterFraction 0x0054 + (0x1323 << 16) //DS
 //ftp://dicom.nema.org/MEDICAL/dicom/2014c/output/chtml/part03/sect_C.8.9.4.html
 //If ImageType is REPROJECTION we slice direction is reversed - need example to test
 // #define kSeriesType 0x0054+(0x1000 << 16 )
@@ -4666,7 +4676,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	bool isHasBMatrix = false;
 	bool isHasBVec = false;
 	bool is2005140FSQ = false;
-	bool is4000561SQ = false; //Original Attributes SQ
+	int sqDepth04000561 = -1;
 	bool is00089092SQ = false; //Referenced Image Evidence SQ
 	bool overlayOK = true;
 	int userData11GE = 0;
@@ -4854,6 +4864,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 		} //transfer syntax requests switching VR after group 0001
 		//uint32_t group = (groupElement & 0xFFFF);
 		lPos += 4;
+		uint32_t realGroupElement = groupElement;
 		//issue409 - icons can have their own sub-sections... keep reading until we get to the icon image?
 		//if ((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) isIconImageSequence = false;
 		//if (groupElement == kItemTag) sqDepth++;
@@ -4876,8 +4887,10 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			}
 		}
 		if (unNest) {
+			if ((groupElement != kItemTag) && (sqDepth <= sqDepth04000561)) {
+				sqDepth04000561 = -1; //unlatch
+			}
 			is2005140FSQ = false;
-			is4000561SQ = false;
 			is00089092SQ = false;
 			if (sqDepth < 0)
 				sqDepth = 0; //should not happen, but protect for faulty anonymization
@@ -5135,7 +5148,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 					encapsulatedDataFragmentStart = (int)lPos + (int)lFileOffset;
 			}
 		}
-		if ((is4000561SQ) || (is00089092SQ))
+		if ((sqDepth04000561 >= 0) || (is00089092SQ))
 			groupElement = kUnused; //ignore Original Attributes
 		if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028))
 			groupElement = kUnused; //ignore icon dimensions
@@ -5302,6 +5315,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			break;
 		}
 		case kTransferSyntax: {
+			//if (sqDepth04000561 >= 0) break;
 			char transferSyntax[kDICOMStr];
 			strcpy(transferSyntax, "");
 			dcmStr(lLength, &buffer[lPos], transferSyntax);
@@ -5656,11 +5670,40 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kPatientAge:
 			dcmStr(lLength, &buffer[lPos], d.patientAge);
 			break;
+		case kPatientSize:
+			d.patientSize = dcmStrFloat(lLength, &buffer[lPos]);
+			break;
 		case kPatientWeight:
 			d.patientWeight = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
+/* n.b. check GeneralElectricAdvance-NIMH example dataset: need to specify SQ
+    (0018,0031) LO [FDG -- fluorodeoxyglucose ]                   # 26,1 Radiopharmaceutical
+    (0018,1071) DS [0 ]                                           # 2,1 Radiopharmaceutical Volume
+    (0018,1072) TM [092345.00 ]                                   # 10,1 Radiopharmaceutical Start Time
+    (0018,1074) DS [      75850000]                               # 14,1 Radionuclide Total Dose
+    (0018,1075) DS [6588]                                         # 4,1 Radionuclide Half Life
+    (0018,1076) DS [0.97000002861023]                             # 16,1 Radionuclide Positron Fraction
+    (0054,0300) SQ (Sequence with undefined length)               # u/l,1 Radionuclide Code Sequence
+      (fffe,e000) na (Item with defined length)
+        (0008,0100) SH [C-111A1 ]                                 # 8,1 Code Value
+        (0008,0102) SH [99SDM ]                                   # 6,1 Coding Scheme Designator
+        (0008,0104) LO [18F ]                                     # 4,1 Code Meaning
+    (fffe,e0dd)
+    (0054,0304) SQ (Sequence with undefined length)               # u/l,1 Radiopharmaceutical Code Sequence
+      (fffe,e000) na (Item with defined length)
+        (0008,0100) SH [Y-X1743 ]                                 # 8,1 Code Value
+        (0008,0102) SH [99SDM ]                                   # 6,1 Coding Scheme Designator
+        (0008,0104) LO [FDG -- fluorodeoxyglucose ]               # 26,1 Code Meaning
+    (fffe,e0dd)
+		case kTracerRadionuclide1:
+		case kTracerRadionuclide2:
+			dcmStr(lLength, &buffer[lPos], d.tracerRadionuclide);
+			break;*/
 		case kStationName:
 			dcmStr(lLength, &buffer[lPos], d.stationName);
+			break;
+		case kStudyDescription:
+			dcmStr(lLength, &buffer[lPos], d.studyDescription);
 			break;
 		case kSeriesDescription:
 			dcmStr(lLength, &buffer[lPos], d.seriesDescription);
@@ -5783,6 +5826,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.accelFactPE = accelFactPE;
 			break;
 		case kAcquisitionDuration:
+			if (!isSameFloatGE(d.acquisitionDuration, 0.0))
+				break; //issue 808: give precedence to more precise measures, e.g kAcquisitionDurationGE (0019,105a)
 			//n.b. used differently by different vendors https://github.com/rordenlab/dcm2niix/issues/225
 			d.acquisitionDuration = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
@@ -5796,6 +5841,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			printf("%s\t FrameAcquisitionDateTime %0.4f \n", dateTime, dTime);
 			//d.triggerDelayTime = dTime;
 		}*/
+		case kAcquisitionDurationGE: // issue 808
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.acquisitionDuration = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
+			d.acquisitionDuration /= 1000000.0; //convert microsec to sec
+			break;
 		case kDiffusionDirectionality: { // 0018, 9075
 			set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
 			if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 10))
@@ -6645,6 +6696,10 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kDecayFactor:
 			d.decayFactor = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
+		case kScatterFraction:
+			d.scatterFraction = dcmStrFloat(lLength, &buffer[lPos]);
+			//printf("SF%g\n", d.scatterFraction); //for each slice?
+			break;
 		case kIconImageSequence:
 			if (lLength > 8)
 				break; //issue638: we will skip entire icon if there is an explicit length
@@ -7042,7 +7097,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kOriginalAttributesSq:
 			if (lLength > 8)
 				break; //issue639: we will skip entire icon if there is an explicit length
-			is4000561SQ = true;
+			sqDepth04000561 = sqDepth;
 			break;
 		case kWaveformSq:
 			d.imageStart = 1; //abort!!!
@@ -7454,9 +7509,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			// this section will report very little for implicit data
 			//if (d.isHasReal) printf("r");else printf("m");
 			char str[kDICOMStr];
-			snprintf(str, kDICOMStr, "%*c%04x,%04x %u@%zu ", sqDepth + 1, ' ', groupElement & 65535, groupElement >> 16, lLength, lFileOffset + lPos);
+			char realCh = ' ';
+			if (realGroupElement != groupElement)
+				realCh = '~'; //indicate we are ignoring this tag (e.g. wrapped in 0400,0561)
+			snprintf(str, kDICOMStr, "%*c%04x,%04x%c %u@%zu ", sqDepth + 1, ' ', realGroupElement & 65535, realGroupElement >> 16, realCh, lLength, lFileOffset + lPos);
 			bool isStr = false;
-			if (d.isExplicitVR) {
+			if ((d.isExplicitVR) && (realGroupElement != kItemTag)) {
 				//snprintf(str, kDICOMStr, "%s%c%c ", str, vr[0], vr[1]);
 				//if (snprintf(str2, kDICOMStr-1, "%s%c%c", str, vr[0], vr[1]) < 0) exit(EXIT_FAILURE);
 				strncat(str, &vr[0], 1);
@@ -8075,7 +8133,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		if ((strstr(d.manufacturersModelName, "Premier") != NULL) || (strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) {
 			// cycling special OFF mode
 			if (((strstr(d.manufacturersModelName, "Premier") != NULL) && (isSameFloatGE(userData15GE, 0.72))) || 
-			(((strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) && (userData15GE > 0.5) && (userData15GE < 1))) //issue 796
+			(((strstr(d.manufacturersModelName, "UHP") != NULL) || (strstr(d.manufacturersModelName, "7.0T") != NULL)) && (userData15GE >= 0.5) && (userData15GE <= 1.0))) //issue 796
 				d.diffCyclingModeGE = kGE_DIFF_CYCLING_SPOFF;
 			// 2TR cycling mode
 			else if (userData12GE == 2) {

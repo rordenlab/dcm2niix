@@ -78,10 +78,11 @@ These fields are present regardless of modality (e.g. MR, CT, PET).
 
 | Field                    | Unit | Comments            | Defined By |
 |--------------------------|------|---------------------|------------|
-| BodyPartExamined         |      | DICOM tag 0018,0015 | D          |
+| BodyPart                 |      | DICOM tag 0018,0015 | B          |
 | PatientPosition          |      | DICOM tag 0020,0032 | D          |
 | ProcedureStepDescription |      | DICOM tag 0040,0254 | D          |
 | SoftwareVersions         |      | DICOM tag 0020,1020 | B          |
+| StudyDescription         |      | DICOM tag 0008,1030 | D          |
 | SeriesDescription        |      | DICOM tag 0008,103E | D          |
 | ProtocolName             |      | DICOM tag 0018,1030 | D          |
 | ScanningSequence         |      | DICOM tag 0018,0020 | B          |
@@ -107,6 +108,9 @@ These fields contain personally identifiable information. By default dcm2niix wi
 | PatientID              |      | DICOM tag 0010,0020 | D          |
 | AccessionNumber        |      | DICOM tag 0008,0050 | D          |
 | PatientBirthDate       |      | DICOM tag 0010,0030 | D          |
+| PatientSex             |      | DICOM tag 0010,0040 | D          |
+| PatientAge             |      | DICOM tag 0010,1010 | D          |
+| PatientSize            |      | DICOM tag 0010,1020 | D          |
 | PatientWeight          | kg   | DICOM tag 0010,1030 | D          |
 | AcquisitionDateTime    |      | DICOM tag 0008,002A | D          |
 
@@ -181,23 +185,31 @@ PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/curre
 
 The term ECAT in the comments suggests that values are defined by the [ECAT7](http://www.turkupetcentre.net/petanalysis/format_image_ecat.html) format. Therefore, these fields will not be populated for DICOM data.
 
-| Field                        | Unit | Comments                    | Defined By |
-|------------------------------|------|-----------------------------|------------|
-| Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT | D          |
-| RadionuclidePositronFraction | f    | DICOM tag 0018,1076         | D          |
-| RadionuclideTotalDose        | MBq  | DICOM tag 0018,1074         | D          |
-| RadionuclideHalfLife         | s    | DICOM tag 0018,1075         | D          |
-| DoseCalibrationFactor        |      | DICOM tag 0054,1322         | D          |
-| IsotopeHalfLife              |      | ECAT                        | D          |
-| Dosage                       |      | ECAT                        | D          |
-| ConvolutionKernel            |      | DICOM tag 0018,1210         | D          |
-| Units                        |      | DICOM tag 0054,1001         | D          |
-| DecayCorrection              |      | DICOM tag 0054,1102         | D          |
-| AttenuationCorrectionMethod  |      | DICOM tag 0054,1101         | D          |
-| ReconstructionMethod         |      | DICOM tag 0054,1103         | D          |
-| DecayFactor                  |      | DICOM tag 0054,1321         | D          |
-| FrameTimesStart              | s    | DICOM tags 0008,0022        | D          |
-| FrameDuration                | s    | DICOM tag 0018,1242         | D          |
+| Field                        | Unit | Comments                         | Defined By |
+|------------------------------|------|----------------------------------|------------|
+| IsotopeHalfLife              |      | ECAT                             | D          |
+| Dosage                       |      | ECAT                             | D          |
+| FrameTimesStart              | s    | DICOM tag 0008,0022              | D          |
+| TracerRadionuclide           |      | DICOM tag 0008,0100 or 0008,0104 | B          |
+| Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT      | D          |
+| InjectedRadioactivity        | MBq  | DICOM tag 0018,1074              | B          |
+| RadionuclideHalfLife         | s    | DICOM tag 0018,1075              | D          |
+| RadionuclidePositronFraction | f    | DICOM tag 0018,1076              | D          |
+| ConvolutionKernel            |      | DICOM tag 0018,1210              | D          |
+| Units                        |      | DICOM tag 0054,1001              | B          |
+| AttenuationCorrectionMethod  |      | DICOM tag 0054,1101              | B          |
+| DecayCorrection              |      | DICOM tag 0054,1102              | D          |
+| ReconstructionMethod         |      | DICOM tag 0054,1103              | B          |
+| DecayCorrectionFactor        |      | DICOM tag 0054,1321              | B          |
+| DoseCalibrationFactor        |      | DICOM tag 0054,1322              | B          |
+| ScatterFraction              |      | DICOM tag 0054,1323              | B          |
+| FrameDuration                | s    | DICOM tag 0018,1242              | B          |
+
+n.b. ConvolutionKernel (0018,1210) can be parsed to BIDS `ReconFilterType` and `ReconFilterSize`. However, manufacturer variations (Siemens: `XYZGAUSSIAN3.00` GE `Rad: \ rectangle \  4.000000 mm  \ Ax: \ rectangle \  8.500000 mm` require complex logic).
+
+n.b. ReconstructionMethod (0054,1103) can be parsed to ReconMethodName, ReconMethodParameterLabels, ReconMethodParameterUnits and ReconMethodParameterValues. However, this requires maniufacturer specific logic (e.g. Siemens `OP-OSEM4i21s`, GE `3D Kinahan - Rogers`
+
+For Philips scanners, [Source Isotope Name](https://dicom.innolitics.com/ciods/rt-brachy-treatment-record/rt-brachy-session-record/30080100/300a0226) may be a good source for TracerRadionuclide
 
 ## Manufacturer Fields
 
