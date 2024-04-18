@@ -8041,7 +8041,19 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//}
 	if (numberOfFramesICEdims < 2) //issue751: icedims[20] frames for EPI only
 		numberOfFramesICEdims = 0;
-	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] != numberOfFramesICEdims)) {
+        // Issue 742: Detect *currently* enhanced Siemens XA volumes with fewer
+        // than the expected number of slices, and mark them as derived, with
+        // SeriesNumber + 1000. However, valid XA series are often unenhanced,
+        // likely post-scanner, and can arrive as files with just 1 slice each
+        // in d.xyzDim[3] but the total number of z locations for the series in
+        // their ICEdims, so they appear to be partial volumes until the
+        // dcmList is completed (nii_dicom_batch.cpp). Thus we use the
+        // heuristic that d.xyzDim[3] == 1 is probably OK but between 1 and
+        // numberOfFramesICEdims (exclusively) is an enhanced partial
+        // volume. It would miss the case of a true enhanced partial volume
+        // with just 1 slice, but that seems much less likely than unenhanced
+        // DICOM with unmodified ICEDims tags.
+	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] > 1) && (d.xyzDim[3] != numberOfFramesICEdims)) {
 		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
 		d.seriesNum += 1000;
 		d.isDerived = true;
