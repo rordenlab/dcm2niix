@@ -1446,6 +1446,10 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 		return EXIT_FAILURE;
 	int lPos = 8; //skip 8 bytes of data, 'SV10' plus 2 32-bit values unused1 and unused2
 	int lnTag = buff[lPos] + (buff[lPos + 1] << 8) + (buff[lPos + 2] << 16) + (buff[lPos + 3] << 24);
+        if ((lnTag > 128) || (lnTag < 1)){
+                printError("%d n_tags CSA Image Header corrupted (0029,1010) see issue 633.\n", lnTag);
+                return EXIT_FAILURE;
+        }
 	if (buff[lPos + 4] != 77)
 		return EXIT_FAILURE;
 	lPos += 8; //skip 8 bytes of data, 32-bit lnTag plus 77 00 00 0
@@ -1459,10 +1463,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 		// Storage order is always little-endian, so byte-swap required values if necessary
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
-		if (tagCSA.nitems > 128) {
-			printError("%d n_tags CSA Image Header corrupted (0029,1010) see issue 633.\n", tagCSA.nitems);
-			return EXIT_FAILURE;
-		}
 		if (isVerbose > 1) //extreme verbosity: show every CSA tag
 			printMessage("   %d CSA of %s %d\n", lPos, tagCSA.name, tagCSA.nitems);
 		if (tagCSA.nitems > 0) {
