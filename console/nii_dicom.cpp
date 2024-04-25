@@ -5286,7 +5286,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 			//return d;
 		}
 		if (lLength > 0) //issue695: skip empty tags, "gdcmanon --dumb --empty 0018,0089 good.dcm bad.dcm"
-		if(sqDepth < 1 )
+		if(sqDepth < 1 && isDeidentificationMethodCodeSequence && groupElement != kItemDelimitationTag && groupElement != kItemTag )
 			isDeidentificationMethodCodeSequence = false;
 		switch (groupElement) {
 		case kMediaStorageSOPClassUID: {
