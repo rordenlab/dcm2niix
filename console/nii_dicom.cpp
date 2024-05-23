@@ -1446,6 +1446,10 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 		return EXIT_FAILURE;
 	int lPos = 8; //skip 8 bytes of data, 'SV10' plus 2 32-bit values unused1 and unused2
 	int lnTag = buff[lPos] + (buff[lPos + 1] << 8) + (buff[lPos + 2] << 16) + (buff[lPos + 3] << 24);
+        if ((lnTag > 128) || (lnTag < 1)){
+                printError("%d n_tags CSA Image Header corrupted (0029,1010) see issue 633.\n", lnTag);
+                return EXIT_FAILURE;
+        }
 	if (buff[lPos + 4] != 77)
 		return EXIT_FAILURE;
 	lPos += 8; //skip 8 bytes of data, 32-bit lnTag plus 77 00 00 0
@@ -1459,10 +1463,6 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 		// Storage order is always little-endian, so byte-swap required values if necessary
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
-		if (tagCSA.nitems > 128) {
-			printError("%d n_tags CSA Image Header corrupted (0029,1010) see issue 633.\n", tagCSA.nitems);
-			return EXIT_FAILURE;
-		}
 		if (isVerbose > 1) //extreme verbosity: show every CSA tag
 			printMessage("   %d CSA of %s %d\n", lPos, tagCSA.name, tagCSA.nitems);
 		if (tagCSA.nitems > 0) {
@@ -8041,7 +8041,19 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//}
 	if (numberOfFramesICEdims < 2) //issue751: icedims[20] frames for EPI only
 		numberOfFramesICEdims = 0;
-	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] != numberOfFramesICEdims)) {
+        // Issue 742: Detect *currently* enhanced Siemens XA volumes with fewer
+        // than the expected number of slices, and mark them as derived, with
+        // SeriesNumber + 1000. However, valid XA series are often unenhanced,
+        // likely post-scanner, and can arrive as files with just 1 slice each
+        // in d.xyzDim[3] but the total number of z locations for the series in
+        // their ICEdims, so they appear to be partial volumes until the
+        // dcmList is completed (nii_dicom_batch.cpp). Thus we use the
+        // heuristic that d.xyzDim[3] == 1 is probably OK but between 1 and
+        // numberOfFramesICEdims (exclusively) is an enhanced partial
+        // volume. It would miss the case of a true enhanced partial volume
+        // with just 1 slice, but that seems much less likely than unenhanced
+        // DICOM with unmodified ICEDims tags.
+	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] > 1) && (d.xyzDim[3] != numberOfFramesICEdims)) {
 		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
 		d.seriesNum += 1000;
 		d.isDerived = true;
