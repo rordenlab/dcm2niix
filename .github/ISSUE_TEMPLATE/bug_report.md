@@ -42,6 +42,6 @@ Please try the following steps to resolve your issue:
 ```
 git clone --branch development https://github.com/rordenlab/dcm2niix.git
 cd dcm2niix/console
-g++  -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG
+make
 ./dcm2niix ....
 ```

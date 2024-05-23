@@ -24,10 +24,10 @@ def main(args=None, **run_kwargs):
     Arguments:
       args: defaults to `sys.argv[1:]`.
       **run_kwargs: passed to `subprocess.run`.
-    Returns: `subprocess.CompletedProcess` instance.
+    Returns: `int` exit code from dcm2niix execution.
     """
     if args is None:
         import sys
         args = sys.argv[1:]
     from subprocess import run
-    return run([bin] + args, **run_kwargs)
+    return run([bin] + args, **run_kwargs).returncode
