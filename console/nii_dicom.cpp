@@ -4690,6 +4690,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	//bool isProspectiveSynced = false;
 	bool isDICOMANON = false; //issue383
 	bool isMATLAB = false; //issue383
+	bool isDWI_UIH = false; //issue836
 	//bool isASL = false;
 	bool has00200013 = false;
 	//double contentTime = 0.0;
@@ -6423,6 +6424,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer != kMANUFACTURER_UIH)
 				break;
 			float v[4];
+			isDWI_UIH = true; //issue836
 			dcmMultiFloatDouble(lLength, &buffer[lPos], 3, v, d.isLittleEndian);
 			//dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, v);
 			//printf(">>>%g %g %g\n", v[0], v[1], v[2]);
@@ -6908,7 +6910,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//  ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ)) &&
 			//  (isAtFirstPatientPosition || isnan(d.patientPosition[1])))
 			//if((d.manufacturer == kMANUFACTURER_SIEMENS) || ((d.manufacturer == kMANUFACTURER_PHILIPS) && !is2005140FSQ))
-			if (true) {
+			if (!isDWI_UIH) { //issue836
 			//if ((d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_TOSHIBA) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_HITACHI) || (d.manufacturer == kMANUFACTURER_SIEMENS) || (d.manufacturer == kMANUFACTURER_PHILIPS)) {
 				//for kMANUFACTURER_HITACHI see https://nciphub.org/groups/qindicom/wiki/StandardcompliantenhancedmultiframeDWI
 				float v[4];
