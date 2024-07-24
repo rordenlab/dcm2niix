@@ -1,6 +1,8 @@
 # Regular use
 CFLAGS=-s -O3
 
+# Universal files used for everything
+UFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG
 # Debugging
 #CFLAGS=-g
 
@@ -44,4 +46,7 @@ ifneq ($(OS),Windows_NT)
 	endif
 endif
 all:
-	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG
+	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES)
+
+sanitize:
+	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer $(LFLAGS) $(UFILES)

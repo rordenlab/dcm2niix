@@ -7255,6 +7255,11 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 		printWarning("Unable to determine GE Slice timing, no Protocol Data Block GE (0025,101B): %s\n", filename);
 		return;
 	}
+	if (strlen(d->softwareVersions) < 10) { //issue838
+		d->CSA.sliceTiming[0] = -1;
+		printWarning("Unable to determine GE Slice timing, invalid SoftwareVersions (0018,1020): %s\n", filename);
+		return;
+	}
 	//start version check:
 	float geMajorVersion = 0;
 	int geMajorVersionInt = 0, geMinorVersionInt = 0, geReleaseVersionInt = 0;
