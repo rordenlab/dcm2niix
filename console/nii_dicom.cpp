@@ -4517,6 +4517,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16) //CS Siemens ONLY
 #define kPATModeText 0x0021 + (0x1009 << 16) //LO, see kImaPATModeText
+#define kFrameNumberInSeries 0x0021 + (0x118A << 16) //IS issue837
 #define kCSASeriesHeaderInfoXA 0x0021 + (0x1019 << 16)
 #define kCSASeriesHeaderInfoXA2 0x0021 + (0x11FE << 16)
 #define kTimeAfterStart 0x0021 + (0x1104 << 16) //DS
@@ -4727,6 +4728,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int gradientOrientationNumberPhilips = -1;
 	int numberOfFrames = 0;
 	int numberOfFramesICEdims = 0;
+	int frameNumberInSeries = -1; //issue837
 	//int MRImageGradientOrientationNumber = 0;
 	//int minGradNum = kMaxDTI4D + 1;
 	//int maxGradNum = -1;
@@ -6226,6 +6228,9 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		//group 21: siemens
 		case kScanOptionsSiemens:
 			dcmStr(lLength, &buffer[lPos], scanOptionsSiemens, true);
+			break;
+		case kFrameNumberInSeries: //issue837
+			frameNumberInSeries = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		case kPATModeText: { //e.g. Siemens iPAT x2 listed as "p2"
 			char accelStr[kDICOMStr];
@@ -8072,6 +8077,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.seriesUidCrc = mz_crc32X((unsigned char *)&d.protocolName, strlen(d.protocolName));
 		}
 	}
+	if (frameNumberInSeries >= 0) //issue837
+		d.imageNum = frameNumberInSeries;
 	//TODO533: alias Philips ASL PLD as frameDuration? isKludgeIssue533
 	//if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
 	//	d.triggerDelayTime = 0.0; 		 //Philips ASL use "(0018,9037) CS [NONE]" but "(2001,1010) CS [TRIGGERED]", a situation not described in issue408
