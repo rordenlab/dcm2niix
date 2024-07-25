@@ -6230,6 +6230,8 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			dcmStr(lLength, &buffer[lPos], scanOptionsSiemens, true);
 			break;
 		case kFrameNumberInSeries: //issue837
+			if (d.manufacturer != kMANUFACTURER_SIEMENS)
+				break;
 			frameNumberInSeries = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		case kPATModeText: { //e.g. Siemens iPAT x2 listed as "p2"
