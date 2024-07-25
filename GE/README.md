@@ -118,7 +118,6 @@ Anatomical localizers (e.g. scout images) are quick-and-dirty scans used to posi
 ## Sample Datasets
 
  - [A validation dataset for dcm2niix commits](https://github.com/neurolabusc/dcm_qa_nih).
- - [Slice Timing and Phase Encoding examples](https://github.com/jannikadon/cc-dcm2bids-wrapper/tree/main/dicom-qa-examples)
  - [Slice timing validation](https://github.com/neurolabusc/dcm_qa_stc) for different varieties of GE EPI sequences.
  - [Examples of phase encoding polarity, slice timing and diffusion gradients](https://github.com/neurolabusc/dcm_qa_ge).
  - The dcm2niix [wiki](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage) includes examples of diffusion data, slice timing, and other variations.

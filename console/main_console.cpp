@@ -117,7 +117,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	//#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
 	//#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
 	printf("  -w : write behavior for name conflicts (0,1,2, default 2: 0=skip duplicates, 1=overwrite, 2=add suffix)\n");
-	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquistions)\n");
+	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquisitions)\n");
 	char gzCh = 'n';
 	if (opts.isGz)
 		gzCh = 'y';

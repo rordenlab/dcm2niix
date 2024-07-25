@@ -1745,8 +1745,10 @@ tse3d: T2*/
 				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"2TR\",\n");
 			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_3TR)
 				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"3TR\",\n");
+			// codespell:disable
 			if (d.diffCyclingModeGE == kGE_DIFF_CYCLING_SPOFF)
 				fprintf(fp, "\t\"DiffGradientCyclingGE\": \"SPOFF\",\n");
+			// codespell:enable
 		}
 	}
 #ifdef myReadAsciiCsa
@@ -8401,6 +8403,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			else
 				nii_saveNII(pathoutnameADC, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 		}
+		#ifndef myNoRois
 		if (isHasOverlay) { //each series can have up to 16 overlays, overlays may not be on all slices
 			for (int j = 0; j < kMaxOverlay; j++) {
 				bool isOverlay = false;
@@ -8452,6 +8455,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				nii_saveNII(pathoutnameROI, hdrr, imgR, opts, dcmList[dcmSort[0].indx]);
 			}
 		}
+		#endif //myNoRois
 		imgM = removeADC(&hdr0, imgM, numADC);
 		if (iVaries)
 			printMessage("Saving as 32-bit float (slope, intercept or bits allocated varies).\n");
