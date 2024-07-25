@@ -1674,7 +1674,11 @@ tse3d: T2*/
 		json_Float(fp, "\t\"SpacingBetweenSlices\": %g,\n", d.zSpacing);
 	}
 	//if (!opts.isAnonymizeBIDS) //issue668 is SAR identifiable??
+	//an identical sequence can create different SAR and TablePosition depending on participant
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR);
+	if (d.CSA.tablePos[0] > 0.0)
+		fprintf(fp, "\t\"TablePosition\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.CSA.tablePos[1], d.CSA.tablePos[2], d.CSA.tablePos[3]);
+
 	if (d.numberOfAverages > 1.0)
 		json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages);
 	if ((d.echoNum > 1) || ((d.isMultiEcho) && (d.echoNum > 0)))

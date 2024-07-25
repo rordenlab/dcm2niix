@@ -228,7 +228,7 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
     } TCSAitem; //Siemens csa item structure
 #endif
     struct TCSAdata {
-        float sliceTiming[kMaxEPI3D], dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration;
+        float sliceTiming[kMaxEPI3D], dtiV[4], sliceNormV[4], bandwidthPerPixelPhaseEncode, sliceMeasurementDuration, tablePos[4];
         int coilNumber, numDti, SeriesHeader_offset, SeriesHeader_length, multiBandFactor, sliceOrder, slice_start, slice_end, mosaicSlices, protocolSliceNumber1, phaseEncodingDirectionPositive;
         bool isPhaseMap;
         char bidsDataType[kDICOMStr]; //anat, func, dwi

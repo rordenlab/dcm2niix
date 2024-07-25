@@ -244,8 +244,9 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
 | LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
 | SliceTiming                    | s    | [see notes](https://github.com/rordenlab/dcm2niix/tree/master/GE#slice-timing)  | B          |
-| CompressedSensingFactor        |      | DICOM tag 0043,10b7      | D          |
-| DeepLearningFactor             |      | DICOM tag 0043,10ca      | D          |
+| CompressedSensingFactor        |      | DICOM tag 0043,10B7      | D          |
+| TablePosition                  | mm   | DICOM tag 0043,10B2      | B          |
+| DeepLearningFactor             |      | DICOM tag 0043,10CA      | D          |
 
 ### Manufacturer Philips
 
@@ -258,11 +259,12 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 | PhilipsRWVIntercept                |      | DICOM tag 0040,9224              | D          |
 | PhilipsRescaleSlope                |      | DICOM tag 0028,1053              | D          |
 | PhilipsRescaleIntercept            |      | DICOM tag 0028,1052              | D          |
-| PhilipsScaleSlope                  |      | DICOM tag 2005,100E              | D          |
 | UsePhilipsFloatNotDisplayScaling   |      | dcm2niix option `-p y` or `-p n` | D          |
 | PartialFourierEnabled              |      | DICOM tag 0018,9081, `YES`       | D          |
 | PhaseEncodingStepsNoPartialFourier |      | DICOM tag 0018,9231              | D          |
 | WaterFatShift                      |      | DICOM tag 2001,1022              | D          |
+| PhilipsScaleSlope                  |      | DICOM tag 2005,100E              | D          |
+| TablePosition                      | mm   | DICOM tag 2005,143D              | B          |
 
 ### Manufacturer Siemens (Arterial Spin Labeling)
 
@@ -332,6 +334,7 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | ConsistencyInfo                |                                                 | The more complete software version, e.g. VE11C or VE11E instead of just VE11.                                                                                                                                                                                                                                                                                                                          | D          |
 | CoilCombinationMethod          |                                                 | Detects `Sum of Squares` and `Adaptive Combine`                                                                                                                                                                                                                                                                                                                                                        | B          |
 | MatrixCoilMode                 |                                                 | Detects `SENSE` and `GRAPPA`                                                                                                                                                                                                                                                                                                                                                                           | B          |
+| TablePosition                  | mm                                              | DICOM tag 0019,1014                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | DwellTime                      |                                                 | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | BandwidthPerPixelPhaseEncode   | Hz                                              | DICOM tag 0019,1028                                                                                                                                                                                                                                                                                                                                                                                    | D          |
 | ImageOrientationText           |                                                 | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
@@ -347,9 +350,10 @@ Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tre
 | BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153        | D          |
 | ScanningSequence             |      | DICOM tag 0021,105a        | D          |
 | PostLabelingDelay            | s    | DICOM tag 0018,9258        | B          |
+| TablePosition                | mm   | DICOM tag 0021,1005        | B          |
 | NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
 | PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
-| SpoilingState                |      | 0021,105B                  | B          |
+| SpoilingState                |      | DICOM tag 0021,105B        | B          |
 
 Siemens also includes some sequence information in the private MRPhoenixProtocol (0021,1019) tag. You can view this with [gdcmdump](https://gdcm.sourceforge.net/html/gdcmdump.html), e.g. `gdcmdump --mrprotocol img.dcm`. Fields that dcm2niix inspects include `sPat.lAccelFact3D `, `sPat.lAccelFactPE`, `sPat.lRefLinesPE` and `sPat.ucPATMode`. The behavior of dcm2niix will be more well documented as our understanding of this tag improves.
 
