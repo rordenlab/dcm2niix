@@ -412,6 +412,9 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
 		printMessage("Check bvecs: expected Patient Position (0018,5100) to be 'HFS' not '%s'\n", d->patientOrient);
 		//return; //see https://github.com/rordenlab/dcm2niix/issues/238
 	}
+	float minBvalThreshold = 6.0;
+	if (d->manufacturer == kMANUFACTURER_SIEMENS)
+		minBvalThreshold = 50.0;
 	vec3 read_vector = setVec3(d->orient[1], d->orient[2], d->orient[3]);
 	vec3 phase_vector = setVec3(d->orient[4], d->orient[5], d->orient[6]);
 	vec3 slice_vector = crossProduct(read_vector, phase_vector);
@@ -421,7 +424,7 @@ void siemensPhilipsCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI 
 	for (int i = 0; i < d->CSA.numDti; i++) {
 		float vLen = sqrt((vx[i].V[1] * vx[i].V[1]) + (vx[i].V[2] * vx[i].V[2]) + (vx[i].V[3] * vx[i].V[3]));
 		if ((vx[i].V[0] <= FLT_EPSILON) || (vLen <= FLT_EPSILON)) { //bvalue=0
-			if ((vx[i].V[0] > 50.0) && (!d->isDerived))	//Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
+			if ((vx[i].V[0] > minBvalThreshold) && (!d->isDerived))	//Philip stores n.b. UIH B=1.25126 Vec=0,0,0 while Philips stored isotropic images
 				printWarning("Volume %d appears to be derived image ADC/Isotropic (non-zero b-value with zero vector length)\n", i);
 			continue; //do not normalize or reorient b0 vectors
 		} //if bvalue=0
@@ -2498,6 +2501,9 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	ImageList *images = (ImageList *)opts.imageList;
 #endif
 	//https://github.com/rordenlab/dcm2niix/issues/352
+	float minBvalThreshold = 6.0;
+	if (dcmList[indx0].manufacturer == kMANUFACTURER_SIEMENS)
+		minBvalThreshold = 50.0;
 	bool allB0 = dcmList[indx0].isDiffusion;
 	bool isDerived = dcmList[indx0].isDerived;
 	if (dcmList[indx0].isDerived)
@@ -2513,7 +2519,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 				allB0 = false;
 		}
 	}
-	if ((numDti == 1) && (dti4D->S[0].V[0] > 50.0))
+	if ((numDti == 1) && (dti4D->S[0].V[0] > minBvalThreshold))
 		allB0 = false;
 	if (allB0) {
 		if (opts.isVerbose)
@@ -2579,7 +2585,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	for (int i = 1; i < numDti; i++) //check if all bvalues match first volume
 		if (vx[i].V[0] < minBval)
 			minBval = vx[i].V[0];
-	if (minBval > 50.0)
+	if (minBval > minBvalThreshold)
 		bValueVaries = true;
 	//start issue394: experimental, single volume per series, Siemens XA
 	if (!isAllZeroFloat(vx[0].V[1], vx[0].V[2], vx[0].V[3]))
@@ -4644,11 +4650,14 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 				b_max = dti4D->S[i].V[0];
 		fprintf(fp, "DWMRI_b-value:=%g\n", b_max);
 		//gradient tag, e.g. DWMRI_gradient_0000:=0.0 0.0 0.0
+		float minBvalThreshold = 6.0;
+		if (d.manufacturer == kMANUFACTURER_SIEMENS)
+			minBvalThreshold = 50.0;
 		for (int i = 0; i < numDTI; i++) {
 			float factor = 0.0;
 			if (b_max > 0)
 				factor = sqrt(dti4D->S[i].V[0] / b_max);
-			if ((dti4D->S[i].V[0] > 50.0) && (isSameFloatGE(0.0, dti4D->S[i].V[1])) && (isSameFloatGE(0.0, dti4D->S[i].V[2])) && (isSameFloatGE(0.0, dti4D->S[i].V[3]))) {
+			if ((dti4D->S[i].V[0] > minBvalThreshold) && (isSameFloatGE(0.0, dti4D->S[i].V[1])) && (isSameFloatGE(0.0, dti4D->S[i].V[2])) && (isSameFloatGE(0.0, dti4D->S[i].V[3]))) {
 				//On May 2, 2019, at 10:47 AM, Gordon L. Kindlmann <> wrote:
 				//(assuming b_max 2000, we write "isotropic" for the b=2000 isotropic image, and specify the b-value if it is an isotropic image but not b-bax
 				// DWMRI_gradient_0003:=isotropic b=1000
