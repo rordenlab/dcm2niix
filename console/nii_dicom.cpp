@@ -4583,6 +4583,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kASLContrastTechniqueGE 0x0043 + (0x10A3 << 16) //CS
 #define kASLLabelingTechniqueGE 0x0043 + (0x10A4 << 16) //LO
 #define kDurationLabelPulseGE 0x0043 + (0x10A5 << 16) //IS
+#define kMRTablePositionInformation 0x0043 + (0x10B2 << 16) //LO
 #define kMultiBandGE 0x0043 + (0x10B6 << 16) //LO
 #define kCompressedSensingParameters 0x0043 + (0x10B7 << 16) //LO
 #define kDeepLearningParameters 0x0043 + (0x10CA << 16) //LO "0.75\High"
@@ -7366,6 +7367,18 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			d.durationLabelPulseGE = dcmStrInt(lLength, &buffer[lPos]);
+			break;
+		}
+		case kMRTablePositionInformation: { //LO issue427GE
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			//LO array of floats stored in LONG STRING!
+			// [960.5\400\17.9108\0\-9999\-9999]
+			//we want 3rd value, e.g. 17.9: 
+			float v[5];
+			dcmMultiFloat(lLength, (char *)&buffer[lPos], 5, v);
+			d.CSA.tablePos[3] = v[3];
+			d.CSA.tablePos[0] = 1.0;
 			break;
 		}
 		case kMultiBandGE: { //LO issue427GE
