@@ -3,9 +3,10 @@ skip = .git,*.json,dcm_qa*
 # te - the TE used in the code often
 # clen - another common variable for length of smth
 # tage - for \tAge, inline ignores are yet to be released
+# SPOFF - GE diffusion cycling mode
 # nd - there is some kind of ND whi
 # ❯ grep -e 'trace or MD ' -e 'Trace/ND' ./console/nii_dicom_batch.cpp
 #		// the isotropic trace or MD can be calculated) often come as
 #			/*if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
 # ser - used in  printMessage(" acq %d img %d ser %ld ...
-ignore-words-list = te,clen,tage,nd,ser
+ignore-words-list = te,clen,tage,nd,ser,SPOFF
