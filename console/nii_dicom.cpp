@@ -4717,6 +4717,10 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int locationsInAcquisitionGE = 0;
 	int PETImageIndex = 0;
 	int inStackPositionNumber = 0;
+	int isIssue839 = false;
+	float patientPosition1[kMaxSlice2D];
+	float patientPosition2[kMaxSlice2D];
+	float patientPosition3[kMaxSlice2D];
 	bool isKludgeIssue533 = false;
 	uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
 	size_t dimensionIndexPointerCounter = 0;
@@ -4930,10 +4934,24 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 					acquisitionTimePhilips = - 1.0;
 				}
 				int ndim = nDimIndxVal;
+				//issue 839
+				patientPosition1[numDimensionIndexValues] = patientPosition[1];
+				patientPosition2[numDimensionIndexValues] = patientPosition[2];
+				patientPosition3[numDimensionIndexValues] = patientPosition[3];
 				if (inStackPositionNumber > 0) {
 					//for images without SliceNumberMrPhilips (2001,100A)
 					int sliceNumber = inStackPositionNumber;
 					//printf("slice %d \n", sliceNumber);
+					if ((!isIssue839) && (sliceNumber == 1) && (!isnan(patientPositionStartPhilips[1]))) {
+						float dx = sqrt(
+							pow(patientPositionStartPhilips[1] - patientPosition[1], 2) +
+							pow(patientPositionStartPhilips[2] - patientPosition[2], 2) +
+							pow(patientPositionStartPhilips[3] - patientPosition[3], 2));
+						if (!isSameFloatGE(dx, 0.0)) {
+							isIssue839 = true;
+							printWarning("repeats of first inStackPositionNumber are at different locations (dx = %gmm; issue 839)\n", dx);
+						}
+					}
 					if ((sliceNumber == 1) && (!isnan(patientPosition[1]))) {
 						for (int k = 0; k < 4; k++)
 							patientPositionStartPhilips[k] = patientPosition[k];
@@ -7901,6 +7919,51 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 	//	printWarning("3D EPI with FrameAcquisitionDuration = %gs volumes = %d (see issue 369)\n", frameAcquisitionDuration/1000.0, d.xyzDim[4]);
 	if (numDimensionIndexValues > 1)
 		strcpy(d.imageType, imageType1st); //for multi-frame datasets, return name of book, not name of last chapter
+	if (((d.isValid)) && (isIssue839) && (numDimensionIndexValues > 2)) {
+		//rewrite
+		for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++) {
+			for (int i = 0; i < numDimensionIndexValues; i++) {
+				dcmDim[i].dimIdx[j] = 0;
+			}
+		}
+		// we need a scalar value for sorting
+		// first pass: find slice that is furthest from isocenter, n.b. arbitrary if tied
+		float mxDx = 0.0; 
+		int mxIdx = 0; //
+		for (int i = 0; i < numDimensionIndexValues; i++) {
+			float dx = sqrt(pow(patientPosition1[i],2)+pow(patientPosition2[i],2)+pow(patientPosition3[i],2));
+			if (dx > mxDx) {
+				mxDx = dx;
+				mxIdx = i;
+			}
+			if (isVerbose > 1) printf("slice %d is %gmm from isocenter\n", i, dx);
+		}
+		if (isVerbose > 1) printf("slice %d is furthest (%gmm) from isocenter\n", mxIdx, mxDx);
+		// second pass: measure each slices scalar distance from furthest slice
+		// ensure their are no repeated slice positions
+		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numDimensionIndexValues);
+		bool isSamePosition = false;
+		for (int i = 0; i < numDimensionIndexValues; i++) {
+			float dx = sqrt(pow(patientPosition1[i]-patientPosition1[mxIdx],2)+pow(patientPosition2[i]-patientPosition2[mxIdx],2)+pow(patientPosition3[i]-patientPosition3[mxIdx],2));
+			if (isVerbose > 1) printf("slice %d is %gmm from furthest slice\n", i, dx);
+			objects[i].value = dx;
+			//sliceMM[i];
+			objects[i].index = i;
+			if ((i != mxIdx) && (isSameFloatGE(dx, 0.0)))
+				isSamePosition = true;
+		}
+		if (isSamePosition) {
+			printError("Multivolume file with invalid DimensionIndexValues (issue839)\n");
+			d.isValid = false;
+		}
+		qsort(objects, numberOfFrames, sizeof(struct fidx), fcmp);
+		numDimensionIndexValues = numberOfFrames;
+		for (int i = 0; i < numDimensionIndexValues; i++) {
+			dcmDim[objects[i].index].dimIdx[0] = i;
+		}
+		d.xyzDim[4] = 1;
+		d.xyzDim[3] = numDimensionIndexValues;
+	} //issue839
 	if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
 		//Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
 		int maxVariableItem = 0;
