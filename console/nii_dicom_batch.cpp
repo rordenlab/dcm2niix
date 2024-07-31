@@ -4266,7 +4266,7 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 		strcat(fname, ".nhdr"); //nrrd or nhdr
 	else
 		strcat(fname, ".nrrd"); //nrrd or nhdr
-	FILE *fp = fopen(fname, "w");
+	FILE *fp = fopen(fname, "wb");
 	fprintf(fp, "NRRD0005\n");
 	fprintf(fp, "# Complete NRRD file format specification at:\n");
 	fprintf(fp, "# http://teem.sourceforge.net/nrrd/format.html\n");
