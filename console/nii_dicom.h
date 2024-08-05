@@ -184,6 +184,9 @@ static const int kMaxOverlay = 16; //even group values 0x6000..0x601E
 // Maximum number of dimensions for .dimensionIndexValues, i.e. possibly the
 // number of axes in the output .nii.
 static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
+// Maximum supported number of entries in DeidentificationMethodCodeSequence
+// Any additional will be ignored
+static const uint8_t MAX_DEID_CS = 10;
     struct TDTI {
         float V[4];
         //int totalSlicesIn4DOrder;
@@ -235,9 +238,16 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         char bidsEntitySuffix[kDICOMStrLarge]; //anat, func, dwi
         char bidsTask[kDICOMStr]; //rest, naming40
     };
+    struct TDeIDCodeSequence {
+      char CodeValue[kDICOMStr];
+      char CodeMeaning[kDICOMStrLarge];
+      char CodingSchemeDesignator[kDICOMStr];
+      char CodingSchemeVersion[kDICOMStr];
+    };
     struct TDICOMdata {
         long seriesNum;
         int xyzDim[5];
+        int deID_CS_n = 0;
         uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
         int overlayStart[kMaxOverlay];
         int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel,locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
@@ -248,12 +258,13 @@ static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
         float pixelPaddingValue;  // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
         double imagingFrequency, acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, acquisitionDate, bandwidthPerPixelPhaseEncode;
         char parallelAcquisitionTechnique[kDICOMStr], radiopharmaceutical[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], tracerRadionuclide[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr],reconstructionMethod[kDICOMStr], transferSyntax[kDICOMStr];
-        char prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], studyDescription[kDICOMStr],  softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr];
+        char prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], studyDescription[kDICOMStr],  softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr],sequenceVariant[kDICOMStr],scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr],  studyDate[kDICOMStr],studyTime[kDICOMStr], deidentificationMethod[kDICOMStr];
         char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
         uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
         struct TCSAdata CSA;
         bool isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude,isHasMixed, isFloat, isResampled, isLocalizer;
         char phaseEncodingRC, patientSex;
+        struct TDeIDCodeSequence deID_CS[MAX_DEID_CS];
     };
     struct TDCMprefs {
         int isVerbose, compressFlag, isIgnoreTriggerTimes;
