@@ -836,7 +836,20 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		char keyStrCoil[] = "sCoilElementID.tCoilID";
 		readKeyStr(keyStrCoil, keyPos, csaLengthTrim, coilID);
 		char keyStrCI[] = "sProtConsistencyInfo.tMeasuredBaselineString";
+		// issue848 VE11 reports N4_VE11C_LATEST_20160120
 		readKeyStr(keyStrCI, keyPos, csaLengthTrim, consistencyInfo);
+		// issue848 VB17 reports N4_VB17A_LATEST_20090307
+		if (strlen(consistencyInfo) < 1) {
+			char keyStrCI2[] = "sProtConsistencyInfo.tBaselineString";
+			readKeyStr(keyStrCI2, keyPos, csaLengthTrim, consistencyInfo);
+		}
+		// issue848 XA30 reports 63010001
+		if (strlen(consistencyInfo) < 1) {
+			char keyStrCI3[] = "sProtConsistencyInfo.ulConvFromVersion";
+			int vers = readKey(keyStrCI3, keyPos, csaLengthTrim);
+			if (vers > 0)
+				snprintf(consistencyInfo, 16, "%d", vers);
+		}
 		char keyStrCS[] = "sCoilSelectMeas.sCoilStringForConversion";
 		readKeyStr(keyStrCS, keyPos, csaLengthTrim, coilElements);
 		char keyStrSeq[] = "tSequenceFileName";
