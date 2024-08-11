@@ -4476,7 +4476,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 // https://nciphub.org/groups/qindicom/wiki/DiffusionrelatedDICOMtags:experienceacrosssites?action=pdf
 #define kDiffusion_bValueSiemens 0x0019 + (0x100C << 16) //IS
 #define kDiffusionGradientDirectionSiemens 0x0019 + (0x100E << 16) //FD
-#define kImaRelTablePosition 0x0019 + (0x1014 << 16) //IS[]
+#define kImaRelTablePosition 0x0019 + (0x1014 << 16) //IS[] Siemens V*
 #define kSeriesPlaneGE 0x0019 + (0x1017 << 16) //SS
 #define kDwellTime 0x0019 + (0x1018 << 16) //IS in NSec, see https://github.com/rordenlab/dcm2niix/issues/127
 #define kLastScanLoc 0x0019 + (0x101B << 16)
@@ -4518,7 +4518,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kTemporalPositionIndex 0x0020 + uint32_t(0x9128 << 16) // UL
 #define kDimensionIndexPointer 0x0020 + uint32_t(0x9165 << 16)
 //Private Group 21 as Used by Siemens:
-#define kRelTablePosition 0x0021 + (0x1005 << 16) //IS
+#define kRelTablePosition 0x0021 + (0x1005 << 16) //IS Siemens XA
 #define kScanningSequenceSiemens 0x0021 + (0x105A << 16) //CS n.b. for GE this is Diffusion direction of SL!
 #define kSequenceVariant21 0x0021 + (0x105B << 16) //CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16) //CS Siemens ONLY
@@ -4583,7 +4583,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kASLContrastTechniqueGE 0x0043 + (0x10A3 << 16) //CS
 #define kASLLabelingTechniqueGE 0x0043 + (0x10A4 << 16) //LO
 #define kDurationLabelPulseGE 0x0043 + (0x10A5 << 16) //IS
-#define kMRTablePositionInformation 0x0043 + (0x10B2 << 16) //LO
+#define kMRTablePositionInformation 0x0043 + (0x10B2 << 16) //LO GE
 #define kMultiBandGE 0x0043 + (0x10B6 << 16) //LO
 #define kCompressedSensingParameters 0x0043 + (0x10B7 << 16) //LO
 #define kDeepLearningParameters 0x0043 + (0x10CA << 16) //LO "0.75\High"
@@ -4650,7 +4650,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kDiffusionDirectionFH 0x2005 + (0x10B2 << 16)
 #define kDeepLearningPhilips 0x2005 + (0x1110 << 16)
 #define kPrivatePerFrameSq 0x2005 + (0x140F << 16)
-#define kMRStackTablePosLong 0x2005 + (0x143C << 16) //FL
+#define kMRStackTablePosLong 0x2005 + (0x143C << 16) //FL Philips
 #define kMRImageDiffBValueNumber 0x2005 + (0x1412 << 16) //IS
 #define kMRImageGradientOrientationNumber 0x2005+(0x1413 << 16) //IS
 #define kMRImageLabelType 0x2005 + (0x1429 << 16) //CS ASL LBL_CTL https://github.com/physimals/dcm_convert_phillips/

@@ -264,7 +264,7 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 | PhaseEncodingStepsNoPartialFourier |      | DICOM tag 0018,9231              | D          |
 | WaterFatShift                      |      | DICOM tag 2001,1022              | D          |
 | PhilipsScaleSlope                  |      | DICOM tag 2005,100E              | D          |
-| TablePosition                      | mm   | DICOM tag 2005,143D              | B          |
+| TablePosition                      | mm   | DICOM tag 2005,143C              | B          |
 
 ### Manufacturer Siemens (Arterial Spin Labeling)
 
