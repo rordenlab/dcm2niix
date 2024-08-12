@@ -245,7 +245,7 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
 | SliceTiming                    | s    | [see notes](https://github.com/rordenlab/dcm2niix/tree/master/GE#slice-timing)  | B          |
 | CompressedSensingFactor        |      | DICOM tag 0043,10B7      | D          |
-| TablePosition                  | mm   | DICOM tag 0043,10B2      | B          |
+| TablePosition                  | mm   | The 3rd value of DICOM tag 0043,10B2 - the value of DICOM tag 0019,107F    | B          |
 | DeepLearningFactor             |      | DICOM tag 0043,10CA      | D          |
 
 ### Manufacturer Philips
