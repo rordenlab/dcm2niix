@@ -2303,38 +2303,40 @@ following logic now occurs earlier to aid bids guess
 	bool isSkipPhaseEncodingAxis = d.is3DAcq;
 	if (d.echoTrainLength > 1)
 		isSkipPhaseEncodingAxis = false; //issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
-	int phPos = d.CSA.phaseEncodingDirectionPositive;
-	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
-		//when phase encoding axis is known but we do not know phase encoding polarity
-		// https://github.com/rordenlab/dcm2niix/issues/163
-		// This will typically correspond with InPlanePhaseEncodingDirectionDICOM
-		if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
-			fprintf(fp, "\t\"PhaseEncodingAxis\": \"j\",\n");
-		else if (d.phaseEncodingRC == 'R')
-			fprintf(fp, "\t\"PhaseEncodingAxis\": \"i\",\n");
-	}
-	if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos >= 0)) {
-		//printf("%ld %d %d %c %d\n", d.seriesNum, d.echoTrainLength, isSkipPhaseEncodingAxis, d.phaseEncodingRC, phPos); //test issue 371
-		if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
-			fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
-		else if (d.phaseEncodingRC == 'R')
-			fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
-		else
-			fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
-		//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
-		//However, DICOM and NIfTI are reversed in the j (ROW) direction
-		//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
-		//for samples see https://github.com/rordenlab/dcm2niix/issues/125
-		if (phPos < 0)
-			fprintf(fp, "?"); //unknown
-		else if ((phPos == 0) && (d.phaseEncodingRC != 'C'))
-			fprintf(fp, "-");
-		else if ((d.phaseEncodingRC == 'C') && (phPos == 1) && (opts.isFlipY))
-			fprintf(fp, "-");
-		else if ((d.phaseEncodingRC == 'C') && (phPos == 0) && (!opts.isFlipY))
-			fprintf(fp, "-");
-		fprintf(fp, "\",\n");
-	} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
+	if (!d.is3DAcq) { //issue849
+		int phPos = d.CSA.phaseEncodingDirectionPositive;
+		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
+			//when phase encoding axis is known but we do not know phase encoding polarity
+			// https://github.com/rordenlab/dcm2niix/issues/163
+			// This will typically correspond with InPlanePhaseEncodingDirectionDICOM
+			if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+				fprintf(fp, "\t\"PhaseEncodingAxis\": \"j\",\n");
+			else if (d.phaseEncodingRC == 'R')
+				fprintf(fp, "\t\"PhaseEncodingAxis\": \"i\",\n");
+		}
+		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos >= 0)) {
+			//printf("%ld %d %d %c %d\n", d.seriesNum, d.echoTrainLength, isSkipPhaseEncodingAxis, d.phaseEncodingRC, phPos); //test issue 371
+			if (d.phaseEncodingRC == 'C') //Values should be "R"ow, "C"olumn or "?"Unknown
+				fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
+			else if (d.phaseEncodingRC == 'R')
+				fprintf(fp, "\t\"PhaseEncodingDirection\": \"i");
+			else
+				fprintf(fp, "\t\"PhaseEncodingDirection\": \"?");
+			//phaseEncodingDirectionPositive has one of three values: UNKNOWN (-1), NEGATIVE (0), POSITIVE (1)
+			//However, DICOM and NIfTI are reversed in the j (ROW) direction
+			//Equivalent to dicm2nii's "if flp(iPhase), phPos = ~phPos; end"
+			//for samples see https://github.com/rordenlab/dcm2niix/issues/125
+			if (phPos < 0)
+				fprintf(fp, "?"); //unknown
+			else if ((phPos == 0) && (d.phaseEncodingRC != 'C'))
+				fprintf(fp, "-");
+			else if ((d.phaseEncodingRC == 'C') && (phPos == 1) && (opts.isFlipY))
+				fprintf(fp, "-");
+			else if ((d.phaseEncodingRC == 'C') && (phPos == 0) && (!opts.isFlipY))
+				fprintf(fp, "-");
+			fprintf(fp, "\",\n");
+		} //only save PhaseEncodingDirection if BOTH direction and POLARITY are known
+	} // if (!d.is3DAcq), e.g. only for 2D issue849
 	//Slice Timing UIH or GE >>>>
 	//in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
 	if ((d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
