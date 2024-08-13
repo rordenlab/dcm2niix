@@ -5982,6 +5982,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 3, &d.CSA.tablePos[0]); //slice position
+			d.CSA.tablePos[3] = -d.CSA.tablePos[3]; //reverse Z polarity, issue 726
 			d.CSA.tablePos[0] = 1.0; //set
 			break;
 		}
@@ -6794,6 +6795,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break;
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 3, &d.CSA.tablePos[0]); //slice position
+			d.CSA.tablePos[3] = -d.CSA.tablePos[3]; //reverse Z polarity, issue 726
 			d.CSA.tablePos[0] = 1.0; //set
 			break;
 		}
@@ -7138,7 +7140,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 		case kMRStackTablePosLong: //FL
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
-			d.CSA.tablePos[3] = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
+			d.CSA.tablePos[3] = - dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
 			d.CSA.tablePos[0] = 1.0;
 			break;
 		case kMRImageDiffBValueNumber:
