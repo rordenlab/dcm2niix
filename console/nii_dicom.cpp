@@ -4483,6 +4483,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 #define kBandwidthPerPixelPhaseEncode 0x0019 + (0x1028 << 16) //FD
 #define kSliceTimeSiemens 0x0019 + (0x1029 << 16) ///FD
 #define kAcquisitionDurationGE 0x0019 + (0x105a << 16) //FL Acquisition Duration in microsecond, Duration of Scan (series)
+#define kTableDeltaGE 0x0019 + (0x107f << 16) //DS Table delta
 #define kPulseSequenceNameGE 0x0019 + (0x109C << 16) //LO 'epiRT' or 'epi'
 #define kInternalPulseSequenceNameGE 0x0019 + (0x109E << 16) //LO 'EPI' or 'EPI2'
 #define kRawDataRunNumberGE 0x0019 + (0x10A2 << 16)//SL
@@ -4692,6 +4693,7 @@ const uint32_t kEffectiveTE = 0x0018 + uint32_t(0x9082 << 16); //FD
 	int userData12GE = 0;
 	float userData15GE = 0;
 	float accelFactPE = 0.0;
+	float tableDeltaGE = 0.0;
 	int overlayRows = 0;
 	int overlayCols = 0;
 	bool isNeologica = false;
@@ -7387,7 +7389,12 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			d.durationLabelPulseGE = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		}
-		case kMRTablePositionInformation: { //LO issue427GE
+		case kTableDeltaGE: { //DS issue726
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			tableDeltaGE = dcmStrFloat(lLength, &buffer[lPos]);
+		}
+		case kMRTablePositionInformation: { //LO issue726
 			if (d.manufacturer != kMANUFACTURER_GE)
 				break;
 			//LO array of floats stored in LONG STRING!
@@ -7395,7 +7402,7 @@ https://neurostars.org/t/how-dcm2niix-handles-different-imaging-types/22697/6
 			//we want 3rd value, e.g. 17.9: 
 			float v[5];
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 5, v);
-			d.CSA.tablePos[3] = v[3];
+			d.CSA.tablePos[3] = v[3] - tableDeltaGE;
 			d.CSA.tablePos[0] = 1.0;
 			break;
 		}
