@@ -1431,7 +1431,7 @@ tse3d: T2*/
 			} else
 				isSep = true;
 		}
-		if ((d.isHasMagnitude) && ((d.manufacturer == kMANUFACTURER_GE) || (strstr(d.imageType, "_MAGNITUDE_") == NULL)))
+		if ((d.isHasMagnitude) && ((d.manufacturer == kMANUFACTURER_GE) || ( (strstr(d.imageType, "_M_") == NULL) && (strstr(d.imageType, "_MAGNITUDE_") == NULL))))
 			fprintf(fp, "\", \"MAGNITUDE");
 		if ((d.isHasPhase) && ((d.manufacturer == kMANUFACTURER_GE) || (strstr(d.imageType, "_PHASE_") == NULL)))
 			fprintf(fp, "\", \"PHASE"); //"_IMAGINARY_"
