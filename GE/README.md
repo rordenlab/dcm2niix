@@ -50,24 +50,25 @@ Some sequences allow the user to interpolate images in plane (e.g. saving a 2D 6
 
 ## Total Readout Time
 
-One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be undistorted. Specifically, we are interested in FSL's definition of total read-out time, which may differ from the actual read-out time. FSL expects “the time from the middle of the first echo to the middle of the last echo, as it would have been had partial k-space not been used”. So total read-out time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, but not partial Fourier. For GE data we can use the Acquisition Matrix (0018,1310) in the phase-encoding direction, the in-plane acceleration ASSET R factor (the reciprocal of this is stored as the first element of 0043,1083) and the Effective Echo Spacing (0043,102C). Note that the Effective Echo Spacing (0043,102C) in GE DICOMS is defined as the time between two consecutives acquired phase encoding lines divided by the number of shots (usually, this is equal to 1 for fMRI and Diffusion). 
-While GE does not tell us the [partial Fourier fraction](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html), is does reveal if it is present with the ScanOptions (0018,1022) reporting [PFF](http://dicomlookup.com/lookup.asp?sw=Ttable&q=C.8-4) (in my experience, GE does not populate [(0018,9081)](http://dicomlookup.com/lookup.asp?sw=Tnumber&q=(0018,9081))). While partial Fourier does not impact FSL's totalReadoutTime directly, it can interact with the number of lines acquired when combined with parallel imaging (the `Round_factor` 2 (Full Fourier) or 4 (Partial Fourier)).
+One often wants to determine [echo spacing, bandwidth](https://support.brainvoyager.com/brainvoyager/functional-analysis-preparation/29-pre-processing/78-epi-distortion-correction-echo-spacing-and-bandwidth) and total read-out time for EPI data so they can be corrected for susceptibility distortions. Specifically, we are interested in FSL's definition of total read-out time, which may differ from the actual read-out time. FSL expects “the time from the middle of the first echo to the middle of the last echo, as it would have been had partial k-space not been used”. So total read-out time is influenced by parallel acceleration factor, bandwidth, number of EPI lines, but not partial Fourier. For GE data we can use the Acquisition Matrix (0018,1310) in the phase-encoding direction, the in-plane acceleration ASSET R factor (the reciprocal of this is stored as the first element of "0043,1083") and the value of (0043,102C), which is named “Effective Echo Spacing” in GE’s DICOM conformance statements, but which is NOT the same as the desired FSL definition. Specifically, (0043,102C) in GE DICOMS is defined as the time between two consecutively acquired phase encoding lines in microseconds divided by the number of shots (usually, this is equal to 1 for fMRI and Diffusion). Note that this GE DICOM field does not consider the impact of parallel acceleration on its “effective” echo spacing (which is not consistent with the FSL definition). So, to avoid confusion, we will name the value of (0043,102C) `EchoSpacingMicroSecondsGE`. 
 
-Let `NotPhysicalNumberOfAcquiredPELinesGE` be the number of acquired phase encoding lines if there was no partial Fourier and `NotPhysicalTotalReadOutTimeGE` be the physical total read-out time if there was no partial Fourier. Please, note that these two intermediate variables do not take partial Fourier into account. These two variables can be computed as
+GE DICOMs do not (currently) provide the actual [partial Fourier fraction](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html), but they do reveal if any amount of partial Fourier was used by reporting [PFF](http://dicomlookup.com/dicomtags/(0018,0022)) in the ScanOptions field (0018,1022). (In my experience, GE does not populate [(0018,9081)](http://dicomlookup.com/dicomtags/(0018,9081))). While partial Fourier does not impact FSL's TotalReadoutTime directly, it can interact with the number of lines acquired when combined with parallel imaging (via the `Round_factor` in the equations below, which is 2 for Full Fourier but 4 for Partial Fourier).
+
+Let `NotPhysicalNumberOfAcquiredPELinesGE` be the number of acquired phase encoding lines if there was no partial Fourier (but reflecting the impact of parallel acceleration on the number of *acquired* PE lines) and `NotPhysicalTotalReadOutTimeGE` be the associated read-out time if there was no partial Fourier. These two intermediate variables can be computed as
 
 ```
-NotPhysicalNumberOfAcquiredPELinesGE = (ceil((1/Round_factor) * PE_AcquisitionMatrix / Asset_R_factor) * Round_factor)
-NotPhysicalTotalReadOutTimeGE = (NotPhysicalNumberOfAcquiredPELinesGE - 1) * EchoSpacing * 0.000001
+NotPhysicalNumberOfAcquiredPELinesGE = (ceil((1/Round_factor) * AcquisitionMatrixPE / ASSET_R_factor) * Round_factor)
+NotPhysicalTotalReadOutTimeGE = (NotPhysicalNumberOfAcquiredPELinesGE - 1) * EchoSpacingMicroSecondsGE * 1e-6
 ```
-
-with `EchoSpacing` referring to the GE private DICOM field "(0043,102C) Effective Echo Spacing". 
+ 
 Then, the formula for FSL's definition of `EffectiveEchoSpacing` and `TotalReadoutTime` (in seconds) are:
 
 ```
-EffectiveEchoSpacing = NotPhysicalTotalReadOutTimeGE / (PE_AcquisitionMatrix - 1)
+EffectiveEchoSpacing = NotPhysicalTotalReadOutTimeGE / (AcquisitionMatrixPE - 1)
 TotalReadoutTime = EffectiveEchoSpacing * (ReconMatrixPE - 1)
 ```
-When there is no image interpolation (i.e. `ReconMatrixPE = PE_AcquisitionMatrix`) the `TotalReadoutTime` has the same value as `NotPhysicalTotalReadOutTimeGE`. In other words, `NotPhysicalTotalReadOutTimeGE` is the `TotalReadoutTime` without any image interpolation. 
+
+When there is no image interpolation or phase oversampling (i.e., `ReconMatrixPE = AcquisitionMatrixPE`) `TotalReadoutTime` has the same value as `NotPhysicalTotalReadOutTimeGE`.
 
 Consider an example:
 
@@ -78,12 +79,20 @@ Consider an example:
 (0043,1083) DS [0.666667\1]                                #  10, 2 Acceleration
 ```
 
-From this we can derive:
+From this, and knowing from the image data that the reconstructed volume was 128 voxels in the phase dimension (i.e., `ReconMatrixPE` = 128), we can derive:
 
 ```
-ASSET= 1.5 PE_AcquisitionMatrix= 128 EchoSpacing= 636 Round_Factor= 4 TotalReadoutTime= 0.055332
+ASSET_R_factor = 1.5 (reciprocal of 1st value in "0043,1083")
+AcquisitionMatrixPE = 128 (3rd or 4th value in "0018,1310" (whichever is non-zero))
+EchoSpacingMicroSecondsGE = 636 (us)
+Round_factor = 4 (because "0018,0022" contains "PFF"; otherwise = 2)
+NotPhysicalNumberOfAcquiredPELinesGE = (ceil((1/4) * 128 / 1.5) * 4) = 88
+NotPhysicalTotalReadOutTimeGE = (88 - 1) * 636 * 1e-6 = 0.055332 (sec)
+EffectiveEchoSpacing = 0.055332 / (128 - 1) = 0.435685e-3 (sec) 
+TotalReadoutTime = 0.435685e-3 * (128 - 1) = 0.055332 (sec)
 ```
-For debugging purposes, the intermediate variables `NotPhysicalTotalReadOutTimeGE`, `NotPhysicalNumberOfAcquiredPELinesGE` and `EchoSpacing` (renamed `EchoSpacingMicroSecondsGE`) are written to the BIDS-sidecar JSON file when dcm2niix is compiled with the flag `MY_DEBUG`. 
+
+For debugging purposes, the intermediate variables `NotPhysicalTotalReadOutTimeGE`, `NotPhysicalNumberOfAcquiredPELinesGE` and `EchoSpacingMicroSecondsGE` are written to the BIDS-sidecar JSON file when dcm2niix is compiled with the flag `MY_DEBUG`.
 
 ## Image Acceleration
 
@@ -118,6 +127,7 @@ Anatomical localizers (e.g. scout images) are quick-and-dirty scans used to posi
 ## Sample Datasets
 
  - [A validation dataset for dcm2niix commits](https://github.com/neurolabusc/dcm_qa_nih).
+ - [Slice Timing and Phase Encoding examples](https://github.com/jannikadon/cc-dcm2bids-wrapper/tree/main/dicom-qa-examples)
  - [Slice timing validation](https://github.com/neurolabusc/dcm_qa_stc) for different varieties of GE EPI sequences.
  - [Examples of phase encoding polarity, slice timing and diffusion gradients](https://github.com/neurolabusc/dcm_qa_ge).
  - The dcm2niix [wiki](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage) includes examples of diffusion data, slice timing, and other variations.
