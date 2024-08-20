@@ -53,3 +53,8 @@ sanitize:
 
 noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois
+
+wasm:
+wasm:
+	emcc -O3 $(UFILES) -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s INVOKE_RUN=0 -o ../js/src/niimath.js
+
