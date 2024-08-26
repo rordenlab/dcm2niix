@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dcm2niix WASM Demo</title>
+</head>
+
+<body>
+  <h1>dcm2niix WASM Demo</h1>
+  <input type="file" id="fileInput" webkitdirectory multiple>
+  <button id="processButton">Process Image</button>
+  <p id="status">Please select a dicom folder to process.</p>
+  <a id="downloadLink" style="display: none;">Download Processed Image(s)</a>
+
+  <script type="module">
+    import { Dcm2niix } from './dist/index.js';
+    const dcm2niix = new Dcm2niix();
+    const fileInput = document.getElementById('fileInput');
+    const processButton = document.getElementById('processButton');
+    const status = document.getElementById('status');
+    const downloadLink = document.getElementById('downloadLink');
+
+    let selectedFiles = null;
+
+    fileInput.addEventListener('change', async (event) => {
+      selectedFiles = event.target.files;
+      console.log(selectedFiles);
+    });
+
+    processButton.addEventListener('click', async () => {
+      // if (!selectedFile) return;
+
+      status.textContent = 'Processing...';
+      // processButton.disabled = true;
+
+      try {
+        console.log('Initializing dcm2niix wasm...');
+        await dcm2niix.init();
+        console.log('dcm2niix wasm initialized.');
+
+        const t0 = performance.now();
+
+        const inputFileList = selectedFiles
+        const resultFileList = await dcm2niix.input(inputFileList).run()        
+        console.log(resultFileList);
+
+        const t1 = performance.now();
+        console.log("dcm2niix wasm took " + (t1 - t0) + " milliseconds.")
+
+        // Create a download link for each file in resultFileList
+        resultFileList.forEach((resultFile, index) => {
+          let url = URL.createObjectURL(resultFile);
+          const downloadLink = document.createElement('a');
+          downloadLink.href = url;
+          downloadLink.download = resultFile.name;
+          downloadLink.textContent = `Download ${resultFile.name}`;
+          downloadLink.style.display = 'block';
+          document.body.appendChild(downloadLink);
+        });
+
+
+        status.textContent = 'Processing complete!';
+      } catch (error) {
+        console.error('Processing failed:', error);
+        status.textContent = 'Processing failed. Please check the console for details.';
+      } finally {
+        processButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>

@@ -13,3 +13,8 @@ __pycache__/
 /MANIFEST*
 /*.egg*/
 /dist/
+
+dist
+node_modules
+dcm2niix.js
+dcm2niix.wasm
