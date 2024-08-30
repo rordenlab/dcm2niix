@@ -1465,7 +1465,20 @@ tse3d: T2*/
 			fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
-	json_Str(fp, "\t\"DeidentificationMethod\": \"%s\",\n", d.deidentificationMethod);
+	if (strlen(d.deidentificationMethod) > 0) {
+		fprintf(fp, "\t\"DeidentificationMethod\": [\"");
+		bool isSep = false;
+		for (size_t i = 0; i < strlen(d.deidentificationMethod); i++) {
+			if (d.deidentificationMethod[i] != '\\') {
+				if (isSep)
+					fprintf(fp, "\", \"");
+				isSep = false;
+				fprintf(fp, "%c", d.deidentificationMethod[i]);
+			} else
+				isSep = true;
+		}
+		fprintf(fp, "\"],\n");
+	}
 if(d.deID_CS_n>0)
 {
 	fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
