@@ -24,7 +24,7 @@ export class Dcm2niix {
   }
 
   input(fileList) {
-    return new Processor({ worker: this.worker, fileList});
+    return new Processor({ worker: this.worker, fileList });
   }
 }
 
@@ -52,57 +52,57 @@ class Processor {
   }
 
   // -a adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)
-  a(value){
+  a(value) {
     return this._addCommand('-a', value);
   }
   // alias for -a
-  adjacent(value){
+  adjacent(value) {
     return this.a(value);
   }
 
   // -b BIDS sidecar (y/n/o [o=only: no NIfTI], default y)
-  b(value){
+  b(value) {
     return this._addCommand('-b', value);
   }
   // alias for -b
-  bids(value){
+  bids(value) {
     return this.b(value);
   }
 
   // -ba BIDS anonymize (y/n, default y)
-  ba(value){
+  ba(value) {
     return this._addCommand('-ba', value);
   }
   // alias for -ba
-  bidsAnonymize(value){
+  bidsAnonymize(value) {
     return this.ba(value);
   }
 
   // -c comment stored as NIfTI aux_file (up to 24 characters)
-  c(value){
+  c(value) {
     return this._addCommand('-c', value);
   }
   // alias for -c
-  comment(value){
+  comment(value) {
     return this.c(value);
   }
 
   // -d directory search depth (0..9, default 5)
   // Note: not used in browser/wasm since file list is a flat list
-  d(value){
+  d(value) {
     return this._addCommand('-d', value);
   }
   // alias for -d
-  directorySearchDepth(value){
+  directorySearchDepth(value) {
     return this.d(value);
   }
 
   // export as NRRD (y) or MGH (o) or JSON/JNIfTI (j) or BJNIfTI (b) instead of NIfTI (y/n/o/j/b, default n)
-  e(value){
+  e(value) {
     return this._addCommand('-e', value);
   }
   // alias for -e
-  exportFormat(value){
+  exportFormat(value) {
     return this.e(value);
   }
 
@@ -113,47 +113,47 @@ class Processor {
   // %v=vendor, %x=study ID; %z=sequence name; 
   // 
   // default '%f_%p_%t_%s')
-  f(value){
+  f(value) {
     return this._addCommand('-f', value);
   }
   // alias for -f
-  filenameformat(value){
+  filenameformat(value) {
     return this.f(value);
   }
 
   // -i : ignore derived, localizer and 2D images (y/n, default n)
-  i(value){
+  i(value) {
     return this._addCommand('-i', value);
   }
   // alias for -i
-  ignoreDerived(value){
+  ignoreDerived(value) {
     return this.i(value);
   }
 
   // -l : losslessly scale 16-bit integers to use dynamic range (y/n/o [yes=scale, no=no, but uint16->int16, o=original], default o)
-  l(value){
+  l(value) {
     return this._addCommand('-l', value);
   }
   // alias for -l
-  losslessScale(value){
+  losslessScale(value) {
     return this.l(value);
   }
 
   // -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]
-  m(value){
+  m(value) {
     return this._addCommand('-m', value);
   }
   // alias for -m
-  merge2DSlices(value){
+  merge2DSlices(value) {
     return this.m(value);
   }
 
   // -n : only convert this series CRC number - can be used up to 16 times (default convert all)
-  n(value){
+  n(value) {
     return this._addCommand('-n', value);
   }
   // alias for -n
-  seriesCRC(value){
+  seriesCRC(value) {
     return this.n(value);
   }
 
@@ -165,96 +165,96 @@ class Processor {
   // outputDirectory(value){
   //   return this.o(value);
   // }
-  
+
   // -p : Philips precise float (not display) scaling (y/n, default y)
-  p(value){
+  p(value) {
     return this._addCommand('-p', value);
   }
   // alias for -p
-  philipsPreciseFloat(value){
+  philipsPreciseFloat(value) {
     return this.p(value);
   }
 
   // -q : only search directory for DICOMs (y/l/n, default y) [y=show number of DICOMs found, l=additionally list DICOMs found, n=no]
-  q(value){
+  q(value) {
     return this._addCommand('-q', value);
   }
   // alias for -q
-  searchDirectory(value){
+  searchDirectory(value) {
     return this.q(value);
   }
 
   // -r : rename instead of convert DICOMs (y/n, default n)
-  r(value){
+  r(value) {
     return this._addCommand('-r', value);
   }
   // alias for -r
-  renameOnly(value){
+  renameOnly(value) {
     return this.r(value);
   }
 
   // -s : single file mode, do not convert other images in folder (y/n, default n)
-  s(value){
+  s(value) {
     return this._addCommand('-s', value);
   }
   // alias for -s
-  singleFileMode(value){
+  singleFileMode(value) {
     return this.s(value);
   }
 
   // -v : verbose (n/y or 0/1/2, default 0) [no, yes, logorrheic]
-  v(value){
+  v(value) {
     return this._addCommand('-v', value);
   }
   // alias for -v
-  verbose(value){
+  verbose(value) {
     return this.v(value);
   }
 
   // -w : write behavior for name conflicts (0,1,2, default 2: 0=skip duplicates, 1=overwrite, 2=add suffix)
-  w(value){
+  w(value) {
     return this._addCommand('-w', value);
   }
   // alias for -w
-  writeBehavior(value){
+  writeBehavior(value) {
     return this.w(value);
   }
 
   // -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquisitions)
-  x(value){
+  x(value) {
     return this._addCommand('-x', value);
   }
   // alias for -x
-  crop(value){
+  crop(value) {
     return this.x(value);
   }
 
   // -z : gz compress images (y/o/i/n/3, default n) [y=pigz, o=optimal pigz, i=internal:miniz, n=no, 3=no,3D]
-  z(value){
+  z(value) {
     return this._addCommand('-z', value);
   }
   // alias for -z
-  gzip(value){
+  gzip(value) {
     return this.z(value);
   }
 
   // --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]
-  bigEndian(value){
+  bigEndian(value) {
     return this._addCommand('--big-endian', value);
   }
 
   // --ignore_trigger_times : disregard values in 0018,1060 and 0020,9153
-  ignoreTriggerTimes(){
+  ignoreTriggerTimes() {
     return this._addCommand('--ignore_trigger_times');
   }
 
   // --terse : omit filename post-fixes (can cause overwrites)
-  terse(){
+  terse() {
     return this._addCommand('--terse');
   }
 
   // --xml : Slicer format features
-  xml(){
+  xml() {
     return this._addCommand('--xml');
   }
 
@@ -281,7 +281,19 @@ class Processor {
       if (this.worker === null) {
         reject(new Error('Worker not initialized. Did you await the init() method?'));
       }
-      this.worker.postMessage({ fileList: this.fileList, cmd: args});
+      // prepare files with their relative paths.
+      // annoyingly, safari strips the webkitRelativePath property when sending files to the worker.
+      // fileList is a FileList object, not an array, so we need to convert it to an array.
+      // filesWithRelativePaths is an array of objects with the file and webkitRelativePath properties.
+      // Now we can use the webkitRelativePath property in the worker.
+      // This is important for dcm2niix to work with nested dicom directories in safari.
+      const filesWithRelativePaths = Array.from(this.fileList).map((file) => ({
+        file,
+        webkitRelativePath: file.webkitRelativePath || ''
+      }));
+
+      // send files and commands to the worker
+      this.worker.postMessage({ fileList: filesWithRelativePaths, cmd: args });
     });
   }
 }
