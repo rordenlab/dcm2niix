@@ -36,7 +36,11 @@ const copyFilesToFS = async (fileList, inDir, outDir) => {
 
   // an array to hold all the promises for copying files
   const promises = [];
-  for (let file of fileList) {
+  for (let fileItem of fileList) {
+    const file = fileItem.file;
+    // Note: Safari strips webkitRelativePath in the worker,
+    // so we use the name property of the file object instead.
+    const webkitRelativePath = fileItem.webkitRelativePath || file.name;
     const promise = new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -46,9 +50,8 @@ const copyFilesToFS = async (fileList, inDir, outDir) => {
           // such as 'some_dir/some_file.dcm'.
           // We need to replace the '/' with '_' to create a valid name for the WASM filesystem
           // since some_dir does not exist at out mount point. That directory stub, 
-          // doesn't provide any useful information to dcm2niix anyway.
-          const fileName = `${file.webkitRelativePath.split('/').join('_')}`;
-          const filePath = `${inDir}/${fileName}`;
+          // doesn't provide any useful information to dcm2niix anyway. 
+          const fileName = `${webkitRelativePath.split('/').join('_')}`;
           mod.FS.createDataFile(inDir, fileName, data, true, true);
           resolve(); // Resolve the promise when the file is successfully written
         } catch (error) {
@@ -68,6 +71,7 @@ const copyFilesToFS = async (fileList, inDir, outDir) => {
 
   // return a promise that resolves when all files are written
   return Promise.all(promises);
+
 }
 
 const typeFromExtension = (fileName) => {
