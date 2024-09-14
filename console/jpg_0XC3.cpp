@@ -293,8 +293,8 @@ unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose,
 				lIncI = lIncI + 1;
 			else if (lRawRA[lIncI + 1] == 0xD9)
 				lIncO = -666; // end of padding
-			// else
-			//     lIsRestartSegments = lRawRA[lIncI+1];
+							  // else
+							  //     lIsRestartSegments = lRawRA[lIncI+1];
 		}
 		lIncI++;
 		lIncO++;
@@ -326,7 +326,7 @@ unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose,
 						}
 					} else
 						l[lFrameCount].LookUpRA[k] = lHufVal; // SSSS
-					// printMessage("Frame %d SSSS %d Size %d Code %d SHL %d EmptyBits %ld\n", lFrameCount, lHufRA[lFrameCount][lIncY].HufVal, lHufRA[lFrameCount][lIncY].HufSz,lHufRA[lFrameCount][lIncY].HufCode, k, lInc);
+															  // printMessage("Frame %d SSSS %d Size %d Code %d SHL %d EmptyBits %ld\n", lFrameCount, lHufRA[lFrameCount][lIncY].HufVal, lHufRA[lFrameCount][lIncY].HufSz,lHufRA[lFrameCount][lIncY].HufCode, k, lInc);
 				} // Set SSSS
 			} // Length of size lInc > 0
 		} // for lInc := 1 to 8

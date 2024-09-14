@@ -149,8 +149,8 @@ typedef struct bufinfo {
 } BufInfo;
 
 static void my_stream_free(void *p_user_data) { // do nothing
-	// BufInfo d = (BufInfo) p_user_data;
-	// free(d.buf);
+												// BufInfo d = (BufInfo) p_user_data;
+												// free(d.buf);
 } // my_stream_free()
 
 static OPJ_UINT32 opj_read_from_buffer(void *p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo *p_file) {
@@ -3974,7 +3974,7 @@ void set_directionality0018_9075(struct TVolumeDiffusion *ptvd, unsigned char *i
 	//  elsewhere we use strstr() which returns 0/null if match is not present
 	if (strncmp((char *)(inbuf), "DIRECTIONAL", 11) && // strncmp = 0 for ==.
 													   // strncmp(( char*)(inbuf), "NONE", 4) && //issue 256
-		strncmp((char *)(inbuf), "BMATRIX", 7)) { // Siemens XA10
+		strncmp((char *)(inbuf), "BMATRIX", 7)) {	   // Siemens XA10
 		ptvd->_isPhilipsNonDirectional = true;
 		// Explicitly set the direction to 0 now, because there may
 		// not be a 0018,9089 for this frame.
@@ -4681,11 +4681,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	uint32_t kItemDelimitationTag = 0xFFFE + (0xE00D << 16);
 	uint32_t kSequenceDelimitationItemTag = 0xFFFE + (0xE0DD << 16);
 #define salvageAgfa
-#ifdef salvageAgfa // issue435
-	// handle PrivateCreator renaming e.g. 0021,10xx -> 0021,11xx
-	// https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl
-	// https://github.com/neurolabusc/dcm_qa_agfa
-	// http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_7.8.html
+#ifdef salvageAgfa	  // issue435
+					  // handle PrivateCreator renaming e.g. 0021,10xx -> 0021,11xx
+					  // https://github.com/dcm4che/dcm4che/blob/master/dcm4che-dict/src/main/dicom3tools/libsrc/standard/elmdict/siemens.tpl
+					  // https://github.com/neurolabusc/dcm_qa_agfa
+					  // http://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_7.8.html
 #define kMaxRemaps 16 // no vendor uses more than 5 private creator groups
 	// we need to keep track of multiple remappings, e.g. issue 437 2005,0014->2005,0012; 2005,0015->2005,0011
 	int nRemaps = 0;
@@ -4945,7 +4945,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					d.dimensionIndexValues[2] = d.aslFlags == kASL_FLAG_PHILIPS_LABEL; // dim[5] Control/Label
 					d.dimensionIndexValues[3] = volumeNumber;						   // dim[6] Repeat changes slowest
 					nDimIndxVal = 4;												   // slice < phase < control/label < volume
-					// printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
+																					   // printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
@@ -5133,8 +5133,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				lPos = lPos + 4; // skip 4 byte length
 			} else if ((buffer[lPos] == 'S') && (buffer[lPos + 1] == 'Q')) {
 				lLength = 8; // Sequence Tag
-				// printMessage(" !!!SQ\t%04x,%04x\n", groupElement & 65535,groupElement>>16);
-			} else { // explicit VR with 16-bit length
+							 // printMessage(" !!!SQ\t%04x,%04x\n", groupElement & 65535,groupElement>>16);
+			} else {		 // explicit VR with 16-bit length
 				if ((d.isLittleEndian))
 					lLength = buffer[lPos + 2] | (buffer[lPos + 3] << 8);
 				else
@@ -5412,7 +5412,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				// #else
 				printWarning("Unsupported transfer syntax '%s' (inflate files with 'dcmconv +te gz.dcm raw.dcm' or 'gdcmconv -w gz.dcm raw.dcm)'\n", transferSyntax);
 				d.imageStart = 1; // abort as invalid (imageStart MUST be >128)
-				// #endif
+								  // #endif
 			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)) {
 				d.compressionScheme = kCompressYes;
 				// printMessage("JPEG2000 support is new: please validate conversion\n");
@@ -6873,7 +6873,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kSequenceVariant21:
 			if (d.manufacturer != kMANUFACTURER_SIEMENS)
 				break; // n.b. for GE 0021,105B' TaggingFlipAngle
-			// fall through...
+					   // fall through...
 		case kSequenceVariant: {
 			dcmStr(lLength, &buffer[lPos], d.sequenceVariant);
 			break;
@@ -8220,7 +8220,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.imageNum = abs((int)d.instanceUidCrc) % 2147483647; // INT_MAX;
 		if (d.imageNum == 0)
 			d.imageNum = 1; // https://github.com/rordenlab/dcm2niix/issues/341
-		// d.imageNum = 1; //not set
+							// d.imageNum = 1; //not set
 	}
 	if ((numDimensionIndexValues < 1) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (d.seriesNum > 99999) && (philMRImageDiffBValueNumber > 0)) {
 		// Ugly kludge to distinguish Philips classic DICOM dti

@@ -1865,7 +1865,7 @@ tse3d: T2*/
 			isPASL = true;
 			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); // usec->sec
 			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); // usec -> sec
-			// json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
+																									  // json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
 		}
 		// PASL http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
 		if (strstr(pulseSequenceDetails, "ep2d_fairest")) {
@@ -3942,7 +3942,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	for (size_t pos = 0; pos < strlen(outname); pos++)
 		if ((outname[pos] == '\\') || (outname[pos] == '/') || (outname[pos] == ' ') || (outname[pos] == '<') || (outname[pos] == '>') || (outname[pos] == ':') || (outname[pos] == ';') || (outname[pos] == '"') // || (outname[pos] == '/') || (outname[pos] == '\\')
 																																																				  //|| (outname[pos] == '^') issue398
-			|| (outname[pos] == '$') // issue749
+			|| (outname[pos] == '$')																																											  // issue749
 			|| (outname[pos] == '*') || (outname[pos] == '|') || (outname[pos] == '?'))
 			outname[pos] = '_';
 #else
@@ -8293,7 +8293,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			if ((dx > 0) && (!isSameFloatGE(dx, hdr0.pixdim[3])))
 				hdr0.pixdim[3] = dx;
 			dcmList[dcmSort[0].indx].xyzMM[3] = dx; // 16Sept2014 : correct DICOM for true distance between slice centers:
-			// e.g. MCBI Siemens ToF 0018:0088 reports 16mm SpacingBetweenSlices, but actually 0.5mm
+													// e.g. MCBI Siemens ToF 0018:0088 reports 16mm SpacingBetweenSlices, but actually 0.5mm
 		} else if (hdr0.dim[4] < 2) {
 			hdr0.dim[4] = nConvert;
 			hdr0.dim[0] = 4;
@@ -8543,26 +8543,26 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			);*/
 			hdr0.srow_y[2] = 0.0;			 // remove gantry tilt
 			hdr0.srow_z[2] = hdr0.pixdim[3]; // retain distance between slices
-			/*printf("b=[%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1];\n",
-				hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
-				hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3],
-				hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]
-			);*/
-			/*
-			LOAD_MAT33(shearMat, 1.0, 0.0, 0.0,
-					0.0, 1.0, sin(thetaRad) / c,
-					0.0, 0.0, 1.0);
-			mat33 s;
-			LOAD_MAT33(s, hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2],
-					hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2],
-					hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2]);
-			s = nifti_mat33_mul(shearMat, s);
-			mat44 shearForm;
-			LOAD_MAT44(shearForm, s.m[0][0], s.m[0][1], s.m[0][2], hdr0.srow_x[3],
-					s.m[1][0], s.m[1][1], s.m[1][2], hdr0.srow_y[3],
-					s.m[2][0], s.m[2][1], s.m[2][2], hdr0.srow_z[3]);
-			setQSForm(&hdr0, shearForm, true);
-			*/
+											 /*printf("b=[%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1];\n",
+												 hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
+												 hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3],
+												 hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]
+											 );*/
+											 /*
+											 LOAD_MAT33(shearMat, 1.0, 0.0, 0.0,
+													 0.0, 1.0, sin(thetaRad) / c,
+													 0.0, 0.0, 1.0);
+											 mat33 s;
+											 LOAD_MAT33(s, hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2],
+													 hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2],
+													 hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2]);
+											 s = nifti_mat33_mul(shearMat, s);
+											 mat44 shearForm;
+											 LOAD_MAT44(shearForm, s.m[0][0], s.m[0][1], s.m[0][2], hdr0.srow_x[3],
+													 s.m[1][0], s.m[1][1], s.m[1][2], hdr0.srow_y[3],
+													 s.m[2][0], s.m[2][1], s.m[2][2], hdr0.srow_z[3]);
+											 setQSForm(&hdr0, shearForm, true);
+											 */
 		} // avoid div/0: cosine not zero
 	} // if gantry tilt
 	// end: gantry tilt we need to save the shear in the transform
