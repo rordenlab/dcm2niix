@@ -6,14 +6,14 @@
  * See README for more details.
  */
 
-//#include "includes.h"
+// #include "includes.h"
 
-//#include "os.h"
+// #include "os.h"
 #include "base64.h"
-#include <stdio.h>
 #include <math.h>
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const unsigned char base64_table[65] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -30,22 +30,21 @@ static const unsigned char base64_table[65] =
  * nul terminated to make it easier to use as a C string. The nul terminator is
  * not included in out_len.
  */
-unsigned char * base64_encode(const unsigned char *src, size_t len,
-			      size_t *out_len)
-{
+unsigned char *base64_encode(const unsigned char *src, size_t len,
+							 size_t *out_len) {
 	unsigned char *out, *pos;
 	const unsigned char *end, *in;
 	size_t olen;
-	
+
 	olen = len * 4 / 3 + 4; /* 3-byte blocks to 4-byte */
-	#ifdef USE_EOLN
+#ifdef USE_EOLN
 	int line_len 0;
 	olen += olen / 72; /* line feeds */
-	#endif
+#endif
 	olen++; /* nul termination */
 	if (olen < len)
-		return NULL; /* integer overflow */
-	out = (unsigned char *) malloc(olen); //os_
+		return NULL;					 /* integer overflow */
+	out = (unsigned char *)malloc(olen); // os_
 	if (out == NULL)
 		return NULL;
 	end = src + len;
@@ -57,13 +56,13 @@ unsigned char * base64_encode(const unsigned char *src, size_t len,
 		*pos++ = base64_table[((in[1] & 0x0f) << 2) | (in[2] >> 6)];
 		*pos++ = base64_table[in[2] & 0x3f];
 		in += 3;
-		#ifdef USE_EOLN
+#ifdef USE_EOLN
 		line_len += 4;
 		if (line_len >= 72) {
 			*pos++ = '\n';
 			line_len = 0;
 		}
-		#endif
+#endif
 	}
 
 	if (end - in) {
@@ -73,18 +72,18 @@ unsigned char * base64_encode(const unsigned char *src, size_t len,
 			*pos++ = '=';
 		} else {
 			*pos++ = base64_table[((in[0] & 0x03) << 4) |
-					      (in[1] >> 4)];
+								  (in[1] >> 4)];
 			*pos++ = base64_table[(in[1] & 0x0f) << 2];
 		}
 		*pos++ = '=';
-		#ifdef USE_EOLN
+#ifdef USE_EOLN
 		line_len += 4;
-		#endif
+#endif
 	}
-	#ifdef USE_EOLN
+#ifdef USE_EOLN
 	if (line_len)
 		*pos++ = '\n';
-	#endif
+#endif
 	*pos = '\0';
 	if (out_len)
 		*out_len = pos - out;
@@ -101,18 +100,17 @@ unsigned char * base64_encode(const unsigned char *src, size_t len,
  *
  * Caller is responsible for freeing the returned buffer.
  */
-unsigned char * base64_decode(const unsigned char *src, size_t len,
-			      size_t *out_len)
-{
+unsigned char *base64_decode(const unsigned char *src, size_t len,
+							 size_t *out_len) {
 	unsigned char dtable[256], *out, *pos, block[4], tmp;
 	size_t i, count, olen;
 	int pad = 0;
 
-	memset(dtable, 0x80, 256); //os_
+	memset(dtable, 0x80, 256); // os_
 	for (i = 0; i < sizeof(base64_table) - 1; i++)
-		dtable[base64_table[i]] = (unsigned char) i;
-	//next line rewritten to avoid warning -Wchar-subscripts
-	dtable[61] = 0; //dtable['='] = 0;
+		dtable[base64_table[i]] = (unsigned char)i;
+	// next line rewritten to avoid warning -Wchar-subscripts
+	dtable[61] = 0; // dtable['='] = 0;
 
 	count = 0;
 	for (i = 0; i < len; i++) {
@@ -124,7 +122,7 @@ unsigned char * base64_decode(const unsigned char *src, size_t len,
 		return NULL;
 
 	olen = count / 4 * 3;
-	pos = out = (unsigned char *) malloc(olen);  //os_
+	pos = out = (unsigned char *)malloc(olen); // os_
 	if (out == NULL)
 		return NULL;
 
@@ -150,7 +148,7 @@ unsigned char * base64_decode(const unsigned char *src, size_t len,
 					pos -= 2;
 				else {
 					/* Invalid padding */
-					free(out); //os_
+					free(out); // os_
 					return NULL;
 				}
 				break;
