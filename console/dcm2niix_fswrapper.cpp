@@ -477,7 +477,8 @@ void dcm2niix_fswrapper::seriesInfoDump(FILE *fpdump, const MRIFSSTRUCT *pmrifsS
   // dcm2niix doesn't seem to retrieve this  0x51, 0x1016
   //fprintf(fpdump, "SiemensCrit %s\n",e->d.string);
 
+#ifdef myDeidentificationMethod
   // kDeidentificationMethod 0x0012 + (0x0063 << 16) // '0012' '0063' 'LO' 'DeidentificationMethod'
   fprintf(fpdump, "DeidentificationMethod %s\n", tdicomData->deidentificationMethod);
-
+#endif // myDeidentificationMethod
 }

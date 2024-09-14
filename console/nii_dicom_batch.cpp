@@ -1465,6 +1465,7 @@ tse3d: T2*/
 			fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
 	if (d.isDerived) //DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
+#ifdef myDeidentificationMethod
 	json_Str(fp, "\t\"DeidentificationMethod\": \"%s\",\n", d.deidentificationMethod);
 if(d.deID_CS_n>0)
 {
@@ -1483,6 +1484,7 @@ if(d.deID_CS_n>0)
 	}
 	fprintf(fp, "\t],\n");
 }
+#endif // myDeidentificationMethod
 	if (d.seriesNum > 0)
 		fprintf(fp, "\t\"SeriesNumber\": %ld,\n", d.seriesNum);
 	//Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)
