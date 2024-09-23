@@ -3836,7 +3836,7 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	if (dcm.CSA.mosaicSlices > 1) {
 		img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, (dcm.manufacturer == kMANUFACTURER_UIH)); //, dcm.CSA.protocolSliceNumber1);
 	}
-	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do afte
+	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do after
 		img = nii_iVaries(img, hdr, NULL);
 	int nAcq = dcm.locationsInAcquisition;
 	if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3] % nAcq) == 0) && (hdr->dim[3] > nAcq)) {
