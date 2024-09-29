@@ -4281,6 +4281,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->frameReferenceTime[0] = -1;
 	// dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
+	d.deID_CS_n = 0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
 	if (stat(fname, &s) == 0) {
@@ -4397,13 +4398,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPatientWeight 0x0010 + (0x1030 << 16)
 #define kAnatomicalOrientationType 0x0010 + (0x2210 << 16)
 #define kDeidentificationMethod 0x0012 + (0x0063 << 16) //[DICOMANON, issue 383
-#ifdef myDeidentificationMethod
 #define kDeidentificationMethodCodeSequence 0x0012 + (0x0064 << 16)
 #define kCodeValue 0x0008 + (0x0100 << 16)
 #define kCodingSchemeDesignator 0x0008 + (0x0102 << 16)
 #define kCodingSchemeVersion 0x0008 + (0x0103 << 16)
 #define kCodeMeaning 0x0008 + (0x0104 << 16)
-#endif
 #define kBodyPartExamined 0x0018 + (0x0015 << 16)
 #define kBodyPartExamined 0x0018 + (0x0015 << 16)
 #define kScanningSequence 0x0018 + (0x0020 << 16)
@@ -4804,9 +4803,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isPaletteColor = false;
 	bool isInterpolated = false;
 	bool isIconImageSequence = false;
-#ifdef myDeidentificationMethod
 	bool isDeidentificationMethodCodeSequence = false;
-#endif
 	int sqDepthIcon = -1;
 	bool isSwitchToImplicitVR = false;
 	bool isSwitchToBigEndian = false;
@@ -4852,7 +4849,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// Allocating a large array on the stack, as below, vexes valgrind and may cause overflow
 	std::vector<TDCMdim> dcmDim(kMaxSlice2D);
 #else
-	TDCMdim dcmDim[kMaxSlice2D];
+	//don't use stack! TDCMdim dcmDim[kMaxSlice2D];
+	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
 #endif
 	for (int i = 0; i < kMaxSlice2D; i++) {
 		dcmDim[i].diskPos = i;
@@ -4877,6 +4875,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (sz < MaxBufferSz) {
 				printError("Only loaded %zu of %zu bytes for %s\n", sz, MaxBufferSz, fname);
 				fclose(file);
+				#ifndef USING_R
+				free(dcmDim);
+				#endif
 				return d;
 			}
 			lPos = 0;
@@ -5037,8 +5038,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 						printMessage("%d ", d.dimensionIndexValues[i]);
 					printMessage("]\n");
 					// printMessage("B0= %g num=%d\n", B0Philips, gradNum);
-				} else
+				} else {
+					#ifndef USING_R
+						free(dcmDim);
+					#endif
 					return d;
+				}
 #endif
 				// next: add diffusion if reported
 				if (B0Philips >= 0.0) { // diffusion parameters
@@ -5109,7 +5114,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			}
 			lLength = 4;
 			sqDepth++;
-			// return d;
 		} else if (((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) && (!isEncapsulatedData)) {
 			vr[0] = 'N';
 			vr[1] = 'A';
@@ -5326,13 +5330,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			printMessage("Illegal DICOM tag %04x,%04x (odd element length %d): %s\n", groupElement & 65535, groupElement >> 16, lLength, fname);
 			// proper to return here, but we can carry on as a hail mary
 			//  d.isValid = false;
-			// return d;
 		}
 		if (lLength > 0) // issue695: skip empty tags, "gdcmanon --dumb --empty 0018,0089 good.dcm bad.dcm"
-#ifdef myDeidentificationMethod
 			if (sqDepth < 1 && isDeidentificationMethodCodeSequence && groupElement != kItemDelimitationTag && groupElement != kItemTag)
 				isDeidentificationMethodCodeSequence = false;
-#endif // myDeidentificationMethod
 		switch (groupElement) {
 		case kMediaStorageSOPClassUID: {
 			char mediaUID[kDICOMStr];
@@ -5693,18 +5694,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// printError("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly\n");
 			break;
 		}
-#ifdef myDeidentificationMethod
 		case kDeidentificationMethod: { // issue 383
-#ifdef myDeidentificationMethod
-			dcmStr(lLength, &buffer[lPos], d.deidentificationMethod);
-			int slen = (int)strlen(d.deidentificationMethod);
-			if ((slen < 10) || (strstr(d.deidentificationMethod, "DICOMANON") == NULL))
-#else
-			char anonTxt[kDICOMStr];
-			dcmStr(lLength, &buffer[lPos], anonTxt);
-			int slen = (int)strlen(anonTxt);
-			if ((slen < 10) || (strstr(anonTxt, "DICOMANON") == NULL))
-#endif //
+			dcmStr(lLength, &buffer[lPos], dti4D->deidentificationMethod);
+			int slen = (int)strlen(dti4D->deidentificationMethod);
+			if ((slen < 10) || (strstr(dti4D->deidentificationMethod, "DICOMANON") == NULL))
 				break;
 			isDICOMANON = true;
 			printWarning("Matlab DICOMANON can scramble SeriesInstanceUID (0020,000e) and remove crucial data (see issue 383). \n");
@@ -5716,27 +5709,26 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		}
 		case kCodeValue: {
 			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
-				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodeValue);
+				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodeValue);
 			break;
 		}
 		case kCodingSchemeDesignator: {
 			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
-				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeDesignator);
+				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodingSchemeDesignator);
 			break;
 		}
 		case kCodingSchemeVersion: {
 			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
-				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeVersion);
+				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodingSchemeVersion);
 			break;
 		}
 		case kCodeMeaning: {
 			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS) {
-				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodeMeaning);
+				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodeMeaning);
 				d.deID_CS_n++;
 			}
 			break;
 		}
-#endif // myDeidentificationMethod
 		case kPatientID:
 			if (strlen(d.patientID) > 1)
 				break;
@@ -8478,6 +8470,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// printf("%g\t%g\t%s\n", d.intenIntercept, d.intenScale, fname);
 	if ((d.isLocalizer) && (strstr(d.seriesDescription, "b1map"))) // issue751 b1map uses same base as scout
 		d.isLocalizer = false;
+	#ifndef USING_R
+	free(dcmDim);
+	#endif
 	return d;
 } // readDICOMx()
 

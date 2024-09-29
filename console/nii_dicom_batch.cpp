@@ -1458,24 +1458,30 @@ tse3d: T2*/
 		fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
 	if (d.isDerived) // DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
-#ifdef myDeidentificationMethod
-	json_Str(fp, "\t\"DeidentificationMethod\": \"%s\",\n", d.deidentificationMethod);
 	if (d.deID_CS_n > 0) {
+		char *fname = (char *)malloc(strlen(filename) + 1);
+		strcpy(fname, filename);
+		//struct TDICOMdata *d2 = (struct TDICOMdata *)malloc(sizeof(struct TDICOMdata));
+		struct TDTI4D *d4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+		struct TDICOMdata d2;  // No need to preallocate with malloc()
+		d2 = readDICOMv(fname, 0, 1, d4D);
+		free(fname);
+		json_Str(fp, "\t\"DeidentificationMethod\": \"%s\",\n", d4D->deidentificationMethod);
 		fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
 		for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++) {
 			fprintf(fp, "\t  { \n");
-			json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d.deID_CS[i].CodeValue);
-			json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d.deID_CS[i].CodingSchemeDesignator);
-			json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d.deID_CS[i].CodingSchemeVersion);
-			json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d.deID_CS[i].CodeMeaning);
+			json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d4D->deID_CS[i].CodeValue);
+			json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d4D->deID_CS[i].CodingSchemeDesignator);
+			json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d4D->deID_CS[i].CodingSchemeVersion);
+			json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d4D->deID_CS[i].CodeMeaning);
 			if (i + 1 < d.deID_CS_n)
 				fprintf(fp, "\t  },\n");
 			else
 				fprintf(fp, "\t  }\n");
 		}
 		fprintf(fp, "\t],\n");
-	}
-#endif // myDeidentificationMethod
+		free(d4D);
+	} // d.deID_CS_n > 0
 	if (d.seriesNum > 0)
 		fprintf(fp, "\t\"SeriesNumber\": %ld,\n", d.seriesNum);
 	// Chris Gorgolewski: BIDS standard specifies ISO8601 date-time format (Example: 2016-07-06T12:49:15.679688)

@@ -50,7 +50,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20240812"
+#define kDCMdate "v1.0.20240928"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -183,11 +183,16 @@ static const int kCompressSupport = kCompressYes; // OPENJPEG for JPEG2000
 // number of axes in the output .nii.
 static const uint8_t MAX_NUMBER_OF_DIMENSIONS = 8;
 
-#ifdef myDeidentificationMethod
 // Maximum supported number of entries in DeidentificationMethodCodeSequence
 // Any additional will be ignored
 static const uint8_t MAX_DEID_CS = 10;
-#endif // myDeidentificationMethod
+struct TDeIDCodeSequence {
+	char CodeValue[kDICOMStr];
+	char CodeMeaning[kDICOMStrLarge];
+	char CodingSchemeDesignator[kDICOMStr];
+	char CodingSchemeVersion[kDICOMStr];
+};
+
 struct TDTI {
 	float V[4];
 	// int totalSlicesIn4DOrder;
@@ -202,6 +207,8 @@ struct TDTI4D {
 	bool isImaginary[kMaxDTI4D];
 	bool isPhase[kMaxDTI4D];
 	float repetitionTimeExcitation, repetitionTimeInversion;
+	char deidentificationMethod[kDICOMStr];
+	struct TDeIDCodeSequence deID_CS[MAX_DEID_CS];
 };
 
 #ifdef _MSC_VER // Microsoft nomenclature for packed structures is different...
@@ -239,12 +246,7 @@ struct TCSAdata {
 	char bidsEntitySuffix[kDICOMStrLarge]; // anat, func, dwi
 	char bidsTask[kDICOMStr];			   // rest, naming40
 };
-struct TDeIDCodeSequence {
-	char CodeValue[kDICOMStr];
-	char CodeMeaning[kDICOMStrLarge];
-	char CodingSchemeDesignator[kDICOMStr];
-	char CodingSchemeVersion[kDICOMStr];
-};
+
 struct TDICOMdata {
 	long seriesNum;
 	int xyzDim[5];
@@ -261,14 +263,10 @@ struct TDICOMdata {
 	char prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], studyDescription[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStr], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr], sequenceVariant[kDICOMStr], scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr], studyDate[kDICOMStr], studyTime[kDICOMStr];
 	char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
+	int deID_CS_n;
 	struct TCSAdata CSA;
 	bool isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer;
 	char phaseEncodingRC, patientSex;
-#ifdef myDeidentificationMethod
-	int deID_CS_n = 0;
-	char deidentificationMethod[kDICOMStr];
-	struct TDeIDCodeSequence deID_CS[MAX_DEID_CS];
-#endif
 };
 
 struct TDCMprefs {
@@ -281,7 +279,6 @@ int isSameFloatGE(float a, float b);
 void getFileNameX(char *pathParent, const char *path, int maxLen);
 struct TDICOMdata readDICOMv(char *fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
 struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D *dti4D);
-
 struct TDICOMdata readDICOM(char *fname);
 struct TDICOMdata clear_dicom_data(void);
 struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase);
