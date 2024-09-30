@@ -8758,13 +8758,15 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	int ret = EXIT_SUCCESS;
 	// check for repeated echoes - count unique number of echoes
 	// code below checks for multi-echoes - not required if maxNumberOfEchoes reported in PARREC
-	//reduce stack pressure use malloc, not "int echoNum[kMaxDTI4D];"
-	int *echoNum = (int *)malloc(kMaxDTI4D * sizeof(int));
+	// issue867 use malloc, not "int echoNum[kMaxDTI4D];"
+	// issue867 nVol is known and typically far smaller than kMaxDTI4D
+	int nVol = dcmList[indx].xyzDim[4];
+	int *echoNum = (int *)malloc(nVol * sizeof(int));
 	int echo = 1;
-	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
+	for (int i = 0; i < nVol; i++)
 		echoNum[i] = 0;
 	echoNum[0] = 1;
-	for (int i = 1; i < dcmList[indx].xyzDim[4]; i++) {
+	for (int i = 1; i < nVol; i++) {
 		for (int j = 0; j < i; j++)
 			if (dti4D->TE[i] == dti4D->TE[j])
 				echoNum[i] = echoNum[j];
@@ -8773,7 +8775,6 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 			echoNum[i] = echo;
 		}
 	}
-	free(echoNum);
 	if (echo > 1)
 		dcmList[indx].isMultiEcho = true;
 	// check for repeated volumes
@@ -8795,7 +8796,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		}
 	}
 	// bvec/bval saved for each series (real, phase, magnitude, imaginary) https://github.com/rordenlab/dcm2niix/issues/219
-	// Allocate memory for dti4Ds on the heap
+	// issue867  Allocate memory for dti4Ds on the heap
+	// issue867 TODO sizeof(TDTI4D) = 10mb, this could be reduced if elements reduced from kMaxDTI4D
 	TDTI4D *dti4Ds = (TDTI4D *)malloc(sizeof(TDTI4D));
 	if (dti4Ds == NULL) {
 		perror("Failed to allocate memory for dti4Ds");
@@ -8885,6 +8887,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	}
 	// Free the heap-allocated memory
 	free(dti4Ds);
+	free(echoNum);
 	return ret;
 } // saveDcm2Nii()
 
