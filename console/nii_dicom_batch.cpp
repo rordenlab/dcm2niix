@@ -8758,7 +8758,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	int ret = EXIT_SUCCESS;
 	// check for repeated echoes - count unique number of echoes
 	// code below checks for multi-echoes - not required if maxNumberOfEchoes reported in PARREC
-	int echoNum[kMaxDTI4D];
+	//reduce stack pressure use malloc, not "int echoNum[kMaxDTI4D];"
+	int *echoNum = (int *)malloc(kMaxDTI4D * sizeof(int));
 	int echo = 1;
 	for (int i = 0; i < dcmList[indx].xyzDim[4]; i++)
 		echoNum[i] = 0;
@@ -8772,6 +8773,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 			echoNum[i] = echo;
 		}
 	}
+	free(echoNum);
 	if (echo > 1)
 		dcmList[indx].isMultiEcho = true;
 	// check for repeated volumes
@@ -8793,22 +8795,29 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		}
 	}
 	// bvec/bval saved for each series (real, phase, magnitude, imaginary) https://github.com/rordenlab/dcm2niix/issues/219
-	TDTI4D dti4Ds = *dti4D;
+	// Allocate memory for dti4Ds on the heap
+	TDTI4D *dti4Ds = (TDTI4D *)malloc(sizeof(TDTI4D));
+	if (dti4Ds == NULL) {
+		perror("Failed to allocate memory for dti4Ds");
+		exit(EXIT_FAILURE);
+	}
+	// Copy the content from the original dti4D into dti4Ds
+	*dti4Ds = *dti4D;
 	bool isHasDti = (dcmList[indx].CSA.numDti > 0);
 	if ((isHasDti) && (dcmList[indx].CSA.numDti == dcmList[indx].xyzDim[4])) {
 		int nDti = 0;
 		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
 			if (dti4D->gradDynVol[i] == 1) {
-				dti4Ds.S[nDti].V[0] = dti4Ds.S[i].V[0];
-				dti4Ds.S[nDti].V[1] = dti4Ds.S[i].V[1];
-				dti4Ds.S[nDti].V[2] = dti4Ds.S[i].V[2];
-				dti4Ds.S[nDti].V[3] = dti4Ds.S[i].V[3];
+				dti4Ds->S[nDti].V[0] = dti4Ds->S[i].V[0];
+				dti4Ds->S[nDti].V[1] = dti4Ds->S[i].V[1];
+				dti4Ds->S[nDti].V[2] = dti4Ds->S[i].V[2];
+				dti4Ds->S[nDti].V[3] = dti4Ds->S[i].V[3];
 				nDti++;
 			}
 		}
 		dcmList[indx].CSA.numDti = nDti;
 	}
-	// save each series
+	// Save each series
 	bool isScaleVariesEnh = dcmList[indx].isScaleVariesEnh; // issue363: any variation in any image
 	float intenScale = dcmList[indx].intenScale;
 	float intenIntercept = dcmList[indx].intenIntercept;
@@ -8816,25 +8825,17 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	float RWVIntercept = dcmList[indx].RWVIntercept;
 	float RWVScale = dcmList[indx].RWVScale;
 	for (int s = 1; s <= series; s++) {
-		// issue461: assert these values as saveDcm2NiiCore modifies them when it applies Philips scaling
+		// Reassign these values as saveDcm2NiiCore modifies them
 		dcmList[indx].intenScale = intenScale;
 		dcmList[indx].intenIntercept = intenIntercept;
 		dcmList[indx].intenScalePhilips = intenScalePhilips;
 		dcmList[indx].RWVIntercept = RWVIntercept;
 		dcmList[indx].RWVScale = RWVScale;
-		// for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) //for each volume
-		//	printf("%g<<<!\n", dti4D->triggerDelayTime[i]);
-		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) { // for each volume
+		// Iterate through each volume
+		for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
 			if (dti4D->gradDynVol[i] == s) {
-				// dti4D->gradDynVol[i] = s;
-				// nVol ++;
 				dcmList[indx].TE = dti4D->TE[i];
 				dcmList[indx].TR = dti4D->TR[i];
-				// dcmList[indx].intenScale = dti4D->intenScale[i];
-				// dcmList[indx].intenIntercept = dti4D->intenIntercept[i];
-				// dcmList[indx].intenScalePhilips = dti4D->intenScalePhilips[i];
-				// dcmList[indx].RWVScale = dti4D->RWVScale[i];
-				// dcmList[indx].RWVIntercept = dti4D->RWVIntercept[i];
 				dcmList[indx].isHasPhase = dti4D->isPhase[i];
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
@@ -8845,41 +8846,45 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 			}
 		}
 		dcmList[indx].isScaleVariesEnh = false;
-		if (isScaleVariesEnh) { // check if intensity scale varies for this particular output image, this will force 32-bit output
+		if (isScaleVariesEnh) {
 			int nz = 0;
-			for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) { // for each volume
+			for (int i = 0; i < dcmList[indx].xyzDim[4]; i++) {
 				if (dti4D->gradDynVol[i] == s) {
-					for (int z = 0; z < dcmList[indx].xyzDim[3]; z++) { // for each slice
+					for (int z = 0; z < dcmList[indx].xyzDim[3]; z++) {
 						int ix = (i * dcmList[indx].xyzDim[3]) + z;
-						dti4Ds.intenScale[nz] = dti4D->intenScale[ix];
-						dti4Ds.intenIntercept[nz] = dti4D->intenIntercept[ix];
-						dti4Ds.intenScalePhilips[nz] = dti4D->intenScalePhilips[ix];
-						dti4Ds.RWVIntercept[nz] = dti4D->RWVIntercept[ix];
-						dti4Ds.RWVScale[nz] = dti4D->RWVScale[ix];
+						dti4Ds->intenScale[nz] = dti4D->intenScale[ix];
+						dti4Ds->intenIntercept[nz] = dti4D->intenIntercept[ix];
+						dti4Ds->intenScalePhilips[nz] = dti4D->intenScalePhilips[ix];
+						dti4Ds->RWVIntercept[nz] = dti4D->RWVIntercept[ix];
+						dti4Ds->RWVScale[nz] = dti4D->RWVScale[ix];
 						nz++;
-					} // for z: each slice
-				} // if series matches
-			} // for each volume
+					}
+				}
+			}
 			for (int i = 0; i < nz; i++) {
-				if (dti4Ds.intenIntercept[i] != dti4Ds.intenIntercept[0])
+				if (dti4Ds->intenIntercept[i] != dti4Ds->intenIntercept[0])
 					dcmList[indx].isScaleVariesEnh = true;
-				if (dti4Ds.intenScale[i] != dti4Ds.intenScale[0])
+				if (dti4Ds->intenScale[i] != dti4Ds->intenScale[0])
 					dcmList[indx].isScaleVariesEnh = true;
-				if (dti4Ds.intenScalePhilips[i] != dti4Ds.intenScalePhilips[0])
+				if (dti4Ds->intenScalePhilips[i] != dti4Ds->intenScalePhilips[0])
 					dcmList[indx].isScaleVariesEnh = true;
 			}
-			dcmList[indx].intenScale = dti4Ds.intenScale[0];
-			dcmList[indx].intenIntercept = dti4Ds.intenIntercept[0];
-			dcmList[indx].intenScalePhilips = dti4Ds.intenScalePhilips[0];
-			dcmList[indx].RWVIntercept = dti4Ds.RWVIntercept[0];
-			dcmList[indx].RWVScale = dti4Ds.RWVScale[0];
+	
+			dcmList[indx].intenScale = dti4Ds->intenScale[0];
+			dcmList[indx].intenIntercept = dti4Ds->intenIntercept[0];
+			dcmList[indx].intenScalePhilips = dti4Ds->intenScalePhilips[0];
+			dcmList[indx].RWVIntercept = dti4Ds->RWVIntercept[0];
+			dcmList[indx].RWVScale = dti4Ds->RWVScale[0];
 		}
 		if (s > 1)
 			dcmList[indx].CSA.numDti = 0; // only save bvec for first type (magnitude)
-		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, &dti4Ds, s);
+		// Call the save function, passing the pointer to dti4Ds
+		int ret2 = saveDcm2NiiCore(nConvert, dcmSort, dcmList, nameList, opts, dti4Ds, s);
 		if (ret2 != EXIT_SUCCESS)
-			ret = ret2; // return EXIT_SUCCESS only if ALL are successful
+			ret = ret2;
 	}
+	// Free the heap-allocated memory
+	free(dti4Ds);
 	return ret;
 } // saveDcm2Nii()
 
