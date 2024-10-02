@@ -1458,6 +1458,27 @@ tse3d: T2*/
 		fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
 	if (d.isDerived) // DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
+	struct TDTI4D *d4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+	struct TDICOMdata d2;  // No need to preallocate with malloc()
+	char *fname = (char *)malloc(strlen(filename) + 1);
+	strcpy(fname, filename);
+	d2 = readDICOMv(fname, 0, 1, d4D);
+	if (strlen(d4D->deidentificationMethod) > 0) {
+		fprintf(fp, "\t\"DeidentificationMethod\": [\"");
+		bool isSep = false;
+		for (size_t i = 0; i < strlen(d4D->deidentificationMethod); i++) {
+			if (d4D->deidentificationMethod[i] != '\\') {
+				if (isSep)
+					fprintf(fp, "\", \"");
+				isSep = false;
+				fprintf(fp, "%c", d4D->deidentificationMethod[i]);
+			} else
+				isSep = true;
+		}
+		fprintf(fp, "\"],\n");
+	}
+	free(d4D);
+	free(fname);
 	if (d.deID_CS_n > 0) {
 		char *fname = (char *)malloc(strlen(filename) + 1);
 		strcpy(fname, filename);
@@ -1466,7 +1487,6 @@ tse3d: T2*/
 		struct TDICOMdata d2;  // No need to preallocate with malloc()
 		d2 = readDICOMv(fname, 0, 1, d4D);
 		free(fname);
-		json_Str(fp, "\t\"DeidentificationMethod\": \"%s\",\n", d4D->deidentificationMethod);
 		fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
 		for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++) {
 			fprintf(fp, "\t  { \n");
