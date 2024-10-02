@@ -23,13 +23,40 @@ export class Dcm2niix {
     });
   }
 
-  input(fileList) {
-    return new Processor({ worker: this.worker, fileList });
+  conformFileList(fileObjectOrArray) {
+    // prepare files with their relative paths.
+      // annoyingly, safari strips the webkitRelativePath property when sending files to the worker.
+      // fileList is a FileList object, not an array, so we need to convert it to an array.
+      // filesWithRelativePaths is an array of objects with the file and webkitRelativePath properties.
+      // Now we can use the webkitRelativePath property in the worker.
+      // This is important for dcm2niix to work with nested dicom directories in safari.
+      const filesWithRelativePaths = Array.from(fileObjectOrArray).map((file) => ({
+        file,
+        // need to check for both webkitRelativePath and _webkitRelativePath.
+        // _webkitRelativePath is used in case the file was not from a webkitdirectory file input element (e.g. from a drop event).
+        // IMPORTANT: it is up to other developers to ensure that the special _webkitRelativePath property is set correctly when using drop events.
+        webkitRelativePath: file.webkitRelativePath || file._webkitRelativePath || ''
+      }));
+      return filesWithRelativePaths
+    }
+
+  input(fileListObject) {
+    const conformedFileList = this.conformFileList(fileListObject);
+    return new Processor({ worker: this.worker, fileList: conformedFileList });
+  }
+
+  inputFromWebkitDirectory(fileListObject) {
+    const conformedFileList = this.conformFileList(fileListObject);
+    return new Processor({ worker: this.worker, fileList: conformedFileList });
+  }
+
+  inputFromDropItems(dataTransferItemArray) {
+    const conformedFileList = this.conformFileList(dataTransferItemArray);
+    return new Processor({ worker: this.worker, fileList: conformedFileList });
   }
 }
 
 class Processor {
-
   constructor({ worker, fileList }) {
     this.worker = worker;
     this.fileList = fileList;
@@ -281,19 +308,8 @@ class Processor {
       if (this.worker === null) {
         reject(new Error('Worker not initialized. Did you await the init() method?'));
       }
-      // prepare files with their relative paths.
-      // annoyingly, safari strips the webkitRelativePath property when sending files to the worker.
-      // fileList is a FileList object, not an array, so we need to convert it to an array.
-      // filesWithRelativePaths is an array of objects with the file and webkitRelativePath properties.
-      // Now we can use the webkitRelativePath property in the worker.
-      // This is important for dcm2niix to work with nested dicom directories in safari.
-      const filesWithRelativePaths = Array.from(this.fileList).map((file) => ({
-        file,
-        webkitRelativePath: file.webkitRelativePath || ''
-      }));
-
       // send files and commands to the worker
-      this.worker.postMessage({ fileList: filesWithRelativePaths, cmd: args });
+      this.worker.postMessage({ fileList: this.fileList, cmd: args });
     });
   }
 }
