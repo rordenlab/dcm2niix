@@ -6526,23 +6526,6 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		if (d->CSA.sliceTiming[i] > maxT)
 			maxT = d->CSA.sliceTiming[i];
 	}
-	if (isSliceTimeHHMMSS) // convert HHMMSS to msec
-		for (int i = 0; i < kMaxEPI3D; i++)
-			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]) * 1000.0;
-	float TRms = d->TR; // d->TR in msec!
-	if ((minT != maxT) && (maxT <= TRms)) {
-		if (verbose != 0)
-			printMessage("Slice timing range appears reasonable (range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
-		return; // looks fine
-	}
-	if ((minT == maxT) && (d->is3DAcq))
-		return; // fine: 3D EPI
-	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices))
-		return; // fine: all slices single excitation
-	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))
-		return; // fine: single-band calibration data, the slice timing WILL exceed the TR
-	if (verbose > 1)
-		printMessage("Slice timing range of first volume: range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
 	// check if 2nd image has valid slice timing
 	float minT1 = d1->CSA.sliceTiming[0];
 	float maxT1 = minT1;
@@ -6553,11 +6536,37 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		if (d1->CSA.sliceTiming[i] > maxT1)
 			maxT1 = d1->CSA.sliceTiming[i];
 	}
-	if (verbose > 1)
-		printMessage("Slice timing range of 2nd volume: range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
+	int isIssue870 = !isSameFloatGE(maxT-minT, maxT1-minT1);
+	if (isSliceTimeHHMMSS) // convert HHMMSS to msec
+		for (int i = 0; i < kMaxEPI3D; i++)
+			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]) * 1000.0;
+	float TRms = d->TR; // d->TR in msec!
+	if ((minT != maxT) && (maxT <= TRms)) {
+		if (verbose != 0)
+			printMessage("Slice timing range appears reasonable (range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
+		if (!isIssue870)
+			return; // looks fine
+	}
+	if ((minT == maxT) && (d->is3DAcq))
+		return; // fine: 3D EPI
+	if ((minT == maxT) && (d->CSA.multiBandFactor == d->CSA.mosaicSlices))
+		return; // fine: all slices single excitation
+	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))
+		return; // fine: single-band calibration data, the slice timing WILL exceed the TR
+	if (isIssue870) {
+		printWarning("Issue870: Slice timing range of first volume: range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT-minT, TRms);
+		printWarning("Issue870: Slice timing range of 2nd volume: range %g..%g, TA= %g, TR=%g ms)\n", minT1, maxT1, maxT1-minT1, TRms);
+	} else if (verbose > 1) {
+		printMessage("Slice timing range of first volume: range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
+		printMessage("Slice timing range of 2nd volume: range %g..%g, TR=%g ms)\n", minT1, maxT1, TRms);
+	}
+	int mbFactor = 0;
 	if ((minT1 < maxT1) && (minT1 > 0.0) && ((maxT1 - minT1) <= TRms)) { // issue 429: 2nd volume may not start from zero
-		for (int i = 0; i < nSlices; i++)
+		for (int i = 0; i < nSlices; i++) {
 			d1->CSA.sliceTiming[i] -= minT1;
+			if (isSameFloatGE(d1->CSA.sliceTiming[i], 0.0))
+				mbFactor++;
+		}
 		maxT1 -= minT1;
 		minT1 -= minT1;
 	}
@@ -6572,7 +6581,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 			printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRms);
 		return;
 	}
-	if ((minT1 == maxT1) || (maxT1 >= TRms)) { // both first and second image corrupted
+	if ((!d->isLocalizer) && ((minT1 == maxT1) || (maxT1 >= TRms))) { // both first and second image corrupted
 		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g ms)\n", minT1, maxT1, TRms);
 		return;
 	}
@@ -6582,8 +6591,11 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		if (d1->CSA.sliceTiming[i] < 0.0)
 			break;
 	}
+	if ((mbFactor > 1) && (mbFactor > d1->CSA.multiBandFactor)) {
+		printWarning("Issue870 ParallelReductionFactorOutOfPlane estimated as %d but DICOM reports %d\n", mbFactor, d1->CSA.multiBandFactor);
+		d1->CSA.multiBandFactor = mbFactor;
+	}
 	d->CSA.multiBandFactor = d1->CSA.multiBandFactor;
-	printMessage("CSA slice timing based on 2nd volume, 1st volume corrupted (CMRR bug, range %g..%g, TR=%g ms)\n", minT, maxT, TRms);
 } // checkSliceTiming()
 
 void setMultiBandFactor(int dim3, uint64_t indx0, struct TDICOMdata *dcmList) {
