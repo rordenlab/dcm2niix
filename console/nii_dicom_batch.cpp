@@ -6536,6 +6536,13 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		if (d1->CSA.sliceTiming[i] > maxT1)
 			maxT1 = d1->CSA.sliceTiming[i];
 	}
+	if ((maxT1 < 0.0) && (minT1 < 0.0)) {
+		// issue 797 e.g. E11 2D slices where acquisition time used
+		// in this case d1->csa is not populated
+		if ((maxT-minT) > d->TR)
+			printWarning("Issue797: Check slice timing range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT-minT, d->TR);
+		return;
+	}
 	int isIssue870 = !isSameFloatGE(maxT-minT, maxT1-minT1);
 	if (isSliceTimeHHMMSS) // convert HHMMSS to msec
 		for (int i = 0; i < kMaxEPI3D; i++)
@@ -7843,10 +7850,9 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	}
 	if (sliceDir < 0) {
 		// Issue 797: For Siemens MOSAICs, slice order depends on ProtocolSliceNumber not temporal order
-		//  for non-mosaic images, we may need to reverse slice order as saved to disk to ensure FSL's preferred negative determinant
-		// if((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2))
-		//	dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
-		if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2))
+		//  for enhanced non-mosaic images, we may need to reverse slice order as saved to disk to ensure FSL's preferred negative determinant
+		//  for classic non-mosaic images, we do not encode this. xyzDim[3] discriminates classic vs enhanced
+		if ((dcmList[dcmSort[0].indx].xyzDim[3] > 1) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
 		if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
