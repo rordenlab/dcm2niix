@@ -6536,14 +6536,14 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		if (d1->CSA.sliceTiming[i] > maxT1)
 			maxT1 = d1->CSA.sliceTiming[i];
 	}
+	int isIssue870 = !isSameFloatGE(maxT-minT, maxT1-minT1);
 	if ((maxT1 < 0.0) && (minT1 < 0.0)) {
 		// issue 797 e.g. E11 2D slices where acquisition time used
 		// in this case d1->csa is not populated
 		if ((maxT-minT) > d->TR)
 			printWarning("Issue797: Check slice timing range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT-minT, d->TR);
-		return;
+		isIssue870 = 0;
 	}
-	int isIssue870 = !isSameFloatGE(maxT-minT, maxT1-minT1);
 	if (isSliceTimeHHMMSS) // convert HHMMSS to msec
 		for (int i = 0; i < kMaxEPI3D; i++)
 			d->CSA.sliceTiming[i] = dicomTimeToSec(d->CSA.sliceTiming[i]) * 1000.0;
