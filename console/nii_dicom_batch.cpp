@@ -7851,8 +7851,8 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	if (sliceDir < 0) {
 		// Issue 797: For Siemens MOSAICs, slice order depends on ProtocolSliceNumber not temporal order
 		//  for enhanced non-mosaic images, we may need to reverse slice order as saved to disk to ensure FSL's preferred negative determinant
-		//  for classic non-mosaic images, we do not encode this. xyzDim[3] discriminates classic vs enhanced
-		if ((dcmList[dcmSort[0].indx].xyzDim[3] > 1) && (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2))
+		//  for classic non-mosaic images, we will also isFlipZ
+		if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_SIEMENS) && (dcmList[dcmSort[0].indx].CSA.mosaicSlices < 2))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
 		if ((dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_UIH) || (dcmList[dcmSort[0].indx].manufacturer == kMANUFACTURER_GE))
 			dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 = -1;
