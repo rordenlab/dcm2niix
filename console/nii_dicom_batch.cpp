@@ -6466,7 +6466,7 @@ void checkDateTimeOrder(struct TDICOMdata *d, struct TDICOMdata *d1) {
 		printWarning("Images sorted by instance number [0020,0013](%d..%d), but AcquisitionTime [0008,0032] suggests a different order (%g..%g) \n", d->imageNum, d1->imageNum, d->acquisitionTime, d1->acquisitionTime);
 }
 
-void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, int isForceSliceTimeHHMMSS) {
+void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, int isForceSliceTimeHHMMSS, struct nifti_1_header *hdr, int nConvert) {
 	// detect images with slice timing errors. https://github.com/rordenlab/dcm2niix/issues/126
 	// modified 20190704: this function now ensures all slice times are in msec
 	if ((d->TR < 0.0) || (d->CSA.sliceTiming[0] < 0.0))
@@ -6560,6 +6560,8 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		return; // fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))
 		return; // fine: single-band calibration data, the slice timing WILL exceed the TR
+	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && ((maxT-minT) <= TRms) && ((maxT-minT) > 0.0))
+		return; // assume issue875
 	if (isIssue870) {
 		printWarning("Issue870: Slice timing range of first volume: range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT-minT, TRms);
 		printWarning("Issue870: Slice timing range of 2nd volume: range %g..%g, TA= %g, TR=%g ms)\n", minT1, maxT1, maxT1-minT1, TRms);
@@ -6629,11 +6631,16 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 	if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1) || (hdr->dim[4] < 1))
 		return;
 	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1)) {
+		// issue875 use 2nd volume
+		int offset = 0;
+		if (hdr->dim[4] > 1)
+			offset = hdr->dim[3];
 		// XA11 2D classic: nb XA30 in `MFSPLIT` will save each 3D volume from 4D timeseries as a unique series number!
 		for (int v = 0; v < hdr->dim[3]; v++)
-			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].CSA.sliceTiming[0];
+			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v+offset].indx].CSA.sliceTiming[0];
 		setMultiBandFactor(hdr->dim[3], indx0, dcmList);
 	} else if ((nConvert == (hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
+
 		// XA10 mosaics - these are missing a lot of information
 		// get slice timing from second volume
 		for (int v = 0; v < hdr->dim[3]; v++)
@@ -7837,7 +7844,7 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
 	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS);
+	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
 	rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
 	if (hdr->dim[3] > 1)
 		sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1], hdr, true);
