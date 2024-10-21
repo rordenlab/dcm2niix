@@ -26,9 +26,9 @@
 #else
 #undef MiniZ
 #endif
+#include "tinydir.h"
 #include "nifti1_io_core.h"
 #include "print.h"
-#include "tinydir.h"
 #ifndef USING_R
 #include "nifti1.h"
 #endif
@@ -3678,7 +3678,9 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(bidsSubject, "1");
 				else
 					strcat(bidsSubject, opts.bidsSubject);
+#ifndef USING_R
 				printf("%s<<<:::\n", bidsSubject);
+#endif
 				char bidsSession[kOptsStr] = "ses-";
 				if (strlen(opts.bidsSession) <= 0)
 					strcat(bidsSession, "1");
@@ -7098,7 +7100,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcat(suffixBIDS, modalityBIDS);
 	}
 	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
-		printf("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n",
+		printMessage("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n",
 			   seqDetails, d->pulseSequenceName, d->sequenceName);
 	if (isDerived)
 		strcpy(dataTypeBIDS, "derived");
@@ -8845,8 +8847,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	// issue867 TODO sizeof(TDTI4D) = 10mb, this could be reduced if elements reduced from kMaxDTI4D
 	TDTI4D *dti4Ds = (TDTI4D *)malloc(sizeof(TDTI4D));
 	if (dti4Ds == NULL) {
+#ifdef USING_R
+		Rf_error("Failed to allocate memory for dti4Ds");
+#else
 		perror("Failed to allocate memory for dti4Ds");
 		exit(EXIT_FAILURE);
+#endif
 	}
 	// Copy the content from the original dti4D into dti4Ds
 	*dti4Ds = *dti4D;

@@ -8008,10 +8008,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				mxIdx = i;
 			}
 			if (isVerbose > 1)
-				printf("slice %d is %gmm from isocenter\n", i, dx);
+				printMessage("slice %d is %gmm from isocenter\n", i, dx);
 		}
 		if (isVerbose > 1)
-			printf("slice %d is furthest (%gmm) from isocenter\n", mxIdx, mxDx);
+			printMessage("slice %d is furthest (%gmm) from isocenter\n", mxIdx, mxDx);
 		// second pass: measure each slices scalar distance from furthest slice
 		// ensure their are no repeated slice positions
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numDimensionIndexValues);
@@ -8019,7 +8019,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		for (int i = 0; i < numDimensionIndexValues; i++) {
 			float dx = sqrt(pow(patientPosition1[i] - patientPosition1[mxIdx], 2) + pow(patientPosition2[i] - patientPosition2[mxIdx], 2) + pow(patientPosition3[i] - patientPosition3[mxIdx], 2));
 			if (isVerbose > 1)
-				printf("slice %d is %gmm from furthest slice\n", i, dx);
+				printMessage("slice %d is %gmm from furthest slice\n", i, dx);
 			objects[i].value = dx;
 			// sliceMM[i];
 			objects[i].index = i;
