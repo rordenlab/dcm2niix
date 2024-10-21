@@ -3963,7 +3963,7 @@ void clear_volume(struct TVolumeDiffusion *ptvd) {
 	ptvd->_dtiV[0] = -1;
 	for (int i = 1; i < 4; ++i)
 		ptvd->_dtiV[i] = 2;
-	for (int i = 1; i < 6; ++i)
+	for (int i = 0; i < 6; ++i)
 		ptvd->_symBMatrix[i] = NAN;
 	// numDti = 0;
 } // clear_volume()
@@ -4211,31 +4211,6 @@ int fcmp(const void *a, const void *b) {
 		return 0;
 }
 
-#ifdef USING_R
-
-// True iff dcm1 sorts *before* dcm2
-bool compareTDCMdim(const TDCMdim &dcm1, const TDCMdim &dcm2) {
-	for (int i = MAX_NUMBER_OF_DIMENSIONS - 1; i >= 0; i--) {
-		if (dcm1.dimIdx[i] < dcm2.dimIdx[i])
-			return true;
-		else if (dcm1.dimIdx[i] > dcm2.dimIdx[i])
-			return false;
-	}
-	return false;
-} // compareTDCMdim()
-
-bool compareTDCMdimRev(const TDCMdim &dcm1, const TDCMdim &dcm2) {
-	for (int i = 0; i < MAX_NUMBER_OF_DIMENSIONS; i++) {
-		if (dcm1.dimIdx[i] < dcm2.dimIdx[i])
-			return true;
-		else if (dcm1.dimIdx[i] > dcm2.dimIdx[i])
-			return false;
-	}
-	return false;
-} // compareTDCMdimRev()
-
-#else
-
 int compareTDCMdim(void const *item1, void const *item2) {
 	struct TDCMdim const *dcm1 = (const struct TDCMdim *)item1;
 	struct TDCMdim const *dcm2 = (const struct TDCMdim *)item2;
@@ -4261,8 +4236,6 @@ int compareTDCMdimRev(void const *item1, void const *item2) {
 	return 0;
 } // compareTDCMdimRev()
 
-#endif // USING_R
-
 struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D *dti4D) {
 	// struct TDICOMdata readDICOMv(char * fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
 	int isVerbose = prefs->isVerbose;
@@ -4281,6 +4254,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->frameReferenceTime[0] = -1;
 	// dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
+#ifdef USING_R
+	// Ensure dti4D fields are initialised, as in nii_readParRec()
+	for (int i = 0; i < kMaxDTI4D; i++) {
+		dti4D->S[i].V[0] = -1.0;
+		dti4D->TE[i] = -1.0;
+	}
+#endif
 	d.deID_CS_n = 0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
@@ -4845,13 +4825,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	//	philDTI[i].V[0] = -1;
 	// array for storing DimensionIndexValues
 	int numDimensionIndexValues = 0;
-#ifdef USING_R
-	// Allocating a large array on the stack, as below, vexes valgrind and may cause overflow
-	std::vector<TDCMdim> dcmDim(kMaxSlice2D);
-#else
 	//don't use stack! TDCMdim dcmDim[kMaxSlice2D];
 	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
-#endif
 	for (int i = 0; i < kMaxSlice2D; i++) {
 		dcmDim[i].diskPos = i;
 		for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++)
@@ -7464,7 +7439,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// LO array of floats stored in LONG STRING!
 			//  [960.5\400\17.9108\0\-9999\-9999]
 			// we want 3rd value, e.g. 17.9:
-			float v[5];
+			float v[6];
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 5, v);
 			d.CSA.tablePos[3] = v[3] - tableDeltaGE;
 			d.CSA.tablePos[0] = 1.0;
@@ -8008,10 +7983,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				mxIdx = i;
 			}
 			if (isVerbose > 1)
-				printf("slice %d is %gmm from isocenter\n", i, dx);
+				printMessage("slice %d is %gmm from isocenter\n", i, dx);
 		}
 		if (isVerbose > 1)
-			printf("slice %d is furthest (%gmm) from isocenter\n", mxIdx, mxDx);
+			printMessage("slice %d is furthest (%gmm) from isocenter\n", mxIdx, mxDx);
 		// second pass: measure each slices scalar distance from furthest slice
 		// ensure their are no repeated slice positions
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numDimensionIndexValues);
@@ -8019,7 +7994,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		for (int i = 0; i < numDimensionIndexValues; i++) {
 			float dx = sqrt(pow(patientPosition1[i] - patientPosition1[mxIdx], 2) + pow(patientPosition2[i] - patientPosition2[mxIdx], 2) + pow(patientPosition3[i] - patientPosition3[mxIdx], 2));
 			if (isVerbose > 1)
-				printf("slice %d is %gmm from furthest slice\n", i, dx);
+				printMessage("slice %d is %gmm from furthest slice\n", i, dx);
 			objects[i].value = dx;
 			// sliceMM[i];
 			objects[i].index = i;
@@ -8104,17 +8079,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		if ((isKludgeIssue533) && (numDimensionIndexValues > 1))
 			printWarning("Guessing temporal order for Philips enhanced DICOM ASL (issue 532).\n");
 			// sort dimensions
-#ifdef USING_R
-		if (stackPositionItem < maxVariableItem)
-			std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdim);
-		else
-			std::sort(dcmDim.begin(), dcmDim.begin() + numberOfFrames, compareTDCMdimRev);
-#else
 		if (stackPositionItem < maxVariableItem)
 			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 		else
 			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdimRev);
-#endif
 		// for (int i = 0; i < numberOfFrames; i++)
 		//	printf("i %d diskPos= %d dimIdx= %d %d %d %d TE= %g\n", i, dcmDim[i].diskPos, dcmDim[i].dimIdx[0], dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++) {
@@ -8470,9 +8438,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// printf("%g\t%g\t%s\n", d.intenIntercept, d.intenScale, fname);
 	if ((d.isLocalizer) && (strstr(d.seriesDescription, "b1map"))) // issue751 b1map uses same base as scout
 		d.isLocalizer = false;
-	#ifndef USING_R
 	free(dcmDim);
-	#endif
 	return d;
 } // readDICOMx()
 

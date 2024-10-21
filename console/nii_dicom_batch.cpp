@@ -26,9 +26,9 @@
 #else
 #undef MiniZ
 #endif
+#include "tinydir.h"
 #include "nifti1_io_core.h"
 #include "print.h"
-#include "tinydir.h"
 #ifndef USING_R
 #include "nifti1.h"
 #endif
@@ -1055,13 +1055,17 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 #ifdef myDisableMiniZ
 	ret = inflate(&s, Z_SYNC_FLUSH);
 	if (ret != Z_STREAM_END) {
+		free(pCmp);
 		free(pUnCmp);
+		inflateEnd(&s);
 		return EXIT_FAILURE;
 	}
 #else
 	ret = mz_inflate(&s, MZ_SYNC_FLUSH);
 	if (ret != MZ_STREAM_END) {
+		free(pCmp);
 		free(pUnCmp);
+		inflateEnd(&s);
 		return EXIT_FAILURE;
 	}
 #endif
@@ -1108,7 +1112,9 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 		printMessage(" ViewOrder %d SliceOrder %d\n", *viewOrder, *sliceOrder);
 		printMessage("%s\n", pUnCmp);
 	}
+	free(pCmp);
 	free(pUnCmp);
+	inflateEnd(&s);
 	return EXIT_SUCCESS;
 }
 #endif // myReadGeProtocolBlock()
@@ -1629,7 +1635,7 @@ tse3d: T2*/
 	int iterations = 0;
 	// note, some vendors write 'OSEM3D-OP-PSFi10s16' others 'OP-OSEM4i21s'
 	//  order matters `OP-OSEM4i21s` should have i=4 NOT i=21
-	bool sEnd = d.reconstructionMethod[strlen(d.reconstructionMethod) - 1] == 's';
+	bool sEnd = strlen(d.reconstructionMethod) == 0 ? false : (d.reconstructionMethod[strlen(d.reconstructionMethod) - 1] == 's');
 	for (int i = 1; i < 33; i++) {
 		char stri[12];
 		if (sEnd)
@@ -3678,7 +3684,9 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(bidsSubject, "1");
 				else
 					strcat(bidsSubject, opts.bidsSubject);
+#ifndef USING_R
 				printf("%s<<<:::\n", bidsSubject);
+#endif
 				char bidsSession[kOptsStr] = "ses-";
 				if (strlen(opts.bidsSession) <= 0)
 					strcat(bidsSession, "1");
@@ -5556,6 +5564,10 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 			return EXIT_FAILURE;
 		image->data = (void *)im;
 		images->append(image, name);
+		// A copy of "image" has been made, so free all aspects of it except the data (which is owned by the caller)
+		free(image->fname);
+		free(image->iname);
+		nifti_free_extensions(image);
 		free(image);
 		return EXIT_SUCCESS;
 	}
@@ -6428,6 +6440,7 @@ int nii_saveCrop(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	strcat(niiFilenameCrop, "_Crop");
 	const int returnCode = nii_saveNII3D(niiFilenameCrop, hdrX, imX, opts, d);
 	free(imX);
+	free(sliceSums);
 	return returnCode;
 } // nii_saveCrop()
 
@@ -6767,16 +6780,20 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose, char geVersi
 			sepStart += 1;
 		}
 	}
-	len = 11; // RX27.0_R02_
+	// Default: start from the beginning
+	if (ismatched == false) {
+		sepStart = softwareVersionsGE;
+	}
+	len = 12; // RX27.0_R02_, plus nul terminator
 	char *versionString = (char *)malloc(sizeof(char) * len);
 	versionString[len - 1] = 0;
-	memcpy(versionString, sepStart, len);
+	memcpy(versionString, sepStart, len-1);
 	char c1, c2, c3, c4;
 	// RX27.0_R02_ or MR29.1_EA_2
-	sscanf(versionString, "%c%c%d.%d_%c%c%d", &c1, &c2, geMajorVersionInt, geMinorVersionInt, &c3, &c4, geReleaseVersionInt);
+	int fields = sscanf(versionString, "%c%c%d.%d_%c%c%d", &c1, &c2, geMajorVersionInt, geMinorVersionInt, &c3, &c4, geReleaseVersionInt);
 	memcpy(geVersionPrefix, &c1, 1);
 	memcpy(geVersionPrefix + 1, &c2, 1);
-	if ((c3 == 'E') && (c4 == 'A')) {
+	if ((fields >= 6) && (c3 == 'E') && (c4 == 'A')) {
 		*geReleaseVersionInt = 0;
 	}
 	free(versionString);
@@ -7098,7 +7115,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcat(suffixBIDS, modalityBIDS);
 	}
 	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
-		printf("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n",
+		printMessage("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n",
 			   seqDetails, d->pulseSequenceName, d->sequenceName);
 	if (isDerived)
 		strcpy(dataTypeBIDS, "derived");
@@ -8845,8 +8862,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	// issue867 TODO sizeof(TDTI4D) = 10mb, this could be reduced if elements reduced from kMaxDTI4D
 	TDTI4D *dti4Ds = (TDTI4D *)malloc(sizeof(TDTI4D));
 	if (dti4Ds == NULL) {
+#ifdef USING_R
+		Rf_error("Failed to allocate memory for dti4Ds");
+#else
 		perror("Failed to allocate memory for dti4Ds");
 		exit(EXIT_FAILURE);
+#endif
 	}
 	// Copy the content from the original dti4D into dti4Ds
 	*dti4Ds = *dti4D;
@@ -9503,6 +9524,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 			}
 		}
 	}
+	tinydir_close(&dir);
 	return count;
 }
 
