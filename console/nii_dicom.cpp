@@ -3963,7 +3963,7 @@ void clear_volume(struct TVolumeDiffusion *ptvd) {
 	ptvd->_dtiV[0] = -1;
 	for (int i = 1; i < 4; ++i)
 		ptvd->_dtiV[i] = 2;
-	for (int i = 1; i < 6; ++i)
+	for (int i = 0; i < 6; ++i)
 		ptvd->_symBMatrix[i] = NAN;
 	// numDti = 0;
 } // clear_volume()
@@ -4254,6 +4254,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->frameReferenceTime[0] = -1;
 	// dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
+#ifdef USING_R
+	// Ensure dti4D fields are initialised, as in nii_readParRec()
+	for (int i = 0; i < kMaxDTI4D; i++) {
+		dti4D->S[i].V[0] = -1.0;
+		dti4D->TE[i] = -1.0;
+	}
+#endif
 	d.deID_CS_n = 0;
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
@@ -7432,7 +7439,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// LO array of floats stored in LONG STRING!
 			//  [960.5\400\17.9108\0\-9999\-9999]
 			// we want 3rd value, e.g. 17.9:
-			float v[5];
+			float v[6];
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 5, v);
 			d.CSA.tablePos[3] = v[3] - tableDeltaGE;
 			d.CSA.tablePos[0] = 1.0;
