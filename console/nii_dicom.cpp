@@ -749,6 +749,7 @@ struct TDICOMdata clear_dicom_data() {
 	for (int i = 0; i < 7; i++)
 		d.orient[i] = 0.0f;
 	strcpy(d.patientName, "");
+	strcpy(d.deidentificationMethod, "");
 	strcpy(d.patientID, "");
 	strcpy(d.accessionNumber, "");
 	strcpy(d.imageType, "");
@@ -4254,14 +4255,21 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->frameReferenceTime[0] = -1;
 	// dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
-#ifdef USING_R
 	// Ensure dti4D fields are initialised, as in nii_readParRec()
 	for (int i = 0; i < kMaxDTI4D; i++) {
 		dti4D->S[i].V[0] = -1.0;
 		dti4D->TE[i] = -1.0;
 	}
-#endif
 	d.deID_CS_n = 0;
+	for (int i = 0; i < MAX_DEID_CS; i++) {
+		// n.b. knowing deID_CS_n is insufficient to know number of strings
+		// e.g. dcm_qa_deident CodingSchemeVersion (0008,0103) provided for only some entries
+		strcpy(dti4D->deID_CS[i].CodeValue, "");
+		strcpy(dti4D->deID_CS[i].CodeMeaning, "");
+		strcpy(dti4D->deID_CS[i].CodingSchemeDesignator, "");
+		strcpy(dti4D->deID_CS[i].CodingSchemeVersion, "");
+	}
+	
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
 	if (stat(fname, &s) == 0) {
@@ -5670,9 +5678,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kDeidentificationMethod: { // issue 383
-			dcmStr(lLength, &buffer[lPos], dti4D->deidentificationMethod);
-			int slen = (int)strlen(dti4D->deidentificationMethod);
-			if ((slen < 10) || (strstr(dti4D->deidentificationMethod, "DICOMANON") == NULL))
+			dcmStr(lLength, &buffer[lPos], d.deidentificationMethod);
+			int slen = (int)strlen(d.deidentificationMethod);
+			if ((slen < 10) || (strstr(d.deidentificationMethod, "DICOMANON") == NULL))
 				break;
 			isDICOMANON = true;
 			printWarning("Matlab DICOMANON can scramble SeriesInstanceUID (0020,000e) and remove crucial data (see issue 383). \n");
