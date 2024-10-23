@@ -1119,6 +1119,28 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 }
 #endif // myReadGeProtocolBlock()
 
+void json_StrList(FILE *fp, const char *sLabel, char *sVal) {
+	if (strlen(sVal) < 1) return;
+	fprintf(fp, "\t\"%s\": [\"", sLabel);
+	for (size_t i = 0; i < strlen(sVal); i++) {
+		if (sVal[i] != '\\') {
+			if (i > 0 && sVal[i-1] == '\\') {
+				fprintf(fp, "\", \"");
+			}
+			unsigned char ch = (unsigned char)sVal[i];
+			// Convert ISO-8859-1 to UTF-8
+			if (ch < 0x80) {
+				// ASCII range: 1-byte UTF-8
+				fprintf(fp, "%c", ch);
+			} else {
+				// Non-ASCII range: 2-byte UTF-8
+				fprintf(fp, "%c%c", 0xC0 | (ch >> 6), 0x80 | (ch & 0x3F));
+			}
+		}
+	}
+	fprintf(fp, "\"],\n");
+}
+
 void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
 	if (strlen(sVal) < 1)
 		return;
@@ -1464,20 +1486,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"NonlinearGradientCorrection\": false,\n");
 	if (d.isDerived) // DICOM is derived image or non-spatial file (sounds, etc)
 		fprintf(fp, "\t\"RawImage\": false,\n");
-	if (strlen(d.deidentificationMethod) > 0) {
-		fprintf(fp, "\t\"DeidentificationMethod\": [\"");
-		bool isSep = false;
-		for (size_t i = 0; i < strlen(d.deidentificationMethod); i++) {
-			if (d.deidentificationMethod[i] != '\\') {
-				if (isSep)
-					fprintf(fp, "\", \"");
-				isSep = false;
-				fprintf(fp, "%c", d.deidentificationMethod[i]);
-			} else
-				isSep = true;
-		}
-		fprintf(fp, "\"],\n");
-	}
+	json_StrList(fp, "DeidentificationMethod", d.deidentificationMethod);
 	if (d.deID_CS_n > 0) {
 		char *fname = (char *)malloc(strlen(filename) + 1);
 		strcpy(fname, filename);

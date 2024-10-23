@@ -52,6 +52,9 @@ all:
 sanitize:
 	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer $(LFLAGS) $(UFILES)
 
+debug:
+	g++ -O0 $(LFLAGS) $(UFILES)
+
 noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois
 
