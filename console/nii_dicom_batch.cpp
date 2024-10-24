@@ -1452,15 +1452,18 @@ tse3d: T2*/
 			} else
 				isSep = true;
 		}
-		if ((d.isHasMagnitude) && ((strstr(d.imageType, "_M_") == NULL) && (strstr(d.imageType, "_MAGNITUDE_") == NULL)))
+		//issue881 Philips enhanced includes magnitude and Hz images into one file
+		bool isHz = d.isHasReal && d.isRealIsPhaseMapHz;
+		//n.b. issue881 alias `M` does not prevent appending `MAGNITUDE`
+		if ((!isHz) && (d.isHasMagnitude) && (strstr(d.imageType, "_MAGNITUDE_") == NULL))
 			fprintf(fp, "\", \"MAGNITUDE");
-		if ((d.isHasPhase) && ((strstr(d.imageType, "_P_") == NULL) && (strstr(d.imageType, "_PHASE_") == NULL)))
+		if ((!isHz) && (d.isHasPhase) && (strstr(d.imageType, "_PHASE_") == NULL))
 			fprintf(fp, "\", \"PHASE");
-		if ((d.isHasReal) && ((strstr(d.imageType, "_R_") == NULL) && (strstr(d.imageType, "_REAL_") == NULL)))
+		if ((!isHz) && (d.isHasReal) && (strstr(d.imageType, "_REAL_") == NULL))
 			fprintf(fp, "\", \"REAL");
-		if ((d.isHasImaginary) && ((strstr(d.imageType, "_I_") == NULL) && (strstr(d.imageType, "_IMAGINARY_") == NULL)))
+		if ((!isHz) && (d.isHasImaginary) && (strstr(d.imageType, "_IMAGINARY_") == NULL))
 			fprintf(fp, "\", \"IMAGINARY");
-		if ((d.isRealIsPhaseMapHz) && ((strstr(d.imageType, "_FIELDMAPHZ_") == NULL)))
+		if ((isHz) && ((strstr(d.imageType, "_FIELDMAPHZ_") == NULL)))
 			fprintf(fp, "\", \"FIELDMAPHZ");
 		fprintf(fp, "\"],\n");
 	}

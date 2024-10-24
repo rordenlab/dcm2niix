@@ -4348,7 +4348,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kImplementationVersionName 0x0002 + (0x0013 << 16)
 #define kSourceApplicationEntityTitle 0x0002 + (0x0016 << 16)
 #define kDirectoryRecordSequence 0x0004 + (0x1220 << 16)
-// #define kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
+//#define kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define kImageTypeTag 0x0008 + (0x0008 << 16)
 #define kSOPInstanceUID 0x0008 + (0x0018 << 16) // Philips inserts time as last item, e.g. ?.?.?.YYYYMMDDHHmmSS.SSSS
 // not reliable https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/21
@@ -5436,6 +5436,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.isSegamiOasis = true;
 			break;
 		}
+		/* case kSpecificCharacterSet : {
+			char charTxt[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], charTxt);
+			//issue878 dcm_qa_uih is ISO_IR 192 aka  UTF-8 !
+			if (strcmp(charTxt, "ISO_IR 100") != 0) {
+				printWarning("Issue878: Specific Character Set (0008,0005) is not ISO-IR 100. Non-latin characters may be mangled.\n");
+			}
+		} */
 		case kDirectoryRecordSequence: {
 			d.isRawDataStorage = true;
 			break;
