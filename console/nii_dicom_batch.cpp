@@ -6861,9 +6861,8 @@ void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename, int isVer
 	char ioptGE[3000] = "";
 	char seqName[kDICOMStr] = "";
 	geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE, seqName);
-	// if (strlen(d->procedureStepDescription) < 2)
-	//	strcpy(d->procedureStepDescription, seqName);
-	strcat(d->procedureStepDescription, seqName); // issue790
+	size_t remaining_space = kDICOMStr - strlen(d->procedureStepDescription) - 1; //issue883
+	strncat(d->procedureStepDescription, seqName, remaining_space); // issue790
 #endif
 } // bidsGE
 

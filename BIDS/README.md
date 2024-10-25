@@ -189,7 +189,7 @@ The term ECAT in the comments suggests that values are defined by the [ECAT7](ht
 |------------------------------|------|----------------------------------|------------|
 | IsotopeHalfLife              |      | ECAT                             | D          |
 | Dosage                       |      | ECAT                             | D          |
-| FrameTimesStart              | s    | DICOM tag 0008,0022              | D          |
+| FrameTimesStart              | s    | DICOM tag 0008,0022              | B          |
 | TracerRadionuclide           |      | DICOM tag 0008,0100 or 0008,0104 | B          |
 | Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT      | D          |
 | InjectedRadioactivity        | MBq  | DICOM tag 0018,1074              | B          |
