@@ -793,6 +793,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
 		char keyStrNumEcho[] = "lContrasts";
 		csaAscii->lContrasts = readKey(keyStrNumEcho, keyPos, csaLengthTrim);
+		// TODO: read sAsl.ulSuppressionMode for required BackgroundSuppression
 		char keyStrDS[] = "sDiffusion.dsScheme";
 		csaAscii->difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
 		if (csaAscii->difBipolar == 0) {
@@ -1207,7 +1208,7 @@ void print_FloatNotNan(const char *sLabel, int iVal, float sVal) {
 	printMessage(sLabel, iVal, sVal);
 } // json_Float
 
-void json_Float(FILE *fp, const char *sLabel, float sVal) {
+void json_Float(FILE *fp, const char *sLabel, double sVal) {
 	if (!isfinite(sVal)) { // isfinite() defined in C99
 		// https://github.com/bids-standard/bids-2-devel/issues/12
 		printWarning(sLabel, sVal);
@@ -1565,14 +1566,18 @@ tse3d: T2*/
 	}
 	// https://bids-specification--622.org.readthedocs.build/en/622/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#case-3-direct-field-mapping
 	if ((d.isRealIsPhaseMapHz) && ((d.manufacturer == kMANUFACTURER_GE) || (d.isHasReal)))
-		fprintf(fp, "\t\"Units\": \"Hz\",\n"); //
+		fprintf(fp, "\t\"Units\": \"Hz\",\n");
 	// PET ISOTOPE MODULE ATTRIBUTES
 	json_Str(fp, "\t\"TracerRadionuclide\": \"%s\",\n", d.tracerRadionuclide);
 	json_Str(fp, "\t\"Radiopharmaceutical\": \"%s\",\n", d.radiopharmaceutical);
 	json_Float(fp, "\t\"RadionuclidePositronFraction\": %g,\n", d.radionuclidePositronFraction);
-	json_Float(fp, "\t\"InjectedRadioactivity\": %g,\n", d.radionuclideTotalDose); // renamed https://bids-specification.readthedocs.io/en/stable/glossary.html#objects.metadata.InjectedRadioactivity
+	json_Float(fp, "\t\"InjectedRadioactivity\": %.8g,\n", d.radionuclideTotalDose); // renamed https://bids-specification.readthedocs.io/en/stable/glossary.html#objects.metadata.InjectedRadioactivity
+	if (d.radionuclideTotalDose > 0.0)
+		fprintf(fp, "\t\"InjectedRadioactivityUnits\": \"MBq\",\n");
+	json_Float(fp, "\t\"InjectedVolume\": %g,\n", d.injectedVolume);
+
 	json_Float(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife);
-	json_Float(fp, "\t\"DoseCalibrationFactor\": %g,\n", d.doseCalibrationFactor);
+	json_Float(fp, "\t\"DoseCalibrationFactor\": %.8g,\n", d.doseCalibrationFactor);
 	json_Float(fp, "\t\"IsotopeHalfLife\": %g,\n", d.ecat_isotope_halflife);
 	json_Float(fp, "\t\"Dosage\": %g,\n", d.ecat_dosage);
 	json_Str(fp, "\t\"ConvolutionKernel\": \"%s\",\n", d.convolutionKernel);
@@ -1671,7 +1676,6 @@ tse3d: T2*/
 	// printf("::::%s ->'%s' : s%d i%d\n", d.reconstructionMethod, reconMethodName, subsets, iterations);
 	// END issue 802
 	json_Float(fp, "\t\"ScatterFraction\": %g,\n", d.scatterFraction);
-
 	if (dti4D->decayFactor[0] >= 0.0) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"DecayFactor\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
@@ -1682,6 +1686,8 @@ tse3d: T2*/
 			fprintf(fp, "\t\t%g", dti4D->decayFactor[i]);
 		}
 		fprintf(fp, "\t],\n");
+	} else if (d.decayFactor > 0) { //single volume
+		fprintf(fp, "\t\"DecayFactor\": [\n\t\t%g\t],\n", d.decayFactor);
 	}
 	if ((h->dim[4] > 1) && (dti4D->volumeOnsetTime[0] >= 0.0)) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"FrameTimesStart\": [\n");
@@ -1693,8 +1699,11 @@ tse3d: T2*/
 			fprintf(fp, "\t\t%g", dti4D->volumeOnsetTime[i]);
 		}
 		fprintf(fp, "\t],\n");
+	} else if ((d.decayFactor > 0) && (h->dim[4] == 1)) { //single volume
+		fprintf(fp, "\t\"FrameTimesStart\": [\n\t\t0\t],\n");
 	}
-	if ((h->dim[4] > 1) && (dti4D->frameDuration[0] >= 0.0)) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
+	
+	if ((h->dim[4] > 0) && (dti4D->frameDuration[0] >= 0.0)) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"FrameDuration\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
 			if (i != 0)
@@ -1724,6 +1733,19 @@ tse3d: T2*/
 			}
 			fprintf(fp, "\t],\n");
 		}
+	}
+	json_FloatNotNan(fp, "\t\"ReconFilterSize\": %g,\n", d.reconFilterSize);
+	if ((d.modality == kMODALITY_PT) && (d.acquisitionTime > 0.0)) {
+		// to do: should we use post_inj_datetime 0009,103d for GE?
+		// are we really sure that acquisitionTime is timezero?
+		// Convert float to integer for easier manipulation
+		int time = (int)d.acquisitionTime;
+		// Extract hours, minutes, and seconds
+		int hours = time / 10000;
+		int minutes = (time / 100) % 100;
+		int seconds = time % 100;
+		// Format into HH:MM:SS and store in timeString
+		fprintf(fp, "\t\"TimeZero\": \"%02d:%02d:%02d\",\n", hours, minutes, seconds);
 	}
 	// CT parameters
 	json_Float(fp, "\t\"ExposureTime\": %g,\n", d.exposureTimeMs / 1000.0);
@@ -1860,6 +1882,7 @@ tse3d: T2*/
 		*/
 		bool isPCASL = false;
 		bool isPASL = false;
+		int nPLD = 0;
 		// ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
 		// ASL specific tags - 2D PASL Siemens Product XA30, n.b pasl/casl/pcasl set using 0018,9250
 		if (strstr(pulseSequenceDetails, "ep2d_asl")) {
@@ -1896,12 +1919,14 @@ tse3d: T2*/
 		// ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails, "ep2d_pasl")) {
 			isPASL = true;
+			fprintf(fp, "\t\"PASLType\": \"PICORE\",\n");
 			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); // usec->sec
 			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); // usec -> sec
 		}
 		// ASL specific tags - 3D PASL Siemens Product http://adni.loni.usc.edu/wp-content/uploads/2010/05/ADNI3_Basic_Siemens_Skyra_E11.pdf
 		if (strstr(pulseSequenceDetails, "tgse_pasl")) {
 			isPASL = true;
+			fprintf(fp, "\t\"PASLType\": \"FAIR QII\",\n");
 			json_FloatNotNan(fp, "\t\"BolusDuration\": %g,\n", csaAscii.alTI[0] * (1.0 / 1000000.0)); // usec->sec
 			json_FloatNotNan(fp, "\t\"InversionTime\": %g,\n", csaAscii.alTI[2] * (1.0 / 1000000.0)); // usec -> sec
 																									  // json_FloatNotNan(fp, "\t\"SaturationStopTime\": %g,\n", csaAscii.alTI[2] * (1.0/1000.0));
@@ -1909,6 +1934,7 @@ tse3d: T2*/
 		// PASL http://www.pubmed.com/11746944 http://www.pubmed.com/21606572
 		if (strstr(pulseSequenceDetails, "ep2d_fairest")) {
 			isPASL = true;
+			fprintf(fp, "\t\"PASLType\": \"FAIR\",\n");
 			json_FloatNotNan(fp, "\t\"PostInversionDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000.0)); // usec->sec
 			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000.0));  // usec -> sec
 		}
@@ -1928,7 +1954,6 @@ tse3d: T2*/
 			json_Float(fp, "\t\"TagDuration\": %g,\n", csaAscii.alFree[9] / 1000.0);				  // ms -> sec
 			json_Float(fp, "\t\"MaximumT1Opt\": %g,\n", csaAscii.alFree[10] / 1000.0);				  // ms -> sec
 			// report post label delay
-			int nPLD = 0;
 			bool isValid = true; // detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 11; k < 31; k++) {
 				if ((isnan(csaAscii.alFree[k])) || (csaAscii.alFree[k] <= 0.0))
@@ -1971,7 +1996,6 @@ tse3d: T2*/
 			json_Float(fp, "\t\"Tag1\": %g,\n", csaAscii.alFree[11] / 1000.0);				// DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"Tag2\": %g,\n", csaAscii.alFree[12] / 1000.0);				// DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"Tag3\": %g,\n", csaAscii.alFree[13] / 1000.0);				// DelayTimeInTR usec -> sec
-			int nPLD = 0;
 			bool isValid = true; // detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 30; k < 38; k++) {
 				if ((isnan(csaAscii.alFree[k])) || (csaAscii.alFree[k] <= 0.0))
@@ -2012,6 +2036,28 @@ tse3d: T2*/
 		//  https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#common-metadata-fields-applicable-to-both-pcasl-and-pasl
 		if (((isPASL) || (isPCASL)) && (csaAscii.interp <= 0))
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.xyzMM[1], d.xyzMM[2], d.zThick);
+			int maxEchoNum = csaAscii.lContrasts; // this stores number of echoes, but maybe other contrasts (PLD)
+		if (maxEchoNum < 1)
+			maxEchoNum = 1;
+		if (nPLD < 1)
+			nPLD = 1;
+		int nContrasts = nPLD * maxEchoNum;
+		if (isPASL || isPCASL) {
+			int totalAcquiredPairs = 0;
+			if ((h->dim[4] % (nContrasts * 2)) == 0) {
+				// n.b. M0Type requires information about other series
+				// either "Separate" or "Absent"
+				// fprintf(fp, "\t\"M0Type\": \"Separate\",\n");
+				int totalAcquiredPairs = h->dim[4] / nContrasts;
+			} else if (((h->dim[4] - 1) % (nContrasts * 2)) == 0) {
+				fprintf(fp, "\t\"M0Type\": \"Included\",\n");
+				int totalAcquiredPairs = (h->dim[4] - 1) / nContrasts;
+			} else {
+				printWarning("Unable to determine M0Type\n");
+			}
+			if (totalAcquiredPairs > 0)
+				fprintf(fp, "\t\"TotalAcquiredPairs\": %d,\n", totalAcquiredPairs);
+		}
 		// lund free waveform sequence, see https://github.com/filip-szczepankiewicz/fwf_sequence_tools
 		if ((strstr(pulseSequenceDetails, "ep2d_diff_fwf") != 0) || (strstr(pulseSequenceDetails, "ep2d_diff_sms_fwf_simple") != 0)) {
 			for (int i = 0; i < kMaxWipFree; i++) {

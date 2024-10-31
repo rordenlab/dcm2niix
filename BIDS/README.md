@@ -248,6 +248,15 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | TablePosition                  | mm   | The 3rd value of DICOM tag 0043,10B2 - the value of DICOM tag 0019,107F    | B          |
 | DeepLearningFactor             |      | DICOM tag 0043,10CA      | D          |
 
+### Manufacturer GE (Positron Emission Tomography)
+
+[GE Private Tags](https://www.gehealthcare.com/-/jssmedia/b86f641ae0bd4a7b919c79215e5c01e7)
+
+| Field                              | Unit | Comments              | Defined By |
+|------------------------------------|------|-----------------------|------------|
+| InjectedVolume                     |      | DICOM tag 0009,103A   | B          |
+| ReconFilterSize                    |      | DICOM tag 0009,108F   | B          |
+
 ### Manufacturer Philips
 
 Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3998685/)

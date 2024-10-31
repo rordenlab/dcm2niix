@@ -865,6 +865,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.radionuclidePositronFraction = 0.0;
 	d.radionuclideHalfLife = 0.0;
 	d.doseCalibrationFactor = 0.0;
+	d.injectedVolume = 0.0;
+	d.reconFilterSize = NAN;
 	d.ecat_isotope_halflife = 0.0;
 	d.frameDuration = -1.0;
 	d.frameReferenceTime = -1.0;
@@ -4376,6 +4378,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kReferencedImageEvidenceSQ (uint32_t)0x0008 + (0x9092 << 16)
 #define kComplexImageComponent (uint32_t)0x0008 + (0x9208 << 16) //'0008' '9208' 'CS' 'ComplexImageComponent'
 #define kAcquisitionContrast (uint32_t)0x0008 + (0x9209 << 16)	 //'0008' '9209' 'CS' 'AcquisitionContrast'
+#define kInjectedVolumeGE 0x0009 + (0x103A << 16) // FL
+#define kReconFilterSizeGE 0x0009 + (0x108F << 16) // FL bp_filter_cutoff
 #define kIconSQ 0x0009 + (0x1110 << 16)
 #define kPatientName 0x0010 + (0x0010 << 16)
 #define kPatientID 0x0010 + (0x0020 << 16)
@@ -4465,6 +4469,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 // #define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) // CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16)		  // UL
+//TODO ASL LabelingOrientation 0018,9255, VascularCrushing 0x0018,9259 CS, VascularCrushingVENC 0018,925A
 #define kDiffusionBValueXX 0x0018 + uint32_t(0x9602 << 16)			  // FD
 // #define kDiffusionBValueXY 0x0018 + uint32_t(0x9603 << 16) //FD
 // #define kDiffusionBValueXZ 0x0018 + uint32_t(0x9604 << 16) //FD
@@ -5663,6 +5668,16 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kStudyTime:
 			if (strlen(d.studyTime) < 2)
 				dcmStr(lLength, &buffer[lPos], d.studyTime);
+			break;
+		case kInjectedVolumeGE:
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.injectedVolume = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kReconFilterSizeGE:
+			if (d.manufacturer != kMANUFACTURER_GE)
+				break;
+			d.reconFilterSize = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kIconSQ: { // issue760 GEIIS icon strikes again
 			if ((vr[0] != 'S') || (vr[1] != 'Q') || (lLength != 8))
