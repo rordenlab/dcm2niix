@@ -2611,6 +2611,10 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	if (isnan(dcmList[indx0].patientPosition[1]))
 		return NULL; // issue606 do not save bvec for non-spatial data (e.g. physio)
 	int numDti = dcmList[indx0].CSA.numDti;
+	if ((numDti > nConvert) && (numDti > kMaxSlice2D)) {
+		printError("nii_saveDTI unable to save vectors.\n");
+		return NULL;
+	}
 #ifdef USING_R
 	ImageList *images = (ImageList *)opts.imageList;
 #endif
@@ -2674,15 +2678,16 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	TDTI *vx = NULL;
 	if (numDti > 1) {
 		vx = (TDTI *)malloc(numDti * sizeof(TDTI));
-		for (int i = 0; i < numDti; i++) // for each direction
-			for (int v = 0; v < 4; v++)	 // for each vector+B-value
+		for (int i = 0; i < numDti; i++) {// for each direction
+			for (int v = 0; v < 4; v++) 	 // for each vector+B-value
 				vx[i].V[v] = dti4D->S[i].V[v];
+			}
 	} else { // if (numDti == 1) {//extract DTI from different slices
 		vx = (TDTI *)malloc(nConvert * sizeof(TDTI));
 		numDti = 0;
 		for (int i = 0; i < nConvert; i++) { // for each image
 			if ((dcmList[indx0].CSA.mosaicSlices > 1) || (isSamePosition(dcmList[indx0], dcmList[dcmSort[i].indx]))) {
-				// if (numDti < kMaxDTIv)
+				int idx = dcmSort[i].indx;
 				for (int v = 0; v < 4; v++)									// for each vector+B-value
 					vx[numDti].V[v] = dcmList[dcmSort[i].indx].CSA.dtiV[v]; // dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
 				numDti++;
@@ -6696,6 +6701,10 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 	uint64_t indx0 = dcmSort[0].indx; // first volume
 	if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1) || (hdr->dim[4] < 1))
 		return;
+	if (hdr->dim[3] > kMaxEPI3D) {
+		printWarning("Unable to set Siemens XA sliceTiming due to excessive slices per volume (%d).\n", hdr->dim[3]);
+		return;
+	}
 	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1)) {
 		// issue875 use 2nd volume
 		int offset = 0;
@@ -8081,7 +8090,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #ifdef USING_DCM2NIIXFSWRAPPER
 	printMessage("load Image %s\n", nameList->str[indx]);
 #endif
-
 	// printMessage(" %d %d %d %d %lu\n", hdr0.dim[1], hdr0.dim[2], hdr0.dim[3], hdr0.dim[4], (unsigned long)[imgM length]);
 	bool isHasOverlay = dcmList[indx0].isHasOverlay;
 	bool isDerived = dcmList[indx0].isDerived;
@@ -8465,7 +8473,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			checkDateTimeOrder(&dcmList[dcmSort[0].indx], &dcmList[dcmSort[nConvert - 1].indx]);
 	}
 	bool ok = setBids(&dcmList[indx0], nameList->str[dcmSort[0].indx], nConvert, opts.isVerbose);
-
 	if (opts.isIgnoreDerivedAnd2D && !ok) {
 		printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
 		return EXIT_SUCCESS;

@@ -4838,6 +4838,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	//	philDTI[i].V[0] = -1;
 	// array for storing DimensionIndexValues
 	int numDimensionIndexValues = 0;
+	bool isSiemensXA = false;
 	//don't use stack! TDCMdim dcmDim[kMaxSlice2D];
 	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
 	for (int i = 0; i < kMaxSlice2D; i++) {
@@ -5818,6 +5819,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kSoftwareVersions: {
 			dcmStr(lLength, &buffer[lPos], d.softwareVersions);
 			int slen = (int)strlen(d.softwareVersions);
+			if ((slen > 4) && (strstr(d.softwareVersions, "XA10") != NULL))
+				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA11") != NULL))
 				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA20") != NULL))
@@ -5826,9 +5829,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA31") != NULL))
 				d.isXA10A = true;
-			if ((slen < 5) || (strstr(d.softwareVersions, "XA10") == NULL))
-				break;
-			d.isXA10A = true;
+			//isXA10A is designed to catch early Siemens bugs, while isSiemensXA also detect modern XA
+			if (d.isXA10A)
+				isSiemensXA = true;
+			if ((slen > 4) && (strstr(d.softwareVersions, "XA5") != NULL))
+				isSiemensXA = true; //XA50/XA51
+			if ((slen > 4) && (strstr(d.softwareVersions, "XA6") != NULL))
+				isSiemensXA = true; //XA60
+			if ((slen > 4) && (strstr(d.softwareVersions, "XA7") != NULL))
+				isSiemensXA = true; //XA70
 			break;
 		}
 		case kProtocolName: {
@@ -8265,7 +8274,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	if (d.phaseNumber > 0) // Philips TurboQUASAR set this uniquely for each slice
 		d.triggerDelayTime = 0.0;
 	// printf("%d\t%g\t%g\t%g\n", d.imageNum, d.acquisitionTime, d.triggerDelayTime, MRImageDynamicScanBeginTime);
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (d.isXA10A) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (strlen(seriesTimeTxt) > 1) && (isSiemensXA) && (d.xyzDim[3] == 1) && (d.xyzDim[4] < 2)) {
 		// printWarning(">>Ignoring series number of XA data saved as classic DICOM (issue 394)\n");
 		d.isStackableSeries = true;
 		d.imageNum += (d.seriesNum * 1000);
