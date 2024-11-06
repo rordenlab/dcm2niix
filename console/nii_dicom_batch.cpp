@@ -3264,8 +3264,14 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	int minInstance = dcmList[dcmSort[0].indx].imageNum;
 	int maxInstance = minInstance;
 	int maxPhase = 1; // Philips Multi-Phase
+	int idxFrame1 = 0;
+	int nFrameIs1 = 0;
 	for (int i = 0; i < nConvert; i++) {
 		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
+		if (dcmList[dcmSort[i].indx].frameNum == 1) {
+			nFrameIs1 ++;
+			idxFrame1 = i;
+		}
 		minVol = min(minVol, vol);
 		maxVol = max(maxVol, vol);
 		if (vol < kMaxDTI4D)
@@ -3274,6 +3280,20 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		minInstance = min(minInstance, instance);
 		maxInstance = max(maxInstance, instance);
 		maxPhase = max(maxPhase, dcmList[dcmSort[i].indx].phaseNumber);
+	}
+	if (nFrameIs1 > 1) {
+		//all samples of ReferencedFrameNumber (0008,1160) should have identical ImagePositionPatient
+		int lastVol = idxFrame1;
+		float maxDx = 0.0;
+		for (int i = 0; i < idxFrame1; i++) {
+			if (dcmList[dcmSort[i].indx].frameNum != 1)
+				continue;
+			float dx = fabs(intersliceDistanceSigned(dcmList[dcmSort[i].indx], dcmList[dcmSort[idxFrame1].indx]));
+			maxDx = max(dx, maxDx);
+		}
+		if (!isSameFloatGE(0.0, maxDx)) {
+			printError("%d images report ReferencedFrameNumber (0008,1160) of 1, but ImagePositionPatient varies by %gmm (issue 888).\n", nFrameIs1, maxDx);
+		}
 	}
 	bool isUseFrameReferenceTimeForVolume = false;
 	if (dcmList[dcmSort[0].indx].frameReferenceTime >= 0.0)

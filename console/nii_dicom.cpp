@@ -874,6 +874,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.radionuclideTotalDose = 0.0;
 	d.seriesNum = 1;
 	d.acquNum = 0;
+	d.frameNum = 0; //first shall be one
 	d.imageNum = 1;
 	d.imageStart = 0;
 	d.is3DAcq = false;				  // e.g. MP-RAGE, SPACE, TFE
@@ -4373,6 +4374,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kStudyDescription 0x0008 + (0x1030 << 16)  // LO
 #define kSeriesDescription 0x0008 + (0x103E << 16) // '0008' '103E' 'LO' 'SeriesDescription'
 #define kInstitutionalDepartmentName 0x0008 + (0x1040 << 16)
+#define kFrameNum 0x0008 + (0x1160 << 16) // IS
 #define kManufacturersModelName 0x0008 + (0x1090 << 16)
 #define kDerivationDescription 0x0008 + (0x2111 << 16)
 #define kReferencedImageEvidenceSQ (uint32_t)0x0008 + (0x9092 << 16)
@@ -5800,6 +5802,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		case kInstitutionalDepartmentName:
 			dcmStr(lLength, &buffer[lPos], d.institutionalDepartmentName);
+			break;
+		case kFrameNum:
+			d.frameNum = dcmStrInt(lLength, &buffer[lPos]);
 			break;
 		case kManufacturersModelName:
 			dcmStr(lLength, &buffer[lPos], d.manufacturersModelName);
