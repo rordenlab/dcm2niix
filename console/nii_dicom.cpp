@@ -1504,7 +1504,13 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 				CSA->sliceMeasurementDuration = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
 			else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
 				CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-			else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)) {
+			else if (strcmp(tagCSA.name, "ImaRelTablePosition") == 0) { //issue890
+				csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
+				CSA->tablePos[0] = 1.0;
+				CSA->tablePos[1] = lFloats[1];
+				CSA->tablePos[2] = lFloats[2];	
+				CSA->tablePos[3] = -lFloats[3];
+			} else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)) {
 				if (itemsOK > kMaxEPI3D) {
 					printError("Please increase kMaxEPI3D and recompile\n");
 				} else {
