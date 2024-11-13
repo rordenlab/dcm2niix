@@ -6502,6 +6502,16 @@ int nii_saveCrop(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	hdrX.srow_x[3] += hdr.srow_x[2] * ventralCrop;
 	hdrX.srow_y[3] += hdr.srow_y[2] * ventralCrop;
 	hdrX.srow_z[3] += hdr.srow_z[2] * ventralCrop;
+	//issue889 - also change origin for qform
+	//mork
+	mat44 Q44;
+	LOAD_MAT44(Q44,
+			   hdrX.srow_x[0], hdrX.srow_x[1], hdrX.srow_x[2], hdrX.srow_x[3],
+			   hdrX.srow_y[0], hdrX.srow_y[1], hdrX.srow_y[2], hdrX.srow_y[3],
+			   hdrX.srow_z[0], hdrX.srow_z[1], hdrX.srow_z[2], hdrX.srow_z[3]);
+	float dumdx, dumdy, dumdz;
+	nifti_mat44_to_quatern(Q44, &hdrX.quatern_b, &hdrX.quatern_c, &hdrX.quatern_d, &hdrX.qoffset_x, &hdrX.qoffset_y, &hdrX.qoffset_z, &dumdx, &dumdy, &dumdz, &hdrX.pixdim[0]);
+
 	// convert data
 	unsigned char *imX;
 	imX = (unsigned char *)malloc((nVox2D * slices) * 2); // sizeof( short) );
