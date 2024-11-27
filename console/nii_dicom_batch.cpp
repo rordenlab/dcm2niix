@@ -6691,6 +6691,11 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 			printWarning("Siemens MoCo? Bogus slice timing (range %g..%g, TR=%g seconds)\n", minT1, maxT1, TRms);
 		return;
 	}
+	if (((d->isLocalizer) || (d->isDerived)) && ((minT1 == maxT1) || (maxT1 >= TRms))) {
+		//no need to store or report non-sensical slice times for derived or localizers
+		d->CSA.sliceTiming[0] = -1.0;
+		return;
+	}
 	if ((!d->isLocalizer) && ((minT1 == maxT1) || (maxT1 >= TRms))) { // both first and second image corrupted
 		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g ms)\n", minT1, maxT1, TRms);
 		return;
