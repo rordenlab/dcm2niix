@@ -4699,6 +4699,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isHasBMatrix = false;
 	bool isHasBVec = false;
 	bool is2005140FSQ = false;
+	bool isSliceOrientVaries = false; //issue894
 	int sqDepth04000561 = -1;
 	bool is00089092SQ = false; // Referenced Image Evidence SQ
 	bool overlayOK = true;
@@ -7553,10 +7554,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				if ((!isSameFloatGE(d.orient[1], orient[1]) || !isSameFloatGE(d.orient[2], orient[2]) || !isSameFloatGE(d.orient[3], orient[3]) ||
 					 !isSameFloatGE(d.orient[4], orient[4]) || !isSameFloatGE(d.orient[5], orient[5]) || !isSameFloatGE(d.orient[6], orient[6]))) {
 					if (!d.isLocalizer)
-						printMessage("slice orientation varies (localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
+						printError("DICOM incompatible with NIfTI slice orientation varies (issue 894, localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
 									 d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
 									 orient[1], orient[2], orient[3], orient[4], orient[5], orient[6]);
 					d.isLocalizer = true;
+					isSliceOrientVaries = true;
 				}
 			}
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 6, d.orient);
@@ -8474,6 +8476,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	d.SAR = fmax(maxSAR, d.SAR);
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	// end: issue529
+	if (isSliceOrientVaries)
+		d.isValid = false; //issue894
 	if (hasDwiDirectionality)
 		d.isVectorFromBMatrix = false; // issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
 	// printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
