@@ -1,30 +1,30 @@
-//main_console.cpp dcm2niix
-// by Chris Rorden on 3/22/14, see license.txt
-// Copyright (c) 2014-2021 Chris Rorden. All rights reserved.
+// main_console.cpp dcm2niix
+//  by Chris Rorden on 3/22/14, see license.txt
+//  Copyright (c) 2014-2021 Chris Rorden. All rights reserved.
 
-//g++ -O3 main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix -lz
+// g++ -O3 main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix -lz
 
-//if you do not have zlib,you can compile without it
-// g++ -O3 -DmyDisableZLib main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix
-//or you can build your own copy:
-// to compile you will first want to build the Z library, then compile the project
-// cd zlib-1.2.8
-// sudo ./configure;
-// sudo make
+// if you do not have zlib,you can compile without it
+//  g++ -O3 -DmyDisableZLib main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -s -o dcm2niix
+// or you can build your own copy:
+//  to compile you will first want to build the Z library, then compile the project
+//  cd zlib-1.2.8
+//  sudo ./configure;
+//  sudo make
 
-//to generate combined 32-bit and 64-bit builds for OSX :
-// g++ -O3 -x c++ main_console.c nii_dicom.c nifti1_io_core.c nii_ortho.c nii_dicom_batch.c -s -arch x86_64 -o dcm2niix64 -lz
-// g++ -O3 -x c++ main_console.c nii_dicom.c nifti1_io_core.c nii_ortho.c nii_dicom_batch.c -s -arch i386 -o dcm2niix32 -lz
-// lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
+// to generate combined 32-bit and 64-bit builds for OSX :
+//  g++ -O3 -x c++ main_console.c nii_dicom.c nifti1_io_core.c nii_ortho.c nii_dicom_batch.c -s -arch x86_64 -o dcm2niix64 -lz
+//  g++ -O3 -x c++ main_console.c nii_dicom.c nifti1_io_core.c nii_ortho.c nii_dicom_batch.c -s -arch i386 -o dcm2niix32 -lz
+//  lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
 
-//On windows with mingw you may get "fatal error: zlib.h: No such file
-// to remedy, run "mingw-get install libz-dev" from mingw
+// On windows with mingw you may get "fatal error: zlib.h: No such file
+//  to remedy, run "mingw-get install libz-dev" from mingw
 
-//Alternatively, windows users with VisualStudio can compile this project
-// vcvarsall amd64
-// cl /EHsc main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -DmyDisableOpenJPEG /o dcm2niix
+// Alternatively, windows users with VisualStudio can compile this project
+//  vcvarsall amd64
+//  cl /EHsc main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -DmyDisableOpenJPEG /o dcm2niix
 
-//#define mydebugtest //automatically process directory specified in main, ignore input arguments
+// #define mydebugtest //automatically process directory specified in main, ignore input arguments
 
 #include <ctype.h>
 #include <float.h>
@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-//#include <unistd.h>
+// #include <unistd.h>
 #include "nifti1_io_core.h"
 #include "nii_dicom.h"
 #include "nii_dicom_batch.h"
@@ -62,7 +62,7 @@ const char *removePath(const char *path) { // "/usr/path/filename.exe" -> "filen
 	if (pDelimeter)
 		path = pDelimeter + 1;
 	return path;
-} //removePath()
+} // removePath()
 
 char bool2Char(bool b) {
 	if (b)
@@ -107,22 +107,22 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -q : only search directory for DICOMs (y/l/n, default y) [y=show number of DICOMs found, l=additionally list DICOMs found, n=no]\n");
 	printf("  -r : rename instead of convert DICOMs (y/n, default n)\n");
 	printf("  -s : single file mode, do not convert other images in folder (y/n, default n)\n");
-//text notes replaced with BIDS: this function is deprecated
-//printf("  -t : text notes includes private patient details (y/n, default n)\n");
-#if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
+// text notes replaced with BIDS: this function is deprecated
+// printf("  -t : text notes includes private patient details (y/n, default n)\n");
+#if !defined(_WIN64) && !defined(_WIN32) // shell script for Unix only
 	printf("  -u : up-to-date check\n");
 #endif
 	printf("  -v : verbose (n/y or 0/1/2, default 0) [no, yes, logorrheic]\n");
-	//#define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
-	//#define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
-	//#define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
+	// #define kNAME_CONFLICT_SKIP 0 //0 = write nothing for a file that exists with desired name
+	// #define kNAME_CONFLICT_OVERWRITE 1 //1 = overwrite existing file with same name
+	// #define kNAME_CONFLICT_ADD_SUFFIX 2 //default 2 = write with new suffix as a new file
 	printf("  -w : write behavior for name conflicts (0,1,2, default 2: 0=skip duplicates, 1=overwrite, 2=add suffix)\n");
-	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquistions)\n");
+	printf("  -x : crop 3D acquisitions (y/n/i, default n, use 'i'gnore to neither crop nor rotate 3D acquisitions)\n");
 	char gzCh = 'n';
 	if (opts.isGz)
 		gzCh = 'y';
 #if defined(_WIN64) || defined(_WIN32)
-//n.b. the optimal use of pigz requires pipes that are not provided for Windows
+// n.b. the optimal use of pigz requires pipes that are not provided for Windows
 #ifdef myDisableZLib
 	if (strlen(opts.pigzname) > 0)
 		printf("  -z : gz compress images (y/n/3, default %c) [y=pigz, n=no, 3=no,3D]\n", gzCh);
@@ -176,25 +176,25 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  %s -f mystudy%%s ~/dicomdir\n", cstr);
 	printf("  %s -o \"~/dir with spaces/dir\" ~/dicomdir\n", cstr);
 #endif
-} //showHelp()
+} // showHelp()
 
 int invalidParam(int i, const char *argv[]) {
-	if (strchr("yYnNoOhHiIjlLJBb01234",argv[i][0]))
+	if (strchr("yYnNoOhHiIjlLJBb01234", argv[i][0]))
 		return 0;
 
-	//if (argv[i][0] != '-') return 0;
+	// if (argv[i][0] != '-') return 0;
 	printf(" Error: invalid option '%s %s'\n", argv[i - 1], argv[i]);
 	return 1;
 }
 
-#if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
+#if !defined(_WIN64) && !defined(_WIN32) // shell script for Unix only
 
 int checkUpToDate() {
 #define URL "/rordenlab/dcm2niix/releases/"
 #define APIURL "\"https://api.github.com/repos" URL "latest\""
 #define HTMURL "https://github.com" URL
 #define SHELLSCRIPT "#!/usr/bin/env bash\n curl --silent " APIURL " | grep '\"tag_name\":' | sed -E 's/.*\"([^\"]+)\".*/\\1/'"
-//check first 13 characters, e.g. "v1.0.20171204"
+// check first 13 characters, e.g. "v1.0.20171204"
 #define versionChars 13
 	FILE *pipe = popen(SHELLSCRIPT, "r");
 	char ch, gitvers[versionChars + 1];
@@ -209,34 +209,34 @@ int checkUpToDate() {
 		}
 	}
 	pclose(pipe);
-	gitvers[n] = 0; //null terminate
-	if (n < 1) {	//script reported nothing
+	gitvers[n] = 0; // null terminate
+	if (n < 1) {	// script reported nothing
 		printf("Error: unable to check version with script:\n %s\n", SHELLSCRIPT);
-		return 3; //different from EXIT_SUCCESS (0) and EXIT_FAILURE (1)
+		return 3; // different from EXIT_SUCCESS (0) and EXIT_FAILURE (1)
 	}
-	if (nMatch == versionChars) { //versions match
+	if (nMatch == versionChars) { // versions match
 		printf("Good news: Your version is up to date: %s\n", gitvers);
 		return EXIT_SUCCESS;
 	}
-	//report error
+	// report error
 	char myvers[versionChars + 1];
 	for (int i = 0; i < versionChars; i++)
 		myvers[i] = kDCMvers[i];
-	myvers[versionChars] = 0; //null terminate
-	int myv = atoi(myvers + 5); //skip "v1.0."
-	int gitv = atoi(gitvers + 5); //skip "v1.0."
+	myvers[versionChars] = 0;	  // null terminate
+	int myv = atoi(myvers + 5);	  // skip "v1.0."
+	int gitv = atoi(gitvers + 5); // skip "v1.0."
 	if (myv > gitv) {
 		printf("Warning: your version ('%s') more recent than stable release ('%s')\n %s\n", myvers, gitvers, HTMURL);
-		return 2; //different from EXIT_SUCCESS (0) and EXIT_FAILURE (1)
+		return 2; // different from EXIT_SUCCESS (0) and EXIT_FAILURE (1)
 	}
 	printf("Error: your version ('%s') is not the latest release ('%s')\n %s\n", myvers, gitvers, HTMURL);
 	return EXIT_FAILURE;
-} //checkUpToDate()
+} // checkUpToDate()
 
-#endif //shell script for UNIX only
+#endif // shell script for UNIX only
 
 void showXML() {
-	//https://www.slicer.org/wiki/Documentation/Nightly/Developers/SlicerExecutionModel#XML_Schema
+	// https://www.slicer.org/wiki/Documentation/Nightly/Developers/SlicerExecutionModel#XML_Schema
 	printf("<?xml version="
 		   "1.0"
 		   " encoding="
@@ -251,16 +251,16 @@ void showXML() {
 	printf("</executable>\n");
 }
 
-//#define mydebugtest
+// #define mydebugtest
 int main(int argc, const char *argv[]) {
 	struct TDCMopts opts;
 	bool isSaveIni = false;
 	bool isOutNameSpecified = false;
 	bool isResetDefaults = false;
-	readIniFile(&opts, argv); //set default preferences
+	readIniFile(&opts, argv); // set default preferences
 #ifdef mydebugtest
-	//strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
-	//strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
+	// strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/Philips_PARREC_Rotation/NoRotation/DBIEX_4_1.PAR");
+	// strcpy(opts.indir, "/Users/rorden/desktop/sliceOrder/dicom2/test");
 	strcpy(opts.indir, "e:\\t1s");
 #else
 #if defined(__APPLE__)
@@ -275,11 +275,11 @@ int main(int argc, const char *argv[]) {
 		showHelp(argv, opts);
 		return 0;
 	}
-	//for (int i = 1; i < argc; i++) { printf(" argument %d= '%s'\n", i, argv[i]);}
+	// for (int i = 1; i < argc; i++) { printf(" argument %d= '%s'\n", i, argv[i]);}
 	int i = 1;
 	int lastCommandArg = 0;
 	while (i < (argc)) {									//-1 as final parameter is DICOM directory
-		if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { //command
+		if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { // command
 			if (argv[i][1] == 'h') {
 				showHelp(argv, opts);
 			} else if ((!strcmp(argv[i], "--big-endian")) && ((i + 1) < argc)) {
@@ -307,11 +307,11 @@ int main(int argc, const char *argv[]) {
 				else
 					opts.isProgress = 1;
 				if (argv[i][0] == '2')
-					opts.isProgress = 2; //logorrheic
+					opts.isProgress = 2; // logorrheic
 			} else if (!strcmp(argv[i], "--xml")) {
 				showXML();
 				return EXIT_SUCCESS;
-			} else if ((argv[i][1] == 'a') && ((i + 1) < argc)) { //adjacent DICOMs
+			} else if ((argv[i][1] == 'a') && ((i + 1) < argc)) { // adjacent DICOMs
 				i++;
 				if (invalidParam(i, argv))
 					return 0;
@@ -331,7 +331,7 @@ int main(int argc, const char *argv[]) {
 					if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 						opts.isCreateBIDS = false;
 					else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
-						//input only mode (for development): does not create NIfTI or BIDS outputs!
+						// input only mode (for development): does not create NIfTI or BIDS outputs!
 						opts.isCreateBIDS = false;
 						opts.isOnlyBIDS = true;
 					} else {
@@ -349,16 +349,16 @@ int main(int argc, const char *argv[]) {
 						opts.isAnonymizeBIDS = true;
 				} else if (argv[i][2] == 'i') { //"-bi M2022" provide BIDS subject ID
 					i++;
-					snprintf(opts.bidsSubject, kOptsStr-1, "%s", argv[i]);
+					snprintf(opts.bidsSubject, kOptsStr - 1, "%s", argv[i]);
 				} else if (argv[i][2] == 'v') { //"-bv 1222" provide BIDS subject visit
 					i++;
-					snprintf(opts.bidsSession, kOptsStr-1, "%s", argv[i]);
+					snprintf(opts.bidsSession, kOptsStr - 1, "%s", argv[i]);
 				} else
 					printf("Error: Unknown command line argument: '%s'\n", argv[i]);
 			} else if ((argv[i][1] == 'c') && ((i + 1) < argc)) {
 				i++;
 				snprintf(opts.imageComments, 24, "%s", argv[i]);
-				if (strlen(opts.imageComments) == 0) //empty string is flag to anonymize DICOM image comments
+				if (strlen(opts.imageComments) == 0) // empty string is flag to anonymize DICOM image comments
 					snprintf(opts.imageComments, 24, "%s", "\t");
 			} else if ((argv[i][1] == 'd') && ((i + 1) < argc)) {
 				i++;
@@ -376,12 +376,12 @@ int main(int argc, const char *argv[]) {
 					opts.saveFormat = kSaveFormatJNII;
 				if ((argv[i][0] == 'b') || (argv[i][0] == 'B') || (argv[i][0] == '4'))
 					opts.saveFormat = kSaveFormatBNII;
-				#ifndef myEnableJNIFTI
+#ifndef myEnableJNIFTI
 				if ((opts.saveFormat == kSaveFormatJNII) || (opts.saveFormat == kSaveFormatBNII)) {
 					printf("Recompile for JNIfTI support.\n");
 					return EXIT_SUCCESS;
 				}
-				#endif
+#endif
 			} else if ((argv[i][1] == 'g') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
@@ -392,16 +392,16 @@ int main(int argc, const char *argv[]) {
 					isResetDefaults = true;
 					printf("Defaults ignored\n");
 					setDefaultOpts(&opts, argv);
-					i = 0; //re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
+					i = 0; // re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
 				}
 				if (((argv[i][0] == 'o') || (argv[i][0] == 'O')) && (!isResetDefaults)) {
-					//reset defaults - do not read, but do write defaults
+					// reset defaults - do not read, but do write defaults
 					isSaveIni = true;
 					isResetDefaults = true;
 					printf("Defaults reset\n");
 					setDefaultOpts(&opts, argv);
-					//this next line is optional, otherwise "dcm2niix -f %p_%s -d o" and "dcm2niix -d o -f %p_%s" will create different results
-					i = 0; //re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
+					// this next line is optional, otherwise "dcm2niix -f %p_%s -d o" and "dcm2niix -d o -f %p_%s" will create different results
+					i = 0; // re-read all settings for this pass, e.g. "dcm2niix -f %p_%s -d o" should save filename as "%p_%s"
 				}
 			} else if ((argv[i][1] == 'i') && ((i + 1) < argc)) {
 				i++;
@@ -425,19 +425,16 @@ int main(int argc, const char *argv[]) {
 				if (argv[i][0] == '0') {
 					opts.diffCyclingModeGE = 0;
 					printf("undocumented '--diffCyclingModeGE 0' cycling OFF\n");
-				}
-				else if (argv[i][0] == '1') {
+				} else if (argv[i][0] == '1') {
 					opts.diffCyclingModeGE = 1;
 					printf("undocumented '--diffCyclingModeGE 1' cycling All-TR\n");
-				}
-				else if (argv[i][0] == '2') {
+				} else if (argv[i][0] == '2') {
 					opts.diffCyclingModeGE = 2;
 					printf("undocumented '--diffCyclingModeGE 2' cycling 2-TR\n");
-				}
-				else if (argv[i][0] == '3') {
+				} else if (argv[i][0] == '3') {
 					opts.diffCyclingModeGE = 3;
 					printf("undocumented '--diffCyclingModeGE 3' cycling 3-TR\n");
-				}				
+				}
 			} else if ((argv[i][1] == 'l') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
@@ -460,7 +457,7 @@ int main(int argc, const char *argv[]) {
 					opts.isForceStackSameSeries = 2;
 				if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
 					opts.isForceStackDCE = false;
-					//printf("Advanced feature: '-m o' merges images despite varying series number\n");
+					// printf("Advanced feature: '-m o' merges images despite varying series number\n");
 				}
 				if ((argv[i][0] == '2')) {
 					opts.isIgnoreSeriesInstanceUID = true;
@@ -504,7 +501,7 @@ int main(int argc, const char *argv[]) {
 					opts.isCreateText = false;
 				else
 					opts.isCreateText = true;
-#if !defined(_WIN64) && !defined(_WIN32) //shell script for Unix only
+#if !defined(_WIN64) && !defined(_WIN32) // shell script for Unix only
 			} else if (argv[i][1] == 'u') {
 				return checkUpToDate();
 #endif
@@ -515,12 +512,12 @@ int main(int argc, const char *argv[]) {
 				i++;
 				if (invalidParam(i, argv))
 					return 0;
-				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0')) //0: verbose OFF
+				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0')) // 0: verbose OFF
 					opts.isVerbose = 0;
-				else if ((argv[i][0] == 'h') || (argv[i][0] == 'H') || (argv[i][0] == '2')) //2: verbose HYPER
+				else if ((argv[i][0] == 'h') || (argv[i][0] == 'H') || (argv[i][0] == '2')) // 2: verbose HYPER
 					opts.isVerbose = 2;
 				else
-					opts.isVerbose = 1; //1: verbose ON
+					opts.isVerbose = 1; // 1: verbose ON
 			} else if ((argv[i][1] == 'w') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
@@ -548,7 +545,7 @@ int main(int argc, const char *argv[]) {
 				if (invalidParam(i, argv))
 					return 0;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')) {
-					opts.isFlipY = true; //force use of internal compression instead of pigz
+					opts.isFlipY = true; // force use of internal compression instead of pigz
 					strcpy(opts.pigzname, "");
 				} else if ((argv[i][0] == 'n') || (argv[i][0] == 'N'))
 					opts.isFlipY = false;
@@ -559,19 +556,19 @@ int main(int argc, const char *argv[]) {
 				if (invalidParam(i, argv))
 					return 0;
 				if ((argv[i][0] == '3')) {
-					opts.isGz = false; //uncompressed 3D
+					opts.isGz = false; // uncompressed 3D
 					opts.isSave3D = true;
 				} else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
 					opts.isGz = true;
 #ifndef myDisableZLib
-					strcpy(opts.pigzname, ""); //force use of internal compression instead of pigz
+					strcpy(opts.pigzname, ""); // force use of internal compression instead of pigz
 #endif
 				} else if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 					opts.isGz = false;
 				else
 					opts.isGz = true;
 				if (argv[i][0] == 'o')
-					opts.isPipedGz = true; //pipe to pigz without saving uncompressed to disk
+					opts.isPipedGz = true; // pipe to pigz without saving uncompressed to disk
 			} else if ((argv[i][1] == 'f') && ((i + 1) < argc)) {
 				i++;
 				strcpy(opts.filename, argv[i]);
@@ -583,7 +580,7 @@ int main(int argc, const char *argv[]) {
 				i++;
 				double seriesNumber = atof(argv[i]);
 				if (seriesNumber < 0)
-					opts.numSeries = -1.0; //report series: convert none
+					opts.numSeries = -1.0; // report series: convert none
 				else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {
 					opts.seriesNumber[opts.numSeries] = seriesNumber;
 					opts.numSeries += 1;
@@ -594,32 +591,32 @@ int main(int argc, const char *argv[]) {
 				printf(" Error: invalid option '%s %s'\n", argv[i], argv[i + 1]);
 			;
 			lastCommandArg = i;
-		}	 //if parameter is a command
-		i++; //read next parameter
-	}		 //while parameters to read
+		} // if parameter is a command
+		i++; // read next parameter
+	} // while parameters to read
 #ifndef myDisableZLib
 	if ((opts.isGz) && (opts.dirSearchDepth < 1) && (strlen(opts.pigzname) > 0)) {
 		strcpy(opts.pigzname, "");
 		printf("n.b. Setting directory search depth of zero invokes internal gz (network mode)\n");
 	}
 #endif
-	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { //sensible naming scheme for renaming option
-//strcpy(opts.filename,argv[i]);
-//2019 - now include "%o" to append media SOP UID, as instance number is not required to be unique
+	if ((opts.isRenameNotConvert) && (!isOutNameSpecified)) { // sensible naming scheme for renaming option
+// strcpy(opts.filename,argv[i]);
+// 2019 - now include "%o" to append media SOP UID, as instance number is not required to be unique
 #if defined(_WIN64) || defined(_WIN32)
-		strcpy(opts.filename, "%t\\%s_%p\\%4r_%o.dcm"); //nrrd or nhdr (windows folders)
+		strcpy(opts.filename, "%t\\%s_%p\\%4r_%o.dcm"); // nrrd or nhdr (windows folders)
 #else
-		strcpy(opts.filename, "%t/%s_%p/%4r_%o.dcm"); //nrrd or nhdr (unix folders)
+		strcpy(opts.filename, "%t/%s_%p/%4r_%o.dcm"); // nrrd or nhdr (unix folders)
 #endif
 		printf("renaming without output filename, assuming '-f %s'\n", opts.filename);
 	}
 	if (isSaveIni)
 		saveIniFile(opts);
-	//printf("%d %d",argc,lastCommandArg);
+	// printf("%d %d",argc,lastCommandArg);
 	if (argc == (lastCommandArg + 1)) { //+1 as array indexed from 0
-		//the user did not provide an input filename, report filename structure
+		// the user did not provide an input filename, report filename structure
 		char niiFilename[1024];
-		strcpy(opts.outdir, ""); //no input supplied
+		strcpy(opts.outdir, ""); // no input supplied
 		nii_createDummyFilename(niiFilename, opts);
 		printf("%s\n", niiFilename);
 		return EXIT_SUCCESS;
@@ -649,7 +646,7 @@ int main(int argc, const char *argv[]) {
 		printf("Conversion required %f seconds.\n", ((float)(clock() - start)) / CLOCKS_PER_SEC);
 #endif
 	}
-	//if (isSaveIni) //we now save defaults earlier, in case of early termination.
+	// if (isSaveIni) //we now save defaults earlier, in case of early termination.
 	//	saveIniFile(opts);
 	return EXIT_SUCCESS;
 }

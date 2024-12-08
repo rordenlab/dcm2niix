@@ -1,0 +1,38 @@
+{
+  "name": "@niivue/dcm2niix",
+  "version": "0.1.1-dev.2",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node esbuild.config.js",
+    "makeWasm": "make wasm -C ../console",
+    "prebuild": "npm run makeWasm && node scripts/pre-build.js -i src/dcm2niix.js -o src/dcm2niix.js",
+    "demo": "npm run build && npx http-server .",
+    "pub": "npm run build && npm publish --access public"
+  },
+  "keywords": [
+    "niivue",
+    "dcm2niix",
+    "nifti",
+    "dicom",
+    "medical",
+    "imaging",
+    "conversion",
+    "wasm"
+  ],
+  "author": "dcm2niix developers",
+  "license": "BSD-2-Clause",
+  "description": "A javascript library to easily use the WASM build of Chris Rorden's dcm2niix command line program but in the browser.",
+  "files": [
+    "dist/"
+  ],
+  "devDependencies": {
+    "esbuild": "^0.23.1"
+  }
+}

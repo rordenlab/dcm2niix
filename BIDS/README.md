@@ -78,10 +78,11 @@ These fields are present regardless of modality (e.g. MR, CT, PET).
 
 | Field                    | Unit | Comments            | Defined By |
 |--------------------------|------|---------------------|------------|
-| BodyPartExamined         |      | DICOM tag 0018,0015 | D          |
+| BodyPart                 |      | DICOM tag 0018,0015 | B          |
 | PatientPosition          |      | DICOM tag 0020,0032 | D          |
 | ProcedureStepDescription |      | DICOM tag 0040,0254 | D          |
 | SoftwareVersions         |      | DICOM tag 0020,1020 | B          |
+| StudyDescription         |      | DICOM tag 0008,1030 | D          |
 | SeriesDescription        |      | DICOM tag 0008,103E | D          |
 | ProtocolName             |      | DICOM tag 0018,1030 | D          |
 | ScanningSequence         |      | DICOM tag 0018,0020 | B          |
@@ -107,6 +108,9 @@ These fields contain personally identifiable information. By default dcm2niix wi
 | PatientID              |      | DICOM tag 0010,0020 | D          |
 | AccessionNumber        |      | DICOM tag 0008,0050 | D          |
 | PatientBirthDate       |      | DICOM tag 0010,0030 | D          |
+| PatientSex             |      | DICOM tag 0010,0040 | D          |
+| PatientAge             |      | DICOM tag 0010,1010 | D          |
+| PatientSize            |      | DICOM tag 0010,1020 | D          |
 | PatientWeight          | kg   | DICOM tag 0010,1030 | D          |
 | AcquisitionDateTime    |      | DICOM tag 0008,002A | D          |
 
@@ -181,23 +185,31 @@ PET fields extracted from [DICOM tags](http://dicom.nema.org/medical/dicom/curre
 
 The term ECAT in the comments suggests that values are defined by the [ECAT7](http://www.turkupetcentre.net/petanalysis/format_image_ecat.html) format. Therefore, these fields will not be populated for DICOM data.
 
-| Field                        | Unit | Comments                    | Defined By |
-|------------------------------|------|-----------------------------|------------|
-| Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT | D          |
-| RadionuclidePositronFraction | f    | DICOM tag 0018,1076         | D          |
-| RadionuclideTotalDose        | MBq  | DICOM tag 0018,1074         | D          |
-| RadionuclideHalfLife         | s    | DICOM tag 0018,1075         | D          |
-| DoseCalibrationFactor        |      | DICOM tag 0054,1322         | D          |
-| IsotopeHalfLife              |      | ECAT                        | D          |
-| Dosage                       |      | ECAT                        | D          |
-| ConvolutionKernel            |      | DICOM tag 0018,1210         | D          |
-| Units                        |      | DICOM tag 0054,1001         | D          |
-| DecayCorrection              |      | DICOM tag 0054,1102         | D          |
-| AttenuationCorrectionMethod  |      | DICOM tag 0054,1101         | D          |
-| ReconstructionMethod         |      | DICOM tag 0054,1103         | D          |
-| DecayFactor                  |      | DICOM tag 0054,1321         | D          |
-| FrameTimesStart              | s    | DICOM tags 0008,0022        | D          |
-| FrameDuration                | s    | DICOM tag 0018,1242         | D          |
+| Field                        | Unit | Comments                         | Defined By |
+|------------------------------|------|----------------------------------|------------|
+| IsotopeHalfLife              |      | ECAT                             | D          |
+| Dosage                       |      | ECAT                             | D          |
+| FrameTimesStart              | s    | DICOM tag 0008,0022              | B          |
+| TracerRadionuclide           |      | DICOM tag 0008,0100 or 0008,0104 | B          |
+| Radiopharmaceutical          |      | DICOM tag 0018,0031 or ECAT      | D          |
+| InjectedRadioactivity        | MBq  | DICOM tag 0018,1074              | B          |
+| RadionuclideHalfLife         | s    | DICOM tag 0018,1075              | D          |
+| RadionuclidePositronFraction | f    | DICOM tag 0018,1076              | D          |
+| ConvolutionKernel            |      | DICOM tag 0018,1210              | D          |
+| Units                        |      | DICOM tag 0054,1001              | B          |
+| AttenuationCorrectionMethod  |      | DICOM tag 0054,1101              | B          |
+| DecayCorrection              |      | DICOM tag 0054,1102              | D          |
+| ReconstructionMethod         |      | DICOM tag 0054,1103              | B          |
+| DecayCorrectionFactor        |      | DICOM tag 0054,1321              | B          |
+| DoseCalibrationFactor        |      | DICOM tag 0054,1322              | B          |
+| ScatterFraction              |      | DICOM tag 0054,1323              | B          |
+| FrameDuration                | s    | DICOM tag 0018,1242              | B          |
+
+n.b. ConvolutionKernel (0018,1210) can be parsed to BIDS `ReconFilterType` and `ReconFilterSize`. However, manufacturer variations (Siemens: `XYZGAUSSIAN3.00` GE `Rad: \ rectangle \  4.000000 mm  \ Ax: \ rectangle \  8.500000 mm` require complex logic).
+
+n.b. ReconstructionMethod (0054,1103) can be parsed to ReconMethodName, ReconMethodParameterLabels, ReconMethodParameterUnits and ReconMethodParameterValues. However, this requires maniufacturer specific logic (e.g. Siemens `OP-OSEM4i21s`, GE `3D Kinahan - Rogers`
+
+For Philips scanners, [Source Isotope Name](https://dicom.innolitics.com/ciods/rt-brachy-treatment-record/rt-brachy-session-record/30080100/300a0226) may be a good source for TracerRadionuclide
 
 ## Manufacturer Fields
 
@@ -232,8 +244,18 @@ Data unique to [GE](https://github.com/rordenlab/dcm2niix/tree/master/GE). Deter
 | ASLLabelingTechnique           |      | DICOM tag 0043,10A4      | D          |
 | LabelingDuration               | s    | DICOM tag 0043,10A5      | B          |
 | SliceTiming                    | s    | [see notes](https://github.com/rordenlab/dcm2niix/tree/master/GE#slice-timing)  | B          |
-| CompressedSensingFactor        |      | DICOM tag 0043,10b7      | D          |
-| DeepLearningFactor             |      | DICOM tag 0043,10ca      | D          |
+| CompressedSensingFactor        |      | DICOM tag 0043,10B7      | D          |
+| TablePosition                  | mm   | The 3rd value of DICOM tag 0043,10B2 - the value of DICOM tag 0019,107F    | B          |
+| DeepLearningFactor             |      | DICOM tag 0043,10CA      | D          |
+
+### Manufacturer GE (Positron Emission Tomography)
+
+[GE Private Tags](https://www.gehealthcare.com/-/jssmedia/b86f641ae0bd4a7b919c79215e5c01e7)
+
+| Field                              | Unit | Comments              | Defined By |
+|------------------------------------|------|-----------------------|------------|
+| InjectedVolume                     |      | DICOM tag 0009,103A   | B          |
+| ReconFilterSize                    |      | DICOM tag 0009,108F   | B          |
 
 ### Manufacturer Philips
 
@@ -246,11 +268,12 @@ Data unique to Philips, including [custom intensity scaling](https://www.ncbi.nl
 | PhilipsRWVIntercept                |      | DICOM tag 0040,9224              | D          |
 | PhilipsRescaleSlope                |      | DICOM tag 0028,1053              | D          |
 | PhilipsRescaleIntercept            |      | DICOM tag 0028,1052              | D          |
-| PhilipsScaleSlope                  |      | DICOM tag 2005,100E              | D          |
 | UsePhilipsFloatNotDisplayScaling   |      | dcm2niix option `-p y` or `-p n` | D          |
 | PartialFourierEnabled              |      | DICOM tag 0018,9081, `YES`       | D          |
 | PhaseEncodingStepsNoPartialFourier |      | DICOM tag 0018,9231              | D          |
 | WaterFatShift                      |      | DICOM tag 2001,1022              | D          |
+| PhilipsScaleSlope                  |      | DICOM tag 2005,100E              | D          |
+| TablePosition                      | mm   | DICOM tag 2005,143C              | B          |
 
 ### Manufacturer Siemens (Arterial Spin Labeling)
 
@@ -320,6 +343,7 @@ Fields specific to Siemens V*-series (e.g. VB, VE) MRI systems (e.g. Verio, Trio
 | ConsistencyInfo                |                                                 | The more complete software version, e.g. VE11C or VE11E instead of just VE11.                                                                                                                                                                                                                                                                                                                          | D          |
 | CoilCombinationMethod          |                                                 | Detects `Sum of Squares` and `Adaptive Combine`                                                                                                                                                                                                                                                                                                                                                        | B          |
 | MatrixCoilMode                 |                                                 | Detects `SENSE` and `GRAPPA`                                                                                                                                                                                                                                                                                                                                                                           | B          |
+| TablePosition                  | mm                                              | DICOM tag 0019,1014                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | DwellTime                      |                                                 | DICOM tag 0019,1018                                                                                                                                                                                                                                                                                                                                                                                    | B          |
 | BandwidthPerPixelPhaseEncode   | Hz                                              | DICOM tag 0019,1028                                                                                                                                                                                                                                                                                                                                                                                    | D          |
 | ImageOrientationText           |                                                 | DICOM tag 0051,100E                                                                                                                                                                                                                                                                                                                                                                                    | D          |
@@ -335,9 +359,10 @@ Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tre
 | BandwidthPerPixelPhaseEncode | Hz   | DICOM tag 0021,1153        | D          |
 | ScanningSequence             |      | DICOM tag 0021,105a        | D          |
 | PostLabelingDelay            | s    | DICOM tag 0018,9258        | B          |
+| TablePosition                | mm   | DICOM tag 0021,1005        | B          |
 | NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
 | PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
-| SpoilingState                |      | 0021,105B                  | B          |
+| SpoilingState                |      | DICOM tag 0021,105B        | B          |
 
 Siemens also includes some sequence information in the private MRPhoenixProtocol (0021,1019) tag. You can view this with [gdcmdump](https://gdcm.sourceforge.net/html/gdcmdump.html), e.g. `gdcmdump --mrprotocol img.dcm`. Fields that dcm2niix inspects include `sPat.lAccelFact3D `, `sPat.lAccelFactPE`, `sPat.lRefLinesPE` and `sPat.ucPATMode`. The behavior of dcm2niix will be more well documented as our understanding of this tag improves.
 

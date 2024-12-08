@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dcm2niix WASM Demo</title>
+</head>
+
+<body>
+  <h1>dcm2niix WASM Demo</h1>
+  <input type="file" id="fileInput" webkitdirectory multiple>
+  <button id="processButton">Process Image</button>
+  <div id="dropTarget" style="margin: 2rem; color: white; width: 100px; height: 100px; background-color: red;">
+    Drop files here
+  </div>
+  <p id="status">Please select a dicom folder to process.</p>
+  <a id="downloadLink" style="display: none;">Download Processed Image(s)</a>
+
+  <script type="module">
+    import { Dcm2niix } from './dist/index.js';
+
+    const fileInput = document.getElementById('fileInput');
+    const processButton = document.getElementById('processButton');
+    const status = document.getElementById('status');
+    const downloadLink = document.getElementById('downloadLink');
+
+    const dropTarget = document.getElementById('dropTarget');
+    dropTarget.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      dropTarget.style.backgroundColor = 'green';
+    });
+
+    dropTarget.addEventListener('dragleave', (event) => {
+      event.preventDefault();
+      dropTarget.style.backgroundColor = 'red';
+    });
+
+    dropTarget.ondrop = handleDrop;
+
+    async function handleDrop(e) {
+      e.preventDefault(); // prevent navigation to open file
+      const items = e.dataTransfer.items;
+      const files = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i].webkitGetAsEntry();
+        if (item) {
+          await traverseFileTree(item, '', files);
+        }
+      }
+      const dcm2niix = new Dcm2niix();
+      await dcm2niix.init()
+      const resultFileList = await dcm2niix.inputFromDropItems(files).run()
+
+      resultFileList.forEach((resultFile, index) => {
+          let url = URL.createObjectURL(resultFile);
+          const downloadLink = document.createElement('a');
+          downloadLink.href = url;
+          downloadLink.download = resultFile.name;
+          downloadLink.textContent = `Download ${resultFile.name}`;
+          downloadLink.style.display = 'block';
+          document.body.appendChild(downloadLink);
+        });
+        status.textContent = 'Processing complete!';
+    }
+
+    async function traverseFileTree(item, path = '', fileArray) {
+      return new Promise((resolve) => {
+        if (item.isFile) {
+          item.file(file => {
+            file.fullPath = path + file.name; 
+            // IMPORTANT: _webkitRelativePath is required for dcm2niix to work.
+            // We need to add this property so we can parse multiple directories correctly.
+            // the "webkitRelativePath" property on File objects is read-only, so we can't set it directly, hence the underscore.
+            file._webkitRelativePath = path + file.name;
+            fileArray.push(file);
+            resolve();
+          });
+        } else if (item.isDirectory) {
+          const dirReader = item.createReader();
+          const readAllEntries = () => {
+            dirReader.readEntries(entries => {
+              if (entries.length > 0) {
+                const promises = [];
+                for (const entry of entries) {
+                  promises.push(traverseFileTree(entry, path + item.name + '/', fileArray));
+                }
+                Promise.all(promises).then(readAllEntries);
+              } else {
+                resolve();
+              }
+            });
+          };
+          readAllEntries();
+        }
+      });
+    }
+
+    let selectedFiles = null;
+
+    fileInput.addEventListener('change', async (event) => {
+      selectedFiles = event.target.files;
+      console.log(selectedFiles);
+    });
+
+    processButton.addEventListener('click', async () => {
+      status.textContent = 'Processing...';
+      try {
+        console.log('Initializing dcm2niix wasm...');
+        const dcm2niix = new Dcm2niix();
+        await dcm2niix.init();
+        console.log('dcm2niix wasm initialized.');
+
+        const t0 = performance.now();
+
+        const inputFileList = selectedFiles
+        const resultFileList = await dcm2niix.input(inputFileList).run()
+        console.log(resultFileList);
+
+        const t1 = performance.now();
+        console.log("dcm2niix wasm took " + (t1 - t0) + " milliseconds.")
+
+        resultFileList.forEach((resultFile, index) => {
+          let url = URL.createObjectURL(resultFile);
+          const downloadLink = document.createElement('a');
+          downloadLink.href = url;
+          downloadLink.download = resultFile.name;
+          downloadLink.textContent = `Download ${resultFile.name}`;
+          downloadLink.style.display = 'block';
+          document.body.appendChild(downloadLink);
+        });
+
+
+        status.textContent = 'Processing complete!';
+      } catch (error) {
+        console.error('Processing failed:', error);
+        status.textContent = 'Processing failed. Please check the console for details.';
+      } finally {
+        processButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>

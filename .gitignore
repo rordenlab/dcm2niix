@@ -10,6 +10,11 @@ __pycache__/
 /_cmake_test_compile/
 /dcm2niix/_dist_ver.py
 /dcm2niix/dcm2niix
-MANIFEST
+/MANIFEST*
 /*.egg*/
 /dist/
+
+dist
+node_modules
+dcm2niix.js
+dcm2niix.wasm

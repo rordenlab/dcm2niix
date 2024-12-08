@@ -31,12 +31,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef _MSC_VER
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#pragma warning (disable : 4996)
+#pragma warning(disable : 4996)
 #else
 #include <dirent.h>
 #include <sys/stat.h>
 #endif
-
 
 /* types */
 
@@ -84,7 +83,6 @@ typedef struct
 #endif
 } tinydir_dir;
 
-
 /* declarations */
 
 _TINYDIR_FUNC
@@ -106,19 +104,15 @@ int tinydir_open_subdir_n(tinydir_dir *dir, size_t i);
 _TINYDIR_FUNC
 int _tinydir_file_cmp(const void *a, const void *b);
 
-
 /* definitions*/
 
 _TINYDIR_FUNC
-int tinydir_open(tinydir_dir *dir, const char *path)
-{
-	if (dir == NULL || path == NULL || strlen(path) == 0)
-	{
+int tinydir_open(tinydir_dir *dir, const char *path) {
+	if (dir == NULL || path == NULL || strlen(path) == 0) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (strlen(path) + _TINYDIR_PATH_EXTRA >= _TINYDIR_PATH_MAX)
-	{
+	if (strlen(path) + _TINYDIR_PATH_EXTRA >= _TINYDIR_PATH_MAX) {
 		errno = ENAMETOOLONG;
 		return -1;
 	}
@@ -150,8 +144,7 @@ int tinydir_open(tinydir_dir *dir, const char *path)
 	dir->has_next = 1;
 #ifndef _MSC_VER
 	dir->_e = readdir(dir->_d);
-	if (dir->_e == NULL)
-	{
+	if (dir->_e == NULL) {
 		dir->has_next = 0;
 	}
 #endif
@@ -164,56 +157,46 @@ bail:
 }
 
 _TINYDIR_FUNC
-int tinydir_open_sorted(tinydir_dir *dir, const char *path)
-{
+int tinydir_open_sorted(tinydir_dir *dir, const char *path) {
 	/* Count the number of files first, to pre-allocate the files array */
 	size_t n_files = 0;
-	if (tinydir_open(dir, path) == -1)
-	{
+	if (tinydir_open(dir, path) == -1) {
 		return -1;
 	}
-	while (dir->has_next)
-	{
+	while (dir->has_next) {
 		n_files++;
-		if (tinydir_next(dir) == -1)
-		{
+		if (tinydir_next(dir) == -1) {
 			goto bail;
 		}
 	}
 	tinydir_close(dir);
 
-	if (tinydir_open(dir, path) == -1)
-	{
+	if (tinydir_open(dir, path) == -1) {
 		return -1;
 	}
 
 	dir->n_files = 0;
 	dir->_files = (tinydir_file *)malloc(sizeof *dir->_files * n_files);
-	if (dir->_files == NULL)
-	{
+	if (dir->_files == NULL) {
 		errno = ENOMEM;
 		goto bail;
 	}
-	while (dir->has_next)
-	{
+	while (dir->has_next) {
 		tinydir_file *p_file;
 		dir->n_files++;
 
 		p_file = &dir->_files[dir->n_files - 1];
-		if (tinydir_readfile(dir, p_file) == -1)
-		{
+		if (tinydir_readfile(dir, p_file) == -1) {
 			goto bail;
 		}
 
-		if (tinydir_next(dir) == -1)
-		{
+		if (tinydir_next(dir) == -1) {
 			goto bail;
 		}
 
 		/* Just in case the number of files has changed between the first and
 		second reads, terminate without writing into unallocated memory */
-		if (dir->n_files == n_files)
-		{
+		if (dir->n_files == n_files) {
 			break;
 		}
 	}
@@ -228,30 +211,25 @@ bail:
 }
 
 _TINYDIR_FUNC
-void tinydir_close(tinydir_dir *dir)
-{
-	if (dir == NULL)
-	{
+void tinydir_close(tinydir_dir *dir) {
+	if (dir == NULL) {
 		return;
 	}
 
 	memset(dir->path, 0, sizeof(dir->path));
 	dir->has_next = 0;
 	dir->n_files = 0;
-	if (dir->_files != NULL)
-	{
+	if (dir->_files != NULL) {
 		free(dir->_files);
 	}
 	dir->_files = NULL;
 #ifdef _MSC_VER
-	if (dir->_h != INVALID_HANDLE_VALUE)
-	{
+	if (dir->_h != INVALID_HANDLE_VALUE) {
 		FindClose(dir->_h);
 	}
 	dir->_h = INVALID_HANDLE_VALUE;
 #else
-	if (dir->_d)
-	{
+	if (dir->_d) {
 		closedir(dir->_d);
 	}
 	dir->_d = NULL;
@@ -260,15 +238,12 @@ void tinydir_close(tinydir_dir *dir)
 }
 
 _TINYDIR_FUNC
-int tinydir_next(tinydir_dir *dir)
-{
-	if (dir == NULL)
-	{
+int tinydir_next(tinydir_dir *dir) {
+	if (dir == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (!dir->has_next)
-	{
+	if (!dir->has_next) {
 		errno = ENOENT;
 		return -1;
 	}
@@ -283,8 +258,7 @@ int tinydir_next(tinydir_dir *dir)
 		dir->has_next = 0;
 #ifdef _MSC_VER
 		if (GetLastError() != ERROR_SUCCESS &&
-			GetLastError() != ERROR_NO_MORE_FILES)
-		{
+			GetLastError() != ERROR_NO_MORE_FILES) {
 			tinydir_close(dir);
 			errno = EIO;
 			return -1;
@@ -296,10 +270,8 @@ int tinydir_next(tinydir_dir *dir)
 }
 
 _TINYDIR_FUNC
-int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
-{
-	if (dir == NULL || file == NULL)
-	{
+int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file) {
+	if (dir == NULL || file == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -313,15 +285,15 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 		return -1;
 	}
 	if (strlen(dir->path) +
-		strlen(
+			strlen(
 #ifdef _MSC_VER
-			dir->_f.cFileName
+				dir->_f.cFileName
 #else
-			dir->_e->d_name
+				dir->_e->d_name
 #endif
-		) + 1 + _TINYDIR_PATH_EXTRA >=
-		_TINYDIR_PATH_MAX)
-	{
+				) +
+			1 + _TINYDIR_PATH_EXTRA >=
+		_TINYDIR_PATH_MAX) {
 		/* the path for the file will be too long */
 		errno = ENAMETOOLONG;
 		return -1;
@@ -332,8 +304,7 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 #else
 			dir->_e->d_name
 #endif
-		) >= _TINYDIR_FILENAME_MAX)
-	{
+			) >= _TINYDIR_FILENAME_MAX) {
 		errno = ENAMETOOLONG;
 		return -1;
 	}
@@ -342,17 +313,16 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 	strcat(file->path, "/");
 	strcpy(file->name,
 #ifdef _MSC_VER
-		dir->_f.cFileName
+		   dir->_f.cFileName
 #else
-		dir->_e->d_name
+		   dir->_e->d_name
 #endif
 	);
-    /* Limit the number of bytes copied to the maximum length of the name,
-    to avoid spurious compiler warnings about possible overlap */
+	/* Limit the number of bytes copied to the maximum length of the name,
+	to avoid spurious compiler warnings about possible overlap */
 	strncat(file->path, file->name, _TINYDIR_FILENAME_MAX);
 #ifndef _MSC_VER
-	if (stat(file->path, &file->_s) == -1)
-	{
+	if (stat(file->path, &file->_s) == -1) {
 		return -1;
 	}
 #endif
@@ -365,18 +335,17 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 	file->is_reg =
 #ifdef _MSC_VER
 		!!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_NORMAL) ||
-		(
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_DEVICE) &&
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_ENCRYPTED) &&
+		(!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_DEVICE) &&
+		 !(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+		 !(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_ENCRYPTED) &&
 #ifdef FILE_ATTRIBUTE_INTEGRITY_STREAM
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_INTEGRITY_STREAM) &&
+		 !(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_INTEGRITY_STREAM) &&
 #endif
 #ifdef FILE_ATTRIBUTE_NO_SCRUB_DATA
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_NO_SCRUB_DATA) &&
+		 !(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_NO_SCRUB_DATA) &&
 #endif
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_OFFLINE) &&
-			!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_TEMPORARY));
+		 !(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_OFFLINE) &&
+		 !(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_TEMPORARY));
 #else
 		S_ISREG(file->_s.st_mode);
 #endif
@@ -385,15 +354,12 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 }
 
 _TINYDIR_FUNC
-int tinydir_readfile_n(const tinydir_dir *dir, tinydir_file *file, size_t i)
-{
-	if (dir == NULL || file == NULL)
-	{
+int tinydir_readfile_n(const tinydir_dir *dir, tinydir_file *file, size_t i) {
+	if (dir == NULL || file == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (i >= dir->n_files)
-	{
+	if (i >= dir->n_files) {
 		errno = ENOENT;
 		return -1;
 	}
@@ -404,24 +370,20 @@ int tinydir_readfile_n(const tinydir_dir *dir, tinydir_file *file, size_t i)
 }
 
 _TINYDIR_FUNC
-int tinydir_open_subdir_n(tinydir_dir *dir, size_t i)
-{
+int tinydir_open_subdir_n(tinydir_dir *dir, size_t i) {
 	char path[_TINYDIR_PATH_MAX];
-	if (dir == NULL)
-	{
+	if (dir == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (i >= dir->n_files || !dir->_files[i].is_dir)
-	{
+	if (i >= dir->n_files || !dir->_files[i].is_dir) {
 		errno = ENOENT;
 		return -1;
 	}
 
 	strcpy(path, dir->_files[i].path);
 	tinydir_close(dir);
-	if (tinydir_open_sorted(dir, path) == -1)
-	{
+	if (tinydir_open_sorted(dir, path) == -1) {
 		return -1;
 	}
 
@@ -429,12 +391,10 @@ int tinydir_open_subdir_n(tinydir_dir *dir, size_t i)
 }
 
 _TINYDIR_FUNC
-int _tinydir_file_cmp(const void *a, const void *b)
-{
+int _tinydir_file_cmp(const void *a, const void *b) {
 	const tinydir_file *fa = (const tinydir_file *)a;
 	const tinydir_file *fb = (const tinydir_file *)b;
-	if (fa->is_dir != fb->is_dir)
-	{
+	if (fa->is_dir != fb->is_dir) {
 		return -(fa->is_dir - fb->is_dir);
 	}
 	return strncmp(fa->name, fb->name, _TINYDIR_FILENAME_MAX);

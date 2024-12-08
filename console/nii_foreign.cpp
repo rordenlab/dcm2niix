@@ -3,7 +3,7 @@
 #include "nifti1_io_core.h"
 #include "nii_dicom.h"
 #include "nii_dicom_batch.h"
-//#include "nifti1_io_core.h"
+// #include "nifti1_io_core.h"
 #include "print.h"
 #include <math.h>
 #include <stdbool.h> //requires VS 2015 or later
@@ -17,8 +17,8 @@
 #define chdir _chrdir
 #include "io.h"
 #include <math.h>
-//#define snprintMessage _snprintMessage
-//#define vsnprintMessage _vsnprintMessage
+// #define snprintMessage _snprintMessage
+// #define vsnprintMessage _vsnprintMessage
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
 #else
@@ -60,7 +60,7 @@ void strClean(char *cString) {
 }
 
 unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti_1_header *hdr, struct TDCMopts opts, bool isWarnIfNotEcat) {
-//data type
+// data type
 #define ECAT7_BYTE 1
 #define ECAT7_VAXI2 2
 #define ECAT7_VAXI4 3
@@ -68,8 +68,8 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 #define ECAT7_IEEER4 5
 #define ECAT7_SUNI2 6
 #define ECAT7_SUNI4 7
-//file types
-//#define ECAT7_UNKNOWN 0
+// file types
+// #define ECAT7_UNKNOWN 0
 #define ECAT7_2DSCAN 1
 #define ECAT7_IMAGE16 2
 #define ECAT7_ATTEN 3
@@ -166,7 +166,7 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 	if (swapEndian) {
 		nifti_swap_2bytes(2, &mhdr.sw_version);
 		nifti_swap_2bytes(1, &mhdr.file_type);
-		//nifti_swap_2bytes(1, &mhdr.num_frames);
+		// nifti_swap_2bytes(1, &mhdr.num_frames);
 		nifti_swap_4bytes(1, &mhdr.ecat_calibration_factor);
 		nifti_swap_4bytes(1, &mhdr.isotope_halflife);
 		nifti_swap_4bytes(2, &mhdr.dosage);
@@ -176,7 +176,7 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 		fclose(f);
 		return NULL;
 	}
-	//read list matrix
+	// read list matrix
 	ecat_list_hdr lhdr;
 	fseek(f, 512, SEEK_SET);
 	size_t nRead = fread(&lhdr, sizeof(lhdr), 1, f);
@@ -187,10 +187,10 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 	}
 	if (swapEndian)
 		nifti_swap_4bytes(128, &lhdr.hdr[0]);
-	//offset to first image
+	// offset to first image
 	int img_StartBytes = lhdr.r[0][1] * 512;
-	//load image header for first image
-	fseek(f, img_StartBytes - 512, SEEK_SET); //image header is block immediately before image
+	// load image header for first image
+	fseek(f, img_StartBytes - 512, SEEK_SET); // image header is block immediately before image
 	ecat_img_hdr ihdr;
 	nRead = fread(&ihdr, sizeof(ihdr), 1, f);
 	if (nRead != 1) {
@@ -224,7 +224,7 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 		bytesPerVoxel = 1;
 	if (ihdr.data_type == ECAT7_SUNI4)
 		bytesPerVoxel = 4;
-	//next: read offsets for each volume: data not saved sequentially (each volume preceded by its own ecat_img_hdr)
+	// next: read offsets for each volume: data not saved sequentially (each volume preceded by its own ecat_img_hdr)
 	int num_vol = 0;
 	bool isAbort = false;
 	bool isScaleFactorVaries = false;
@@ -232,8 +232,8 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 	size_t *imgOffsets = (size_t *)malloc(sizeof(size_t) * (kMaxVols));
 	float *imgSlopes = (float *)malloc(sizeof(float) * (kMaxVols));
 	ecat_img_hdr ihdrN;
-	while ((lhdr.hdr[0] + lhdr.hdr[3]) == 31) { //while valid list
-		if (num_vol > 0) {						//read the next list
+	while ((lhdr.hdr[0] + lhdr.hdr[3]) == 31) { // while valid list
+		if (num_vol > 0) {						// read the next list
 			fseek(f, 512 * (lhdr.hdr[1] - 1), SEEK_SET);
 			nRead = fread(&lhdr, 512, 1, f);
 			if (nRead != 1) {
@@ -245,12 +245,12 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 				nifti_swap_4bytes(128, &lhdr.hdr[0]);
 		}
 		if ((lhdr.hdr[0] + lhdr.hdr[3]) != 31)
-			break; //if valid list
+			break; // if valid list
 		if (lhdr.hdr[3] < 1)
 			break;
 		for (int k = 0; k < lhdr.hdr[3]; k++) {
-			//check images' ecat_img_hdr matches first
-			fseek(f, (lhdr.r[k][1] - 1) * 512, SEEK_SET); //image header is block immediately before image
+			// check images' ecat_img_hdr matches first
+			fseek(f, (lhdr.r[k][1] - 1) * 512, SEEK_SET); // image header is block immediately before image
 			nRead = fread(&ihdrN, sizeof(ihdrN), 1, f);
 			if (nRead != 1) {
 				printMessage("Error reading ECAT file (yet another image header)\n");
@@ -286,9 +286,9 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 			num_vol++;
 		}
 		if ((lhdr.hdr[0] > 0) || (isAbort))
-			break; //this list contains empty volumes: all lists have been read
-	}			   //read all image offsets
-	//report error reading image offsets
+			break; // this list contains empty volumes: all lists have been read
+	} // read all image offsets
+	// report error reading image offsets
 	if ((num_vol < 1) || (isAbort) || (num_vol >= kMaxVols)) {
 		printMessage("Failure to extract ECAT7 images\n");
 		if (num_vol >= kMaxVols)
@@ -305,11 +305,11 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 		free(imgSlopes);
 		return NULL;
 	}
-	//load image data
+	// load image data
 	unsigned char *img = NULL;
-	if ((isScaleFactorVaries) && (bytesPerVoxel == 2)) { //we need to convert volumes from 16-bit to 32-bit to preserve scaling factors
+	if ((isScaleFactorVaries) && (bytesPerVoxel == 2)) { // we need to convert volumes from 16-bit to 32-bit to preserve scaling factors
 		int num_vox = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension;
-		size_t bytesPerVolumeIn = (size_t)(num_vox * bytesPerVoxel); //bytesPerVoxel == 2
+		size_t bytesPerVolumeIn = (size_t)(num_vox * bytesPerVoxel); // bytesPerVoxel == 2
 		unsigned char *imgIn = (unsigned char *)malloc(bytesPerVolumeIn);
 		int16_t *img16i = (int16_t *)imgIn;
 		bytesPerVoxel = 4;
@@ -331,11 +331,11 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 			for (int i = 0; i < num_vox; i++)
 				img32[i + volOffset] = (img16i[i] * scale);
 		}
-		//we have applied the scale factors to the data, so eliminate them
+		// we have applied the scale factors to the data, so eliminate them
 		ihdr.scale_factor = 1.0;
 		mhdr.ecat_calibration_factor = 1.0;
 
-	} else { //if isScaleFactorVaries else simple conversion
+	} else { // if isScaleFactorVaries else simple conversion
 		size_t bytesPerVolume = ihdr.x_dimension * ihdr.y_dimension * ihdr.z_dimension * bytesPerVoxel;
 		img = (unsigned char *)malloc(bytesPerVolume * num_vol);
 		for (int v = 0; v < num_vol; v++) {
@@ -355,11 +355,11 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 	free(imgOffsets);
 	free(imgSlopes);
 	fclose(f);
-	//fill DICOM header
+	// fill DICOM header
 	float timeBetweenVolumes = ihdr.frame_duration;
 	if (num_vol > 1)
 		timeBetweenVolumes = (float)(ihdrN.frame_start_time - ihdr.frame_start_time) / (float)(num_vol - 1);
-	//copy and clean strings (ECAT can use 0x0D as a string terminator)
+	// copy and clean strings (ECAT can use 0x0D as a string terminator)
 	strncpy(dcm->patientName, mhdr.patient_name, 32);
 	strncpy(dcm->patientID, mhdr.patient_id, 16);
 	strncpy(dcm->accessionNumber, mhdr.accession_number, 16);
@@ -398,30 +398,30 @@ unsigned char *readEcat7(const char *fname, struct TDICOMdata *dcm, struct nifti
 		printMessage(" NIfTI scale slope %12.12g\n", ihdr.scale_factor * mhdr.ecat_calibration_factor);
 	}
 	dcm->manufacturer = kMANUFACTURER_SIEMENS;
-	//dcm->manufacturersModelName = itoa(mhdr.system_type);
+	// dcm->manufacturersModelName = itoa(mhdr.system_type);
 	snprintf(dcm->manufacturersModelName, kDICOMStr, "%d", mhdr.system_type);
 	dcm->bitsAllocated = bytesPerVoxel * 8;
 	if (isScaleFactorVaries)
 		dcm->isFloat = true;
-	dcm->bitsStored = 15; //ensures 16-bit images saved as INT16 not UINT16
+	dcm->bitsStored = 15; // ensures 16-bit images saved as INT16 not UINT16
 	dcm->samplesPerPixel = 1;
-	dcm->xyzMM[1] = ihdr.x_pixel_size * 10.0; //cm -> mm
-	dcm->xyzMM[2] = ihdr.y_pixel_size * 10.0; //cm -> mm
-	dcm->xyzMM[3] = ihdr.z_pixel_size * 10.0; //cm -> mm
+	dcm->xyzMM[1] = ihdr.x_pixel_size * 10.0; // cm -> mm
+	dcm->xyzMM[2] = ihdr.y_pixel_size * 10.0; // cm -> mm
+	dcm->xyzMM[3] = ihdr.z_pixel_size * 10.0; // cm -> mm
 	dcm->TR = timeBetweenVolumes;
 	dcm->xyzDim[1] = ihdr.x_dimension;
 	dcm->xyzDim[2] = ihdr.y_dimension;
 	dcm->xyzDim[3] = ihdr.z_dimension;
 	dcm->xyzDim[4] = num_vol;
-	//create a NIfTI header
+	// create a NIfTI header
 	headerDcm2Nii(*dcm, hdr, false);
-	//here we mimic SPM's spatial starting estimate SForm
+	// here we mimic SPM's spatial starting estimate SForm
 	mat44 m44;
 	LOAD_MAT44(m44, -hdr->pixdim[1], 0.0f, 0.0f, ((float)dcm->xyzDim[1] - 2.0) / 2.0 * dcm->xyzMM[1],
 			   0.0f, -hdr->pixdim[2], 0.0f, ((float)dcm->xyzDim[2] - 2.0) / 2.0 * dcm->xyzMM[2],
 			   0.0f, 0.0f, -hdr->pixdim[3], ((float)dcm->xyzDim[3] - 2.0) / 2.0 * dcm->xyzMM[3]);
 	setQSForm(hdr, m44, false);
-	//make sure image does not include a spatial matrix
+	// make sure image does not include a spatial matrix
 	bool isMatrix = false;
 	for (int i = 0; i < 9; i++)
 		if (ihdr.mtx[i] != 0.0)
@@ -438,7 +438,7 @@ int convert_foreign(const char *fn, struct TDCMopts opts) {
 	struct nifti_1_header hdr;
 	struct TDICOMdata dcm = clear_dicom_data();
 	unsigned char *img = NULL;
-	img = readEcat7(fn, &dcm, &hdr, opts, false); //false: silent, do not report if file is not ECAT format
+	img = readEcat7(fn, &dcm, &hdr, opts, false); // false: silent, do not report if file is not ECAT format
 	if (!img)
 		return EXIT_FAILURE;
 	char niiFilename[1024];
@@ -448,8 +448,8 @@ int convert_foreign(const char *fn, struct TDCMopts opts) {
 		return ret;
 	}
 	printMessage("Saving ECAT as '%s'\n", niiFilename);
-	//struct TDTI4D dti4D;
-	//nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
+	// struct TDTI4D dti4D;
+	// nii_SaveBIDS(niiFilename, dcm, opts, &dti4D, &hdr, fn);
 	nii_SaveBIDS(niiFilename, dcm, opts, &hdr, fn);
 	ret = nii_saveNIIx(niiFilename, hdr, img, opts);
 	free(img);
