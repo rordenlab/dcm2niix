@@ -1,8 +1,11 @@
 # Regular use
 CFLAGS=-s -O3
 
-# Universal files used for everything
-UFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix -DmyDisableOpenJPEG
+# Common files used for everything
+CFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix
+
+# Universal files used for almost everything
+UFILES=$(CFILES) -DmyDisableOpenJPEG
 # Debugging
 #CFLAGS=-g
 
@@ -54,6 +57,9 @@ sanitize:
 
 debug:
 	g++ -O0 $(LFLAGS) $(UFILES)
+
+jp2:
+	g++ -O0 $(LFLAGS) $(CFILES) -I/opt/homebrew/Cellar/openjpeg/2.5.3/include/openjpeg-2.5/ -L/opt/homebrew/Cellar/openjpeg/2.5.3/lib/ -lopenjp2
 
 noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois

@@ -5403,6 +5403,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
 				d.compressionScheme = kCompressYes;
 				// printMessage("JPEG2000 Lossless support is new: please validate conversion\n");
+			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.201") == 0)) {
+				d.compressionScheme = kCompressYes; //High-Throughput JPEG 2000 issue 897
+			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.203") == 0)) {
+				d.compressionScheme = kCompressYes; //High-Throughput JPEG 2000 issue 897
 			} else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.1.99") == 0)) {
 				// n.b. Deflate compression applied applies to the encoding of the **entire** DICOM Data Set, not just image data
 				//  see https://www.medicalconnections.co.uk/kb/Transfer-Syntax/
