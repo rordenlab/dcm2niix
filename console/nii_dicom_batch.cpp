@@ -4326,13 +4326,13 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	strcat(command, opts.pigzname);
 	if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 		char newstr[256];
-		snprintf(newstr, sizeof(newstr), "\"%.*s -n -f -%d \"", 200, blockSize, opts.gzLevel);
+		snprintf(newstr, sizeof(newstr), "\"%.*s --no-time -n -f -%d \"", 200, blockSize, opts.gzLevel);
 		// snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
 		// 749 snprintf(newstr, 256, "\"%s -n -f -%d '", blockSize, opts.gzLevel);
 		strcat(command, newstr);
 	} else {
 		char newstr[256];
-		snprintf(newstr, 256, "\"%s -n \"", blockSize);
+		snprintf(newstr, 256, "\"%s --no-time -n \"", blockSize);
 		// 749 snprintf(newstr, 256, "\"%s -n '", blockSize);
 		strcat(command, newstr);
 	}
@@ -5713,11 +5713,11 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		strcat(command, opts.pigzname);
 		if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 			char newstr[256];
-			snprintf(newstr, 256, "\" -n -f -%d > \"", opts.gzLevel);
+			snprintf(newstr, 256, "\" --no-time -n -f -%d > \"", opts.gzLevel);
 			// 749 snprintf(newstr, 256, "\" -n -f -%d > '", opts.gzLevel);
 			strcat(command, newstr);
 		} else
-			strcat(command, "\" -n -f > \""); // current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+			strcat(command, "\" --no-time -n -f > \""); // current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
 		// 749 strcat(command, "\" -n -f > '"); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
 		strcat(command, fname);
 		// issue749 single not double quotes so $ character does not cause issues
