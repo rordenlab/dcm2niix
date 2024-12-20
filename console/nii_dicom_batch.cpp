@@ -4326,7 +4326,8 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	strcat(command, opts.pigzname);
 	if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 		char newstr[256];
-		snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
+		snprintf(newstr, sizeof(newstr), "\"%.*s -n -f -%d \"", 200, blockSize, opts.gzLevel);
+		// snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
 		// 749 snprintf(newstr, 256, "\"%s -n -f -%d '", blockSize, opts.gzLevel);
 		strcat(command, newstr);
 	} else {
@@ -10324,12 +10325,12 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	}
 	if (is_exe(opts->pigzname))
 		return;
-#ifdef myDisableZLib
-	printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
-#else // myUseZLib
-	if (opts->isVerbose > 0)
-		printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
-#endif
+	#ifdef myDisableZLib
+		printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
+	#else // myUseZLib
+		if (opts->isVerbose > 0)
+			printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
+	#endif
 	strcpy(opts->pigzname, "");
 	return;
 #else // if windows else linux
@@ -10340,11 +10341,10 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		"pigz_mricron",
 		"pigz_afni",
 	};
-#define n_nam (sizeof(names) / sizeof(const char *))
+	#define n_nam (sizeof(names) / sizeof(const char *))
 	for (int n = 0; n < (int)n_nam; n++) {
 		if (findpathof(str, names[n])) {
 			strcpy(opts->pigzname, str);
-			// printMessage("Found pigz: %s\n", str);
 			return;
 		}
 	}
@@ -10352,8 +10352,9 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	const char *pths[] = {
 		"/usr/local/bin/",
 		"/usr/bin/",
+		"/opt/homebrew/bin/",
 	};
-#define n_pth (sizeof(pths) / sizeof(const char *))
+	#define n_pth (sizeof(pths) / sizeof(const char *))
 	char exepth[PATH_MAX];
 	strcpy(exepth, argv[0]);
 	dropFilenameFromPath(exepth); //, opts.pigzname);
@@ -10363,7 +10364,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		strcat(exepth, appendChar);
 	// see if pigz in any path
 	for (int n = 0; n < (int)n_nam; n++) {
-		// printf ("%d: %s\n", i, names[n]);
+		// printf ("%d: %s\n", n, names[n]);
 		for (int p = 0; p < (int)n_pth; p++) {
 			strcpy(str, pths[p]);
 			strcat(str, names[n]);
@@ -10418,7 +10419,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	// printMessage("%d %s\n",opts->compressFlag, opts->compressname);
 	strcpy(opts->outdir, "");
 	strcpy(opts->indir, "");
-	strcpy(opts->pigzname, "");
+	// strcpy(opts->pigzname, ""); // do this BEFORE readFindPigz()
 	strcpy(opts->optsname, "");
 	strcpy(opts->indirParent, "");
 	strcpy(opts->imageComments, "");
