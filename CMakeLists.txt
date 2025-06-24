@@ -1,8 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
-
-if(COMMAND CMAKE_POLICY)
-    CMAKE_POLICY(SET CMP0003 NEW)
-endif()
+cmake_minimum_required(VERSION 3.5...4.0)
 
 project(dcm2niix)
 
