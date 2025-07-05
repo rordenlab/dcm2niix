@@ -89,7 +89,8 @@ set(DCM2NIIX_SRCS
     nifti1_io_core.cpp
     nii_foreign.cpp
     nii_ortho.cpp
-    nii_dicom_batch.cpp)
+    nii_dicom_batch.cpp
+    nii_json_meta.cpp)
 
 if(NOT USE_TURBOJPEG)
     set(DCM2NIIX_SRCS ${DCM2NIIX_SRCS} ujpeg.cpp)
@@ -113,7 +114,8 @@ if(BUILD_DCM2NIIXFSLIB)
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp)
+        nii_dicom_batch.cpp
+        nii_json_meta.cpp)
 endif()
 
 if(USE_JPEGLS)
@@ -202,7 +204,8 @@ if(BATCH_VERSION)
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp)
+        nii_dicom_batch.cpp
+        nii_json_meta.cpp)
 
     if(NOT USE_TURBOJPEG)
         set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} ujpeg.cpp)

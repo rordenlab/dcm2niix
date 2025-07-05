@@ -1246,7 +1246,7 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 #endif
 }
 
-void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
+ void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D, struct TDICOMMetadataCollector* metaCollector) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
 	//  sidecar JSON file (with the same filename as the .nii.gz file, but with .json extension).
@@ -2523,7 +2523,7 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	dti4D->intenScale[0] = 0.0;
 	dti4D->repetitionTimeExcitation = 0.0;
 	dti4D->repetitionTimeInversion = 0.0;
-	nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
+	nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D, NULL);
 	free(dti4D);
 } // nii_SaveBIDSX()
 
@@ -8707,7 +8707,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 
 	if (opts.numSeries >= 0) // issue453
-		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
+		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D, NULL);
 	if (opts.isOnlyBIDS) {
 		// note we waste time loading every image, however this ensures hdr0 matches actual output
 #ifndef USING_DCM2NIIXFSWRAPPER
@@ -8965,6 +8965,41 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			returnCode = nii_saveNII3D(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
 		else
 			returnCode = nii_saveNII(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx]);
+		
+		// Generate JSON metadata if requested
+		if (opts.isExtractMetadata && dcmList[dcmSort[0].indx].metadata) {
+			char jsonPath[2048];
+			
+			if (opts.jsonMetaOpts.separateFile) {
+				// Create separate .metadata.json file
+				snprintf(jsonPath, sizeof(jsonPath), "%s.metadata.json", pathoutname);
+				int jsonResult = generateHumanReadableJSON(
+					dcmList[dcmSort[0].indx].metadata,
+					&opts.jsonMetaOpts,
+					jsonPath
+				);
+				
+				if (jsonResult != 0) {
+					printWarning("Failed to write metadata JSON for %s\n", pathoutname);
+				} else if (opts.isVerbose) {
+					printMessage("Created metadata JSON: %s\n", jsonPath);
+				}
+			} else {
+				// Merge with existing BIDS JSON file
+				snprintf(jsonPath, sizeof(jsonPath), "%s.json", pathoutname);
+				int jsonResult = mergeMetadataWithBIDSJSON(
+					dcmList[dcmSort[0].indx].metadata,
+					&opts.jsonMetaOpts,
+					jsonPath
+				);
+				
+				if (jsonResult != 0) {
+					printWarning("Failed to merge metadata with BIDS JSON for %s\n", pathoutname);
+				} else if (opts.isVerbose) {
+					printMessage("Merged metadata with BIDS JSON: %s\n", jsonPath);
+				}
+			}
+		}
 #endif
 	}
 #endif
@@ -9517,7 +9552,11 @@ int singleDICOM(struct TDCMopts *opts, char *fname) {
 	nameList.numItems++;
 	TDCMsort *dcmSort = (TDCMsort *)malloc(sizeof(TDCMsort));
 	dcmList[0].converted2NII = 1;
-	dcmList[0] = readDICOMx(nameList.str[0], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
+	if (opts->isExtractMetadata) {
+		dcmList[0] = readDICOMWithMetadata(nameList.str[0], &opts->jsonMetaOpts);
+	} else {
+		dcmList[0] = readDICOMx(nameList.str[0], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
+	}
 	// dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
 	if (opts->isIgnoreSeriesInstanceUID)
 		dcmList[0].seriesUidCrc = dcmList[0].seriesNum;
@@ -10003,7 +10042,11 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				convertError = true;
 			continue;
 		}
-		dcmList[i] = readDICOMx(nameList.str[i], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
+		if (opts->isExtractMetadata) {
+			dcmList[i] = readDICOMWithMetadata(nameList.str[i], &opts->jsonMetaOpts);
+		} else {
+			dcmList[i] = readDICOMx(nameList.str[i], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
+		}
 		// dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
 		if (opts->isIgnoreSeriesInstanceUID)
 			dcmList[i].seriesUidCrc = dcmList[i].seriesNum;
@@ -10594,6 +10637,15 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	opts->isTestx0021x105E = false;	 // GE test slice times stored in 0021,105E
 	opts->diffCyclingModeGE = -1;
 	opts->isIgnoreTriggerTimes = false;
+	// JSON metadata defaults
+	opts->isExtractMetadata = false;
+	opts->jsonMetaOpts.prettyPrint = false;
+	opts->jsonMetaOpts.includePrivate = false;
+	opts->jsonMetaOpts.includeSequences = false;
+	opts->jsonMetaOpts.includeUnknown = false;
+	opts->jsonMetaOpts.separateFile = false;
+	opts->jsonMetaOpts.memoryLimitMB = 16;
+	strcpy(opts->jsonMetaOpts.filterPattern, "");
 	opts->saveFormat = kSaveFormatNIfTI;
 	opts->isPipedGz = false; // e.g. pipe data directly to pigz instead of saving uncompressed to disk
 	opts->isSave3D = false;

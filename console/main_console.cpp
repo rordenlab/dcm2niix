@@ -70,6 +70,8 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
 	printf("  -h : show help\n");
 	printf("  -i : ignore derived, localizer and 2D images (y/n, default n)\n");
+	printf("  -J : JSON metadata (c/f/a, default n)\n");
+	printf("       c = comprehensive (standard tags), f = full (+ private), a = all (+ sequences)\n");
 	char max16Ch = 'n';
 	if (opts.isMaximize16BitRange == kMaximize16BitRange_True)
 		max16Ch = 'y';
@@ -114,6 +116,8 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
 	printf("  --progress : report progress (y/n, default n)\n");
 	printf("  --ignore_trigger_times : disregard values in 0018,1060 and 0020,9153\n");
+	printf("  --json-pretty : pretty print JSON metadata (y/n, default n)\n");
+	printf("  --json-separate : write metadata to separate .metadata.json file (y/n, default n)\n");
 	printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
 	printf("  --version : report version\n");
 	printf("  --xml : Slicer format features\n");
@@ -155,7 +159,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 } // showHelp()
 
 int invalidParam(int i, const char *argv[]) {
-	if (strchr("yYnNoOhHiIjlLJBb01234", argv[i][0]))
+	if (strchr("yYnNoOhHiIjlLJBbcCfFaA01234", argv[i][0]))
 		return 0;
 
 	// if (argv[i][0] != '-') return 0;
@@ -395,6 +399,59 @@ int main(int argc, const char *argv[]) {
 					opts.isTestx0021x105E = true;
 					printf("undocumented '-j y' compares GE slice timing from 0021,105E\n");
 				}
+			} else if ((argv[i][1] == 'J') && ((i + 1) < argc)) {
+				i++;
+				if (invalidParam(i, argv))
+					return 0;
+				opts.isExtractMetadata = true;
+				switch(argv[i][0]) {
+					case 'c':
+					case 'C': // comprehensive
+						opts.jsonMetaOpts.includePrivate = false;
+						opts.jsonMetaOpts.includeSequences = false;
+						opts.jsonMetaOpts.includeUnknown = false;
+						opts.jsonMetaOpts.prettyPrint = true;
+						opts.jsonMetaOpts.separateFile = false;
+						opts.jsonMetaOpts.memoryLimitMB = 16;
+						break;
+					case 'f':
+					case 'F': // full
+						opts.jsonMetaOpts.includePrivate = true;
+						opts.jsonMetaOpts.includeSequences = false;
+						opts.jsonMetaOpts.includeUnknown = false;
+						opts.jsonMetaOpts.prettyPrint = true;
+						opts.jsonMetaOpts.separateFile = false;
+						opts.jsonMetaOpts.memoryLimitMB = 32;
+						break;
+					case 'a':
+					case 'A': // all
+						opts.jsonMetaOpts.includePrivate = true;
+						opts.jsonMetaOpts.includeSequences = true;
+						opts.jsonMetaOpts.includeUnknown = true;
+						opts.jsonMetaOpts.prettyPrint = true;
+						opts.jsonMetaOpts.separateFile = false;
+						opts.jsonMetaOpts.memoryLimitMB = 64;
+						break;
+					default:
+						printf("Error: -J accepts c/f/a only (comprehensive/full/all)\n");
+						return 0;
+				}
+			} else if ((!strcmp(argv[i], "--json-pretty")) && ((i + 1) < argc)) {
+				i++;
+				if (invalidParam(i, argv))
+					return 0;
+				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == '1'))
+					opts.jsonMetaOpts.prettyPrint = true;
+				else
+					opts.jsonMetaOpts.prettyPrint = false;
+			} else if ((!strcmp(argv[i], "--json-separate")) && ((i + 1) < argc)) {
+				i++;
+				if (invalidParam(i, argv))
+					return 0;
+				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == '1'))
+					opts.jsonMetaOpts.separateFile = true;
+				else
+					opts.jsonMetaOpts.separateFile = false;
 			} else if ((!strcmp(argv[i], "--diffCyclingModeGE")) && ((i + 1) < argc)) {
 				// see issue 635
 				i++;

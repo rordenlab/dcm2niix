@@ -4,6 +4,8 @@
 #ifndef MRIpro_nii_batch_h
 #define MRIpro_nii_batch_h
 
+#include "nii_json_meta.h"
+
 #ifdef USING_DCM2NIIXFSWRAPPER
 #include "nifti1.h"
 #include "nii_dicom.h"
@@ -74,11 +76,12 @@ struct TDicomSeries {
 
 struct TDCMopts {
 	bool isDumpNotConvert;
-	bool isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isGz, isPipedGz, isFlipY, isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop, isGuessBidsFilename;
+	bool isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isGz, isPipedGz, isFlipY, isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop, isGuessBidsFilename, isExtractMetadata;
 	int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, onlySearchDirForDICOM, gzLevel, diffCyclingModeGE; // support for compressed data 0=none,
 	char filename[kOptsStr], outdir[kOptsStr], indir[kOptsStr], pigzname[kOptsStr], optsname[kOptsStr], indirParent[kOptsStr], imageComments[24], bidsSubject[kOptsStr], bidsSession[kOptsStr];
 	double seriesNumber[MAX_NUM_SERIES]; // requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
 	long numSeries;
+	struct TJSONMetadataOptions jsonMetaOpts;
 #ifdef USING_R
 	bool isScanOnly, isImageInMemory;
 	void *imageList;

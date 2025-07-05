@@ -5,6 +5,7 @@
 #ifndef USING_R
 #include "nifti1.h"
 #endif
+#include "nii_json_meta.h"
 
 #ifndef MRIpro_nii_dcm_h
 
@@ -276,6 +277,9 @@ struct TDICOMdata {
 	struct TCSAdata CSA;
 	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer;
 	char phaseEncodingRC, patientSex;
+	// JSON Metadata support
+	struct TDICOMMetadataCollector* metadata;
+	char* metadataError;
 };
 
 struct TDCMprefs {
@@ -289,6 +293,8 @@ void getFileNameX(char *pathParent, const char *path, int maxLen);
 struct TDICOMdata readDICOMv(char *fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
 struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D *dti4D);
 struct TDICOMdata readDICOM(char *fname);
+struct TDICOMdata readDICOMWithMetadata(char *fname, const struct TJSONMetadataOptions* metaOpts);
+int extractAllDicomTags(const char* filename, struct TDICOMMetadataCollector* collector);
 struct TDICOMdata clear_dicom_data(void);
 struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase);
 unsigned char *nii_flipY(unsigned char *bImg, struct nifti_1_header *h);

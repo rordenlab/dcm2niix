@@ -8711,6 +8711,144 @@ struct TDICOMdata readDICOM(char *fname) {
 	return ret;
 } // readDICOM()
 
+// New functions for JSON metadata extraction
+struct TDICOMdata readDICOMWithMetadata(char *fname, const struct TJSONMetadataOptions* metaOpts) {
+    // Call existing function first to ensure compatibility
+    struct TDICOMdata d = readDICOM(fname);
+    
+    // Initialize metadata fields
+    d.metadata = NULL;
+    d.metadataError = NULL;
+    
+    // Only collect metadata if basic DICOM parsing succeeded and metadata requested
+    if (d.isValid && metaOpts) {
+        d.metadata = initMetadataCollector(metaOpts->memoryLimitMB);
+        
+        if (d.metadata) {
+            d.metadata->includePrivate = metaOpts->includePrivate;
+            d.metadata->includeSequences = metaOpts->includeSequences;
+            d.metadata->includeUnknown = metaOpts->includeUnknown;
+            
+            // Extract all tags from the DICOM file
+            int result = extractAllDicomTags(fname, d.metadata);
+            
+            if (result != 0) {
+                d.metadataError = (char*)malloc(256);
+                if (d.metadataError) {
+                    snprintf(d.metadataError, 255, "Failed to extract DICOM metadata");
+                }
+                // Don't fail the overall conversion, just log warning
+                // printWarning("Metadata extraction failed for %s\n", fname);
+            }
+        }
+    }
+    
+    return d;
+}
+
+int extractAllDicomTags(const char* filename, struct TDICOMMetadataCollector* collector) {
+    if (!filename || !collector) return -1;
+    
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) return -1;
+    
+    // Get file size
+    fseek(fp, 0, SEEK_END);
+    long fileSize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    // Read entire file into buffer (reuse existing pattern from dcm2niix)
+    unsigned char* buffer = (unsigned char*)malloc(fileSize);
+    if (!buffer) {
+        fclose(fp);
+        return -1;
+    }
+    
+    if (fread(buffer, 1, fileSize, fp) != fileSize) {
+        free(buffer);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+    
+    // Parse DICOM header to find start of data elements
+    long pos = 0;
+    bool isExplicitVR = true;
+    bool isLittleEndian = true;
+    
+    // Check for DICOM prefix
+    if (fileSize > 132 && memcmp(buffer + 128, "DICM", 4) == 0) {
+        pos = 132; // Skip preamble + "DICM"
+    }
+    
+    // Parse data elements and collect tags
+    while (pos < fileSize - 8) {
+        uint16_t group = dcmInt(2, &buffer[pos], isLittleEndian);
+        uint16_t element = dcmInt(2, &buffer[pos + 2], isLittleEndian);
+        uint32_t tag = makeTag(group, element);
+        
+        pos += 4;
+        
+        char vr[3] = {0};
+        uint32_t length = 0;
+        
+        if (isExplicitVR && (group != 0xFFFE)) {
+            // Read VR
+            vr[0] = buffer[pos];
+            vr[1] = buffer[pos + 1];
+            vr[2] = 0;
+            pos += 2;
+            
+            // Handle VR-specific length encoding
+            if (strcmp(vr, "OB") == 0 || strcmp(vr, "OD") == 0 || 
+                strcmp(vr, "OF") == 0 || strcmp(vr, "OL") == 0 ||
+                strcmp(vr, "OV") == 0 || strcmp(vr, "OW") == 0 ||
+                strcmp(vr, "SQ") == 0 || strcmp(vr, "UC") == 0 ||
+                strcmp(vr, "UR") == 0 || strcmp(vr, "UT") == 0 ||
+                strcmp(vr, "UN") == 0) {
+                pos += 2; // Skip reserved bytes
+                length = dcmInt(4, &buffer[pos], isLittleEndian);
+                pos += 4;
+            } else {
+                length = dcmInt(2, &buffer[pos], isLittleEndian);
+                pos += 2;
+            }
+        } else {
+            // Implicit VR - guess VR type or use UN
+            strcpy(vr, "UN");
+            length = dcmInt(4, &buffer[pos], isLittleEndian);
+            pos += 4;
+        }
+        
+        // Add tag to collector
+        TVRCode vrCode = stringToVRCode(vr);
+        
+        // Filter based on collector options
+        bool shouldInclude = true;
+        if (!collector->includePrivate && (group % 2 == 1)) {
+            shouldInclude = false;
+        }
+        if (!collector->includeSequences && vrCode == VR_SQ) {
+            shouldInclude = false;
+        }
+        
+        if (shouldInclude && length > 0 && pos + length <= fileSize) {
+            addTagToCollector(collector, tag, vrCode, (char*)&buffer[pos], length);
+        }
+        
+        // Skip to next tag
+        pos += length;
+        
+        // Check memory limit
+        if (collector->memoryExceeded) {
+            break;
+        }
+    }
+    
+    free(buffer);
+    return 0;
+}
+
 #ifdef USING_DCM2NIIXFSWRAPPER
 // remove spaces, '[', ']' in given buf
 // ??? also remove <, >, &
