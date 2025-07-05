@@ -404,6 +404,8 @@ int main(int argc, const char *argv[]) {
 				if (invalidParam(i, argv))
 					return 0;
 				opts.isExtractMetadata = true;
+				// For clinical use, disable BIDS anonymization when using -J option
+				opts.isAnonymizeBIDS = false;
 				switch(argv[i][0]) {
 					case 'c':
 					case 'C': // comprehensive

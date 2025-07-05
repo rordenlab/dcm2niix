@@ -8707,7 +8707,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 
 	if (opts.numSeries >= 0) // issue453
-		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D, NULL);
+		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D, dcmList[dcmSort[0].indx].metadata);
 	if (opts.isOnlyBIDS) {
 		// note we waste time loading every image, however this ensures hdr0 matches actual output
 #ifndef USING_DCM2NIIXFSWRAPPER

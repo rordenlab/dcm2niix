@@ -6,69 +6,69 @@
 // Comprehensive DICOM field mappings
 static const struct TDICOMFieldMapping DICOM_FIELD_MAPPINGS[] = {
     // File Meta Information
-    {0x00020000, "fileMetaInformationGroupLength", VR_UL, false, false, "File Meta Information Group Length"},
-    {0x00020001, "fileMetaInformationVersion", VR_OB, false, false, "File Meta Information Version"},
-    {0x00020002, "mediaStorageSOPClassUID", VR_UI, false, false, "Media Storage SOP Class UID"},
-    {0x00020003, "mediaStorageSOPInstanceUID", VR_UI, false, false, "Media Storage SOP Instance UID"},
-    {0x00020010, "transferSyntaxUID", VR_UI, false, false, "Transfer Syntax UID"},
-    {0x00020012, "implementationClassUID", VR_UI, false, false, "Implementation Class UID"},
-    {0x00020013, "implementationVersionName", VR_SH, false, false, "Implementation Version Name"},
+    {0x00020000, "FileMetaInformationGroupLength", VR_UL, false, false, "File Meta Information Group Length"},
+    {0x00020001, "FileMetaInformationVersion", VR_OB, false, false, "File Meta Information Version"},
+    {0x00020002, "MediaStorageSOPClassUID", VR_UI, false, false, "Media Storage SOP Class UID"},
+    {0x00020003, "MediaStorageSOPInstanceUID", VR_UI, false, false, "Media Storage SOP Instance UID"},
+    {0x00020010, "TransferSyntaxUID", VR_UI, false, false, "Transfer Syntax UID"},
+    {0x00020012, "ImplementationClassUID", VR_UI, false, false, "Implementation Class UID"},
+    {0x00020013, "ImplementationVersionName", VR_SH, false, false, "Implementation Version Name"},
     
     // Data Set Identification
-    {0x00080005, "specificCharacterSet", VR_CS, false, false, "Specific Character Set"},
-    {0x00080012, "instanceCreationDate", VR_DA, false, false, "Instance Creation Date"},
-    {0x00080013, "instanceCreationTime", VR_TM, false, false, "Instance Creation Time"},
-    {0x00080023, "contentDate", VR_DA, false, false, "Content Date"},
-    {0x0008002A, "acquisitionDateTime", VR_DT, false, false, "Acquisition DateTime"},
-    {0x00080033, "contentTime", VR_TM, false, false, "Content Time"},
-    {0x00080070, "manufacturer", VR_LO, false, false, "Manufacturer"},
-    {0x00080080, "institutionName", VR_LO, false, false, "Institution Name"},
-    {0x00080081, "institutionAddress", VR_ST, false, false, "Institution Address"},
-    {0x00081010, "stationName", VR_SH, false, false, "Station Name"},
-    {0x00081090, "manufacturerModelName", VR_LO, false, false, "Manufacturer's Model Name"},
+    {0x00080005, "SpecificCharacterSet", VR_CS, false, false, "Specific Character Set"},
+    {0x00080012, "InstanceCreationDate", VR_DA, false, false, "Instance Creation Date"},
+    {0x00080013, "InstanceCreationTime", VR_TM, false, false, "Instance Creation Time"},
+    {0x00080023, "ContentDate", VR_DA, false, false, "Content Date"},
+    {0x0008002A, "AcquisitionDateTime", VR_DT, false, false, "Acquisition DateTime"},
+    {0x00080033, "ContentTime", VR_TM, false, false, "Content Time"},
+    {0x00080070, "Manufacturer", VR_LO, false, false, "Manufacturer"},
+    {0x00080080, "InstitutionName", VR_LO, false, false, "Institution Name"},
+    {0x00080081, "InstitutionAddress", VR_ST, false, false, "Institution Address"},
+    {0x00081010, "StationName", VR_SH, false, false, "Station Name"},
+    {0x00081090, "ManufacturersModelName", VR_LO, false, false, "Manufacturer's Model Name"},
     
     // Patient Information Module
-    {0x00100010, "patientName", VR_PN, false, false, "Patient's Name"},
-    {0x00100020, "patientID", VR_LO, false, false, "Patient ID"},
-    {0x00100030, "patientBirthDate", VR_DA, false, false, "Patient's Birth Date"},
-    {0x00100040, "patientSex", VR_CS, false, false, "Patient's Sex"},
-    {0x00101010, "patientAge", VR_AS, false, false, "Patient's Age"},
-    {0x00101020, "patientSize", VR_DS, false, false, "Patient's Size"},
-    {0x00101030, "patientWeight", VR_DS, false, false, "Patient's Weight"},
+    {0x00100010, "PatientName", VR_PN, false, false, "Patient's Name"},
+    {0x00100020, "PatientID", VR_LO, false, false, "Patient ID"},
+    {0x00100030, "PatientBirthDate", VR_DA, false, false, "Patient's Birth Date"},
+    {0x00100040, "PatientSex", VR_CS, false, false, "Patient's Sex"},
+    {0x00101010, "PatientAge", VR_AS, false, false, "Patient's Age"},
+    {0x00101020, "PatientSize", VR_DS, false, false, "Patient's Size"},
+    {0x00101030, "PatientWeight", VR_DS, false, false, "Patient's Weight"},
     
     // General Study Module
-    {0x0020000D, "studyInstanceUID", VR_UI, false, false, "Study Instance UID"},
-    {0x00080020, "studyDate", VR_DA, false, false, "Study Date"},
-    {0x00080030, "studyTime", VR_TM, false, false, "Study Time"},
-    {0x00080090, "referringPhysicianName", VR_PN, false, false, "Referring Physician's Name"},
-    {0x00200010, "studyID", VR_SH, false, false, "Study ID"},
-    {0x00080050, "accessionNumber", VR_SH, false, false, "Accession Number"},
-    {0x00081030, "studyDescription", VR_LO, false, false, "Study Description"},
+    {0x0020000D, "StudyInstanceUID", VR_UI, false, false, "Study Instance UID"},
+    {0x00080020, "StudyDate", VR_DA, false, false, "Study Date"},
+    {0x00080030, "StudyTime", VR_TM, false, false, "Study Time"},
+    {0x00080090, "ReferringPhysicianName", VR_PN, false, false, "Referring Physician's Name"},
+    {0x00200010, "StudyID", VR_SH, false, false, "Study ID"},
+    {0x00080050, "AccessionNumber", VR_SH, false, false, "Accession Number"},
+    {0x00081030, "StudyDescription", VR_LO, false, false, "Study Description"},
     
     // General Series Module
-    {0x0020000E, "seriesInstanceUID", VR_UI, false, false, "Series Instance UID"},
-    {0x00200011, "seriesNumber", VR_IS, false, false, "Series Number"},
-    {0x00080021, "seriesDate", VR_DA, false, false, "Series Date"},
-    {0x00080031, "seriesTime", VR_TM, false, false, "Series Time"},
-    {0x00080060, "modality", VR_CS, false, false, "Modality"},
-    {0x0008103E, "seriesDescription", VR_LO, false, false, "Series Description"},
-    {0x00180015, "bodyPartExamined", VR_CS, false, false, "Body Part Examined"},
-    {0x00181030, "protocolName", VR_LO, false, false, "Protocol Name"},
+    {0x0020000E, "SeriesInstanceUID", VR_UI, false, false, "Series Instance UID"},
+    {0x00200011, "SeriesNumber", VR_IS, false, false, "Series Number"},
+    {0x00080021, "SeriesDate", VR_DA, false, false, "Series Date"},
+    {0x00080031, "SeriesTime", VR_TM, false, false, "Series Time"},
+    {0x00080060, "Modality", VR_CS, false, false, "Modality"},
+    {0x0008103E, "SeriesDescription", VR_LO, false, false, "Series Description"},
+    {0x00180015, "BodyPartExamined", VR_CS, false, false, "Body Part Examined"},
+    {0x00181030, "ProtocolName", VR_LO, false, false, "Protocol Name"},
     
     // General Image Module  
-    {0x00200013, "instanceNumber", VR_IS, false, false, "Instance Number"},
-    {0x00080008, "imageType", VR_CS, true, false, "Image Type"},
-    {0x00080016, "sopClassUID", VR_UI, false, false, "SOP Class UID"},
-    {0x00080018, "sopInstanceUID", VR_UI, false, false, "SOP Instance UID"},
-    {0x00200032, "imagePositionPatient", VR_DS, true, false, "Image Position (Patient)"},
-    {0x00200037, "imageOrientationPatient", VR_DS, true, false, "Image Orientation (Patient)"},
+    {0x00200013, "InstanceNumber", VR_IS, false, false, "Instance Number"},
+    {0x00080008, "ImageType", VR_CS, true, false, "Image Type"},
+    {0x00080016, "SOPClassUID", VR_UI, false, false, "SOP Class UID"},
+    {0x00080018, "SOPInstanceUID", VR_UI, false, false, "SOP Instance UID"},
+    {0x00200032, "ImagePositionPatient", VR_DS, true, false, "Image Position (Patient)"},
+    {0x00200037, "ImageOrientationPatient", VR_DS, true, false, "Image Orientation (Patient)"},
     {0x00200052, "frameOfReferenceUID", VR_UI, false, false, "Frame of Reference UID"},
     {0x00181164, "imagerPixelSpacing", VR_DS, true, false, "Imager Pixel Spacing"},
     
     // General Equipment Module
-    {0x00080070, "manufacturer", VR_LO, false, false, "Manufacturer"},
-    {0x00081010, "stationName", VR_SH, false, false, "Station Name"},
-    {0x00081090, "manufacturerModelName", VR_LO, false, false, "Manufacturer's Model Name"},
+    {0x00080070, "Manufacturer", VR_LO, false, false, "Manufacturer"},
+    {0x00081010, "StationName", VR_SH, false, false, "Station Name"},
+    {0x00081090, "ManufacturersModelName", VR_LO, false, false, "Manufacturer's Model Name"},
     {0x00181000, "deviceSerialNumber", VR_LO, false, false, "Device Serial Number"},
     {0x00181020, "softwareVersions", VR_LO, true, false, "Software Versions"},
     
@@ -777,10 +777,16 @@ int mergeMetadataWithBIDSJSON(const struct TDICOMMetadataCollector* collector,
         // Skip sequences if not requested
         if (tag->vrCode == VR_SQ && !opts->includeSequences) continue;
         
-        // When using -J option, we want to merge BIDS and extended DICOM metadata
-        // Don't skip fields that already exist in BIDS - let them be merged/updated
-        // This ensures SpacingBetweenSlices and other important fields are always present
-        // Note: We intentionally removed the duplicate-skipping logic to ensure proper merging
+        // Skip fields that already exist in BIDS to avoid duplicate keys (invalid JSON)
+        // Since both BIDS and extended metadata now use the same PascalCase naming,
+        // this will properly prevent duplicates while preserving BIDS field values
+        if (mapping) {
+            char searchField[512];
+            snprintf(searchField, sizeof(searchField), "\"%s\":", mapping->fieldName);
+            if (strstr(bidsContent, searchField)) {
+                continue; // Skip - field already exists in BIDS
+            }
+        }
         
         // Add comma and newline
         if (needsComma) {
