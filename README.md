@@ -146,6 +146,7 @@ The following tools exploit dcm2niix
   - [BOLD5000_autoencoder](https://github.com/nmningmei/BOLD5000_autoencoder) uses dcm2niix to pipe imaging data into an unsupervised machine learning algorithm.
   - [boutiques-dcm2niix](https://github.com/lalet/boutiques-dcm2niix) is a dockerfile for installing and validating dcm2niix.
   - [Brain imAgiNg Analysis iN Arcana (Banana)](https://pypi.org/project/banana/) is a collection of brain imaging analysis workflows, it uses dcm2niix for format conversions.
+  - [Brain Lesion Suite](https://github.com/BrainLesion) supports dcm2niix for DICOM to NifTI conversion.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
   - [CardioNIfTI](https://github.com/UK-Digital-Heart-Project/CardioNIfTI) processes cardiac MR DICOM datasets and converts them to NIfTI.
