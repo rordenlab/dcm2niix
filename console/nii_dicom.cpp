@@ -4828,6 +4828,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool has00200013 = false;
 	// double contentTime = 0.0;
 	int echoTrainLengthPhil = 0;
+	float prePulseDelayPhil = 0;
 	int philMRImageDiffBValueNumber = 0;
 	int philMRImageDiffVolumeNumber = -1;
 	int sqDepth = 0;
@@ -7294,8 +7295,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kPrepulseDelay: // FL
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
-			d.TI = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
-			break;
+			prePulseDelayPhil = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
+			if (prePulseDelayPhil > 0.0f)
+				d.TI = prePulseDelayPhil;
+					break;
 		case kPrepulseType: // CS [INV]
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
