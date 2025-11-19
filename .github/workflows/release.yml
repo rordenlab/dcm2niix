@@ -1,18 +1,17 @@
 name: Release
-on: {push: {branches: [development], tags: [v*.*.*]}}
+on: {push: {branches: [development], tags: [v*.*.*]}, pull_request: {branches: [development]}}
 jobs:
   wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # macos-13 is an intel runner, macos-14 is apple silicon
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
+        # macos-15 is an intel runner, macos-latest is apple silicon
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest]
     steps:
     - uses: actions/checkout@v4
       with: {fetch-depth: 0, submodules: false}
     - uses: pypa/cibuildwheel@2.x
       with: {output-dir: dist}
-      env: {CIBW_ARCHS: auto64, CIBW_SKIP: pp*}  # skip 32bit & PyPy
     - uses: actions/upload-artifact@v4
       with:
         name: wheels-${{ matrix.os }}-${{ strategy.job-index }}
@@ -31,6 +30,7 @@ jobs:
         pattern: wheels-*
         path: dist
         merge-multiple: true
+    - run: pipx run twine check --strict dist/*
     - uses: casperdcl/deploy-pypi@v2
       with:
         build: -s
