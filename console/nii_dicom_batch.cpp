@@ -1779,6 +1779,10 @@ tse3d: T2*/
 		} else
 			fprintf(fp, "\t\"EchoTime\": %g,\n", d.TE / 1000.0);
 	}
+	
+	if (h->dim[4] >= 1)
+		fprintf(fp, "\t\"VolumesInDicomSeries\": %d,\n", h->dim[4]);
+	
 	// if ((d.TE2 > 0.0) && (!d.isXRay)) fprintf(fp, "\t\"EchoTime2\": %g,\n", d.TE2 / 1000.0 );
 	if (dti4D->frameDuration[0] < 0.0) // e.g. PET scans can have variable TR
 		json_Float(fp, "\t\"RepetitionTime\": %g,\n", d.TR / 1000.0);
