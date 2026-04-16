@@ -1729,8 +1729,18 @@ tse3d: T2*/
 			fprintf(fp, "\t\t%g", dti4D->volumeOnsetTime[i]);
 		}
 		fprintf(fp, "\t],\n");
-	} else if ((d.decayFactor > 0) && (h->dim[4] == 1)) { //single volume
-		fprintf(fp, "\t\"FrameTimesStart\": [\n\t\t0\t],\n");
+	} else if ((d.decayFactor > 0) && (h->dim[4] == 1)) {
+		double seriesSec = -1.0;
+		if ((d.modality == kMODALITY_PT) && (d.seriesTime > 0.0))
+			seriesSec = dicomTimeToSec(d.seriesTime);
+		double tStart = 0.0;
+		if (seriesSec >= 0) {
+			double acqSec = dicomTimeToSec(d.acquisitionTime);
+			tStart = (acqSec >= 0) ? (acqSec - seriesSec) : -1.0;
+			if (tStart < 0)
+				tStart = 0;
+    }
+    fprintf(fp, "\t\"FrameTimesStart\": [\n\t\t%g\t],\n", tStart);
 	}
 	
 	if ((h->dim[4] > 0) && (dti4D->frameDuration[0] >= 0.0)) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
