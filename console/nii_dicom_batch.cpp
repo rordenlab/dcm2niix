@@ -8363,6 +8363,451 @@ void loadOverlay(char *imgname, unsigned char *img, int offset, int x, int y, in
 	return;
 } // loadOverlay()
 
+// ---------------------------------------------------------------------------
+// Siemens XA-line PhysioLogging support
+// ---------------------------------------------------------------------------
+// XA30/XA60 scanners (syngo MR XA*) export physio recordings as Raw Data
+// Storage DICOMs containing a gzip-compressed XML payload at private tag
+// (7FE1,1010). The parser flags these as d.isXAPhysio and stores the byte
+// offset/length of the payload. The helpers below decompress that payload,
+// extract <PhysioStream> samples and <Volume ACQUISITION_TIME_TICS> entries,
+// and emit BIDS-compliant `<base>_recording-<label>_physio.tsv.gz` plus
+// `_physio.json` sidecars (one pair per stream).
+//
+// Note: the MDH clock in XA tics is 2.5 ms; PMU recording start is operator-
+// initiated, so first PMU tic typically precedes the first scan-locked
+// <Volume> tic by a few seconds. BIDS StartTime carries this offset and is
+// usually negative (samples before the first scan trigger).
+//
+// XML parsing is intentionally hand-rolled (no XML dep): the payload schema
+// is fixed by Siemens and the structure is extremely regular. The DOCTYPE
+// block is stripped before scanning to neutralise internal-entity payloads.
+
+#define kMDHTicMs 2.5
+
+// Map an XA <PhysioStream TYPE="..."> to a BIDS recording label (matches
+// bidsphysio's to_physiosignal()). Returns NULL for unknown types so the
+// caller can skip them.
+static const char *xaPhysioBidsLabel(const char *streamType) {
+	if (strcmp(streamType, "PULS") == 0) return "cardiac";
+	if (strcmp(streamType, "RESP") == 0) return "respiratory";
+	if (strcmp(streamType, "ECG") == 0) return "ecg";
+	if (strcmp(streamType, "EXT") == 0) return "external_trigger";
+	return NULL;
+}
+
+// Read a quoted attribute value from an opening XML tag (a substring that
+// runs from the '<' through the matching '>'). Returns true on success.
+static bool xaPhysioReadAttr(const char *tag, const char *tagEnd, const char *attr,
+							 char *out, size_t outSz) {
+	out[0] = '\0';
+	char needle[64];
+	int n = snprintf(needle, sizeof(needle), "%s=\"", attr);
+	if (n <= 0 || n >= (int)sizeof(needle))
+		return false;
+	const char *p = strstr(tag, needle);
+	if ((p == NULL) || (p >= tagEnd))
+		return false;
+	p += n;
+	const char *q = strchr(p, '"');
+	if ((q == NULL) || (q >= tagEnd))
+		return false;
+	size_t len = (size_t)(q - p);
+	if (len >= outSz)
+		len = outSz - 1;
+	memcpy(out, p, len);
+	out[len] = '\0';
+	return true;
+}
+
+// Decompress a gzip blob from `pCmp` (length cmpSz) into a newly malloc'd
+// buffer. Returns the decompressed buffer and writes its length to *unCmpOut,
+// or NULL on failure. Caller frees.
+//
+// Note: the gzip ISIZE trailer is NOT trusted here. DICOM OB elements are
+// even-length-padded, so the (7FE1,1010) value can include trailing bytes
+// after the gzip stream's real end; the bytes at cmpSz-4..cmpSz-1 are then
+// arbitrary, not the original ISIZE. Instead we allocate a generous output
+// buffer (16x cmpSz, capped at 32 MB) and let inflate() report STREAM_END
+// when it has consumed the deflate stream — total_out is the truth.
+static uint8_t *xaPhysioInflate(uint8_t *pCmp, int cmpSz, uint32_t *unCmpOut) {
+	*unCmpOut = 0;
+	if ((cmpSz < 20) || (pCmp[0] != 0x1F) || (pCmp[1] != 0x8B) || (pCmp[2] != 0x08))
+		return NULL;
+	uint8_t flags = pCmp[3];
+	bool isFNAME = ((flags & 0x08) == 0x08);
+	bool isFCOMMENT = ((flags & 0x10) == 0x10);
+	int hdrSz = 10;
+	if (isFNAME) {
+		for (; hdrSz < cmpSz; hdrSz++)
+			if (pCmp[hdrSz] == 0) break;
+		hdrSz++;
+	}
+	if (isFCOMMENT) {
+		for (; hdrSz < cmpSz; hdrSz++)
+			if (pCmp[hdrSz] == 0) break;
+		hdrSz++;
+	}
+	if (hdrSz >= cmpSz)
+		return NULL;
+	// Output buffer: assume the payload won't exceed 16x compressed size,
+	// capped at 32 MB to bound a hostile expansion ratio.
+	size_t outCap = (size_t)cmpSz * 16;
+	if (outCap > (32u * 1024u * 1024u)) outCap = 32u * 1024u * 1024u;
+	if (outCap < 65536) outCap = 65536;
+	uint8_t *pUnCmp = (uint8_t *)malloc(outCap + 1);
+	if (pUnCmp == NULL)
+		return NULL;
+	z_stream s;
+	memset(&s, 0, sizeof(z_stream));
+#ifdef myDisableMiniZ
+#define MZ_DEFAULT_WINDOW_BITS 15
+#endif
+	if (inflateInit2(&s, -MZ_DEFAULT_WINDOW_BITS) != Z_OK) {
+		free(pUnCmp);
+		return NULL;
+	}
+	s.next_in = pCmp + hdrSz;
+	s.avail_in = cmpSz - hdrSz; // include possible padding after the stream;
+								// inflate() stops at STREAM_END regardless.
+	s.next_out = pUnCmp;
+	s.avail_out = (unsigned int)outCap;
+#ifdef myDisableMiniZ
+	int ret = inflate(&s, Z_FINISH);
+	if ((ret != Z_STREAM_END) && (ret != Z_BUF_ERROR)) {
+#else
+	int ret = mz_inflate(&s, MZ_FINISH);
+	if ((ret != MZ_STREAM_END) && (ret != MZ_BUF_ERROR)) {
+#endif
+		inflateEnd(&s);
+		free(pUnCmp);
+		return NULL;
+	}
+	uint32_t produced = (uint32_t)s.total_out;
+	inflateEnd(&s);
+	if (produced == 0) {
+		free(pUnCmp);
+		return NULL;
+	}
+	pUnCmp[produced] = '\0'; // null-terminate so strstr() is safe
+	*unCmpOut = produced;
+	return pUnCmp;
+}
+
+// Strip every <!DOCTYPE ...> block from xmlText, modifying it in place.
+// XA payloads carry a structural DTD with no entities; removing it closes
+// the billion-laughs / internal-entity surface (matches the bidsphysio
+// Python parser). Each DOCTYPE is overwritten with spaces to preserve
+// byte offsets (cheap and avoids reallocation).
+static void xaPhysioStripDoctype(char *xmlText) {
+	for (;;) {
+		char *p = strstr(xmlText, "<!DOCTYPE");
+		if (p == NULL) return;
+		// Look for an internal subset; if absent, end at the first '>'.
+		char *bracket = strchr(p, '[');
+		char *gt = strchr(p, '>');
+		char *end;
+		if ((bracket != NULL) && ((gt == NULL) || (bracket < gt))) {
+			char *closeBracket = strstr(bracket, "]");
+			if (closeBracket == NULL) return;
+			end = strchr(closeBracket, '>');
+			if (end == NULL) return;
+		} else {
+			end = gt;
+			if (end == NULL) return;
+		}
+		for (char *q = p; q <= end; q++)
+			*q = ' ';
+	}
+}
+
+// Write `<base>_recording-<label>_physio.tsv.gz` (gzipped, no header row,
+// per BIDS convention) plus the matching JSON sidecar with Columns,
+// SamplingFrequency, and StartTime.
+static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
+									 const double *signal, const uint8_t *trigger,
+									 int nSamples, double sampFreq,
+									 double startTimeSec, int gzLevel) {
+	char outBase[2048];
+	snprintf(outBase, sizeof(outBase), "%s_recording-%s_physio", baseName, label);
+	// JSON sidecar via cJSON.
+	cJSON *root = cJSON_CreateObject();
+	cJSON *cols = cJSON_CreateArray();
+	cJSON_AddItemToArray(cols, cJSON_CreateString(label));
+	if (trigger != NULL)
+		cJSON_AddItemToArray(cols, cJSON_CreateString("trigger"));
+	cJSON_AddItemToObject(root, "Columns", cols);
+	cJSON_AddItemToObject(root, "SamplingFrequency", cJSON_CreateNumber(sampFreq));
+	cJSON_AddItemToObject(root, "StartTime", cJSON_CreateNumber(startTimeSec));
+	char *jsonStr = cJSON_Print(root);
+	cJSON_Delete(root);
+	char jsonPath[2200];
+	snprintf(jsonPath, sizeof(jsonPath), "%s.json", outBase);
+	FILE *fJson = fopen(jsonPath, "wb");
+	if (fJson != NULL) {
+		fwrite(jsonStr, 1, strlen(jsonStr), fJson);
+		fputc('\n', fJson);
+		fclose(fJson);
+	}
+	free(jsonStr);
+	// TSV: build the uncompressed body, then gzip it (mirrors writeNiiGz).
+	// Worst case per sample: signal up to ~24 chars + tab + "1" + newline.
+	size_t bufCap = (size_t)nSamples * 32 + 16;
+	char *tsv = (char *)malloc(bufCap);
+	if (tsv == NULL) return;
+	size_t tsvLen = 0;
+	for (int i = 0; i < nSamples; i++) {
+		int n;
+		if (trigger != NULL)
+			n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n",
+						 signal[i], (int)trigger[i]);
+		else
+			n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\n", signal[i]);
+		if (n < 0 || (size_t)n >= bufCap - tsvLen) break;
+		tsvLen += (size_t)n;
+	}
+	// Gzip-compress tsv body. Same single-shot deflate-then-write pattern as
+	// writeNiiGz: raw deflate output, then prepend a 10-byte gzip header and
+	// append CRC32 + ISIZE.
+	unsigned long cmpCap = mz_compressBound((unsigned long)tsvLen);
+	unsigned char *pCmp = (unsigned char *)malloc(cmpCap);
+	if (pCmp == NULL) {
+		free(tsv);
+		return;
+	}
+	z_stream strm;
+	memset(&strm, 0, sizeof(z_stream));
+	strm.next_out = pCmp;
+	strm.avail_out = (unsigned int)cmpCap;
+	int zLevel = MZ_DEFAULT_LEVEL;
+	if ((gzLevel > 0) && (gzLevel < 11)) zLevel = gzLevel;
+	if (zLevel > MZ_UBER_COMPRESSION) zLevel = MZ_UBER_COMPRESSION;
+	if (deflateInit(&strm, zLevel) != Z_OK) {
+		free(pCmp);
+		free(tsv);
+		return;
+	}
+	strm.next_in = (uint8_t *)tsv;
+	strm.avail_in = (unsigned int)tsvLen;
+	deflate(&strm, Z_FINISH);
+	deflateEnd(&strm);
+	unsigned long crc = mz_crc32(0L, Z_NULL, 0);
+	crc = mz_crc32(crc, (unsigned char *)tsv, (unsigned int)tsvLen);
+	unsigned long cmpLen = strm.total_out;
+	char tsvPath[2200];
+	snprintf(tsvPath, sizeof(tsvPath), "%s.tsv.gz", outBase);
+	FILE *fGz = fopen(tsvPath, "wb");
+	if (fGz != NULL) {
+		fputc((char)0x1F, fGz);
+		fputc((char)0x8B, fGz);
+		fputc((char)0x08, fGz);
+		fputc((char)0x00, fGz);
+		fputc((char)0x00, fGz); // mtime
+		fputc((char)0x00, fGz);
+		fputc((char)0x00, fGz);
+		fputc((char)0x00, fGz);
+		fputc((char)0x00, fGz); // xfl
+		fputc((char)0xFF, fGz); // os = unknown
+		// Skip 2-byte zlib header at pCmp[0..1] and 4-byte adler at the tail.
+		if (cmpLen >= 6)
+			fwrite(&pCmp[2], 1, cmpLen - 6, fGz);
+		fputc((unsigned char)(crc), fGz);
+		fputc((unsigned char)(crc >> 8), fGz);
+		fputc((unsigned char)(crc >> 16), fGz);
+		fputc((unsigned char)(crc >> 24), fGz);
+		fputc((unsigned char)(strm.total_in), fGz);
+		fputc((unsigned char)(strm.total_in >> 8), fGz);
+		fputc((unsigned char)(strm.total_in >> 16), fGz);
+		fputc((unsigned char)(strm.total_in >> 24), fGz);
+		fclose(fGz);
+		printMessage("Wrote %s and %s\n", tsvPath, jsonPath);
+	}
+	free(pCmp);
+	free(tsv);
+}
+
+// Top-level: read the gzip-XML payload from infname, parse out streams and
+// volume tics, and write a BIDS sidecar pair per stream. Returns
+// EXIT_SUCCESS on any successful write, EXIT_FAILURE if nothing was emitted.
+static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
+						   const char *baseName, struct TDCMopts opts) {
+	if ((d.xaPhysioOffset <= 0) || (d.xaPhysioBytes < 20))
+		return EXIT_FAILURE;
+	FILE *f = fopen(infname, "rb");
+	if (f == NULL) return EXIT_FAILURE;
+	fseek(f, d.xaPhysioOffset, SEEK_SET);
+	uint8_t *pCmp = (uint8_t *)malloc(d.xaPhysioBytes);
+	if (pCmp == NULL) {
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	if ((int)fread(pCmp, 1, d.xaPhysioBytes, f) != d.xaPhysioBytes) {
+		free(pCmp);
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	fclose(f);
+	uint32_t xmlLen = 0;
+	uint8_t *xmlBytes = xaPhysioInflate(pCmp, d.xaPhysioBytes, &xmlLen);
+	free(pCmp);
+	if (xmlBytes == NULL) {
+		printWarning("XA PhysioLogging payload could not be decompressed.\n");
+		return EXIT_FAILURE;
+	}
+	char *xml = (char *)xmlBytes;
+	xaPhysioStripDoctype(xml);
+	// Collect Volume ACQUISITION_TIME_TICS from <VolumeAcquisitionDescription>.
+	// These are scan-locked timestamps (one per acquired volume) and are used
+	// both as triggers and to compute the StartTime offset relative to the
+	// PMU stream (which starts manually, before the scan).
+	int volCap = 64, volN = 0;
+	long *volTics = (long *)malloc(sizeof(long) * volCap);
+	if (volTics == NULL) {
+		free(xmlBytes);
+		return EXIT_FAILURE;
+	}
+	const char *vp = xml;
+	while ((vp = strstr(vp, "<Volume ")) != NULL) {
+		const char *vEnd = strchr(vp, '>');
+		if (vEnd == NULL) break;
+		char buf[64];
+		if (xaPhysioReadAttr(vp, vEnd, "ACQUISITION_TIME_TICS", buf, sizeof(buf))) {
+			if (volN >= volCap) {
+				volCap *= 2;
+				long *tmp = (long *)realloc(volTics, sizeof(long) * volCap);
+				if (tmp == NULL) {
+					free(volTics);
+					free(xmlBytes);
+					return EXIT_FAILURE;
+				}
+				volTics = tmp;
+			}
+			volTics[volN++] = atol(buf);
+		}
+		vp = vEnd + 1;
+	}
+	long firstVolTic = (volN > 0) ? volTics[0] : -1;
+	int wrote = 0;
+	// Iterate <PhysioStream TYPE="X">...</PhysioStream> blocks.
+	const char *sp = xml;
+	while ((sp = strstr(sp, "<PhysioStream ")) != NULL) {
+		const char *sTagEnd = strchr(sp, '>');
+		if (sTagEnd == NULL) break;
+		char streamType[32];
+		if (!xaPhysioReadAttr(sp, sTagEnd, "TYPE", streamType, sizeof(streamType))) {
+			sp = sTagEnd + 1;
+			continue;
+		}
+		const char *sClose = strstr(sTagEnd, "</PhysioStream>");
+		if (sClose == NULL) break;
+		const char *label = xaPhysioBidsLabel(streamType);
+		if (label == NULL) {
+			if (opts.isVerbose)
+				printMessage("Skipping unknown XA PhysioStream TYPE='%s'\n", streamType);
+			sp = sClose + 1;
+			continue;
+		}
+		// Pre-count <PMU> elements within this stream.
+		int nCap = 0;
+		const char *cp = sTagEnd;
+		while ((cp = strstr(cp, "<PMU ")) != NULL) {
+			if (cp >= sClose) break;
+			nCap++;
+			cp += 5;
+		}
+		if (nCap < 2) {
+			if (opts.isVerbose)
+				printMessage("Skipping XA stream %s: only %d sample(s)\n", streamType, nCap);
+			sp = sClose + 1;
+			continue;
+		}
+		double *signal = (double *)malloc(sizeof(double) * nCap);
+		long *ticArr = (long *)malloc(sizeof(long) * nCap);
+		uint8_t *trig = (uint8_t *)calloc(nCap, sizeof(uint8_t));
+		if ((signal == NULL) || (ticArr == NULL) || (trig == NULL)) {
+			free(signal);
+			free(ticArr);
+			free(trig);
+			sp = sClose + 1;
+			continue;
+		}
+		int n = 0;
+		const char *pp = sTagEnd;
+		while (((pp = strstr(pp, "<PMU ")) != NULL) && (pp < sClose) && (n < nCap)) {
+			const char *pEnd = strchr(pp, '>');
+			if ((pEnd == NULL) || (pEnd > sClose)) break;
+			char ticBuf[32], dataBuf[32];
+			if (xaPhysioReadAttr(pp, pEnd, "TIME_TICS", ticBuf, sizeof(ticBuf)) &&
+				xaPhysioReadAttr(pp, pEnd, "DATA", dataBuf, sizeof(dataBuf))) {
+				char *endp;
+				long tic = strtol(ticBuf, &endp, 10);
+				if ((endp != ticBuf) && (tic >= 0)) {
+					double v = strtod(dataBuf, &endp);
+					if (endp != dataBuf) {
+						ticArr[n] = tic;
+						signal[n] = v;
+						n++;
+					}
+				}
+			}
+			pp = pEnd + 1;
+		}
+		if (n < 2) {
+			free(signal);
+			free(ticArr);
+			free(trig);
+			sp = sClose + 1;
+			continue;
+		}
+		// Rasterize <Volume> ticks onto this stream's timeline by snapping
+		// each volume tic to the nearest PMU sample. Linear scan is fine
+		// because tics are monotonic and volN is small (one per TR).
+		int vi = 0;
+		for (int i = 0; i < volN && vi < volN; i++) {
+			long vt = volTics[i];
+			// Find the closest PMU sample. Since both arrays are sorted, walk forward.
+			int best = 0;
+			long bestDiff = labs(ticArr[0] - vt);
+			for (int j = 1; j < n; j++) {
+				long dj = labs(ticArr[j] - vt);
+				if (dj < bestDiff) {
+					bestDiff = dj;
+					best = j;
+				} else if (ticArr[j] > vt) {
+					break;
+				}
+			}
+			trig[best] = 1;
+			vi++;
+		}
+		// As-acquired sample interval: span / (N-1) ms (fencepost).
+		double dtMs = ((double)(ticArr[n - 1] - ticArr[0]) * kMDHTicMs) / (double)(n - 1);
+		double sampFreq = (dtMs > 0.0) ? 1000.0 / dtMs : 0.0;
+		// StartTime per BIDS: physio-timeline t=0 expressed relative to the
+		// first scan trigger. Negative means PMU recording started before
+		// the first acquired volume (the typical manual head-start).
+		double startTimeSec;
+		if (firstVolTic > 0)
+			startTimeSec = ((double)(ticArr[0] - firstVolTic) * kMDHTicMs) / 1000.0;
+		else
+			startTimeSec = 0.0;
+		xaPhysioWriteStreamFiles(baseName, label, signal, (volN > 0) ? trig : NULL,
+								 n, sampFreq, startTimeSec, opts.gzLevel);
+		wrote++;
+		free(signal);
+		free(ticArr);
+		free(trig);
+		sp = sClose + 1;
+	}
+	free(volTics);
+	free(xmlBytes);
+	if (wrote == 0) {
+		printWarning("XA PhysioLogging payload had no recognised streams.\n");
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
+}
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
 #if 0
 #ifdef USING_DCM2NIIXFSWRAPPER
@@ -8378,9 +8823,26 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 #endif
 
+	// Siemens XA-line PhysioLogging short-circuit. The DICOM is a Raw Data
+	// Storage SOP carrying a gzip-XML PMU payload at (7FE1,1010); skip the
+	// NIfTI machinery and emit BIDS physio sidecars instead. This runs
+	// before nii_createFilename so we use a local copy with isRawDataStorage
+	// suppressed, which prevents the "_Raw" suffix from polluting the BIDS
+	// `_recording-<label>_physio` filename.
+	{
+		uint64_t pIdx = dcmSort[0].indx;
+		if (dcmList[pIdx].isXAPhysio) {
+			struct TDICOMdata dPhysio = dcmList[pIdx];
+			dPhysio.isRawDataStorage = false; // do not append "_Raw" to the BIDS prefix
+			char baseName[PATH_MAX] = {""};
+			nii_createFilename(dPhysio, baseName, opts);
+			return xaPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
+		}
+	}
+
 	bool iVaries = intensityScaleVaries(nConvert, dcmSort, dcmList);
 	bool bppVaries = false;
-	if (iVaries) 
+	if (iVaries)
 		bppVaries = bitDepthVaries(nConvert, dcmSort, dcmList);
 	float *sliceMMarray = NULL; // only used if slices are not equidistant
 	uint64_t indx = dcmSort[0].indx;

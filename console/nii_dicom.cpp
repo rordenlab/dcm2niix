@@ -902,6 +902,9 @@ struct TDICOMdata clear_dicom_data() {
 	d.isBVecWorldCoordinates = false; // bvecs can be in image space (GE) or world coordinates (Siemens)
 	d.isGrayscaleSoftcopyPresentationState = false;
 	d.isRawDataStorage = false;
+	d.isXAPhysio = false; // Siemens XA-line PhysioLogging payload at (7FE1,1010), see kSiemensXAPhysio handling below
+	d.xaPhysioOffset = 0;
+	d.xaPhysioBytes = 0;
 	d.isMicroscopy = false;
 	d.isPartialFourier = false;
 	d.isIR = false;
@@ -4794,6 +4797,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kPerFrameFunctionalGroupsSequence 0x5200 + uint32_t(0x9230 << 16) // SQ
 #define kWaveformSq 0x5400 + (0x0100 << 16)
 #define kSpectroscopyData 0x5600 + (0x0020 << 16) // OF
+// kSiemensXAPhysio: Siemens "MR IMA" private tag carrying the XA-line PhysioLogging
+// payload on Raw Data Storage SOPs (XA30/XA60 scanners). Body is gzip-compressed XML.
+// See https://www.magnetomworld.siemens-healthineers.com/clinical-corner/application-tips/physiologging
+#define kSiemensXAPhysio 0x7FE1 + (uint32_t(0x1010) << 16) // OB
 #define kImageStart 0x7FE0 + (0x0010 << 16)
 #define kImageStartFloat 0x7FE0 + (0x0008 << 16)
 #define kImageStartDouble 0x7FE0 + (0x0009 << 16)
@@ -7520,6 +7527,26 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			printMessage("Skipping Spectroscopy DICOM '%s'\n", fname);
 			d.xyzDim[1] = 0; // issue606
 			d.imageStart = (int)lPos + (int)lFileOffset;
+			break;
+		case kSiemensXAPhysio:
+			// Detect Siemens XA-line PhysioLogging payload only on Raw Data
+			// Storage SOPs (set earlier via kMediaStorageSOPClassUID). The
+			// payload body is a gzip stream beginning with magic 0x1F 0x8B;
+			// downstream code decompresses and emits BIDS physio sidecars.
+			if ((d.isRawDataStorage) && (lLength >= 2) && ((lPos + lLength) <= fileLen)) {
+				if (((unsigned char)buffer[lPos] == 0x1F) && ((unsigned char)buffer[lPos + 1] == 0x8B)) {
+					d.isXAPhysio = true;
+					d.xaPhysioOffset = (int)lPos + (int)lFileOffset;
+					d.xaPhysioBytes = (int)lLength;
+					// Mark this DICOM as "valid" so it survives the
+					// (!dcmList[ii].isValid) filter in the series-dispatch
+					// loop and reaches saveDcm2NiiCore, where our XA hook
+					// intercepts it before the NIfTI machinery runs. Image
+					// dimensions are intentionally left at their RawData
+					// defaults; the hook does not consult them.
+					d.isValid = true;
+				}
+			}
 			break;
 		case kCSAImageHeaderInfo:
 			if ((lPos + lLength) > fileLen)
