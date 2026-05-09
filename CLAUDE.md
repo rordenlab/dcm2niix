@@ -76,16 +76,7 @@ A passing run of all three submodules is the baseline expectation before any com
 
 ### Full vendor matrix (release gate)
 
-The wider regression suite lives in [`dcm_validate`](https://github.com/neurolabusc/dcm_validate) (~35 `dcm_qa_*` submodules). Run this before cutting a release or when a change touches vendor-specific code paths that the in-tree trio doesn't cover. Check the sibling path `../dcm_validate` first; if absent, clone with submodules:
-```bash
-git clone --recursive https://github.com/neurolabusc/dcm_validate.git ../dcm_validate
-```
-**Read each `batch.sh` before running it** — they vary widely: different `-f` formats, some unzip `In/*.zip` (and delete the originals), some decompress `Ref/*.nii.gz` in place, some iterate subfolders, and `dcm_qa_sag` is intentionally a single-file `dtifits.py` validation rather than a Ref diff.
-
-For ad-hoc smoke tests against one folder:
-```bash
-./dcm2niix -v 2 ../dcm_qa/
-```
+Wider regression at [`dcm_validate`](https://github.com/neurolabusc/dcm_validate) (~35 `dcm_qa_*` submodules). Run before releases or when a change touches vendor-specific code the in-tree trio doesn't cover. **Read each `batch.sh` before running** — they vary in `-f` format, zip/gz handling, and `dcm_qa_sag` is a single-file `dtifits.py` check rather than a Ref diff.
 
 ## Architecture
 
@@ -111,16 +102,13 @@ Bundled libraries (no external install needed): miniz (zlib), cJSON, NanoJPEG, C
 4. `nii_dicom_batch.cpp` groups files by series, assembles volumes
 5. `nifti1_io_core.cpp` writes NIfTI files and JSON sidecars
 
-### Feature macros (preprocessor)
-`myEnableJPEGLS`, `myTurboJPEG`, `myEnableJasper`, `myDisableOpenJPEG`, `myEnableJNIFTI`, `myEnableZSTD`, `myDisableMiniZ`, `myDisableClassicJPEG`, `LINKING_FREESURFER`
-
 ### Sequence-filter quirks in `nii_dicom.cpp`
 
-Several DICOM sequences are "filtered out" during parsing because their contents are reference/historical data that would corrupt the main header (see issues #599, #655, #639):
-- `(0400,0561) OriginalAttributesSequence` — tracked by `sqDepth04000561` (depth-aware)
-- `(0008,9092) ReferencedImageEvidenceSequence` — tracked by `is00089092SQ` (boolean, cleared on any unNest — crude but generally OK because this SQ is small and shallow)
-- `(0088,0200) IconImageSequence` — tracked by `sqDepthIcon`
-- `(0054,0016) RadiopharmaceuticalInformationSequence` — tracked by `is00540016SQ` (boolean, same crude unNest pattern as `is00089092SQ`). Used to scope nested `CodeMeaning (0008,0104)` lookups for radionuclide/tracer naming (issue #983); the **first** `CodeMeaning` encountered inside wins, so `RadionuclideCodeSequence` is picked over `RadiopharmaceuticalCodeSequence`.
+Several DICOM sequences are "filtered out" during parsing because their contents are reference/historical data that would corrupt the main header (issues #599, #655, #639):
+- `(0400,0561) OriginalAttributesSequence` — tracked by `sqDepth04000561`. Issue #989 fix: peek at the raw 4-byte SQ length and skip latching when length is 0; explicit-length-0 SQs (anonymized DICOMs) never produce item delimiters, so the latch would otherwise never clear and every subsequent tag would be silently dropped.
+- `(0008,9092) ReferencedImageEvidenceSequence` — tracked by `is00089092SQ` (boolean, cleared on any unNest — crude but OK because this SQ is small and shallow).
+- `(0088,0200) IconImageSequence` — tracked by `sqDepthIcon`.
+- `(0054,0016) RadiopharmaceuticalInformationSequence` — tracked by `is00540016SQ`. Used to scope nested `CodeMeaning (0008,0104)` lookups (issue #983); the **first** `CodeMeaning` encountered inside wins, so `RadionuclideCodeSequence` beats `RadiopharmaceuticalCodeSequence`.
 
 ### UIH MOSAIC bvec
 
@@ -132,57 +120,43 @@ UIH DICOMs may store diffusion gradient directions in both the standard `(0018,9
 
 ### Filename format specifiers (`-f` flag)
 
-Full list in [FILENAMING.md](FILENAMING.md). Two conventions worth flagging here because they are case-sensitive and easy to confuse:
-- `%v` = vendor full name (`Canon`, `Siemens`, `GE`); `%m` = 2-char abbreviation (`Ca`, `Si`, `GE`). Used by many `dcm_qa_*` `batch.sh` scripts — don't conflate them.
-- `%h` (lowercase) = legacy hazardous BIDS hierarchical naming, unchanged. `%H` (uppercase) = ReproIn one-pass emulation, dispatched from `nii_dicom_batch.cpp` to the dedicated `console/reproin.cpp` module. Approximates heudiconv's [reproin](https://github.com/ReproNim/reproin) heuristic from a single DICOM pass with documented limitations (see ReproIn section below and [REPROIN.md](REPROIN.md)).
+Full list in [FILENAMING.md](FILENAMING.md). Two conventions are case-sensitive and easy to confuse:
+- `%v` = vendor full name (`Canon`, `Siemens`, `GE`); `%m` = 2-char abbreviation (`Ca`, `Si`, `GE`).
+- `%h` = legacy hazardous BIDS hierarchical naming (unchanged). `%H` = ReproIn one-pass emulation (see below + [REPROIN.md](REPROIN.md)).
 
 ### ReproIn one-pass filenames (`-f H` / `%H`)
 
-`%H` parses `(0018,1030) ProtocolName` (fallback `(0008,103e) SeriesDescription`) into a BIDS-style stem and uses `(0008,1030) StudyDescription` (fallback `(0040,0254) PerformedProcedureStepDescription`) as the path prefix. All logic lives in `console/reproin.cpp`; the `f == 'H'` branch in `nii_dicom_batch.cpp` only dispatches. The legacy `%h` path is untouched. Defaults are heudiconv-parity: `sub-` is derived from `PatientID` via `reproinFixupSubjectId` (not a hardcoded `01`), and the `ses-` segment is **omitted** from the layout unless the protocol or `reproinResolveSession` (which resolves `_ses-{date}` / `_ses-DATE` against `dcm.studyDate`) provides one.
+`%H` parses `(0018,1030) ProtocolName` (fallback `(0008,103e) SeriesDescription`) into a BIDS stem and uses `(0008,1030) StudyDescription` (fallback `(0040,0254) PerformedProcedureStepDescription`) as the path prefix. All logic is in `console/reproin.cpp`; the `f == 'H'` branch in `nii_dicom_batch.cpp` only dispatches. The legacy `%h` path is untouched. Defaults match heudiconv: `sub-` is derived from `PatientID` via `reproinFixupSubjectId`, and `ses-` is **omitted** unless the protocol or `reproinResolveSession` (`_ses-{date}` / `_ses-DATE` against `dcm.studyDate`) provides one. CLI values and entities are sanitised against `..`/separator injection before path use.
 
-This is a single-pass approximation of heudiconv's reproin heuristic — the Python implementation remains canonical. `-bi`/`-bv` values, parsed entity values, and StudyDescription are sanitised before being used as path components (defends against `..` and path-separator injection). Cross-series concerns are handled by `tools/reproinx.py`, a stdlib-only Python wrapper that runs `dcm2niix -f %H -ba n -w 1 -z y` and post-processes the BIDS tree: per-session `_scans.tsv` aggregation, fmap-to-target pairing (heudiconv's ShimSetting + NIfTI affine algorithm, reimplemented without numpy via direct `gzip`/`struct` reads of the NIfTI-1 header), and modern `B0FieldIdentifier`/`B0FieldSource` keys. `reproinx.py` flags: `--anonymize` suppresses `-ba n` (and falls back to first-compatible fmap matching); `--strict` fails fast on per-session post-processing errors. Other downstream concerns still pending: `_run+`/`_run=` counters, `__dup0N` collisions, `_rec-moco`, study-level `participants.tsv`, session inference from a localizer, `protocols2fix`, and `_dir-` cross-checks. Physio sidecars from XA/CMRR (which set `dcm.isDerived`) currently land under `derivatives/scanner/...` rather than alongside their BOLD target. Privacy caveats (PatientID flowing into `sub-`, `-ba n` retaining timestamps, StudyDescription becoming a directory name) are documented in REPROIN.md's "Privacy considerations" section. Full grammar, precedence rules, CLI usage (`-bi`/`-bv`), design choices, and the complete limitations list live in [REPROIN.md](REPROIN.md) — keep that document in sync when touching `reproin.cpp` or `tools/reproinx.py`.
-
-### PET / BIDS notes
-
-`TimeZero` in the BIDS PET sidecar must always equal `SeriesTime`, never `AcquisitionTime`. For delayed reconstructions (or any series where acquisition trails the injection clock), using `AcquisitionTime` desynchronizes `TimeZero` from frame timing and breaks downstream PET pipelines (issue #983).
-
-`ImageDecayCorrectionTime` has two branches keyed off `(0054,1102) DecayCorrection`: `START` emits 0 (corrected to series start = TimeZero); `ADMIN` emits `RadiopharmaceuticalStartTime - TimeZero` (corrected to injection time, expressed relative to TimeZero per BIDS). `NONE` emits nothing.
-
-`TracerName` comes from `(0018,0031) Radiopharmaceutical` (often nested inside `RadiopharmaceuticalInformationSequence`). GE packs this as `"FDG -- fluorodeoxyglucose"` (short name + long description separated by `" -- "`); the parser strips at `" -- "` to emit only the short tracer name. Do not remove this stripping — GE PET data depends on it for clean BIDS `TracerName` values.
-
-`AcquisitionDuration` sources DICOM `(0018,9073)` and is emitted unconditionally for non-UIH data. It is **not** subject to BIDS mutual-exclusion with `RepetitionTime` — that constraint applies only to `FrameAcquisitionDuration` (DICOM `(0018,9220)`, BIDS key of the same name), which dcm2niix does not currently emit. Do not re-introduce a `d.TR <= 0.0` gate here (issue #991, PR #1010 discussion).
-
-`FrameTimesStart` for a static PET reconstruction (`h->dim[4] == 1`) is computed as `AcquisitionTime − SeriesTime` in seconds, clamped at 0. Dynamic (multi-volume) scans use the per-frame onset array from `dti4D->volumeOnsetTime`. Do not hardcode `[0]` for static scans — that silently loses the acquisition offset when reconstruction trails `SeriesTime` (e.g., Philips Gemini, ~42 s offset; upstream PR #1010).
-
-`AttenuationCorrection` (BIDS spelling) and `AttenuationCorrectionMethod` (DICOM spelling) share the same source `d.attenuationCorrectionMethod` but are **not interchangeable**. `AttenuationCorrectionMethod` keeps the verbatim string; `AttenuationCorrection` is emitted as the pre-comma token. Siemens Biograph packs `"measured,AC_CT_Brain"` in `(0054,1101)`; BIDS wants just `"measured"`. The duplicate-looking `json_Str` emits are intentional — do not collapse them.
-
-**Philips ASL volume order**: For Philips ASL data (label/control pairs, multi-phase, 3D pCASL Sources), volumes are reordered into **temporal acquisition order** rather than the scanner's logical/storage order. This is intentional per [issue #533](https://github.com/rordenlab/dcm2niix/issues/533) (commit `66a4fd0`). When updating Ref files for `dcm_qa_philips*` datasets, expect volume reshuffles — same set of voxels, different volume indexing.
-
-### Siemens physio (XA PhysioLogging + legacy CMRR PMU)
-
-dcm2niix extracts two distinct Siemens physio-in-DICOM formats, both carried at private tag `(7FE1,1010)`:
-
-1. **XA30/XA60 PhysioLogging** — Raw Data Storage SOP (`1.2.840.10008.5.1.4.1.1.66`) with a gzipped XML payload (gzip magic `1F 8B`).
-2. **Legacy CMRR Multi-Band (VE11C) PMU** — Siemens CSA Non-Image Storage SOP (`1.3.12.2.1107.5.9.1`) with a raw binary blob: one 1024-byte padded header per waveform followed by ASCII Siemens PMU log lines.
-
-Detection in `nii_dicom.cpp` (parser case `kSiemensXAPhysio`) is gated on `d.isRawDataStorage`. The CSA Non-Image SOP `1.3.12.2.1107.5.9.1` was added to the `isRawDataStorage` allowlist specifically because legacy CMRR PMU lives there; **MR Spectroscopy DICOMs also use this SOP**, so the CMRR branch additionally requires the per-waveform header `fname` field to contain a known PMU log suffix (`_PULS.log`, `_RESP.log`, `_EXT.log`, `_ECG.log`, or `_Info.log`) before setting `d.isCMRRPhysio`. The XA branch peeks for gzip magic bytes. The two flags are mutually exclusive. Note that `d.isValid = true` is deliberately set for both so the file survives the dispatcher's image-validity filter and reaches the hook — do not "fix" this.
-
-The dispatch hook lives at the top of `saveDcm2NiiCore` in `nii_dicom_batch.cpp`, branching on `isXAPhysio` vs `isCMRRPhysio` to call `xaPhysioConvert` or `cmrrPhysioConvert`; either short-circuits the NIfTI machinery entirely and returns. Both formats then funnel through the shared `physioBidsFillUniform` (uniform-grid resampling with NaN fill for sparse streams such as EXT trigger pulses, written as the literal `nan` to match bidsphysio) and `xaPhysioWriteStreamFiles` write path, so output is identical schema regardless of source: BIDS `_recording-<label>_physio.tsv.gz` plus `.json` (PULS→cardiac, RESP→respiratory, ECG→ecg, EXT→external_trigger). `StartTime` is typically negative because PMU recording is started manually before the scan, and the volume timeline is rasterised onto each stream's trigger column.
-
-Trigger placement uses **ceil semantics** to match bidsphysio's `argmax(times >= t)`; `StartTime` is **millisecond-truncated** to match bidsphysio's `int(t_start_ms) / 1000`. Output is byte-equivalent to the [cbinyu/bidsphysio](https://github.com/cbinyu/bidsphysio) Python parser on both XA and CMRR fixtures, modulo a 1-millisecond `StartTime` divergence on sparse streams where bidsphysio loses precision via floating-point arithmetic — dcm2niix's integer-tic arithmetic is exact here. bidsphysio remains the canonical Python equivalent for richer cases; the in-converter shortcut produces equivalent output for the common path so users don't have to round-trip through a second tool.
-
-**Known risk:** These latches assume the parser will encounter item delimiters to unlatch. An **empty** sequence (explicit length 0, common in anonymized DICOMs) has no items, so the latch never clears and every subsequent tag is silently dropped. Fix for issue #989 peeks at the raw 4-byte SQ length at `case kOriginalAttributesSq` and skips latching when the length is 0.
-
-**Re-evaluate this fix if:**
-- A vendor or anonymizer ships a populated `(0400,0561)` with an *explicit non-zero* length that we incorrectly enter (the current `lLength > 8` guard already covers most cases, but explicit-length SQs under 8 bytes could regress).
-- A regression surfaces where fields *inside* `(0400,0561)` now leak into the header — that would mean the empty-check is misfiring on a non-empty SQ, likely due to implicit-VR data where the byte-peek is unsafe.
-- We add support for sequences that genuinely *need* the filter to persist across an empty SQ (none known today).
+Cross-series concerns (fmap pairing via ShimSetting + NIfTI affine, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`) are handled by `tools/reproinx.py` — stdlib-only, parses NIfTI-1 headers directly with `gzip`/`struct`. Flags: `--anonymize` (suppress `-ba n`), `--strict` (fail-fast). Full grammar, defaults, privacy notes, and the complete limitations list live in [REPROIN.md](REPROIN.md) — keep that document in sync when touching `reproin.cpp` or `tools/reproinx.py`.
 
 ## Git Workflow
 
 - **master** — stable releases only, no PRs accepted
 - **development** — active development branch, PRs go here
 - PRs should target `development`, not `master`
+
+### Pre-push checks
+
+Before pushing a commit that touches conversion logic, run at minimum:
+
+1. The in-tree `dcm_qa` regression suite (vendor-agnostic core):
+   ```bash
+   /regressiontest                       # tests build/bin/dcm2niix by default
+   # or, manually:
+   (cd dcm_qa && ./batch.sh)
+   ```
+   `/regressiontest` runs all three of `dcm_qa`, `dcm_qa_nih`, `dcm_qa_uih`. For
+   a faster gate, just running `dcm_qa` catches most cross-vendor breakage.
+2. `codespell` (matches the `Codespell` GitHub Action). The CI fires on every
+   push to `development`/`master` and every PR — failures block merge.
+   ```bash
+   git ls-files | xargs codespell        # mimics CI scope (skips build/, node_modules/)
+   ```
+   Configuration lives in `.codespellrc`. Domain terms that shouldn't be
+   flagged (e.g. Siemens `PULS` for the pulse-oximeter waveform) belong in its
+   `ignore-words-list` with a comment explaining the term — don't disable
+   codespell for the path.
 
 ## Code Style
 

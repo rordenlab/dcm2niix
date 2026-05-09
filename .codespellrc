@@ -9,4 +9,6 @@ skip = .git,*.json,dcm_qa*
 #		// the isotropic trace or MD can be calculated) often come as
 #			/*if (!dcmList[indx0].isDerived) //no need to warn if images are derived Trace/ND pair
 # ser - used in  printMessage(" acq %d img %d ser %ld ...
-ignore-words-list = clen,hep,indx,nd,ser,spoff,tage,te
+# puls - Siemens PMU waveform/log naming (PULS = pulse oximeter trace,
+#        e.g. _PULS.log); not a typo for PULSE/PLUS
+ignore-words-list = clen,hep,indx,nd,puls,ser,spoff,tage,te

@@ -187,7 +187,7 @@ fMRIPrep) will not see them. If needed, a follow-up post-pass could derive
 `IntendedFor` from `B0FieldSource` by walking the same maps.
 
 ### 2. `_run+` / `_run=` counter semantics
-ReproIn allows `_run+` (auto-increment) and `_run=` (re-use last). dcm2niix
+ReproIn allows `_run+` (auto-increment) and `_run=` (reuse last). dcm2niix
 treats run identifiers as literal strings. The post-pass can renumber by walking
 the tree in acquisition order. Until then, users should write explicit numeric
 `_run-NN` in their protocols.
