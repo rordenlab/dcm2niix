@@ -100,6 +100,7 @@ All source is in `console/`. Key files:
 - **nii_ortho.cpp** — slice reorientation, cropping, resampling
 - **jpg_0XC3.cpp** — lossless JPEG decoder for DICOM transfer syntax
 - **ujpeg.cpp** — bundled NanoJPEG (lossy JPEG fallback)
+- **reproin.cpp / reproin.h** — ReproIn one-pass filename emulation invoked from the `%H` branch in `nii_dicom_batch.cpp`. Long-form grammar, precedence, and known limitations live in [REPROIN.md](REPROIN.md)
 
 Bundled libraries (no external install needed): miniz (zlib), cJSON, NanoJPEG, CharLS (in `console/charls/`).
 
@@ -133,7 +134,13 @@ UIH DICOMs may store diffusion gradient directions in both the standard `(0018,9
 
 Full list in [FILENAMING.md](FILENAMING.md). Two conventions worth flagging here because they are case-sensitive and easy to confuse:
 - `%v` = vendor full name (`Canon`, `Siemens`, `GE`); `%m` = 2-char abbreviation (`Ca`, `Si`, `GE`). Used by many `dcm_qa_*` `batch.sh` scripts — don't conflate them.
-- `%h` (lowercase) = hazardous BIDS hierarchical naming; `%H` (uppercase) = hazardous + reproin (uses `studyDescription` as path prefix).
+- `%h` (lowercase) = legacy hazardous BIDS hierarchical naming, unchanged. `%H` (uppercase) = ReproIn one-pass emulation, dispatched from `nii_dicom_batch.cpp` to the dedicated `console/reproin.cpp` module. Approximates heudiconv's [reproin](https://github.com/ReproNim/reproin) heuristic from a single DICOM pass with documented limitations (see ReproIn section below and [REPROIN.md](REPROIN.md)).
+
+### ReproIn one-pass filenames (`-f H` / `%H`)
+
+`%H` parses `(0018,1030) ProtocolName` (fallback `(0008,103e) SeriesDescription`) into a BIDS-style stem and uses `(0008,1030) StudyDescription` (fallback `(0040,0254) PerformedProcedureStepDescription`) as the path prefix. All logic lives in `console/reproin.cpp`; the `f == 'H'` branch in `nii_dicom_batch.cpp` only dispatches. The legacy `%h` path is untouched. Defaults are heudiconv-parity: `sub-` is derived from `PatientID` via `reproinFixupSubjectId` (not a hardcoded `01`), and the `ses-` segment is **omitted** from the layout unless the protocol or `reproinResolveSession` (which resolves `_ses-{date}` / `_ses-DATE` against `dcm.studyDate`) provides one.
+
+This is a single-pass approximation of heudiconv's reproin heuristic — the Python implementation remains canonical. `-bi`/`-bv` values, parsed entity values, and StudyDescription are sanitised before being used as path components (defends against `..` and path-separator injection). Cross-series concerns are handled by `tools/reproinx.py`, a stdlib-only Python wrapper that runs `dcm2niix -f %H -ba n -w 1 -z y` and post-processes the BIDS tree: per-session `_scans.tsv` aggregation, fmap-to-target pairing (heudiconv's ShimSetting + NIfTI affine algorithm, reimplemented without numpy via direct `gzip`/`struct` reads of the NIfTI-1 header), and modern `B0FieldIdentifier`/`B0FieldSource` keys. `reproinx.py` flags: `--anonymize` suppresses `-ba n` (and falls back to first-compatible fmap matching); `--strict` fails fast on per-session post-processing errors. Other downstream concerns still pending: `_run+`/`_run=` counters, `__dup0N` collisions, `_rec-moco`, study-level `participants.tsv`, session inference from a localizer, `protocols2fix`, and `_dir-` cross-checks. Physio sidecars from XA/CMRR (which set `dcm.isDerived`) currently land under `derivatives/scanner/...` rather than alongside their BOLD target. Privacy caveats (PatientID flowing into `sub-`, `-ba n` retaining timestamps, StudyDescription becoming a directory name) are documented in REPROIN.md's "Privacy considerations" section. Full grammar, precedence rules, CLI usage (`-bi`/`-bv`), design choices, and the complete limitations list live in [REPROIN.md](REPROIN.md) — keep that document in sync when touching `reproin.cpp` or `tools/reproinx.py`.
 
 ### PET / BIDS notes
 

@@ -38,6 +38,7 @@
 #endif
 #include "nii_dicom.h"
 #include "nii_ortho.h"
+#include "reproin.h"
 #ifdef myEnableJNIFTI
 #include "base64.h"
 #include "cJSON.h"
@@ -3784,7 +3785,9 @@ void createDummyBidsBoilerplate(char *pth, bool isFunc) {
 	snprintf(descfnm + strlen(descfnm), PATH_MAX - strlen(descfnm), "%s", "dataset_description.json");
 	if (!is_fileexists(descfnm)) {
 		FILE *fp = fopen(descfnm, "w");
-		static const char readme[] = "{\n    \"Name\": \"dcm2niix dummy dataset\",\n    \"Authors\": [\"Chris Rorden\", \"Alex Teghipco\"],\n    \"BIDSVersion\": \"1.6.0\"\n}\n";
+		// 1.7.0 introduced B0FieldIdentifier/B0FieldSource, which the
+		// reproinx.py post-pass writes; declare a version that supports them.
+		static const char readme[] = "{\n    \"Name\": \"dcm2niix dummy dataset\",\n    \"Authors\": [\"Chris Rorden\", \"Alex Teghipco\"],\n    \"BIDSVersion\": \"1.8.0\"\n}\n";
 		if (fp != NULL)
 			fprintf(fp, readme);
 		fclose(fp);
@@ -3882,65 +3885,109 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				strcat(outname, dcm.accessionNumber);
 			if (f == 'H') {
 				printWarning("hazardous (%%h) or reproin (%%H) bids naming experimental\n");
-				
 				bool isReproin = (inname[pos] == 'H');
 				if (isReproin) {
-					// https://dbic-handbook.readthedocs.io/en/latest/mri/reproin.html
-					// reproin convention is hard for one-pass, as `ses` may only be reported in one series in the session (e.g. localizer)
-					// printf("study %s\n", dcm.studyDescription);
-					// printf("series %s\n", dcm.seriesDescription);
-					// printf("id %s\n", dcm.patientID);
-					snprintf(newstr, PATH_MAX, "%s", dcm.studyDescription);
-					heudiconvStrPth(newstr);
-					if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator))
-						strcat(pth, kFileSep); // kPathSeparator);
-					strcat(pth, newstr);
-					mkDirs(pth);
-					strcpy(opts.bidsSubject, dcm.patientID);
-					heudiconvStr(opts.bidsSubject);
-				}
-				char bidsSubject[kOptsStr] = "sub-";
-				if (strlen(opts.bidsSubject) <= 0)
-					strcat(bidsSubject, "1");
-				else
-					strcat(bidsSubject, opts.bidsSubject);
-#ifndef USING_R
-				//printf("%s<<<:::\n", bidsSubject);
-#endif
-				char bidsSession[kOptsStr] = "ses-";
-				if (strlen(opts.bidsSession) <= 0)
-					strcat(bidsSession, "1");
-				else
-					strcat(bidsSession, opts.bidsSession);
-				createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL));
-				if (strlen(dcm.CSA.bidsDataType) < 1) {
-					strcat(outname, "Unknown");
-					snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
-					strcat(outname, newstr);
-					snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
-					strcat(outname, newstr);
-					strcat(outname, "_");
-					strcat(outname, dcm.protocolName);
-
-				} else {
-					isAddNamePostFixes = false;
-					strcat(outname, bidsSubject);
-					strcat(outname, pathSep);
-					strcat(outname, bidsSession);
-					strcat(outname, pathSep);
-					strcat(outname, dcm.CSA.bidsDataType);
-					strcat(outname, pathSep);
-					strcat(outname, bidsSubject);
-					strcat(outname, "_");
-					strcat(outname, bidsSession);
-					if (strstr(dcm.CSA.bidsDataType, "func") != NULL) {
-						strcat(outname, "_task-");
-						if (strlen(dcm.CSA.bidsTask) > 0)
-							strcat(outname, dcm.CSA.bidsTask);
-						else
-							strcat(outname, "rest");
+					// One-pass ReproIn emulation. See REPROIN.md and console/reproin.cpp
+					// for design notes and known limitations (B0FieldIdentifier,
+					// IntendedFor, etc. require a second pass).
+					struct TReproinSpec spec;
+					bool specOk = reproinParseSpec(&dcm, &spec);
+					// Append <study> hierarchy from StudyDescription (or
+					// PerformedProcedureStepDescription as fallback).
+					char studyPth[PATH_MAX] = {""};
+					reproinBuildStudyPath(&dcm, studyPth, sizeof(studyPth));
+					if (strlen(studyPth) > 0) {
+						if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator))
+							strcat(pth, kFileSep);
+						strcat(pth, studyPth);
+						mkDirs(pth);
 					}
-					strcat(outname, dcm.CSA.bidsEntitySuffix);
+					createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0));
+					if (specOk) {
+						isAddNamePostFixes = false;
+						bool isMultiEcho = dcm.isMultiEcho;
+						// Subject: -bi when set (scrubbed below); else heudiconv-style fixup
+						// of PatientID. reproinFixupSubjectId scrubs internally.
+						char subjectVal[kOptsStr];
+						if (strlen(opts.bidsSubject) > 0) {
+							snprintf(subjectVal, sizeof(subjectVal), "%s", opts.bidsSubject);
+							reproinSanitizeLabel(subjectVal);
+						} else {
+							reproinFixupSubjectId(dcm.patientID, subjectVal, sizeof(subjectVal));
+						}
+						// Session: spec _ses- > -bv > omit segment. {date}/DATE resolve to
+						// studyDate. reproinResolveSession scrubs internally.
+						char sessionVal[kOptsStr];
+						reproinResolveSession(&spec, &dcm, opts.bidsSession,
+							sessionVal, sizeof(sessionVal));
+						char repName[PATH_MAX];
+						bool built = reproinBuildFilename(&spec,
+							subjectVal, sessionVal,
+							dcm.echoNum, isMultiEcho,
+							repName, sizeof(repName));
+						if (built) {
+							// reproinBuildFilename uses native path separators;
+							// convert to the temp separator used by this loop.
+							for (size_t i = 0; i < strlen(repName); i++) {
+								if (repName[i] == kPathSeparator)
+									repName[i] = kTempPathSeparator;
+							}
+							strcat(outname, repName);
+						} else {
+							specOk = false;
+						}
+					}
+					if (!specOk) {
+						// Fallback: legacy "Unknown/<series>_<protocol>" basename.
+						strcat(outname, "Unknown");
+						snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
+						strcat(outname, newstr);
+						snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
+						strcat(outname, newstr);
+						strcat(outname, "_");
+						strcat(outname, dcm.protocolName);
+					}
+				} else {
+					// Legacy hazardous (%h) path: unchanged.
+					char bidsSubject[kOptsStr] = "sub-";
+					if (strlen(opts.bidsSubject) <= 0)
+						strcat(bidsSubject, "1");
+					else
+						strcat(bidsSubject, opts.bidsSubject);
+					char bidsSession[kOptsStr] = "ses-";
+					if (strlen(opts.bidsSession) <= 0)
+						strcat(bidsSession, "1");
+					else
+						strcat(bidsSession, opts.bidsSession);
+					createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL));
+					if (strlen(dcm.CSA.bidsDataType) < 1) {
+						strcat(outname, "Unknown");
+						snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
+						strcat(outname, newstr);
+						snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
+						strcat(outname, newstr);
+						strcat(outname, "_");
+						strcat(outname, dcm.protocolName);
+					} else {
+						isAddNamePostFixes = false;
+						strcat(outname, bidsSubject);
+						strcat(outname, pathSep);
+						strcat(outname, bidsSession);
+						strcat(outname, pathSep);
+						strcat(outname, dcm.CSA.bidsDataType);
+						strcat(outname, pathSep);
+						strcat(outname, bidsSubject);
+						strcat(outname, "_");
+						strcat(outname, bidsSession);
+						if (strstr(dcm.CSA.bidsDataType, "func") != NULL) {
+							strcat(outname, "_task-");
+							if (strlen(dcm.CSA.bidsTask) > 0)
+								strcat(outname, dcm.CSA.bidsTask);
+							else
+								strcat(outname, "rest");
+						}
+						strcat(outname, dcm.CSA.bidsEntitySuffix);
+					}
 				}
 			}
 			if (f == 'I')

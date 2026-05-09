@@ -15,8 +15,8 @@ then
 	exit 1
 fi
 
-g++ -O3 -sectcreate __TEXT __info_plist Info.plist -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niixX86 -DmyDisableOpenJPEG -target x86_64-apple-macos10.12 -mmacosx-version-min=10.12
-g++ -O3 -sectcreate __TEXT __info_plist Info.plist -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niixARM -DmyDisableOpenJPEG -target arm64-apple-macos11 -mmacosx-version-min=11.0
+g++ -O3 -sectcreate __TEXT __info_plist Info.plist -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp  -o dcm2niixX86 -DmyDisableOpenJPEG -target x86_64-apple-macos10.12 -mmacosx-version-min=10.12
+g++ -O3 -sectcreate __TEXT __info_plist Info.plist -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp  -o dcm2niixARM -DmyDisableOpenJPEG -target arm64-apple-macos11 -mmacosx-version-min=11.0
 # Create the universal binary.
 strip ./dcm2niixARM; strip ./dcm2niixX86
 lipo -create -output ${APP_NAME} dcm2niixARM dcm2niixX86

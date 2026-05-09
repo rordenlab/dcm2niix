@@ -2,7 +2,7 @@
 CFLAGS=-O3 -s -flto
 
 # Common files used for everything
-CFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix
+CFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp -o dcm2niix
 
 # Universal files used for almost everything
 UFILES=$(CFILES) -DmyDisableOpenJPEG
