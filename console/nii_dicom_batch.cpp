@@ -47,6 +47,7 @@
 #endif
 #include <ctype.h> //toupper
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h> //requires VS 2015 or later
 #include <stddef.h>
@@ -8483,6 +8484,20 @@ static uint8_t *xaPhysioInflate(uint8_t *pCmp, int cmpSz, uint32_t *unCmpOut) {
 		free(pUnCmp);
 		return NULL;
 	}
+	// Z_BUF_ERROR is ambiguous: it fires both when the deflate stream
+	// ended normally with input padding remaining (legit, the common path
+	// for DICOM-padded gzip blobs) AND when the output buffer cap is hit
+	// before the deflate end-marker is reached (output truncated). The
+	// two are distinguishable by avail_in: if any input is left after a
+	// non-STREAM_END exit, the input wasn't exhausted, which means the
+	// output cap was the limiting factor. Surface that as a warning so
+	// the user knows the resulting BIDS sidecar may be incomplete.
+#ifdef myDisableMiniZ
+	if ((ret == Z_BUF_ERROR) && (s.avail_in > 0))
+#else
+	if ((ret == MZ_BUF_ERROR) && (s.avail_in > 0))
+#endif
+		printWarning("XA PhysioLogging payload exceeded internal decompression cap; output may be truncated.\n");
 	uint32_t produced = (uint32_t)s.total_out;
 	inflateEnd(&s);
 	if (produced == 0) {
@@ -8521,14 +8536,159 @@ static void xaPhysioStripDoctype(char *xmlText) {
 	}
 }
 
+// Stable-sort (ticArr, signal) jointly by tic in ascending order. Document
+// order matches scanner emission order in known Siemens output, but a
+// malformed payload with reordered samples would otherwise yield non-
+// monotonic timestamps, breaking the span/(N-1) sample-rate calc and the
+// trigger rasteriser's monotonicity assumption. Bubble sort is adequate:
+// it short-circuits to O(n) on already-sorted input (the typical case),
+// and even O(n^2) is one-shot per series. Used by both XA and CMRR paths.
+static void physioBidsSortByTic(long *ticArr, double *signal, int n) {
+	bool swapped = true;
+	while (swapped) {
+		swapped = false;
+		for (int i = 1; i < n; i++) {
+			if (ticArr[i - 1] > ticArr[i]) {
+				long tt = ticArr[i - 1];
+				ticArr[i - 1] = ticArr[i];
+				ticArr[i] = tt;
+				double ts = signal[i - 1];
+				signal[i - 1] = signal[i];
+				signal[i] = ts;
+				swapped = true;
+			}
+		}
+	}
+}
+
+// Rebuild a sparsely-sampled physio stream on the uniform timeline implied
+// by its sampling rate. Returns malloc'd `outSignal` (length *outN) with
+// missing samples set to NaN, and `outTrigger` (length *outN) with 1s at
+// the indices nearest each volume tic that falls inside the recording
+// window. This matches the bidsphysio Python parser's plug_missing_data
+// step so consumers see uniform-rate BIDS output regardless of whether
+// the source PMU was regular (PULS, RESP) or sparse (EXT pulses).
+//
+// Inputs: ticArr / signal of length n in MDH tics, dtMs sample period in
+// ms, volTics / volN volume timeline. Output expected sample count is
+// round(duration_ms / dtMs) + 1 (fencepost), matching bidsphysio.
+static void physioBidsFillUniform(const long *ticArr, const double *signal, int n,
+								  double dtMs, const long *volTics, int volN,
+								  double **outSignal, uint8_t **outTrigger, int *outN) {
+	*outSignal = NULL;
+	*outTrigger = NULL;
+	*outN = 0;
+	if ((n < 2) || (dtMs <= 0.0))
+		return;
+	// Sample period expressed in tics so we can index without losing
+	// precision on the 2.5 ms tic boundaries.
+	double dtTics = dtMs / kMDHTicMs;
+	if (dtTics <= 0.0)
+		return;
+	double spanTics = (double)(ticArr[n - 1] - ticArr[0]);
+	int expN = (int)floor(spanTics / dtTics + 0.5) + 1;
+	if (expN < n)
+		expN = n; // never lose a real sample to rounding
+	double *uS = (double *)malloc(sizeof(double) * (size_t)expN);
+	uint8_t *uT = (uint8_t *)calloc((size_t)expN, sizeof(uint8_t));
+	if ((uS == NULL) || (uT == NULL)) {
+		free(uS);
+		free(uT);
+		return;
+	}
+	for (int i = 0; i < expN; i++)
+		uS[i] = NAN;
+	long firstTic = ticArr[0];
+	for (int i = 0; i < n; i++) {
+		double off = (double)(ticArr[i] - firstTic) / dtTics;
+		int idx = (int)floor(off + 0.5);
+		if (idx < 0) idx = 0;
+		if (idx >= expN) idx = expN - 1;
+		uS[idx] = signal[i];
+	}
+	long lastTic = ticArr[n - 1];
+	for (int i = 0; i < volN; i++) {
+		long vt = volTics[i];
+		// Drop triggers outside the actual recording window — bidsphysio
+		// also discards them rather than clamping to the endpoints.
+		if ((vt < firstTic) || (vt > lastTic))
+			continue;
+		// Place at the first sample whose time is >= the trigger time
+		// (ceiling semantics). This matches bidsphysio's
+		// `argmax(sampling_times >= t)` placement; using nearest-neighbour
+		// rounding instead would shift triggers by one sample on
+		// half-integer offsets.
+		double off = (double)(vt - firstTic) / dtTics;
+		int idx = (int)ceil(off);
+		if (idx < 0) idx = 0;
+		if (idx >= expN) idx = expN - 1;
+		uT[idx] = 1;
+	}
+	*outSignal = uS;
+	*outTrigger = uT;
+	*outN = expN;
+}
+
+// Forward declaration so physioBidsEmitStream below can call it; the
+// definition follows immediately after.
+static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
+									 const double *signal, const uint8_t *trigger,
+									 int nSamples, double sampFreq,
+									 double startTimeSec, int gzLevel);
+
+// One-shot emit of a single physio stream as a BIDS sidecar pair, given
+// per-stream sample arrays and the volume timeline. Encapsulates the steps
+// shared by both the XA and CMRR converters: rebuild on a uniform timeline
+// (with NaN-fill for sparse streams), compute the BIDS StartTime by
+// truncating to integer milliseconds (matching bidsphysio's `int(t_start_ms)
+// / 1000`), and call xaPhysioWriteStreamFiles. Returns true if a stream
+// was emitted, false if it was skipped (allocation failure or empty grid).
+//
+// Caller retains ownership of ticArr/signal/volTics; this function only
+// allocates and frees the uniform-grid working buffers internally.
+static bool physioBidsEmitStream(const char *baseName, const char *label,
+								 const long *ticArr, const double *signal, int n,
+								 double dtMs, double sampFreq,
+								 const long *volTics, int volN, int gzLevel) {
+	double *uSignal = NULL;
+	uint8_t *uTrig = NULL;
+	int uN = 0;
+	physioBidsFillUniform(ticArr, signal, n, dtMs, volTics, volN,
+						  &uSignal, &uTrig, &uN);
+	if ((uSignal == NULL) || (uN < 1)) {
+		free(uSignal);
+		free(uTrig);
+		return false;
+	}
+	// StartTime per BIDS: physio-timeline t=0 expressed relative to the
+	// first scan trigger. Negative means PMU recording started before
+	// the first acquired volume (the typical manual head-start).
+	// Truncate to integer ms in the integer-tic domain to match bidsphysio
+	// while avoiding the floating-point precision loss bidsphysio incurs
+	// from its tics → seconds → milliseconds → int chain.
+	double startTimeSec;
+	if (volN > 0) {
+		double startTimeMs = (double)(ticArr[0] - volTics[0]) * kMDHTicMs;
+		startTimeSec = (double)((long)startTimeMs) / 1000.0;
+	} else
+		startTimeSec = 0.0;
+	xaPhysioWriteStreamFiles(baseName, label, uSignal,
+							 (volN > 0) ? uTrig : NULL, uN,
+							 sampFreq, startTimeSec, gzLevel);
+	free(uSignal);
+	free(uTrig);
+	return true;
+}
+
 // Write `<base>_recording-<label>_physio.tsv.gz` (gzipped, no header row,
 // per BIDS convention) plus the matching JSON sidecar with Columns,
-// SamplingFrequency, and StartTime.
+// SamplingFrequency, and StartTime. NaN signal values are emitted as the
+// literal string `nan` to match the bidsphysio Python parser.
 static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
 									 int nSamples, double sampFreq,
 									 double startTimeSec, int gzLevel) {
-	char outBase[2048];
+	char outBase[PATH_MAX];
 	snprintf(outBase, sizeof(outBase), "%s_recording-%s_physio", baseName, label);
 	// JSON sidecar via cJSON.
 	cJSON *root = cJSON_CreateObject();
@@ -8541,7 +8701,7 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON_AddItemToObject(root, "StartTime", cJSON_CreateNumber(startTimeSec));
 	char *jsonStr = cJSON_Print(root);
 	cJSON_Delete(root);
-	char jsonPath[2200];
+	char jsonPath[PATH_MAX];
 	snprintf(jsonPath, sizeof(jsonPath), "%s.json", outBase);
 	FILE *fJson = fopen(jsonPath, "wb");
 	if (fJson != NULL) {
@@ -8558,11 +8718,23 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	size_t tsvLen = 0;
 	for (int i = 0; i < nSamples; i++) {
 		int n;
-		if (trigger != NULL)
-			n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n",
-						 signal[i], (int)trigger[i]);
-		else
-			n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\n", signal[i]);
+		// NaN values come from physioBidsFillUniform when a uniform-rate
+		// timeline is reconstructed from sparsely-sampled input (e.g. EXT
+		// trigger pulses). Emit the literal string "nan" — matching
+		// bidsphysio / pandas — rather than the ISO "n/a" so output files
+		// are byte-identical to the reference Python implementation.
+		bool isNan = isnan(signal[i]);
+		if (trigger != NULL) {
+			if (isNan)
+				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "nan\t%d\n", (int)trigger[i]);
+			else
+				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n", signal[i], (int)trigger[i]);
+		} else {
+			if (isNan)
+				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "nan\n");
+			else
+				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\n", signal[i]);
+		}
 		if (n < 0 || (size_t)n >= bufCap - tsvLen) break;
 		tsvLen += (size_t)n;
 	}
@@ -8594,7 +8766,7 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	unsigned long crc = mz_crc32(0L, Z_NULL, 0);
 	crc = mz_crc32(crc, (unsigned char *)tsv, (unsigned int)tsvLen);
 	unsigned long cmpLen = strm.total_out;
-	char tsvPath[2200];
+	char tsvPath[PATH_MAX];
 	snprintf(tsvPath, sizeof(tsvPath), "%s.tsv.gz", outBase);
 	FILE *fGz = fopen(tsvPath, "wb");
 	if (fGz != NULL) {
@@ -8686,7 +8858,6 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		}
 		vp = vEnd + 1;
 	}
-	long firstVolTic = (volN > 0) ? volTics[0] : -1;
 	int wrote = 0;
 	// Iterate <PhysioStream TYPE="X">...</PhysioStream> blocks.
 	const char *sp = xml;
@@ -8723,11 +8894,9 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		}
 		double *signal = (double *)malloc(sizeof(double) * nCap);
 		long *ticArr = (long *)malloc(sizeof(long) * nCap);
-		uint8_t *trig = (uint8_t *)calloc(nCap, sizeof(uint8_t));
-		if ((signal == NULL) || (ticArr == NULL) || (trig == NULL)) {
+		if ((signal == NULL) || (ticArr == NULL)) {
 			free(signal);
 			free(ticArr);
-			free(trig);
 			sp = sClose + 1;
 			continue;
 		}
@@ -8755,54 +8924,328 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		if (n < 2) {
 			free(signal);
 			free(ticArr);
-			free(trig);
 			sp = sClose + 1;
 			continue;
 		}
-		// Rasterize <Volume> ticks onto this stream's timeline by snapping
-		// each volume tic to the nearest PMU sample. Linear scan is fine
-		// because tics are monotonic and volN is small (one per TR).
-		int vi = 0;
-		for (int i = 0; i < volN && vi < volN; i++) {
-			long vt = volTics[i];
-			// Find the closest PMU sample. Since both arrays are sorted, walk forward.
-			int best = 0;
-			long bestDiff = labs(ticArr[0] - vt);
-			for (int j = 1; j < n; j++) {
-				long dj = labs(ticArr[j] - vt);
-				if (dj < bestDiff) {
-					bestDiff = dj;
-					best = j;
-				} else if (ticArr[j] > vt) {
-					break;
-				}
-			}
-			trig[best] = 1;
-			vi++;
-		}
-		// As-acquired sample interval: span / (N-1) ms (fencepost).
+		physioBidsSortByTic(ticArr, signal, n);
+		// As-acquired sample interval: span / (N-1) ms (fencepost). After
+		// sorting, ticArr[n-1] >= ticArr[0]; if they are equal (all samples
+		// share one timestamp) the recording is malformed and producing a
+		// SamplingFrequency of 0 in the JSON sidecar would be invalid BIDS,
+		// so skip the stream with a warning.
 		double dtMs = ((double)(ticArr[n - 1] - ticArr[0]) * kMDHTicMs) / (double)(n - 1);
-		double sampFreq = (dtMs > 0.0) ? 1000.0 / dtMs : 0.0;
-		// StartTime per BIDS: physio-timeline t=0 expressed relative to the
-		// first scan trigger. Negative means PMU recording started before
-		// the first acquired volume (the typical manual head-start).
-		double startTimeSec;
-		if (firstVolTic > 0)
-			startTimeSec = ((double)(ticArr[0] - firstVolTic) * kMDHTicMs) / 1000.0;
-		else
-			startTimeSec = 0.0;
-		xaPhysioWriteStreamFiles(baseName, label, signal, (volN > 0) ? trig : NULL,
-								 n, sampFreq, startTimeSec, opts.gzLevel);
-		wrote++;
+		if (dtMs <= 0.0) {
+			printWarning("XA stream %s has non-positive sample interval; skipping.\n", streamType);
+			free(signal);
+			free(ticArr);
+			sp = sClose + 1;
+			continue;
+		}
+		double sampFreq = 1000.0 / dtMs;
+		if (physioBidsEmitStream(baseName, label, ticArr, signal, n, dtMs,
+								 sampFreq, volTics, volN, opts.gzLevel))
+			wrote++;
 		free(signal);
 		free(ticArr);
-		free(trig);
 		sp = sClose + 1;
 	}
 	free(volTics);
 	free(xmlBytes);
 	if (wrote == 0) {
 		printWarning("XA PhysioLogging payload had no recognised streams.\n");
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy CMRR Multi-Band (VE11C) PMU support
+// ---------------------------------------------------------------------------
+// VE11C-era Siemens DICOMs from the CMRR Multi-Band sequence carry physio
+// at the same private tag (7FE1,1010) as the XA payload, but the body is a
+// raw binary blob rather than gzip-XML. Layout:
+//   * The blob is partitioned into N waveforms of equal stride
+//     wave_len = AcquisitionNumber * 1024 bytes.
+//   * Each waveform begins with a 1024-byte header: data_len (uint32 LE),
+//     fname_len (uint32 LE), fname (variable, e.g. "..._PULS.log"), then
+//     padding to 1024.
+//   * Bytes [1024 .. 1024+data_len) are ASCII log text. Header lines have
+//     the form "Key = Value"; sample lines are "<tics> <CHAN> <value> ...";
+//     ACQUISITION_INFO waveforms instead carry a 5-column table giving
+//     volume/slice/start/finish/echo per scanner trigger.
+//
+// The output schema is identical to the XA path (same per-stream BIDS
+// labels, same `_recording-<label>_physio.tsv.gz` + `.json`), and the
+// shared helper xaPhysioWriteStreamFiles writes the actual sidecars. Only
+// the parsing differs.
+
+#define kCMRRMaxStreams 8 // PULS, RESP, EXT, ECG, plus headroom for forward-compat
+
+typedef struct {
+	char chan[32];	   // "PULS" / "RESP" / "EXT" / "ECG" / "ACQUISITION_INFO"
+	const char *label; // BIDS label, e.g. "cardiac"
+	long *ticArr;	   // per-sample MDH tics (2.5 ms units)
+	double *signal;	   // per-sample value
+	int n;			   // sample count
+	int cap;		   // backing array capacity
+	double dtMs;	   // sample interval, populated from "SampleTime" header (in ms)
+} TCmrrStream;
+
+// Append one (tic, value) pair to a stream, growing the backing arrays as
+// needed. Returns true on success, false on allocation failure.
+//
+// Realloc safety: each result is committed back into the stream BEFORE
+// attempting the next allocation. If the second realloc fails, the first
+// is preserved (already in the struct), so the caller's cleanup path
+// frees the right pointer rather than a dangling one.
+static bool cmrrPhysioAppend(TCmrrStream *st, long tic, double v) {
+	if (st->n >= st->cap) {
+		int newCap = (st->cap == 0) ? 1024 : st->cap * 2;
+		long *t2 = (long *)realloc(st->ticArr, sizeof(long) * newCap);
+		if (t2 == NULL)
+			return false;
+		st->ticArr = t2;
+		double *s2 = (double *)realloc(st->signal, sizeof(double) * newCap);
+		if (s2 == NULL)
+			return false; // st->ticArr already updated; legitimate live ptr.
+		st->signal = s2;
+		st->cap = newCap;
+	}
+	st->ticArr[st->n] = tic;
+	st->signal[st->n] = v;
+	st->n++;
+	return true;
+}
+
+// Walk one ASCII line of a CMRR log body. Recognises:
+//   * "<key> = <value>" lines (LogDataType, SampleTime).
+//   * Sample lines: "<tics> <chan> <value> [...]". The channel name is
+//     "PULS" / "RESP" / "EXT" / "ECG"; downstream BIDS label is set on
+//     first encounter.
+//   * ACQUISITION_INFO 5-column trigger lines (volume, slice, acq_start,
+//     acq_finish, echo). The parser stores echo==0 entries as volume tics.
+//
+// Updates `st` (when this is a sample/header line for the current stream)
+// or `volTics` (when the current waveform is ACQUISITION_INFO).
+//
+// `streamHeaderRead` tracks the first 5-column line of an ACQUISITION_INFO
+// table — that line is column headers (VOLUME SLICE ACQ_START_TICS ...),
+// not data, and must be skipped exactly once.
+static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
+								long **volTicsP, int *volNP, int *volCapP,
+								char *prevVol, bool *streamHeaderRead) {
+	// Trim trailing CR / whitespace introduced by the source file's CRLF.
+	size_t L = strlen(line);
+	while ((L > 0) && ((line[L - 1] == '\r') || (line[L - 1] == '\n') || (line[L - 1] == ' ') || (line[L - 1] == '\t'))) {
+		line[L - 1] = '\0';
+		L--;
+	}
+	if (L == 0)
+		return;
+	// Tokenise on whitespace, capturing up to 5 fields. Anything past 5 is
+	// extra trigger metadata we don't need (e.g. "PULS_TRIGGER" tags).
+	char *toks[5] = {NULL, NULL, NULL, NULL, NULL};
+	int nToks = 0;
+	char *p = line;
+	while ((nToks < 5) && (*p != '\0')) {
+		while ((*p == ' ') || (*p == '\t'))
+			p++;
+		if (*p == '\0')
+			break;
+		toks[nToks++] = p;
+		while ((*p != '\0') && (*p != ' ') && (*p != '\t'))
+			p++;
+		if (*p != '\0') {
+			*p = '\0';
+			p++;
+		}
+	}
+	if (nToks < 3)
+		return;
+	// "<key> = <value>" — match on the second token being "=".
+	if (strcmp(toks[1], "=") == 0) {
+		if (strcmp(toks[0], "LogDataType") == 0) {
+			snprintf(st->chan, sizeof(st->chan), "%s", toks[2]);
+			st->label = xaPhysioBidsLabel(toks[2]);
+		} else if (strcmp(toks[0], "SampleTime") == 0) {
+			st->dtMs = kMDHTicMs * atof(toks[2]); // SampleTime is in MDH-tic units
+		}
+		return;
+	}
+	// ACQUISITION_INFO 5-column trigger table, e.g.
+	//   "0 0 39008572 39008611 0"  (VOLUME SLICE ACQ_START_TICS ACQ_FINISH_TICS ECHO)
+	// First such line is column headers.
+	if ((strcmp(st->chan, "ACQUISITION_INFO") == 0) && (nToks == 5)) {
+		if (!*streamHeaderRead) {
+			*streamHeaderRead = true;
+			return;
+		}
+		// Save only echo==0 to avoid double-counting multi-echo volumes.
+		if (strcmp(toks[4], "0") != 0)
+			return;
+		// Only emit a trigger when the volume number changes — within a
+		// volume each slice produces its own row.
+		if (strcmp(toks[0], prevVol) == 0)
+			return;
+		strncpy(prevVol, toks[0], 31);
+		prevVol[31] = '\0';
+		long tic = atol(toks[2]);
+		if (tic < 0)
+			return;
+		if (*volNP >= *volCapP) {
+			int newCap = (*volCapP == 0) ? 64 : (*volCapP * 2);
+			long *tmp = (long *)realloc(*volTicsP, sizeof(long) * newCap);
+			if (tmp == NULL)
+				return;
+			*volTicsP = tmp;
+			*volCapP = newCap;
+		}
+		(*volTicsP)[(*volNP)++] = tic;
+		return;
+	}
+	// PMU sample line: "<tics> <CHAN> <value>". Channel must match the
+	// LogDataType header parsed earlier — guards against malformed rows
+	// inside an ACQUISITION_INFO body or an unknown stream.
+	if ((nToks >= 3) && (st->label != NULL) && (strcmp(toks[1], st->chan) == 0)) {
+		char *endp;
+		long tic = strtol(toks[0], &endp, 10);
+		if ((endp == toks[0]) || (tic < 0))
+			return;
+		double v = strtod(toks[2], &endp);
+		if (endp == toks[2])
+			return;
+		cmrrPhysioAppend(st, tic, v);
+	}
+}
+
+// Top-level: re-read the CMRR blob from infname, parse all waveforms,
+// rasterise volume tics onto each stream's timeline, and emit BIDS sidecar
+// pairs via the existing xaPhysioWriteStreamFiles helper.
+static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
+							 const char *baseName, struct TDCMopts opts) {
+	if ((d.xaPhysioOffset <= 0) || (d.xaPhysioBytes < 1024))
+		return EXIT_FAILURE;
+	// Bound acquNum before the multiply: a malformed/hostile DICOM with a
+	// huge AcquisitionNumber would otherwise trigger signed-int overflow on
+	// `acquNum * 1024`, then divide-by-(possibly-zero/negative) on the
+	// xaPhysioBytes/waveLen and xaPhysioBytes%waveLen checks below. Cap
+	// against INT_MAX/1024 so the multiplication is safe; legitimate CMRR
+	// payloads have AcquisitionNumber on the order of slice count (<1000).
+	if ((d.acquNum < 1) || (d.acquNum > (INT_MAX / 1024)))
+		return EXIT_FAILURE;
+	int waveLen = d.acquNum * 1024; // bytes per waveform slot in the blob
+	if ((d.xaPhysioBytes % waveLen) != 0) {
+		printWarning("CMRR PMU payload size %d is not a multiple of (AcquisitionNumber=%d)*1024.\n",
+					 d.xaPhysioBytes, d.acquNum);
+		return EXIT_FAILURE;
+	}
+	int nWaves = d.xaPhysioBytes / waveLen;
+	if ((nWaves < 1) || (nWaves > kCMRRMaxStreams + 4)) {
+		printWarning("CMRR PMU payload reports %d waveforms (suspicious).\n", nWaves);
+		return EXIT_FAILURE;
+	}
+	FILE *f = fopen(infname, "rb");
+	if (f == NULL)
+		return EXIT_FAILURE;
+	fseek(f, d.xaPhysioOffset, SEEK_SET);
+	uint8_t *blob = (uint8_t *)malloc(d.xaPhysioBytes);
+	if (blob == NULL) {
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	if ((int)fread(blob, 1, d.xaPhysioBytes, f) != d.xaPhysioBytes) {
+		free(blob);
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	fclose(f);
+	TCmrrStream streams[kCMRRMaxStreams];
+	memset(streams, 0, sizeof(streams));
+	int nStreams = 0;
+	long *volTics = NULL;
+	int volN = 0, volCap = 0;
+	for (int w = 0; (w < nWaves) && (nStreams < kCMRRMaxStreams); w++) {
+		uint8_t *wave = blob + (size_t)w * (size_t)waveLen;
+		uint32_t dataLen = ((uint32_t)wave[0]) +
+						   ((uint32_t)wave[1] << 8) +
+						   ((uint32_t)wave[2] << 16) +
+						   ((uint32_t)wave[3] << 24);
+		if (dataLen > (uint32_t)(waveLen - 1024)) {
+			printWarning("CMRR waveform %d header reports data_len=%u exceeding slot; skipping.\n", w, dataLen);
+			continue;
+		}
+		// Body is plain ASCII; copy into a NUL-terminated scratch buffer so
+		// we can strtok / strstr with no out-of-bounds risk.
+		char *body = (char *)malloc((size_t)dataLen + 1);
+		if (body == NULL)
+			continue;
+		memcpy(body, wave + 1024, dataLen);
+		body[dataLen] = '\0';
+		// Per-waveform parser state. Each waveform is one stream OR the
+		// ACQUISITION_INFO trigger table.
+		TCmrrStream *st = &streams[nStreams];
+		memset(st, 0, sizeof(*st));
+		st->dtMs = kMDHTicMs; // fallback if SampleTime header is missing
+		bool streamHeaderRead = false;
+		char prevVol[32] = "";
+		// Walk lines in place. Replace each '\n' with '\0' temporarily so
+		// the line-parser sees a regular C string.
+		char *lineStart = body;
+		for (uint32_t i = 0; i <= dataLen; i++) {
+			if ((i == dataLen) || (body[i] == '\n')) {
+				body[i] = '\0';
+				cmrrPhysioParseLine(lineStart, st, &volTics, &volN, &volCap, prevVol, &streamHeaderRead);
+				lineStart = body + i + 1;
+			}
+		}
+		free(body);
+		if (strcmp(st->chan, "ACQUISITION_INFO") == 0) {
+			// Volume tics already collected via the line parser; nothing
+			// further to do for this slot. The stream object itself is
+			// recycled.
+			free(st->ticArr);
+			free(st->signal);
+			memset(st, 0, sizeof(*st));
+			continue;
+		}
+		if ((st->label == NULL) || (st->n < 2)) {
+			if (opts.isVerbose)
+				printMessage("CMRR waveform %d (%s) has %d samples or no BIDS mapping; skipping.\n",
+							 w, st->chan, st->n);
+			free(st->ticArr);
+			free(st->signal);
+			memset(st, 0, sizeof(*st));
+			continue;
+		}
+		nStreams++;
+	}
+	int wrote = 0;
+	for (int s = 0; s < nStreams; s++) {
+		TCmrrStream *st = &streams[s];
+		physioBidsSortByTic(st->ticArr, st->signal, st->n);
+		// Sample interval: prefer the SampleTime header (exact rate from
+		// scanner) and fall back to span/(N-1) only if the header was
+		// missing or non-positive.
+		double spanMs = (double)(st->ticArr[st->n - 1] - st->ticArr[0]) * kMDHTicMs;
+		double dtMs = (st->dtMs > 0.0) ? st->dtMs
+									   : (spanMs / (double)(st->n - 1));
+		if (dtMs <= 0.0) {
+			printWarning("CMRR stream %s has non-positive sample interval; skipping.\n", st->chan);
+			continue;
+		}
+		double sampFreq = 1000.0 / dtMs;
+		if (physioBidsEmitStream(baseName, st->label, st->ticArr, st->signal, st->n,
+								 dtMs, sampFreq, volTics, volN, opts.gzLevel))
+			wrote++;
+	}
+	for (int s = 0; s < kCMRRMaxStreams; s++) {
+		free(streams[s].ticArr);
+		free(streams[s].signal);
+	}
+	free(volTics);
+	free(blob);
+	if (wrote == 0) {
+		printWarning("CMRR PMU payload had no recognised streams.\n");
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
@@ -8823,20 +9266,23 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 #endif
 
-	// Siemens XA-line PhysioLogging short-circuit. The DICOM is a Raw Data
-	// Storage SOP carrying a gzip-XML PMU payload at (7FE1,1010); skip the
-	// NIfTI machinery and emit BIDS physio sidecars instead. This runs
-	// before nii_createFilename so we use a local copy with isRawDataStorage
-	// suppressed, which prevents the "_Raw" suffix from polluting the BIDS
-	// `_recording-<label>_physio` filename.
+	// Siemens PMU short-circuit. The DICOM is a Raw Data Storage SOP
+	// carrying a physio payload at (7FE1,1010) — either a gzip-XML XA-line
+	// PhysioLogging document or a legacy CMRR Multi-Band binary blob. In
+	// both cases skip the NIfTI machinery and emit BIDS physio sidecars
+	// directly. nii_createFilename is invoked on a local TDICOMdata copy
+	// with isRawDataStorage suppressed so the "_Raw" suffix doesn't pollute
+	// the BIDS `_recording-<label>_physio` filename.
 	{
 		uint64_t pIdx = dcmSort[0].indx;
-		if (dcmList[pIdx].isXAPhysio) {
+		if (dcmList[pIdx].isXAPhysio || dcmList[pIdx].isCMRRPhysio) {
 			struct TDICOMdata dPhysio = dcmList[pIdx];
-			dPhysio.isRawDataStorage = false; // do not append "_Raw" to the BIDS prefix
+			dPhysio.isRawDataStorage = false;
 			char baseName[PATH_MAX] = {""};
 			nii_createFilename(dPhysio, baseName, opts);
-			return xaPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
+			if (dcmList[pIdx].isXAPhysio)
+				return xaPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
+			return cmrrPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
 		}
 	}
 

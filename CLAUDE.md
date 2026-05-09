@@ -151,6 +151,19 @@ Full list in [FILENAMING.md](FILENAMING.md). Two conventions worth flagging here
 
 **Philips ASL volume order**: For Philips ASL data (label/control pairs, multi-phase, 3D pCASL Sources), volumes are reordered into **temporal acquisition order** rather than the scanner's logical/storage order. This is intentional per [issue #533](https://github.com/rordenlab/dcm2niix/issues/533) (commit `66a4fd0`). When updating Ref files for `dcm_qa_philips*` datasets, expect volume reshuffles — same set of voxels, different volume indexing.
 
+### Siemens physio (XA PhysioLogging + legacy CMRR PMU)
+
+dcm2niix extracts two distinct Siemens physio-in-DICOM formats, both carried at private tag `(7FE1,1010)`:
+
+1. **XA30/XA60 PhysioLogging** — Raw Data Storage SOP (`1.2.840.10008.5.1.4.1.1.66`) with a gzipped XML payload (gzip magic `1F 8B`).
+2. **Legacy CMRR Multi-Band (VE11C) PMU** — Siemens CSA Non-Image Storage SOP (`1.3.12.2.1107.5.9.1`) with a raw binary blob: one 1024-byte padded header per waveform followed by ASCII Siemens PMU log lines.
+
+Detection in `nii_dicom.cpp` (parser case `kSiemensXAPhysio`) is gated on `d.isRawDataStorage`. The CSA Non-Image SOP `1.3.12.2.1107.5.9.1` was added to the `isRawDataStorage` allowlist specifically because legacy CMRR PMU lives there; **MR Spectroscopy DICOMs also use this SOP**, so the CMRR branch additionally requires the per-waveform header `fname` field to contain a known PMU log suffix (`_PULS.log`, `_RESP.log`, `_EXT.log`, `_ECG.log`, or `_Info.log`) before setting `d.isCMRRPhysio`. The XA branch peeks for gzip magic bytes. The two flags are mutually exclusive. Note that `d.isValid = true` is deliberately set for both so the file survives the dispatcher's image-validity filter and reaches the hook — do not "fix" this.
+
+The dispatch hook lives at the top of `saveDcm2NiiCore` in `nii_dicom_batch.cpp`, branching on `isXAPhysio` vs `isCMRRPhysio` to call `xaPhysioConvert` or `cmrrPhysioConvert`; either short-circuits the NIfTI machinery entirely and returns. Both formats then funnel through the shared `physioBidsFillUniform` (uniform-grid resampling with NaN fill for sparse streams such as EXT trigger pulses, written as the literal `nan` to match bidsphysio) and `xaPhysioWriteStreamFiles` write path, so output is identical schema regardless of source: BIDS `_recording-<label>_physio.tsv.gz` plus `.json` (PULS→cardiac, RESP→respiratory, ECG→ecg, EXT→external_trigger). `StartTime` is typically negative because PMU recording is started manually before the scan, and the volume timeline is rasterised onto each stream's trigger column.
+
+Trigger placement uses **ceil semantics** to match bidsphysio's `argmax(times >= t)`; `StartTime` is **millisecond-truncated** to match bidsphysio's `int(t_start_ms) / 1000`. Output is byte-equivalent to the [cbinyu/bidsphysio](https://github.com/cbinyu/bidsphysio) Python parser on both XA and CMRR fixtures, modulo a 1-millisecond `StartTime` divergence on sparse streams where bidsphysio loses precision via floating-point arithmetic — dcm2niix's integer-tic arithmetic is exact here. bidsphysio remains the canonical Python equivalent for richer cases; the in-converter shortcut produces equivalent output for the common path so users don't have to round-trip through a second tool.
+
 **Known risk:** These latches assume the parser will encounter item delimiters to unlatch. An **empty** sequence (explicit length 0, common in anonymized DICOMs) has no items, so the latch never clears and every subsequent tag is silently dropped. Fix for issue #989 peeks at the raw 4-byte SQ length at `case kOriginalAttributesSq` and skips latching when the length is 0.
 
 **Re-evaluate this fix if:**

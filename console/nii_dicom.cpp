@@ -902,7 +902,13 @@ struct TDICOMdata clear_dicom_data() {
 	d.isBVecWorldCoordinates = false; // bvecs can be in image space (GE) or world coordinates (Siemens)
 	d.isGrayscaleSoftcopyPresentationState = false;
 	d.isRawDataStorage = false;
-	d.isXAPhysio = false; // Siemens XA-line PhysioLogging payload at (7FE1,1010), see kSiemensXAPhysio handling below
+	// Siemens physio logs at private tag (7FE1,1010); see kSiemensXAPhysio
+	// handling below. The two flags are mutually exclusive: isXAPhysio for
+	// the gzip-XML XA-line PhysioLogging payload, isCMRRPhysio for the legacy
+	// CMRR Multi-Band binary blob (one 1024-byte header per waveform plus
+	// ASCII log lines).
+	d.isXAPhysio = false;
+	d.isCMRRPhysio = false;
 	d.xaPhysioOffset = 0;
 	d.xaPhysioBytes = 0;
 	d.isMicroscopy = false;
@@ -5519,6 +5525,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isRawDataStorage = true; // Private MR Series Data Storage
 			if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.4") != NULL)
 				d.isRawDataStorage = true; // Private MR Examcard Storage
+			if (strstr(mediaUID, "1.3.12.2.1107.5.9.1") != NULL)
+				d.isRawDataStorage = true; // Siemens CSA Non-Image Storage (legacy CMRR PMU lives here)
 			if (d.isRawDataStorage)
 				d.isDerived = true;
 			if (d.isRawDataStorage)
@@ -7529,22 +7537,88 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.imageStart = (int)lPos + (int)lFileOffset;
 			break;
 		case kSiemensXAPhysio:
-			// Detect Siemens XA-line PhysioLogging payload only on Raw Data
-			// Storage SOPs (set earlier via kMediaStorageSOPClassUID). The
-			// payload body is a gzip stream beginning with magic 0x1F 0x8B;
-			// downstream code decompresses and emits BIDS physio sidecars.
+			// Detect Siemens physio payloads at the Siemens "MR IMA" private
+			// tag (7FE1,1010). Two distinct formats land here:
+			//
+			//  (1) XA-line PhysioLogging (XA30/XA60): a gzip-compressed XML
+			//      document, recognised by the gzip magic bytes 1F 8B.
+			//
+			//  (2) Legacy CMRR Multi-Band (VE11C): a raw binary blob with
+			//      one 1024-byte header per waveform followed by ASCII log
+			//      lines. Header layout: data_len (uint32 LE), fname_len
+			//      (uint32 LE), fname (variable, e.g. "..._PULS.log"). We
+			//      sniff this by checking that the first 1024 bytes parse
+			//      as a plausible header and the file body looks like
+			//      Siemens log text.
+			//
+			// Detection is gated on d.isRawDataStorage. The kMediaStorageSOPClassUID
+			// case earlier in this function recognises both the standard
+			// Raw Data Storage IOD (1.2.840.10008.5.1.4.1.1.66) used by XA
+			// PhysioLogging and the Siemens CSA Non-Image Storage SOP
+			// (1.3.12.2.1107.5.9.1) used by legacy CMRR Multi-Band PMU.
+			//
+			// Either path marks d.isValid = true so the file survives the
+			// (!dcmList[ii].isValid) filter in the series-dispatch loop and
+			// reaches saveDcm2NiiCore, where the physio hook intercepts it
+			// before the NIfTI machinery runs. Image dimensions are left
+			// at their RawData defaults; the hook does not consult them.
 			if ((d.isRawDataStorage) && (lLength >= 2) && ((lPos + lLength) <= fileLen)) {
 				if (((unsigned char)buffer[lPos] == 0x1F) && ((unsigned char)buffer[lPos + 1] == 0x8B)) {
 					d.isXAPhysio = true;
 					d.xaPhysioOffset = (int)lPos + (int)lFileOffset;
 					d.xaPhysioBytes = (int)lLength;
-					// Mark this DICOM as "valid" so it survives the
-					// (!dcmList[ii].isValid) filter in the series-dispatch
-					// loop and reaches saveDcm2NiiCore, where our XA hook
-					// intercepts it before the NIfTI machinery runs. Image
-					// dimensions are intentionally left at their RawData
-					// defaults; the hook does not consult them.
 					d.isValid = true;
+				} else if (lLength > 1024) {
+					// CMRR VE11C: validate the first waveform's header.
+					// `>` (not `>=`): the body-byte sniff at offset 1024
+					// requires at least one byte beyond the padded header.
+					// Layout: data_len (uint32 LE), fname_len (uint32 LE),
+					// fname (variable). data_len must fit in the value
+					// length and be large enough to encode the LogDataType
+					// header line; fname_len must be in a sane range.
+					uint32_t hdrDataLen = ((uint32_t)(unsigned char)buffer[lPos]) +
+										  ((uint32_t)(unsigned char)buffer[lPos + 1] << 8) +
+										  ((uint32_t)(unsigned char)buffer[lPos + 2] << 16) +
+										  ((uint32_t)(unsigned char)buffer[lPos + 3] << 24);
+					uint32_t hdrFnameLen = ((uint32_t)(unsigned char)buffer[lPos + 4]) +
+										   ((uint32_t)(unsigned char)buffer[lPos + 5] << 8) +
+										   ((uint32_t)(unsigned char)buffer[lPos + 6] << 16) +
+										   ((uint32_t)(unsigned char)buffer[lPos + 7] << 24);
+					bool ok = false;
+					if ((hdrDataLen >= 16) && (hdrDataLen <= (uint32_t)lLength) &&
+						(hdrFnameLen >= 4) && (hdrFnameLen <= 255) &&
+						(hdrFnameLen + 8 <= (uint32_t)lLength)) {
+						// Verify the fname looks like a Siemens PMU log
+						// name: "..._PULS.log" / "_RESP.log" / "_EXT.log" /
+						// "_ECG.log" / "_Info.log". This is the gate that
+						// rules out MR Spectroscopy DICOMs which share the
+						// Siemens CSA Non-Image SOP class but carry binary
+						// k-space-like floats here.
+						char fname[256];
+						uint32_t fl = hdrFnameLen;
+						if (fl >= sizeof(fname))
+							fl = sizeof(fname) - 1;
+						memcpy(fname, &buffer[lPos + 8], fl);
+						fname[fl] = '\0';
+						if ((strstr(fname, "_PULS.log") != NULL) ||
+							(strstr(fname, "_RESP.log") != NULL) ||
+							(strstr(fname, "_EXT.log") != NULL) ||
+							(strstr(fname, "_ECG.log") != NULL) ||
+							(strstr(fname, "_Info.log") != NULL)) {
+							// Sample the first body byte (just past the
+							// 1024-byte padded header). All known CMRR PMU
+							// bodies start with "UUID"/printable ASCII.
+							unsigned char first = (unsigned char)buffer[lPos + 1024];
+							if ((first >= 0x20) && (first <= 0x7E))
+								ok = true;
+						}
+					}
+					if (ok) {
+						d.isCMRRPhysio = true;
+						d.xaPhysioOffset = (int)lPos + (int)lFileOffset;
+						d.xaPhysioBytes = (int)lLength;
+						d.isValid = true;
+					}
 				}
 			}
 			break;
