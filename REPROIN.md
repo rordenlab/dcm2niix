@@ -14,7 +14,7 @@ This document records:
 ## Command-line usage
 
 ```
-dcm2niix -f %H [-bi <SUBJECT>] [-bv <SESSION>] -o <out_dir> <dicom_dir>
+dcm2niix -f %H [-bi <SUBJECT>] [-bv <SESSION>] [-br <PROJECT|.>] -o <out_dir> <dicom_dir>
 ```
 
 | Flag | Purpose | Example |
@@ -22,7 +22,8 @@ dcm2niix -f %H [-bi <SUBJECT>] [-bv <SESSION>] -o <out_dir> <dicom_dir>
 | `-f %H` | Activate ReproIn one-pass naming. `%H` is the format specifier; `-f H` (literal `H`) does **not** trigger ReproIn — it produces a literal filename of `H`. | `-f %H` |
 | `-bi <id>` | BIDS subject ID (without the `sub-` prefix). Optional; default is derived from `(0010,0020) PatientID` (see "Subject / session defaults"). | `-bi M2022` → `sub-M2022/...` |
 | `-bv <visit>` | BIDS session / visit (without the `ses-` prefix). Optional; if absent and no `_ses-<X>` is parsed from ProtocolName, the `ses-` segment is omitted entirely. A `_ses-<X>` token in ProtocolName **wins** over this flag. | `-bv 1222` → `ses-1222/...` |
-| `-o <dir>` | Output root. ReproIn appends a study-derived hierarchy below this directory. | `-o /data/bids` |
+| `-br <name>` | Override the project subdirectory name appended under `-o`. By default this name comes from `(0008,1030) StudyDescription` (falling back to `PerformedProcedureStepDescription`). Pass `-br .` to suppress the subdirectory entirely so `-o` itself becomes the BIDS root — useful when the caller already created a named dataset directory. | `-br MyStudy`, `-br .` |
+| `-o <dir>` | Output root. ReproIn appends a study-derived hierarchy below this directory (override with `-br`). | `-o /data/bids` |
 
 **Worked example.** Given DICOM input where `(0008,1030) StudyDescription = "BrainHealth AgingBrain"` and series 5 has `(0018,1030) ProtocolName = "anat-T1w"`:
 

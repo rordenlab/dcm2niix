@@ -333,6 +333,13 @@ int main(int argc, const char *argv[]) {
 				} else if (argv[i][2] == 'v') { //"-bv 1222" provide BIDS subject visit
 					i++;
 					snprintf(opts.bidsSession, kOptsStr - 1, "%s", argv[i]);
+				} else if (argv[i][2] == 'r') { //"-br MyStudy" override the reproin project subdirectory name; "-br ." means no subdir (use -o as BIDS root)
+					i++;
+					opts.isBidsRoot = true;
+					if (strcmp(argv[i], ".") == 0)
+						opts.bidsRoot[0] = '\0';
+					else
+						snprintf(opts.bidsRoot, kOptsStr - 1, "%s", argv[i]);
 				} else
 					printf("Error: Unknown command line argument: '%s'\n", argv[i]);
 			} else if ((argv[i][1] == 'c') && ((i + 1) < argc)) {

@@ -3893,9 +3893,19 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					struct TReproinSpec spec;
 					bool specOk = reproinParseSpec(&dcm, &spec);
 					// Append <study> hierarchy from StudyDescription (or
-					// PerformedProcedureStepDescription as fallback).
+					// PerformedProcedureStepDescription as fallback). When
+					// `-br <name>` is supplied, override that derivation:
+					//   -br <name>  -> use <name> as the project subdir
+					//   -br ""      -> no project subdir; use -o as BIDS root
+					// (-br . is normalised to "" by the CLI parser so callers
+					// have a portable way to say "no subdir" on shells that
+					// strip empty argv.)
 					char studyPth[PATH_MAX] = {""};
-					reproinBuildStudyPath(&dcm, studyPth, sizeof(studyPth));
+					if (opts.isBidsRoot) {
+						snprintf(studyPth, sizeof(studyPth), "%s", opts.bidsRoot);
+					} else {
+						reproinBuildStudyPath(&dcm, studyPth, sizeof(studyPth));
+					}
 					if (strlen(studyPth) > 0) {
 						if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator))
 							strcat(pth, kFileSep);
@@ -11771,6 +11781,8 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	strcpy(opts->imageComments, "");
 	strcpy(opts->bidsSubject, "");
 	strcpy(opts->bidsSession, "");
+	strcpy(opts->bidsRoot, "");
+	opts->isBidsRoot = false;
 	opts->isOnlySingleFile = false; // convert all files in a directory, not just a single file
 	opts->isOneDirAtATime = false;
 	opts->isRenameNotConvert = false;
