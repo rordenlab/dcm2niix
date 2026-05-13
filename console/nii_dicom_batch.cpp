@@ -8343,7 +8343,7 @@ void oldSliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struc
 
 int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct nifti_1_header *hdr, int verbose, const char *filename, int nConvert, struct TDCMopts opts) {
 	int sliceDir = 0;
-	if ((hdr->dim[3] < 2) || (hdr->dim[3] > kMaxEPI3D))
+	if (hdr->dim[3] < 2)
 		return sliceDir;
 	// uint64_t indx0 = dcmSort[0].indx;
 	// uint64_t indx1 = dcmSort[1].indx;
@@ -8352,12 +8352,17 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	if (nConvert > 1) // use 2nd volume as CMRR bug can create bogus slice timing in first volume
 		indx1 = dcmSort[1].indx;
 	struct TDICOMdata *d1 = &dcmList[indx1];
-	// oldSliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
-	rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
+	// Issue #1015: dim[3] > kMaxEPI3D (high-slice-count CT etc.) must still reach
+	// headerDcm2Nii2() below so sliceDir and the final sform/qform are computed.
+	// The slice-timing helpers each guard their own kMaxEPI3D writes.
+	if (hdr->dim[3] <= kMaxEPI3D) {
+		// oldSliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
+		rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
+	}
 	if (hdr->dim[3] > 1)
 		sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1], hdr, true);
 	// UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
