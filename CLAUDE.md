@@ -118,6 +118,10 @@ UIH DICOMs may store diffusion gradient directions in both the standard `(0018,9
 
 `isSQ()` in `nii_dicom.cpp` is the **explicit allowlist** of SQ tags the implicit-VR parser will recurse into. Adding a tag here makes the parser descend; omitting it means the entire SQ is treated as an opaque blob and any nested tags are invisible. PET tags `(0054,0016)`, `(0054,0300)`, `(0054,0304)` were added recently for issue #983 so radionuclide/tracer code sequences are reachable on implicit-VR datasets.
 
+### High-slice volumes (>`kMaxEPI3D`)
+
+`kMaxEPI3D` (in `nii_dicom.h`) caps the per-volume slice-timing arrays (`CSA.sliceTiming[]`). Volumes with `hdr->dim[3] > kMaxEPI3D` must still receive orientation/affine finalisation — commit `1cd1620` fixed a regression where the high-slice branch early-returned out of `headerDcm2Nii2()` and produced wrong orientation. Do **not** reintroduce an early return there. Slice-timing-specific code paths (`sliceTimingGE`, `allSame` loops) still assume `dim[3] <= kMaxEPI3D` — gate any new slice-timing work on that bound, but keep orientation logic running unconditionally.
+
 ### Filename format specifiers (`-f` flag)
 
 Full list in [FILENAMING.md](FILENAMING.md). Two conventions are case-sensitive and easy to confuse:
@@ -126,9 +130,11 @@ Full list in [FILENAMING.md](FILENAMING.md). Two conventions are case-sensitive 
 
 ### ReproIn one-pass filenames (`-f H` / `%H`)
 
-`%H` parses `(0018,1030) ProtocolName` (fallback `(0008,103e) SeriesDescription`) into a BIDS stem and uses `(0008,1030) StudyDescription` (fallback `(0040,0254) PerformedProcedureStepDescription`) as the path prefix. All logic is in `console/reproin.cpp`; the `f == 'H'` branch in `nii_dicom_batch.cpp` only dispatches. The legacy `%h` path is untouched. Defaults match heudiconv: `sub-` is derived from `PatientID` via `reproinFixupSubjectId`, and `ses-` is **omitted** unless the protocol or `reproinResolveSession` (`_ses-{date}` / `_ses-DATE` against `dcm.studyDate`) provides one. CLI values and entities are sanitised against `..`/separator injection before path use.
+`%H` parses `(0018,1030) ProtocolName` (fallback `(0008,103e) SeriesDescription`) into a BIDS stem and uses `(0008,1030) StudyDescription` (fallback `(0040,0254) PerformedProcedureStepDescription`) as the path prefix. All logic is in `console/reproin.cpp`; the `f == 'H'` branch in `nii_dicom_batch.cpp` only dispatches. The legacy `%h` path is untouched. Defaults match heudiconv: `sub-` is derived from `PatientID` via `reproinFixupSubjectId`, and `ses-` is **omitted** unless the protocol or `reproinResolveSession` (`_ses-{date}` / `_ses-DATE` against `dcm.studyDate`) provides one. Companion flags: `-bi` overrides subject, `-bv` overrides session, `-br` overrides the project subdirectory (default = StudyDescription; `-br .` suppresses it so `-o` is the BIDS root). CLI values and entities are sanitised against `..`/separator injection before path use.
 
-Cross-series concerns (fmap pairing via ShimSetting + NIfTI affine, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`) are handled by `tools/reproinx.py` — stdlib-only, parses NIfTI-1 headers directly with `gzip`/`struct`. Flags: `--anonymize` (suppress `-ba n`), `--strict` (fail-fast). Full grammar, defaults, privacy notes, and the complete limitations list live in [REPROIN.md](REPROIN.md) — keep that document in sync when touching `reproin.cpp` or `tools/reproinx.py`.
+Cross-series concerns (fmap pairing via ShimSetting + NIfTI affine, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`, session backfill, BIDS root scaffolding) are handled by `tools/reproinx.py` — stdlib-only, parses NIfTI-1 headers directly with `gzip`/`struct`. Flags: `--anonymize` (suppress `-ba n`), `--strict` (fail-fast). Full grammar, defaults, privacy notes, and the complete limitations list live in [REPROIN.md](REPROIN.md) — keep that document in sync when touching `reproin.cpp` or `tools/reproinx.py`.
+
+The post-pass must stay non-destructive on existing curated metadata: cleanup deletions (e.g. dropping `task-<X>_bold.json` once an `_acq-` variant is emitted, or `README.md` once a plain `README` exists) only proceed when the file content matches the known dcm2niix stub shape (`_is_dcm2niix_task_stub`, `_is_dcm2niix_readme_stub`). Hand-written sidecars and READMEs must survive re-runs untouched.
 
 ## Git Workflow
 

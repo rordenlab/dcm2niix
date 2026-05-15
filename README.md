@@ -33,6 +33,10 @@ DICOM provides many ways to store/compress image data, known as [transfer syntax
  - [Zstandard](https://github.com/facebook/zstd) compression (creating .nii.zst images via `-z s`) is optional, and can be enabled with `-DUSE_ZSTD=ON` (CMake) or `ZSTD=1 make` (Makefile). Zstandard offers a favorable compression/speed tradeoff compared to gzip.
  - Siemens physio recordings stored as DICOM (XA30/XA60 [PhysioLogging](https://www.magnetomworld.siemens-healthineers.com/clinical-corner/application-tips/physiologging) Raw Data Storage SOPs carrying a gzipped XML payload, and legacy CMRR Multi-Band VE11C PMU DICOMs carrying a raw binary blob in the Siemens CSA Non-Image Storage SOP) are extracted to BIDS-compliant `_recording-<label>_physio.tsv.gz` files with companion `.json` sidecars (cardiac/respiratory/ecg/external_trigger streams), rather than skipped as non-image. The Python tool [bidsphysio](https://github.com/cbinyu/bidsphysio) remains the canonical post-processor for richer cases.
 
+## ReproIn one-pass naming (`-f %H`)
+
+dcm2niix can emit ReproIn/heudiconv-style BIDS filenames in a single pass via the `-f %H` format specifier, with the optional `-bi` (subject), `-bv` (session), and `-br` (project subdirectory) flags. A companion script `tools/reproinx.py` handles cross-series concerns (fmap pairing, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`, session backfill, root scaffolding). See [REPROIN.md](./REPROIN.md) for the full grammar, defaults, privacy considerations, and known limitations.
+
 ## Versions
 
 [See releases](https://github.com/rordenlab/dcm2niix/releases) for recent release notes. [See the VERSIONS.md file for details on earlier releases](./VERSIONS.md).

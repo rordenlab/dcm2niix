@@ -66,6 +66,13 @@ void reproinFixupSubjectId(const char *in, char *out, size_t cap);
 // apply heudiconv subject normalisation; use reproinFixupSubjectId for that.
 void reproinSanitizeLabel(char *s);
 
+// In-place path-safety scrub for the `-br` project-subdirectory value.
+// Runs the same pipeline as reproinBuildStudyPath on a CLI-supplied string:
+// drops raw path separators / control characters, expands '_' and ' ' into
+// kPathSeparator, and rejects '.' / '..' segments so '-br ../escape' or
+// '-br /tmp/other' cannot write outside the chosen -o directory.
+void reproinSanitizeProjectPath(char *s);
+
 // Resolve session value for use as `ses-<X>` in BIDS path/filename.
 // Precedence (matches REPROIN.md and the heudiconv heuristic):
 //   1. `spec->ses` (parsed `_ses-<X>` from ProtocolName) — if present, wins.

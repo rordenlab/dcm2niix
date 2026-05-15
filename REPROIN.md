@@ -154,15 +154,37 @@ commented-out branch.
 The companion script [`tools/reproinx.py`](tools/reproinx.py) wraps dcm2niix
 and walks the resulting BIDS tree to address cross-series concerns. It runs
 `dcm2niix -f %H -ba n` (so `AcquisitionDateTime` survives into the JSON
-sidecar), then per-session:
+sidecar), then per-subject and per-session:
 
-- Aggregates `_scans.tsv` from each non-fmap JSON's `AcquisitionDateTime`.
-- Pairs every non-fmap, non-sbref scan with the fmap group whose
-  `ShimSetting` (exact) and NIfTI affine (`np.allclose(rtol=0.05)`) match —
-  the same algorithm heudiconv runs via `POPULATE_INTENDED_FOR_OPTS`.
-- Writes modern BIDS B0 mapping fields: `B0FieldIdentifier` on every fmap
-  JSON in the group, and `B0FieldSource` on each compatible target. (Heudiconv
-  emits the legacy `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.)
+- **Session backfill.** Heudiconv lets a single series (typically the
+  scout) carry `_ses-<X>` and propagates it across every other series in
+  the same `StudyInstanceUID`. dcm2niix's one-pass parser emits `_ses-X`
+  only on series that name it explicitly. The post-pass walks each
+  subject (including the parallel `derivatives/scanner/<sub>/...` tree
+  where scout outputs live) for an `_ses-X` token, and when a single
+  unambiguous label is found it renames and moves every non-derivative
+  file under `sub-X/<datatype>/` into `sub-X/ses-X/<datatype>/`.
+- **Per-session `_scans.tsv`** from each non-fmap JSON's
+  `AcquisitionDateTime`.
+- **Per-task `task-<X>[_acq-<Y>]_bold.json`** at the BIDS root for every
+  task/acq tuple seen under any subject — covers what dcm2niix's
+  `createDummyBidsBoilerplate` doesn't (it writes a fixed
+  `task-rest_bold.json` regardless of the actual `_acq-` label and is
+  removed when a more specific variant is emitted).
+- **Per-task empty `_events.tsv`** placeholders next to each `_bold.nii*`.
+- **BIDS root scaffolding**: `CHANGES`, `README` (no `.md`),
+  `.bidsignore`, `participants.tsv` (one row per `sub-*`),
+  `participants.json`, `scans.json`. Written at the BIDS root, which is
+  the common parent of every `sub-*` directory — *not* necessarily the
+  user's `-o` directory, since dcm2niix may append a `<StudyDescription>`
+  hierarchy below it.
+- **fmap pairing.** Every non-fmap, non-sbref scan is paired with the
+  fmap group whose `ShimSetting` (exact) and NIfTI affine
+  (`np.allclose(rtol=0.05)`) match — the same algorithm heudiconv runs
+  via `POPULATE_INTENDED_FOR_OPTS`. Modern BIDS B0 mapping fields are
+  written: `B0FieldIdentifier` on every fmap JSON in the group, and
+  `B0FieldSource` on each compatible target. (Heudiconv emits the legacy
+  `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.)
 
 Usage:
 
@@ -203,20 +225,28 @@ Triggered by `is_motion_corrected` in heudiconv; dcm2niix doesn't currently set
 that flag. Post-pass can detect from `ImageType` containing `MOCO` and rename
 accordingly.
 
-### 5. Study-level `_scans.tsv` and boilerplate
-heudiconv emits `sub-XX_scans.tsv`, `participants.tsv`, `dataset_description.json`,
-`task-*_bold.json` per task with sensible defaults. dcm2niix only emits a stub
-`dataset_description.json` and `task-rest_bold.json` (existing
-`createDummyBidsBoilerplate`). Post-pass should:
-- Aggregate per-subject `scans.tsv` from JSON sidecars (`AcquisitionDateTime`).
-- Produce per-task JSON files for every distinct `_task-X` value seen.
-- Write `participants.tsv` from `(0010,0010) PatientName` / `(0010,0040) PatientSex`.
+### 5. Study-level `_scans.tsv` and boilerplate (handled by reproinx.py)
+heudiconv emits `sub-XX_scans.tsv`, `participants.tsv`,
+`dataset_description.json`, `task-*_bold.json` per task with sensible
+defaults. dcm2niix only emits stub `dataset_description.json` and
+`task-rest_bold.json`; the rest is filled in by `reproinx.py` (see the
+post-pass list above). Direct `dcm2niix -f %H` users without the post-pass
+will still see only the dcm2niix stubs.
 
-### 6. Session inference from a single localizer
-ReproIn allows `_ses-` to be specified in only one series (typically the
-localizer) and propagated to every other series in the session. dcm2niix sees
-each series in isolation. Workaround: pass `-bv <session>` (`opts.bidsSession`)
-or write `_ses-` in every protocol. Post-pass can backfill from the localizer.
+`participants.tsv` is generated with `participant_id` only — heudiconv
+additionally pulls `PatientName`/`PatientSex` from DICOM, which the
+post-pass does not (the sidecar JSONs already strip these by default).
+
+### 6. Session inference from a single localizer (handled by reproinx.py)
+ReproIn allows `_ses-` to be specified on a single series (typically the
+scout) and propagated to every series in the same `StudyInstanceUID`.
+dcm2niix's one-pass parser sees each series in isolation, so `_ses-X` flows
+only into the series that name it. `reproinx.py` walks each subject after
+conversion (including the parallel `derivatives/scanner/<sub>/...` tree
+where scout outputs live) and, when exactly one `_ses-X` label is found,
+renames and moves every non-derivative file into a `ses-X/` subtree.
+Direct `dcm2niix -f %H` users without the post-pass should pass
+`-bv <session>` or annotate every protocol with `_ses-`.
 
 ### 7. Cross-series `protocols2fix` substitutions
 The heuristic supports per-study regex substitutions on

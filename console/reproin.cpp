@@ -492,6 +492,19 @@ void reproinResolveSession(const struct TReproinSpec *spec,
 	reproinSanitizeLabel(out);
 }
 
+void reproinSanitizeProjectPath(char *s) {
+	if (s == NULL)
+		return;
+	// Same path-safety pipeline as reproinBuildStudyPath, applied to a
+	// CLI-supplied string. Strips raw '/' and '\\' (so '-br /tmp/x' can't
+	// climb out of -o), expands '_' and ' ' into our own kPathSeparator, then
+	// drops "." / ".." segments so '-br ..' or '-br ../escape' resolves to
+	// either empty or a path safely contained below -o.
+	reproinDropRawPathChars(s);
+	reproinPathify(s);
+	reproinRejectDotSegments(s);
+}
+
 void reproinBuildStudyPath(const struct TDICOMdata *dcm, char *pthOut, size_t cap) {
 	pthOut[0] = '\0';
 	const char *src = NULL;
@@ -502,12 +515,7 @@ void reproinBuildStudyPath(const struct TDICOMdata *dcm, char *pthOut, size_t ca
 	if (src == NULL)
 		return;
 	snprintf(pthOut, cap, "%s", src);
-	// Strip raw path separators / control chars BEFORE pathify expands
-	// underscores and spaces into our own structural separators. Then drop
-	// "." / ".." segments to defend against directory traversal.
-	reproinDropRawPathChars(pthOut);
-	reproinPathify(pthOut);
-	reproinRejectDotSegments(pthOut);
+	reproinSanitizeProjectPath(pthOut);
 }
 
 // Decide concrete suffix when emitting fmap GRE multi-echo magnitudes.

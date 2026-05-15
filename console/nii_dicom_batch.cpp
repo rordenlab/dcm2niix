@@ -1268,6 +1268,79 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 #endif
 }
 
+// Replace tab/CR/LF with space so a value can land in a single TSV cell.
+static void reproinTsvField(const char *src, char *dst, size_t cap) {
+	size_t j = 0;
+	if (cap == 0)
+		return;
+	for (size_t i = 0; src != NULL && src[i] != '\0' && j + 1 < cap; i++) {
+		char c = src[i];
+		if (c == '\t' || c == '\r' || c == '\n')
+			c = ' ';
+		dst[j++] = c;
+	}
+	dst[j] = '\0';
+}
+
+// Append a row to <studyRoot>/.reproin_provenance.tsv recording the DICOM
+// provenance of one converted series. Consumed by tools/reproinx.py to apply
+// heudiconv-style cross-series fixups (e.g. __dup-NN, ses- propagation) that
+// require a study-wide view the one-pass C parser does not have.
+// No-op unless the filename format contains literal "%H" (ReproIn one-pass).
+static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d, struct TDCMopts opts) {
+	if (strstr(opts.filename, "%H") == NULL)
+		return;
+	char studyRoot[PATH_MAX] = {""};
+	if (strlen(opts.outdir) > 0)
+		snprintf(studyRoot, sizeof(studyRoot), "%s", opts.outdir);
+	char studyPath[PATH_MAX] = {""};
+	if (opts.isBidsRoot) {
+		snprintf(studyPath, sizeof(studyPath), "%s", opts.bidsRoot);
+		reproinSanitizeProjectPath(studyPath);
+	} else {
+		reproinBuildStudyPath(&d, studyPath, sizeof(studyPath));
+	}
+	if (strlen(studyPath) > 0) {
+		if (strlen(studyRoot) > 0 && studyRoot[strlen(studyRoot) - 1] != kPathSeparator &&
+			strlen(studyRoot) + 1 < sizeof(studyRoot))
+			strcat(studyRoot, kFileSep);
+		if (strlen(studyRoot) + strlen(studyPath) + 1 < sizeof(studyRoot))
+			strcat(studyRoot, studyPath);
+	}
+	if (strlen(studyRoot) < 1)
+		return;
+	// Stem relative to studyRoot (no extension — Python globs to find the
+	// .nii.gz / .json / .bval / .bvec siblings).
+	const char *relStem = pathoutname;
+	size_t rootLen = strlen(studyRoot);
+	if (strncmp(pathoutname, studyRoot, rootLen) == 0) {
+		relStem = pathoutname + rootLen;
+		while (*relStem == kPathSeparator || *relStem == '/')
+			relStem++;
+	} else {
+		const char *slash = strrchr(pathoutname, kPathSeparator);
+		if (slash != NULL)
+			relStem = slash + 1;
+	}
+	char tsvPath[PATH_MAX];
+	snprintf(tsvPath, sizeof(tsvPath), "%s%c.reproin_provenance.tsv", studyRoot, kPathSeparator);
+	FILE *tp = fopen(tsvPath, "a");
+	if (tp == NULL)
+		return;
+	if (ftell(tp) == 0) {
+		fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\n");
+	}
+	char f1[kDICOMStr], f2[kDICOMStr], f3[kDICOMStr], f4[kDICOMStr];
+	char f5[PATH_MAX];
+	reproinTsvField(d.studyInstanceUID, f1, sizeof(f1));
+	reproinTsvField(d.protocolName, f2, sizeof(f2));
+	reproinTsvField(d.seriesDescription, f3, sizeof(f3));
+	reproinTsvField(d.studyDescription, f4, sizeof(f4));
+	reproinTsvField(relStem, f5, sizeof(f5));
+	fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5);
+	fclose(tp);
+}
+
 void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
@@ -1467,8 +1540,14 @@ tse3d: T2*/
 	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
 	json_Str(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant);
 	json_Str(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions);
-	json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName);
-	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
+	if (strlen(d.sequenceName) < 1) {
+		// XA60 fMRI populates (0018,9005) PulseSequenceName but not (0018,0024) SequenceName;
+		// promote PulseSequenceName so BIDS validator's recommended SequenceName is satisfied.
+		json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.pulseSequenceName);
+	} else {
+		json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName);
+		json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
+	}
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
@@ -2205,7 +2284,8 @@ tse3d: T2*/
 				pf = 0.75;
 			if (csaAscii.partialFourier == 8)
 				pf = 0.875;
-			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+			if (pf < 1.0)
+				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
 		}
 		if (csaAscii.interp > 0) { // in-plane interpolation
 			interp = true;
@@ -2548,7 +2628,10 @@ tse3d: T2*/
 	} // if (!d.is3DAcq), e.g. only for 2D issue849
 	// Slice Timing UIH or GE >>>>
 	// in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if ((d.modality != kMODALITY_SEG) && (d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.modality != kMODALITY_SEG) && (d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (h->dim[3] <= kMaxEPI3D) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
+		// h->dim[3] is bounded by kMaxEPI3D because d.CSA.sliceTiming is a
+		// fixed-size array of that capacity; a high-slice volume that
+		// somehow had timing[0]/[1] populated would otherwise read past it.
 		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < h->dim[3]; i++) {
 			if (i != 0)
@@ -2585,6 +2668,8 @@ tse3d: T2*/
 	// fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );kDCMdate
 	fprintf(fp, "}\n");
 	fclose(fp);
+	// Record per-series provenance for tools/reproinx.py (no-op unless %H).
+	reproinAppendProvenance(pathoutname, d, opts);
 } // nii_SaveBIDSX()
 
 void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
@@ -3903,6 +3988,10 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					char studyPth[PATH_MAX] = {""};
 					if (opts.isBidsRoot) {
 						snprintf(studyPth, sizeof(studyPth), "%s", opts.bidsRoot);
+						// Apply the same path-safety scrub as the
+						// StudyDescription-derived default so '-br ../escape'
+						// or '-br /tmp/other' can't write outside -o.
+						reproinSanitizeProjectPath(studyPth);
 					} else {
 						reproinBuildStudyPath(&dcm, studyPth, sizeof(studyPth));
 					}
@@ -7174,6 +7263,8 @@ void sliceTimeGE(struct TDICOMdata *d, int mb, int dim3, float TR, bool isInterl
 	// isInterleaved : interleaved or sequential slice order
 	// geMajorVersion: version, e.g. 29.0
 	// is27r3 : software release 27.0 R03 or later
+	if (dim3 > kMaxEPI3D)
+		return; // local `sliceTiming` and d->CSA.sliceTiming are sized kMaxEPI3D
 	float sliceTiming[kMaxEPI3D];
 	// multiband can be fractional! 'extra' slices discarded
 	int nExcitations = ceil(float(dim3) / float(mb));
@@ -8385,7 +8476,10 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	// ensure slice times have variability
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	bool allSame = true;
-	if (d0->CSA.sliceTiming[0] >= 0.0) {
+	// Issue #1015 follow-up: cap the read range at kMaxEPI3D — d0->CSA.sliceTiming
+	// is a fixed kMaxEPI3D-element array; high-slice (>1024) volumes with a
+	// populated sliceTiming[0] would otherwise read past the end.
+	if (d0->CSA.sliceTiming[0] >= 0.0 && hdr->dim[3] <= kMaxEPI3D) {
 		for (int i = 0; i < hdr->dim[3]; i++)
 			if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0]))
 				allSame = false;
