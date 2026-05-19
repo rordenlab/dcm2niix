@@ -27,3 +27,7 @@ dcm2niix*.wasm
 openjpeg-2.5.3/
 v2.5.3.tar.gz*
 niivue-dcm2niix-*.tgz
+
+# Audit transcripts — written by the /audit slash command, not source.
+audit_*.md
+cpfiles.command

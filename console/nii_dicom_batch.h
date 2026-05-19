@@ -76,7 +76,14 @@ struct TDicomSeries {
 
 struct TDCMopts {
 	bool isDumpNotConvert;
-	bool isKeepDirectionVaries, isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isZStd, isGz, isPipedGz, isFlipY, isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isIgnoreIntensityScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop, isGuessBidsFilename, isBidsRoot;
+	// isAnonymizeBIDS (`-ba y/n/o`): true => strip BOTH dates and patient PII
+	// (heavy anonymisation, default). isOmitPiiBIDS: set by `-ba o`; strips
+	// patient PII (PatientName/ID/BirthDate/Sex/Age/Size/Weight,
+	// AccessionNumber, ReferringPhysicianName) but keeps
+	// AcquisitionDateTime/Time so downstream tools (e.g. reproinx.py's
+	// scans.tsv) can still aggregate timestamps. The two flags are
+	// independent — `o` sets isAnonymizeBIDS=false, isOmitPiiBIDS=true.
+	bool isKeepDirectionVaries, isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isZStd, isGz, isPipedGz, isFlipY, isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOmitPiiBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isIgnoreIntensityScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop, isGuessBidsFilename, isBidsRoot;
 	int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, onlySearchDirForDICOM, gzLevel, diffCyclingModeGE; // support for compressed data 0=none,
 	char filename[kOptsStr], outdir[kOptsStr], indir[kOptsStr], pigzname[kOptsStr], optsname[kOptsStr], indirParent[kOptsStr], imageComments[24], bidsSubject[kOptsStr], bidsSession[kOptsStr], bidsRoot[kOptsStr];
 	double seriesNumber[MAX_NUM_SERIES]; // requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)

@@ -53,7 +53,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
 	printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
 	printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
-	printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
+	printf("   -ba : anonymize BIDS (y=strip dates+PII, n=keep both, o=strip PII only, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
 	printf("  -c : comment stored in NIfTI aux_file (up to 24 characters e.g. '-c VIP', empty to anonymize e.g. 0020,4000 e.g. '-c \"\"')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
 #ifdef myEnableJNIFTI
@@ -319,13 +319,22 @@ int main(int argc, const char *argv[]) {
 						if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
 							opts.isOnlyBIDS = true;
 					}
-				} else if (argv[i][2] == 'a') { //"-ba y"
+				} else if (argv[i][2] == 'a') { //"-ba y|n|o"
 					i++;
 					if (invalidParam(i, argv))
 						return 0;
+					// y = full anon (strip dates AND patient PII; default)
+					// n = no anon  (keep both — useful when downstream tooling
+					//               will scrub later)
+					// o = omit PII only (strip patient block, keep dates) —
+					//     privacy-preserving middle ground for reproinx.py
+					opts.isOmitPiiBIDS = false;
 					if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 						opts.isAnonymizeBIDS = false;
-					else
+					else if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
+						opts.isAnonymizeBIDS = false;
+						opts.isOmitPiiBIDS = true;
+					} else
 						opts.isAnonymizeBIDS = true;
 				} else if (argv[i][2] == 'i') { //"-bi M2022" provide BIDS subject ID
 					i++;

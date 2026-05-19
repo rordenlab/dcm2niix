@@ -118,16 +118,22 @@ void dcm2niix_fswrapper::setOpts(const char *dcmindir, const char *dcm2niixopts)
 void dcm2niix_fswrapper::__setDcm2niixOpts(const char *dcm2niixopts) {
 	// printf("[DEBUG] dcm2niix_fswrapper::__setDcm2niixOpts(%s)\n", dcm2niixopts);
 
-	char *restOpts = (char *)malloc(strlen(dcm2niixopts) + 1);
-	memset(restOpts, 0, strlen(dcm2niixopts) + 1);
-	memcpy(restOpts, dcm2niixopts, strlen(dcm2niixopts));
+	char *optsCopy = (char *)malloc(strlen(dcm2niixopts) + 1);
+	if (optsCopy == NULL)
+		return;
+	strcpy(optsCopy, dcm2niixopts);
 
-	char *nextOpt = strtok_r((char *)dcm2niixopts, ",", &restOpts);
+	char *restOpts = NULL;
+	char *nextOpt = strtok_r(optsCopy, ",", &restOpts);
 	while (nextOpt != NULL) {
 		char *k = nextOpt;
 		char *v = strchr(nextOpt, '=');
-		if (v != NULL)
-			*v = '\0';
+		if (v == NULL) {
+			printf("[WARN] dcm2niix option %s skipped: expected key=value\n", k);
+			nextOpt = strtok_r(NULL, ",", &restOpts);
+			continue;
+		}
+		*v = '\0';
 		v++; // move past '='
 
 		// skip leading white spaces
@@ -142,8 +148,16 @@ void dcm2niix_fswrapper::__setDcm2niixOpts(const char *dcm2niixopts) {
 				tdcmOpts.isOnlyBIDS = true;
 			} else if (*v == 'y' || *v == 'Y')
 				tdcmOpts.isCreateBIDS = true;
-		} else if (strcmp(k, "ba") == 0)
-			tdcmOpts.isAnonymizeBIDS = (*v == 'n' || *v == 'N') ? false : true;
+		} else if (strcmp(k, "ba") == 0) {
+			tdcmOpts.isOmitPiiBIDS = false;
+			if (*v == 'n' || *v == 'N' || *v == '0')
+				tdcmOpts.isAnonymizeBIDS = false;
+			else if (*v == 'o' || *v == 'O') {
+				tdcmOpts.isAnonymizeBIDS = false;
+				tdcmOpts.isOmitPiiBIDS = true;
+			} else
+				tdcmOpts.isAnonymizeBIDS = true;
+		}
 		else if (strcmp(k, "f") == 0)
 			strcpy(tdcmOpts.filename, v);
 		else if (strcmp(k, "i") == 0)
@@ -188,6 +202,7 @@ void dcm2niix_fswrapper::__setDcm2niixOpts(const char *dcm2niixopts) {
 
 		nextOpt = strtok_r(NULL, ",", &restOpts);
 	}
+	free(optsCopy);
 }
 
 // interface to isDICOMfile() in nii_dicom.cpp

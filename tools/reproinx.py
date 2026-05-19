@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import glob as _globlib  # for glob.escape; we keep Path.glob for matching
 import gzip
+import hashlib
 import json
 import math
 import os
@@ -58,12 +59,12 @@ def _load_json(path: Path) -> dict:
 
 
 def _save_json(path: Path, data: dict) -> None:
-    """Write a JSON sidecar atomically (tempfile + rename) with trailing newline."""
+    """Write a JSON sidecar atomically (tempfile + rename). No trailing newline
+    so the output is byte-identical to heudiconv's reproin scaffolding."""
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)
-            f.write("\n")
         os.replace(tmp, str(path))
     except Exception:
         try:
@@ -113,17 +114,18 @@ def _run_dcm2niix(indir: str, outdir: str,
                   subject: Optional[str], session: Optional[str],
                   anonymize: bool) -> None:
     bin_path = _which_dcm2niix()
-    # -ba n: keep AcquisitionDateTime in the JSON sidecar so _scans.tsv has
-    # real ISO timestamps and the "Closest" fmap-matching tie-breaker has
-    # something to compare against. Heudiconv does the same. Pass
-    # anonymize=True to suppress this; tie-breaking then degrades to
+    # -ba o: omit PII (PatientName/ID/BirthDate/Sex/Age/Size/Weight,
+    # AccessionNumber, ReferringPhysicianName) but keep AcquisitionDateTime
+    # so scans.tsv has real ISO timestamps and the fmap "Closest"
+    # tie-breaker has something to compare against. Heudiconv keeps dates
+    # similarly but never emits the patient block. Pass anonymize=True to
+    # upgrade to `-ba y` (also strips dates); tie-breaking then degrades to
     # first-compatible.
     # No "-w 1": dcm2niix's default ADD_SUFFIX (a/b/c) preserves colliding
     # series; the post-pass below renames them to heudiconv-style __dup-NN
     # using the .reproin_provenance.tsv written by the C side.
     cmd = [bin_path, "-f", "%H", "-z", "y", "-o", outdir]
-    if not anonymize:
-        cmd.extend(["-ba", "n"])
+    cmd.extend(["-ba", "y" if anonymize else "o"])
     if subject:
         cmd.extend(["-bi", subject])
     if session:
@@ -405,9 +407,35 @@ def _populate_b0_fields(session_dir: Path) -> int:
     return len(used_groups)
 
 
+def _series_randstr(data: dict) -> str:
+    """8-hex md5 of (StudyInstanceUID || SeriesInstanceUID), heudiconv-style.
+
+    Heudiconv hashes the sorted concatenation of every `*UID` attribute on the
+    first DICOM of the series. dcm2niix's sidecar only exposes Study/Series
+    UIDs, but those two together are already unique-per-series and
+    deterministic, so the resulting randstr is reproducible (matching
+    heudiconv's "same randstr for echo-1/echo-2 of the same series") even if
+    not byte-identical to heudiconv's bytes.
+    """
+    pieces: list[str] = []
+    for key in ("SeriesInstanceUID", "StudyInstanceUID"):
+        v = data.get(key)
+        if v:
+            pieces.append(str(v))
+    if not pieces:
+        return "n/a"
+    return hashlib.md5("".join(sorted(pieces)).encode()).hexdigest()[:8]
+
+
 def _write_scans_tsv(session_dir: Path) -> None:
-    """Aggregate AcquisitionDateTime from JSON sidecars into <sub>[_<ses>]_scans.tsv."""
-    rows: list[tuple[str, str]] = []
+    """Aggregate AcquisitionDateTime + per-series randstr from JSON sidecars
+    into `<sub>[_<ses>]_scans.tsv`. Columns mirror heudiconv reproin:
+    `filename, acq_time, operator, randstr`. `operator` is always 'n/a' —
+    PerformingPhysicianName/OperatorsName carry real human names and are
+    intentionally not threaded through dcm2niix's provenance TSV. Users who
+    want them can populate the column manually post-conversion.
+    """
+    rows: list[tuple[str, str, str]] = []  # (filename, acq, randstr)
     for jp in sorted(session_dir.glob("*/*.json")):
         nii_pattern = _globlib.escape(jp.stem) + ".nii*"
         nii = next(iter(jp.parent.glob(nii_pattern)), None)
@@ -418,7 +446,8 @@ def _write_scans_tsv(session_dir: Path) -> None:
         except (OSError, ValueError, json.JSONDecodeError):
             continue
         acq = _acq_iso(data) or "n/a"
-        rows.append((str(nii.relative_to(session_dir)), acq))
+        rand = _series_randstr(data)
+        rows.append((str(nii.relative_to(session_dir)), acq, rand))
     if not rows:
         return
     rows.sort(key=lambda r: (r[1] == "n/a", r[1]))
@@ -428,10 +457,14 @@ def _write_scans_tsv(session_dir: Path) -> None:
         scans = session_dir / f"{sub_dir.name}_{session_dir.name}_scans.tsv"
     else:
         scans = session_dir / f"{sub_dir.name}_scans.tsv"
-    with scans.open("w") as f:
-        f.write("filename\tacq_time\n")
-        for fname, acq in rows:
-            f.write(f"{fname}\t{acq}\n")
+    # CRLF line endings match heudiconv's csv.writer default (Python's csv
+    # module emits dialect='excel-tab' with `\r\n`). participants.tsv is
+    # hand-written there and uses LF, so the two TSV files have different
+    # conventions — keep them consistent with the reference.
+    with scans.open("w", newline="") as f:
+        f.write("filename\tacq_time\toperator\trandstr\r\n")
+        for fname, acq, rand in rows:
+            f.write(f"{fname}\t{acq}\tn/a\t{rand}\r\n")
 
 
 _SES_RE = re.compile(r"_ses-([A-Za-z0-9]+)")
@@ -513,6 +546,14 @@ def _bids_roots(subjects: list[Path]) -> list[Path]:
     return sorted(roots)
 
 
+_BIDS_EXTS = (".nii.gz", ".nii", ".json", ".bval", ".bvec", ".tsv", ".tsv.gz")
+
+
+def _stem_has_files(stem: Path) -> bool:
+    """True when any recognised BIDS file exists for a stem."""
+    return any((stem.parent / f"{stem.name}{ext}").is_file() for ext in _BIDS_EXTS)
+
+
 def _propagate_session(sub_dir: Path) -> Optional[str]:
     """Backfill `_ses-X` into all non-derivative files for this subject.
 
@@ -531,12 +572,27 @@ def _propagate_session(sub_dir: Path) -> Optional[str]:
     # / SeriesDescription for every series, so the `_ses-X` marker is visible
     # even when the carrying series (typically the scout) was dropped by
     # `-i y` or never produced an on-disk filename containing `_ses-`.
+    #
+    # Filter rows to those belonging to THIS subject (OutputStem contains
+    # `sub-<name>/`). Without this, a `_ses-X` marker on subject A's scout
+    # would propagate every subject in the BIDS root into `ses-X/`, and two
+    # subjects with different sessions would block propagation entirely.
     sessions: set[str] = set()
     prov_rows = _load_provenance(sub_dir.parent)
     if prov_rows:
-        ses_tsv = _session_from_provenance(prov_rows)
-        if ses_tsv:
-            sessions.add(ses_tsv)
+        sub_token = f"/{sub_dir.name}/"
+        own_rows = [r for r in prov_rows
+                    if sub_token in f"/{str(r.get('OutputStem', ''))}"]
+        current_rows = [r for r in own_rows
+                        if _stem_has_files(sub_dir.parent / str(r.get("OutputStem", "")))]
+        study_uids = {str(r.get("StudyInstanceUID", ""))
+                      for r in current_rows if r.get("StudyInstanceUID")}
+        if study_uids:
+            scoped_rows = [r for r in own_rows
+                           if str(r.get("StudyInstanceUID", "")) in study_uids]
+            ses_tsv = _session_from_provenance(scoped_rows)
+            if ses_tsv:
+                sessions.add(ses_tsv)
     # Fallback: scan filenames at the IMMEDIATE subject root only (and the
     # parallel derivatives/scanner/<sub>/ tree where the scout lands).
     # Walking existing ses-X/ subtrees would conflate a previous run with
@@ -601,10 +657,6 @@ def _propagate_session(sub_dir: Path) -> Optional[str]:
             pass
     return ses
 
-
-_BIDS_EXTS = (".nii.gz", ".nii", ".json", ".bval", ".bvec", ".tsv", ".tsv.gz")
-
-
 def _series_stem(fname: str) -> str:
     """Strip recognised BIDS extensions to get the per-series stem.
 
@@ -663,14 +715,24 @@ def _apply_dup_naming(bids_root: Path) -> int:
         if stem and stem not in by_stem:
             by_stem[stem] = r
     # Group: for any stem ending in a single lowercase letter whose base also
-    # appears in the TSV, mark this stem as a collision sibling of `base`.
+    # appears in the TSV, mark this stem as a collision sibling of `base` —
+    # but only when both rows refer to the SAME source series (matching
+    # StudyInstanceUID + ProtocolName + SeriesDescription). Without this
+    # guard, legitimate labels ending in a single lowercase letter (e.g. an
+    # `acq-` value that happens to be 1 char) get falsely grouped with a
+    # different series whose stem happens to be one char shorter.
+    def _same_series(a: dict, b: dict) -> bool:
+        for k in ("StudyInstanceUID", "ProtocolName", "SeriesDescription"):
+            if str(a.get(k, "")) != str(b.get(k, "")):
+                return False
+        return True
     groups: dict[str, list[dict[str, object]]] = {}
     for stem in by_stem:
         if len(stem) < 2:
             continue
         last = stem[-1]
         base = stem[:-1]
-        if "a" <= last <= "z" and base in by_stem:
+        if "a" <= last <= "z" and base in by_stem and _same_series(by_stem[stem], by_stem[base]):
             groups.setdefault(base, []).append(by_stem[stem])
     # Include the base row in each group.
     for base in list(groups.keys()):
@@ -680,6 +742,12 @@ def _apply_dup_naming(bids_root: Path) -> int:
     for base, members in groups.items():
         ordered = sorted(members,
                          key=lambda r: int(str(r.get("SeriesNumber", "0")) or "0"))
+        targets = [
+            base if idx == 0 else f"{base}__dup-{idx:02d}"
+            for idx, _row in enumerate(ordered)
+        ]
+        if all(_stem_has_files(bids_root / target) for target in targets):
+            continue
         # Build (current_stem, target_stem) renames.
         moves: list[tuple[str, str]] = []
         for idx, row in enumerate(ordered):
@@ -688,6 +756,19 @@ def _apply_dup_naming(bids_root: Path) -> int:
             if current != target:
                 moves.append((current, target))
         if not moves:
+            continue
+        current_stems = {current for current, _target in moves}
+        unsafe = False
+        for current, target in moves:
+            if not _stem_has_files(bids_root / current):
+                unsafe = True
+                break
+            if _stem_has_files(bids_root / target) and target not in current_stems:
+                unsafe = True
+                break
+        if unsafe:
+            print(f"reproinx: __dup rename skipped stale or partial group '{base}'",
+                  file=sys.stderr)
             continue
         # Two-phase rename: stems first → tmp; tmp → target. Prevents an
         # ordering-dependent collision when the renaming would overwrite a
@@ -726,6 +807,8 @@ def _move_stem_files(src_stem: Path, dst_stem: Path) -> int:
         if not src.is_file():
             continue
         dst = dst_dir / f"{dst_name}{ext}"
+        if dst.exists():
+            raise FileExistsError(f"{dst} already exists")
         os.replace(str(src), str(dst))
         moved += 1
     return moved
@@ -750,24 +833,65 @@ def _walk_sessions(out_root: Path) -> list[Path]:
 
 
 # --- BIDS scaffolding -------------------------------------------------------
+#
+# Text below is intentionally copied verbatim from heudiconv's reproin output
+# (CHANGES, README, dataset_description.json, participants.json) so the
+# resulting tree is byte-identical to `heudiconv -f reproin` at this layer.
+# Treat these strings like reference data — keep them in sync with the upstream
+# heuristic when its scaffolding changes, do not "polish" the TODO wording.
 
-_CHANGES_TEMPLATE = "1.0.0 — Initial release.\n"
-_README_TEMPLATE = (
-    "Dataset generated by dcm2niix `-f %H` + reproinx.py post-pass.\n"
-    "Edit this file to describe the study, contact information, and any\n"
-    "deviations from the standard BIDS layout.\n"
+# No trailing newline — heudiconv writes these without one and we want byte
+# identity for downstream tools that diff against the reference tree.
+_CHANGES_TEMPLATE = (
+    "0.0.1  Initial data acquired\n"
+    "TODOs:\n"
+    "\t- verify and possibly extend information in participants.tsv (see for example http://datasets.datalad.org/?dir=/openfmri/ds000208)\n"
+    "\t- fill out dataset_description.json, README, sourcedata/README (if present)\n"
+    "\t- provide _events.tsv file for each _bold.nii.gz with onsets of events (see  '8.5 Task events'  of BIDS specification)"
 )
-_BIDSIGNORE_TEMPLATE = "derivatives/\n.heudiconv/\n"
+_README_TEMPLATE = (
+    "TODO: Provide description for the dataset -- basic details about the study, possibly pointing to pre-registration (if public or embargoed)"
+)
+_BIDSIGNORE_TEMPLATE = ".duecredit.p"
+_DATASET_DESCRIPTION = {
+    "Acknowledgements": "We thank Terry Sacket and the rest of the DBIC (Dartmouth Brain Imaging Center) personnel for assistance in data collection, and Yaroslav O. Halchenko for preparing BIDS dataset. TODO: adjust to your case.",
+    "Authors": ["TODO:", "First1 Last1", "First2 Last2", "..."],
+    "BIDSVersion": "1.8.0",
+    "DatasetDOI": "TODO: eventually a DOI for the dataset",
+    "Funding": ["TODO", "GRANT #1", "GRANT #2"],
+    "HowToAcknowledge": "TODO: describe how to acknowledge -- either cite a corresponding paper, or just in acknowledgement section",
+    "License": "TODO: choose a license, e.g. PDDL (http://opendatacommons.org/licenses/pddl/)",
+    "Name": "TODO: name of the dataset",
+    "ReferencesAndLinks": ["TODO", "List of papers or websites"],
+}
 _PARTICIPANTS_JSON = {
     "participant_id": {
-        "Description": "Unique participant identifier (BIDS sub- label).",
+        "Description": "Participant identifier",
+    },
+    "age": {
+        "Description": "Age in years (TODO - verify) as in the initial session, might not be correct for other sessions",
+    },
+    "sex": {
+        "Description": "self-rated by participant, M for male/F for female (TODO: verify)",
+    },
+    "group": {
+        "Description": "(TODO: adjust - by default everyone is in control group)",
     },
 }
 _SCANS_JSON = {
-    "filename": {"Description": "Relative path to the scan."},
+    "filename": {
+        "Description": "Name of the nifti file",
+    },
     "acq_time": {
-        "Description": "Acquisition timestamp from DICOM AcquisitionDateTime "
-                       "(ISO 8601). 'n/a' when unavailable.",
+        "LongName": "Acquisition time",
+        "Description": "Acquisition time of the particular scan",
+    },
+    "operator": {
+        "Description": "Name of the operator",
+    },
+    "randstr": {
+        "LongName": "Random string",
+        "Description": "md5 hash of UIDs",
     },
 }
 
@@ -777,46 +901,164 @@ def _write_text_if_absent(path: Path, content: str) -> None:
         path.write_text(content)
 
 
+_DCM2NIIX_DDESC_NAME = "dcm2niix dummy dataset"
+
+
+def _upgrade_dataset_description(bids_root: Path) -> None:
+    """Replace dcm2niix's dummy `dataset_description.json` with the heudiconv
+    reproin template. Hand-edited files are preserved: we only overwrite when
+    the on-disk JSON's `Name` is the literal placeholder `_DCM2NIIX_DDESC_NAME`.
+    """
+    p = bids_root / "dataset_description.json"
+    if not p.exists():
+        _save_json(p, _DATASET_DESCRIPTION)
+        return
+    try:
+        data = _load_json(p)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return
+    if isinstance(data, dict) and data.get("Name") == _DCM2NIIX_DDESC_NAME:
+        _save_json(p, _DATASET_DESCRIPTION)
+
+
 def _write_root_scaffolding(out_root: Path) -> None:
     """Write CHANGES, README (no .md), .bidsignore, scans.json at the root."""
     _write_text_if_absent(out_root / "CHANGES", _CHANGES_TEMPLATE)
     _write_text_if_absent(out_root / "README", _README_TEMPLATE)
     _write_text_if_absent(out_root / ".bidsignore", _BIDSIGNORE_TEMPLATE)
+    _upgrade_dataset_description(out_root)
     scans_json = out_root / "scans.json"
     if not scans_json.exists():
         _save_json(scans_json, _SCANS_JSON)
 
 
+_DICOM_AGE_RE = re.compile(r"^0*(\d+)Y$")
+
+
+def _parse_age(raw: str) -> str:
+    """Convert DICOM `(0010,1010) PatientAge` ('026Y') to a BIDS year integer.
+
+    Returns 'n/a' when the unit is not years (D/W/M), the field is empty, or
+    parsing fails. Mirrors heudiconv's coarse year-only convention.
+    """
+    if not raw:
+        return "n/a"
+    m = _DICOM_AGE_RE.match(raw.strip())
+    return m.group(1) if m else "n/a"
+
+
+def _demographics_from_provenance(bids_root: Path) -> dict[str, dict[str, str]]:
+    """Return `{sub-<label>: {'age', 'sex', 'study_datetime'}}` from the C-side
+    provenance TSV. Subject label is recovered from `OutputStem` (everything
+    between the first `sub-` and the next path separator). `study_datetime`
+    concatenates DICOM `StudyDate` + `StudyTime` for chronological ordering
+    (heudiconv's participants.tsv ordering).
+    """
+    out: dict[str, dict[str, str]] = {}
+    for row in _load_provenance(bids_root):
+        stem = str(row.get("OutputStem", ""))
+        m = re.search(r"(^|/)(sub-[^/]+)/", stem)
+        if not m:
+            continue
+        sub = m.group(2)
+        age = _parse_age(str(row.get("PatientAge", "")))
+        sex_raw = str(row.get("PatientSex", "")).strip()
+        sex = sex_raw if sex_raw in ("M", "F", "O") else "n/a"
+        sd = str(row.get("StudyDate", "")).strip()
+        st = str(row.get("StudyTime", "")).strip()
+        sdt = (sd + st) if (sd or st) else ""
+        # First non-trivial row per subject wins; later rows only fill in n/a.
+        cur = out.setdefault(sub, {"age": "n/a", "sex": "n/a", "study_datetime": ""})
+        if cur["age"] == "n/a" and age != "n/a":
+            cur["age"] = age
+        if cur["sex"] == "n/a" and sex != "n/a":
+            cur["sex"] = sex
+        if not cur["study_datetime"] and sdt:
+            cur["study_datetime"] = sdt
+    return out
+
+
 def _write_participants(bids_root: Path) -> None:
     """Emit participants.tsv (one row per sub-* in THIS root) and .json.
 
-    Only counts subjects directly under `bids_root`. On re-runs we merge
-    new participant rows into the existing file (additive only) so an
-    incremental conversion does not leave a stale list.
+    Columns mirror heudiconv reproin: `participant_id, age, sex, group`.
+    `group` defaults to 'control' (matching reproin's TODO placeholder).
+    `age` and `sex` are pulled from the C-side provenance TSV.
+
+    On re-runs we merge new participant rows additively. Hand-edited rows
+    (existing participant_ids) are left untouched even if the provenance
+    would now provide age/sex — this preserves curated overrides.
     """
-    subs = sorted({s.name for s in bids_root.iterdir()
-                   if s.is_dir() and s.name.startswith("sub-")
-                   and not s.name.startswith("sub-.")})
-    if not subs:
+    sub_names = {s.name for s in bids_root.iterdir()
+                 if s.is_dir() and s.name.startswith("sub-")
+                 and not s.name.startswith("sub-.")}
+    if not sub_names:
         return
+    demos = _demographics_from_provenance(bids_root)
+    # Order subjects chronologically by StudyDate (matches heudiconv's
+    # participants.tsv). Subjects missing a date fall back to alphabetical
+    # at the tail.
+    def _order_key(s: str) -> tuple:
+        sdt = demos.get(s, {}).get("study_datetime", "")
+        return (sdt == "", sdt, s)
+    subs = sorted(sub_names, key=_order_key)
     tsv = bids_root / "participants.tsv"
+    header = "participant_id\tage\tsex\tgroup\n"
+    def _row(sub: str) -> str:
+        d = demos.get(sub, {"age": "n/a", "sex": "n/a"})
+        return f"{sub}\t{d['age']}\t{d['sex']}\tcontrol\n"
     if tsv.exists():
-        # Read existing rows; add only the participant_ids we haven't seen.
-        existing = tsv.read_text().splitlines()
+        # newline="" disables universal-newline translation so CRLF survives
+        # and `endswith("\r\n")` below works against the on-disk bytes. The
+        # previous default `read_text()` silently rewrote CRLF -> LF and made
+        # the line-end preservation branch unreachable.
+        with tsv.open("r", newline="") as f:
+            existing = f.read().splitlines(keepends=True)
         if not existing:
-            existing = ["participant_id"]
-        body = existing[1:]
-        first_col = [row.split("\t", 1)[0] for row in body]
-        new_rows = [s for s in subs if s not in first_col]
-        if new_rows:
-            with tsv.open("a") as f:
-                for s in new_rows:
-                    f.write(f"{s}\n")
+            with tsv.open("w") as f:
+                f.write(header)
+                for s in subs:
+                    f.write(_row(s))
+            existing = [header] + [_row(s) for s in subs]
+        # Header mismatch (curated columns like `handedness`, `group=patient`,
+        # CRLF line endings, etc.) means a hand-edited file — never overwrite.
+        # Append only `participant_id`s that aren't already listed, leaving the
+        # extra columns blank ("n/a") on the new rows. Preserves curated work
+        # across re-runs.
+        if existing and existing[0] != header:
+            print(
+                f"reproinx: {tsv} has a non-default header — preserving existing "
+                f"columns and appending only new participant_ids",
+                file=sys.stderr,
+            )
+            existing_header = existing[0].rstrip("\r\n")
+            cols = existing_header.split("\t")
+            seen = {ln.split("\t", 1)[0] for ln in existing[1:] if ln.strip()}
+            new_rows = [s for s in subs if s not in seen]
+            if new_rows:
+                with tsv.open("a") as f:
+                    line_end = "\r\n" if existing[0].endswith("\r\n") else "\n"
+                    if existing and not existing[-1].endswith(("\n", "\r")):
+                        f.write(line_end)
+                    for s in new_rows:
+                        d = demos.get(s, {"age": "n/a", "sex": "n/a"})
+                        cells = [s]
+                        for col in cols[1:]:
+                            cells.append(d.get(col, "n/a") if col in ("age", "sex") else
+                                         ("control" if col == "group" else "n/a"))
+                        f.write("\t".join(cells) + line_end)
+        else:
+            seen = {ln.split("\t", 1)[0] for ln in existing[1:] if ln.strip()}
+            new_rows = [s for s in subs if s not in seen]
+            if new_rows:
+                with tsv.open("a") as f:
+                    for s in new_rows:
+                        f.write(_row(s))
     else:
         with tsv.open("w") as f:
-            f.write("participant_id\n")
+            f.write(header)
             for s in subs:
-                f.write(f"{s}\n")
+                f.write(_row(s))
     pj = bids_root / "participants.json"
     if not pj.exists():
         _save_json(pj, _PARTICIPANTS_JSON)
@@ -825,39 +1067,67 @@ def _write_participants(bids_root: Path) -> None:
 _TASK_STEM_RE = re.compile(r"(task-[A-Za-z0-9]+(?:_acq-[A-Za-z0-9]+)?)_")
 
 
+def _json_sidecar_for_nii(nii: Path) -> Optional[Path]:
+    name = nii.name
+    if name.endswith(".nii.gz"):
+        return nii.with_name(name[:-7] + ".json")
+    if name.endswith(".nii"):
+        return nii.with_name(name[:-4] + ".json")
+    return None
+
+
+def _ensure_taskname(json_path: Path, task_name: str) -> None:
+    if not json_path.is_file():
+        return
+    try:
+        data = _load_json(json_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict) or data.get("TaskName"):
+        return
+    data["TaskName"] = task_name
+    _save_json(json_path, data)
+
+
 def _emit_task_bold_jsons(out_root: Path) -> None:
     """For every distinct `task-X[_acq-Y]_*_bold.nii.gz`, ensure a top-level
     `task-X[_acq-Y]_bold.json` exists. dcm2niix's default boilerplate emits
     `task-rest_bold.json` only; this catches per-acq variants."""
     stems: set[str] = set()
+    tasks_with_acq: set[str] = set()
     for nii in out_root.rglob("*_bold.nii*"):
         if any(part == "derivatives" for part in nii.parts):
             continue
         m = _TASK_STEM_RE.search(nii.name)
         if m:
-            stems.add(m.group(1))
+            stem = m.group(1)
+            stems.add(stem)
+            task_name = stem.split("_acq-")[0][len("task-"):]
+            if "_acq-" in stem:
+                tasks_with_acq.add(task_name)
+            sidecar = _json_sidecar_for_nii(nii)
+            if sidecar is not None:
+                _ensure_taskname(sidecar, task_name)
     for stem in sorted(stems):
         task_name = stem.split("_acq-")[0][len("task-"):]
+        if "_acq-" not in stem and task_name in tasks_with_acq:
+            continue
         path = out_root / f"{stem}_bold.json"
         if path.exists():
             continue
         _save_json(path, {"TaskName": task_name})
-    # Drop dcm2niix's generic `task-<X>_bold.json` when an _acq- variant for
-    # the same task is now present. Only remove if the file content matches
-    # the known dcm2niix stub (single-key JSON with the matching TaskName);
-    # never overwrite a user-curated sidecar.
-    for stem in stems:
-        if "_acq-" not in stem:
+    for task_name in sorted(tasks_with_acq):
+        default = out_root / f"task-{task_name}_bold.json"
+        if not default.exists():
             continue
-        task_only = stem.split("_acq-")[0]
-        default = out_root / f"{task_only}_bold.json"
-        if not default.exists() or default == (out_root / f"{stem}_bold.json"):
-            continue
-        if _is_dcm2niix_task_stub(default, task_only[len("task-"):]):
+        if _is_generated_task_stub(default, task_name):
             try:
                 default.unlink()
             except OSError:
                 pass
+        else:
+            print(f"reproinx: {default} conflicts with _acq- task sidecars; "
+                  "preserving curated file", file=sys.stderr)
     # dcm2niix writes README.md; heudiconv writes README. Only remove the
     # .md variant when its content matches dcm2niix's stub — a hand-written
     # README.md must be preserved even if our plain README is also present.
@@ -870,13 +1140,8 @@ def _emit_task_bold_jsons(out_root: Path) -> None:
             pass
 
 
-def _is_dcm2niix_task_stub(path: Path, task_name: str) -> bool:
-    """True iff `path` is a generic dcm2niix task JSON stub safe to delete.
-
-    The stub is `{"TaskName": "<task>", "CogAtlasID": "..."}` — exactly two
-    keys, both with the expected values. Any other shape indicates a
-    user-curated file that we must not touch.
-    """
+def _is_generated_task_stub(path: Path, task_name: str) -> bool:
+    """True iff `path` is a generated root task JSON safe to delete."""
     try:
         data = _load_json(path)
     except (OSError, ValueError, json.JSONDecodeError):
@@ -921,23 +1186,31 @@ def _emit_events_tsv(session_dir: Path) -> None:
 
 
 def _drop_derivatives(out_root: Path) -> int:
-    """Remove every `derivatives/` subtree below a study root.
+    """Remove `derivatives/scanner/` ONLY — the literal subdir dcm2niix `-f %H`
+    routes scouts and DERIVED-flagged images (FA, ColFA, TENSOR_B0, scout
+    localizers, physio) into. Curated subtrees like `derivatives/fmriprep/`,
+    `derivatives/mriqc/`, `derivatives/freesurfer/` are left untouched.
 
-    dcm2niix's `-f %H` routes scouts and DERIVED-flagged images (FA, ColFA,
-    TENSOR_B0, scout localizers, …) into `<study>/derivatives/scanner/...`.
-    Some callers want a clean main-tree-only BIDS dataset and treat these as
-    noise. Returns the number of `derivatives/` trees removed.
+    If `derivatives/` becomes empty after dropping `scanner/`, the parent is
+    also removed (cosmetic). Returns the number of `scanner/` subtrees removed.
     """
     removed = 0
     for root in _bids_roots(_walk_subjects(out_root)):
-        d = root / "derivatives"
-        if d.is_dir():
-            shutil.rmtree(d)
+        scanner = root / "derivatives" / "scanner"
+        if scanner.is_dir():
+            shutil.rmtree(scanner)
             removed += 1
+            parent = root / "derivatives"
+            try:
+                # rmdir only if empty — never delete a parent containing
+                # curated derivatives we don't own.
+                parent.rmdir()
+            except OSError:
+                pass
     return removed
 
 
-def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = True) -> None:
+def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) -> None:
     # Pass 0: rename dcm2niix's a/b/c collision suffix to heudiconv __dup-NN.
     # Must run before session backfill so the rename happens at the as-written
     # paths recorded in the provenance TSV.
@@ -992,14 +1265,14 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = True) -
         print(f"reproinx: scaffolding failed: {e}", file=sys.stderr)
         if strict:
             raise
-    # Pass 4 (optional): drop derivatives/ subtree. Must run last so earlier
-    # passes (session backfill, fmap pairing) can still consult the scout
-    # localizer that lives under derivatives/scanner/.
+    # Pass 4: drop derivatives/ subtree (default; suppressed by --keep-derivatives).
+    # Must run last so earlier passes (session backfill, fmap pairing) can still
+    # consult the scout localizer that lives under derivatives/scanner/.
     if not keep_derivatives:
         try:
             n = _drop_derivatives(out_root)
             if n > 0:
-                print(f"  removed derivatives/ from {n} BIDS root(s)",
+                print(f"  removed derivatives/scanner/ from {n} BIDS root(s)",
                       file=sys.stderr)
         except Exception as e:
             print(f"reproinx: derivatives removal failed: {e}", file=sys.stderr)
@@ -1028,12 +1301,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--strict", action="store_true",
                    help="Exit non-zero if any session's post-processing fails. "
                         "Default is to log per-session failures and continue.")
-    p.add_argument("--no-derivatives", action="store_true",
-                   help="Delete the `derivatives/` subtree under each study "
-                        "root after post-processing. dcm2niix routes scouts "
-                        "and DERIVED-flagged images (FA, ColFA, TENSOR_B0) "
-                        "there; pass this flag for a clean main-tree-only "
-                        "BIDS dataset. Default is to keep them.")
+    p.add_argument("--keep-derivatives", action="store_true",
+                   help="Keep the `derivatives/scanner/` subtree under each "
+                        "study root after post-processing. dcm2niix routes "
+                        "scouts and DERIVED-flagged images (FA, ColFA, "
+                        "TENSOR_B0, physio) there; they are consumed for "
+                        "session detection and then removed by default to "
+                        "match heudiconv's layout. Pass this flag to retain "
+                        "them for inspection.")
     args = p.parse_args(argv)
 
     indir = Path(args.indir).resolve()
@@ -1049,7 +1324,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                       anonymize=args.anonymize)
 
     _post_process(outdir, strict=args.strict,
-                  keep_derivatives=not args.no_derivatives)
+                  keep_derivatives=args.keep_derivatives)
     return 0
 
 

@@ -3941,7 +3941,17 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	// provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
 	if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE)
 		return NULL;
-	if (dcm.offsetTableItems <= 1) 
+	if (dcm.offsetTableItems <= 1)
+		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
+	// issue1013 regression: kCompressC3 (JPEG Lossless 1.2.840.10008.1.2.4.7x) has
+	// its own working multi-fragment path inside nii_loadImgJPEGC3 →
+	// decode_JPEG_SOF_0XC3_stack, which walks the file directly for SOI markers.
+	// The per-frame loop below relies on dti4D->offsetTable[] values that can be
+	// stale (the dti4D pointer reaching the decode site is not always the one
+	// the parser filled — e.g. saveDcm2Nii allocates `dti4Ds` via `*dti4Ds =
+	// *dti4D` from a stage-1 dti4D). Bypass the new wrapper for kCompressC3 so
+	// the legacy stack walker handles multi-fragment as it did pre-regression.
+	if (dcm.compressionScheme == kCompressC3)
 		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
 	int frames = dcm.xyzDim[3];
 	if (dcm.xyzDim[4] > 1)
@@ -8137,7 +8147,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	if (encapsulatedDataFragmentStart > 0) {
 		if ((encapsulatedDataFragments > 1) && (encapsulatedDataFragments == numberOfFrames) && (encapsulatedDataFragments < kMaxDTI4D)) {
-			printWarning("Compressed image stored as %d fragments: if conversion fails decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
+			// kCompressC3 (JPEG Lossless 1.2.840.10008.1.2.4.7x) decodes
+			// multi-fragment reliably via decode_JPEG_SOF_0XC3_stack
+			// (see nii_loadImgXL gate for kCompressC3, issue1013). Other
+			// compression schemes still warn because their multi-fragment
+			// paths are less battle-tested.
+			if (d.compressionScheme != kCompressC3)
+				printWarning("Compressed image stored as %d fragments: if conversion fails decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
 			d.imageStart = encapsulatedDataFragmentStart;
 		} else if (encapsulatedDataFragments > 1) {
 			printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);

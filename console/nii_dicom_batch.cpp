@@ -1324,11 +1324,55 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 	}
 	char tsvPath[PATH_MAX];
 	snprintf(tsvPath, sizeof(tsvPath), "%s%c.reproin_provenance.tsv", studyRoot, kPathSeparator);
+	char bakPath[PATH_MAX];
+	snprintf(bakPath, sizeof(bakPath), "%s.bak", tsvPath);
+	if (opts.isAnonymizeBIDS)
+		remove(bakPath);
+	// Pre-existing TSV: refuse to mix schemas (6-col vs 10-col rows under one
+	// header silently lose data when reproinx.py reads them by header name).
+	// Lightweight check: peek the first line, count tabs, compare to what we
+	// would write now. Mismatch -> rename the stale file so this run starts
+	// fresh with the current schema. Full anonymisation removes stale files
+	// instead of backing them up, so the output tree cannot retain demographics.
+	bool emitDemographicsPeek = !opts.isAnonymizeBIDS;
+	int expectedTabs = emitDemographicsPeek ? 9 : 5; // 10 or 6 columns
+	bool schemaMismatch = false;
+	FILE *peek = fopen(tsvPath, "r");
+	if (peek != NULL) {
+		char hdr[512] = "";
+		if (fgets(hdr, sizeof(hdr), peek) != NULL) {
+			int tabs = 0;
+			for (const char *p = hdr; *p; ++p) if (*p == '\t') tabs++;
+			if (tabs != expectedTabs)
+				schemaMismatch = true;
+		}
+		fclose(peek);
+	}
+	if (schemaMismatch) {
+		if (opts.isAnonymizeBIDS) {
+			remove(tsvPath);
+		} else {
+			remove(bakPath);
+			rename(tsvPath, bakPath);
+		}
+	}
 	FILE *tp = fopen(tsvPath, "a");
 	if (tp == NULL)
 		return;
+	// PatientAge / PatientSex / StudyDate / StudyTime carry the minimum
+	// heudiconv reproinx.py needs for participants.tsv (age, sex, group) plus
+	// chronological subject ordering. `-ba y` (full anon) MUST scrub all four
+	// from the provenance TSV so a user running `reproinx.py --anonymize`
+	// (which maps to `-ba y`) actually gets a privacy-clean output tree —
+	// otherwise the hidden TSV silently retains demographics the per-series
+	// JSON sidecar already stripped. `-ba o` keeps these (age/sex aggregate
+	// into participants.tsv; that's the whole point of the `o` mode).
+	bool emitDemographics = !opts.isAnonymizeBIDS;
 	if (ftell(tp) == 0) {
-		fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\n");
+		if (emitDemographics)
+			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\tPatientAge\tPatientSex\tStudyDate\tStudyTime\n");
+		else
+			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\n");
 	}
 	char f1[kDICOMStr], f2[kDICOMStr], f3[kDICOMStr], f4[kDICOMStr];
 	char f5[PATH_MAX];
@@ -1337,7 +1381,18 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 	reproinTsvField(d.seriesDescription, f3, sizeof(f3));
 	reproinTsvField(d.studyDescription, f4, sizeof(f4));
 	reproinTsvField(relStem, f5, sizeof(f5));
-	fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5);
+	if (emitDemographics) {
+		char f6[kDICOMStr], f7[kDICOMStr], f8[kDICOMStr];
+		reproinTsvField(d.patientAge, f6, sizeof(f6));
+		reproinTsvField(d.studyDate, f7, sizeof(f7));
+		reproinTsvField(d.studyTime, f8, sizeof(f8));
+		char sexBuf[2] = "";
+		if (d.patientSex == 'M' || d.patientSex == 'F' || d.patientSex == 'O')
+			sexBuf[0] = d.patientSex;
+		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5, f6, sexBuf, f7, f8);
+	} else {
+		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5);
+	}
 	fclose(tp);
 }
 
@@ -1493,11 +1548,18 @@ tse3d: T2*/
 	json_Str(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber);
 	json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);
 	if (!opts.isAnonymizeBIDS) {
+		// Non-PII random UIDs and StudyID — emitted whenever the user disables
+		// full anonymisation. Stripped only in `-ba y` (full anon) mode; kept
+		// in `-ba n` and `-ba o`.
 		json_Str(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID);
 		json_Str(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID);
-		json_Str(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName);
 		json_Str(fp, "\t\"StudyID\": \"%s\",\n", d.studyID);
-		// Next lines directly reveal patient identity
+	}
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
+		// Patient-identifying block: only emitted under `-ba n` (no anon).
+		// `-ba o` strips this block but keeps AcquisitionDateTime, giving
+		// downstream tooling a privacy-preserving middle ground.
+		json_Str(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName);
 		json_Str(fp, "\t\"PatientName\": \"%s\",\n", d.patientName);
 		json_Str(fp, "\t\"PatientID\": \"%s\",\n", d.patientID);
 		json_Str(fp, "\t\"AccessionNumber\": \"%s\",\n", d.accessionNumber);
@@ -1642,12 +1704,15 @@ tse3d: T2*/
 		// issue983 : do not include AcquisitionTime for PET
 		if ((count) && (d.modality != kMODALITY_PT)) { // ISO 8601 specifies a sign must exist for distant years.
 			// report time of the day only format, https://www.cs.tut.fi/~jkorpela/iso8601.html
-			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%02.6f\",\n", ahour, amin, asec);
+			// %09.6f gives zero-padded "06.647500"; %02.6f only sets total
+			// minimum width (always exceeded), leaving "6.647500" — which
+			// breaks ISO 8601 readers and trips BIDS validator ACQTIME_FMT.
+			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%09.6f\",\n", ahour, amin, asec);
 			// report date and time together
 			if (!opts.isAnonymizeBIDS) {
 				fprintf(fp, "\t\"AcquisitionDateTime\": ");
 				fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
-				fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
+				fprintf(fp, "-%02d-%02dT%02d:%02d:%09.6f\",\n", amonth, aday, ahour, amin, asec);
 			}
 		} // if (count)
 	} // if acquisitionTime and acquisitionDate recorded
@@ -1973,6 +2038,8 @@ tse3d: T2*/
 	json_Bool(fp, "\t\"MTState\": %s,\n", d.mtState); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
 	// SpoilingState
 	bool isSpoiled = (d.spoiling > kSPOILING_NONE);
+	if (d.spoiling == kSPOILING_NONE)
+		json_Bool(fp, "\t\"SpoilingState\": %s,\n", false);
 	if ((d.spoiling == kSPOILING_UNKNOWN) && (strstr(d.sequenceVariant, "\\SP") != NULL)) // BIDS suggests 0018,9016 Siemens V-series do not populate this, (0018,0021) CS [SK\MTC\SP]
 		isSpoiled = true;
 	if (isSpoiled)
@@ -3844,28 +3911,30 @@ void mkDirs(char *pth) {
 #endif
 } // mkDirs()
 
-void createDummyBidsBoilerplate(char *pth, bool isFunc) {
+void createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, const char *acqName) {
 	// https://remi-gau.github.io/bids_cookbook/#starters
 	char pathSep[2] = {"a"};
 	pathSep[0] = kPathSeparator;
 	char descfnm[PATH_MAX] = {""};
 	char taskfnm[PATH_MAX] = {""};
 	char fnm[PATH_MAX] = {""};
-	strcat(fnm, pth);
-	strcat(fnm, pathSep);
-	strcat(taskfnm, fnm);
-	strcat(descfnm, fnm);
+	int n = snprintf(fnm, sizeof(fnm), "%s%s", pth, pathSep);
+	if (n < 0 || n >= (int)sizeof(fnm))
+		return;
+	snprintf(taskfnm, sizeof(taskfnm), "%s", fnm);
+	snprintf(descfnm, sizeof(descfnm), "%s", fnm);
 	snprintf(fnm + strlen(fnm), PATH_MAX - strlen(fnm), "%s", "README.md");
 	if (!is_fileexists(fnm)) {
 		FILE *fp = fopen(fnm, "w");
 		static const char readmePre[] = "Generated using dcm2niix (";
 		static const char readmePost[] = ")\n\nDescribe your dataset here. This file was generated by dcm2niix in a single pass. Details like IntendedFor, Subject ID, Session and tasks are not defined.";
 
-		if (fp != NULL)
-			fprintf(fp, readmePre);
-		fprintf(fp, kDCMdate);
-		fprintf(fp, readmePost);
-		fclose(fp);
+		if (fp != NULL) {
+			fprintf(fp, "%s", readmePre);
+			fprintf(fp, "%s", kDCMdate);
+			fprintf(fp, "%s", readmePost);
+			fclose(fp);
+		}
 	}
 	snprintf(descfnm + strlen(descfnm), PATH_MAX - strlen(descfnm), "%s", "dataset_description.json");
 	if (!is_fileexists(descfnm)) {
@@ -3873,19 +3942,37 @@ void createDummyBidsBoilerplate(char *pth, bool isFunc) {
 		// 1.7.0 introduced B0FieldIdentifier/B0FieldSource, which the
 		// reproinx.py post-pass writes; declare a version that supports them.
 		static const char readme[] = "{\n    \"Name\": \"dcm2niix dummy dataset\",\n    \"Authors\": [\"Chris Rorden\", \"Alex Teghipco\"],\n    \"BIDSVersion\": \"1.8.0\"\n}\n";
-		if (fp != NULL)
-			fprintf(fp, readme);
-		fclose(fp);
+		if (fp != NULL) {
+			fprintf(fp, "%s", readme);
+			fclose(fp);
+		}
 	}
 	if (!isFunc)
 		return; // only functional data gets a task file
-	snprintf(taskfnm + strlen(taskfnm), PATH_MAX - strlen(taskfnm), "%s", "task-rest_bold.json");
+	// Pick task/acq from caller (reproin %H supplies both); fall back to the
+	// legacy "rest" placeholder when no spec is available (legacy %h path).
+	// The reproinx.py post-pass removes generated bare task-X root stubs when
+	// _acq- variants for the same task exist, and writes TaskName into the
+	// per-series sidecar so bare task runs remain valid.
+	const char *taskNm = (taskName != NULL && taskName[0] != '\0') ? taskName : "rest";
+	const char *acqNm = (acqName != NULL && acqName[0] != '\0') ? acqName : NULL;
+	char taskBase[256];
+	if (acqNm != NULL)
+		snprintf(taskBase, sizeof(taskBase), "task-%s_acq-%s_bold.json", taskNm, acqNm);
+	else
+		snprintf(taskBase, sizeof(taskBase), "task-%s_bold.json", taskNm);
+	snprintf(taskfnm + strlen(taskfnm), PATH_MAX - strlen(taskfnm), "%s", taskBase);
 	if (!is_fileexists(taskfnm)) {
 		FILE *fp = fopen(taskfnm, "w");
-		static const char taskRest[] = "{\n\"TaskName\": \"rest\",\n\"CogAtlasID\": \"https://www.cognitiveatlas.org/task/id/trm_4c8a834779883/\"\n}\n";
-		if (fp != NULL)
-			fprintf(fp, taskRest);
-		fclose(fp);
+		if (fp != NULL) {
+			if (strcmp(taskNm, "rest") == 0) {
+				// Preserve historical CogAtlasID hint for the canonical "rest" task.
+				fprintf(fp, "{\n\"TaskName\": \"%s\",\n\"CogAtlasID\": \"https://www.cognitiveatlas.org/task/id/trm_4c8a834779883/\"\n}\n", taskNm);
+			} else {
+				fprintf(fp, "{\n\"TaskName\": \"%s\"\n}\n", taskNm);
+			}
+			fclose(fp);
+		}
 	}
 }
 
@@ -3994,14 +4081,24 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 						reproinSanitizeProjectPath(studyPth);
 					} else {
 						reproinBuildStudyPath(&dcm, studyPth, sizeof(studyPth));
-					}
-					if (strlen(studyPth) > 0) {
-						if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator))
-							strcat(pth, kFileSep);
-						strcat(pth, studyPth);
-						mkDirs(pth);
-					}
-					createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0));
+						}
+						if (strlen(studyPth) > 0) {
+							if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator)) {
+								if (strlen(pth) + 1 >= sizeof(pth)) {
+									printError("ReproIn output path too long\n");
+									return EXIT_FAILURE;
+								}
+								strcat(pth, kFileSep);
+							}
+							if (strlen(pth) + strlen(studyPth) >= sizeof(pth)) {
+								printError("ReproIn output path too long\n");
+								return EXIT_FAILURE;
+							}
+							strcat(pth, studyPth);
+							mkDirs(pth);
+						}
+					createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0),
+						specOk ? spec.task : NULL, specOk ? spec.acq : NULL);
 					if (specOk) {
 						isAddNamePostFixes = false;
 						bool isMultiEcho = dcm.isMultiEcho;
@@ -4058,7 +4155,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 						strcat(bidsSession, "1");
 					else
 						strcat(bidsSession, opts.bidsSession);
-					createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL));
+					createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL), NULL, NULL);
 					if (strlen(dcm.CSA.bidsDataType) < 1) {
 						strcat(outname, "Unknown");
 						snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
@@ -11927,6 +12024,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 #else
 	opts->isAnonymizeBIDS = true;
 #endif
+	opts->isOmitPiiBIDS = false; // `-ba o` opts in to PII-strip / keep-dates
 	opts->isCreateText = false;
 #ifdef myDebug
 	opts->isVerbose = true;

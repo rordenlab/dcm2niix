@@ -54,13 +54,14 @@ provenance over anonymisation. Specifically:
   normalisation + `-_` strip). For studies where PatientID is the participant's
   real name or a mapping back to PHI, this is a leak. Pass `-bi <pseudonym>`
   to override.
-- **`tools/reproinx.py` runs `dcm2niix` with `-ba n`** so `AcquisitionDateTime`
-  survives into every JSON sidecar. Real timestamps end up in
-  `_scans.tsv`. This is necessary for the closest-time fmap-matching
-  tie-breaker; if you need anonymised timestamps, you have to either run
-  `reproinx.py --anonymize` (which suppresses `-ba n` and accepts
-  first-compatible fmap matching instead of closest-time) or post-process
-  the sidecars with a date-shifter.
+- **`tools/reproinx.py` runs `dcm2niix` with `-ba o`** — strips the
+  patient PII block (PatientName/ID/BirthDate/Sex/Age/Size/Weight,
+  AccessionNumber, ReferringPhysicianName) but keeps `AcquisitionDateTime`
+  so real timestamps survive into every JSON sidecar and into
+  `_scans.tsv`. The dates are needed for the closest-time fmap-matching
+  tie-breaker. Pass `reproinx.py --anonymize` to upgrade to `-ba y`
+  (also strips dates; fmap matching then falls back to first-compatible),
+  or post-process the sidecars with a date-shifter.
 - **StudyDescription / PerformedProcedureStepDescription become directory
   names.** They are sanitised against path traversal but otherwise emitted
   verbatim. If a site encodes the PI name or grant number in
@@ -153,31 +154,49 @@ commented-out branch.
 
 The companion script [`tools/reproinx.py`](tools/reproinx.py) wraps dcm2niix
 and walks the resulting BIDS tree to address cross-series concerns. It runs
-`dcm2niix -f %H -ba n` (so `AcquisitionDateTime` survives into the JSON
-sidecar), then per-subject and per-session:
+`dcm2niix -f %H -ba o` (strips patient PII but keeps `AcquisitionDateTime`
+in the JSON sidecar), then per-subject and per-session:
 
 - **Session backfill.** Heudiconv lets a single series (typically the
   scout) carry `_ses-<X>` and propagates it across every other series in
   the same `StudyInstanceUID`. dcm2niix's one-pass parser emits `_ses-X`
-  only on series that name it explicitly. The post-pass walks each
-  subject (including the parallel `derivatives/scanner/<sub>/...` tree
-  where scout outputs live) for an `_ses-X` token, and when a single
-  unambiguous label is found it renames and moves every non-derivative
-  file under `sub-X/<datatype>/` into `sub-X/ses-X/<datatype>/`.
-- **Per-session `_scans.tsv`** from each non-fmap JSON's
-  `AcquisitionDateTime`.
+  only on series that name it explicitly. The post-pass consults the
+  C-side `.reproin_provenance.tsv` (which records the original
+  ProtocolName/SeriesDescription even when the carrying series was
+  dropped by `-i y`), falling back to scanning filenames under the
+  subject tree and the parallel `derivatives/scanner/<sub>/...`
+  branch. When a single unambiguous label is found it renames and moves
+  every non-derivative file under `sub-X/<datatype>/` into
+  `sub-X/ses-X/<datatype>/`.
+- **`__dup-NN` collision renaming.** dcm2niix's default name-conflict
+  mode appends `a`/`b`/`c`/… to colliding series in write order; the
+  post-pass reads the provenance TSV and renumbers them as heudiconv-style
+  `__dup-NN`, with the lowest `SeriesNumber` owning the unsuffixed base.
+- **Per-session `_scans.tsv`** with columns `filename, acq_time,
+  operator, randstr` — matches heudiconv's reproin layout. `operator`
+  is always `n/a` (PerformingPhysicianName/OperatorsName carry human
+  names and are intentionally not threaded through the provenance TSV);
+  `randstr` is an 8-hex md5 of the sorted `*UID` fields available in the
+  sidecar. CRLF line endings to match Python's `csv.writer`
+  `excel-tab` default, which is what heudiconv emits.
 - **Per-task `task-<X>[_acq-<Y>]_bold.json`** at the BIDS root for every
-  task/acq tuple seen under any subject — covers what dcm2niix's
-  `createDummyBidsBoilerplate` doesn't (it writes a fixed
-  `task-rest_bold.json` regardless of the actual `_acq-` label and is
-  removed when a more specific variant is emitted).
+  task/acq tuple seen under any subject. When a task has both bare
+  `task-X` and `task-X_acq-Y` runs, the post-pass writes `TaskName` into
+  each per-series BOLD sidecar and removes only generated root-level
+  `task-X_bold.json` stubs, avoiding BIDS validator
+  `MULTIPLE_INHERITABLE_FILES` while preserving root files with curated
+  extra metadata.
 - **Per-task empty `_events.tsv`** placeholders next to each `_bold.nii*`.
 - **BIDS root scaffolding**: `CHANGES`, `README` (no `.md`),
-  `.bidsignore`, `participants.tsv` (one row per `sub-*`),
-  `participants.json`, `scans.json`. Written at the BIDS root, which is
-  the common parent of every `sub-*` directory — *not* necessarily the
-  user's `-o` directory, since dcm2niix may append a `<StudyDescription>`
-  hierarchy below it.
+  `.bidsignore`, `participants.tsv` (one row per `sub-*`, columns
+  `participant_id, age, sex, group` with `age`/`sex` pulled from the
+  provenance TSV and `group` defaulting to `control`; rows ordered
+  chronologically by StudyDate then alphabetical),
+  `participants.json`, `scans.json`, and upgrade of dcm2niix's stub
+  `dataset_description.json` to the heudiconv reproin template.
+  Written at the BIDS root, which is the common parent of every
+  `sub-*` directory — *not* necessarily the user's `-o` directory,
+  since dcm2niix may append a `<StudyDescription>` hierarchy below it.
 - **fmap pairing.** Every non-fmap, non-sbref scan is paired with the
   fmap group whose `ShimSetting` (exact) and NIfTI affine
   (`np.allclose(rtol=0.05)`) match — the same algorithm heudiconv runs
@@ -190,8 +209,17 @@ Usage:
 
 ```
 python3 tools/reproinx.py <indir> [outdir] [subject] [session]
-python3 tools/reproinx.py --no-convert <indir> <outdir>   # only re-run post-pass
+python3 tools/reproinx.py --no-convert <indir> <outdir>     # skip dcm2niix; re-run post-pass only
+python3 tools/reproinx.py --anonymize <indir> <outdir>      # upgrade inner -ba o to -ba y
+python3 tools/reproinx.py --strict <indir> <outdir>         # fail-fast on per-session errors
+python3 tools/reproinx.py --keep-derivatives <indir> <out>  # retain derivatives/scanner/
 ```
+
+`derivatives/scanner/` is the scratch tree dcm2niix `-f %H` writes scouts and
+DERIVED-flagged images (FA, ColFA, TENSOR_B0, physio) into. The post-pass
+reads it once for session detection, then deletes it by default so the output
+matches heudiconv's layout (heudiconv produces no `derivatives/` folder).
+Pass `--keep-derivatives` if you want to inspect these scratch files.
 
 Stdlib-only — no third-party Python dependencies. The NIfTI-1 affine and
 shape are read directly from the 348-byte header (works for both `.nii` and
@@ -215,10 +243,13 @@ treats run identifiers as literal strings. The post-pass can renumber by walking
 the tree in acquisition order. Until then, users should write explicit numeric
 `_run-NN` in their protocols.
 
-### 3. Canceled-run detection (`__dup0N` suffix)
-ReproIn marks duplicate filenames as canceled by adding a `__dup0N` suffix to
-older versions. dcm2niix simply overwrites or refuses to overwrite. Post-pass
-should rename collisions.
+### 3. Canceled-run detection (`__dup-NN` suffix, handled by reproinx.py)
+ReproIn marks duplicate filenames as canceled by adding a `__dup-NN`
+suffix; dcm2niix's default name-conflict mode appends `a`/`b`/`c`/… in
+write order. `reproinx.py` reads `.reproin_provenance.tsv` and rewrites
+the suffixes to `__dup-NN` with the lowest `SeriesNumber` owning the
+unsuffixed base. Ordering across the whole study is not matched to
+heudiconv's `infotodict` iteration — only within a collision group.
 
 ### 4. Motion-corrected `_rec-moco`
 Triggered by `is_motion_corrected` in heudiconv; dcm2niix doesn't currently set
@@ -228,14 +259,21 @@ accordingly.
 ### 5. Study-level `_scans.tsv` and boilerplate (handled by reproinx.py)
 heudiconv emits `sub-XX_scans.tsv`, `participants.tsv`,
 `dataset_description.json`, `task-*_bold.json` per task with sensible
-defaults. dcm2niix only emits stub `dataset_description.json` and
-`task-rest_bold.json`; the rest is filled in by `reproinx.py` (see the
-post-pass list above). Direct `dcm2niix -f %H` users without the post-pass
-will still see only the dcm2niix stubs.
+defaults. dcm2niix emits a stub `dataset_description.json` and a
+`task-<X>[_acq-<Y>]_bold.json` matching the entity set of the bold
+file (legacy `%h` still falls back to `task-rest_bold.json`); the rest
+is filled in by `reproinx.py` (see the post-pass list above). Direct
+`dcm2niix -f %H` users without the post-pass will see only the
+dcm2niix stubs.
 
-`participants.tsv` is generated with `participant_id` only — heudiconv
-additionally pulls `PatientName`/`PatientSex` from DICOM, which the
-post-pass does not (the sidecar JSONs already strip these by default).
+`participants.tsv` is generated with `participant_id, age, sex, group`
+(matching heudiconv reproin). `age` and `sex` are pulled from the
+`.reproin_provenance.tsv` written by the C side (PatientAge in years,
+PatientSex restricted to `M`/`F`/`O`, otherwise `n/a`); `group`
+defaults to `control`. `PatientName` is intentionally not propagated —
+it carries identifying information and is withheld from the provenance
+TSV by design. Hand-edited rows survive re-runs; only new subjects are
+appended.
 
 ### 6. Session inference from a single localizer (handled by reproinx.py)
 ReproIn allows `_ses-` to be specified on a single series (typically the
