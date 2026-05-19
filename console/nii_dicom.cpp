@@ -3956,6 +3956,37 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
 	for (int i = 3; i < 8; i++)
 		 hdr2D->dim[i] = 1;
+	// dti4D->offsetTable[] is shared across every file in the series and is overwritten
+	// by each readDICOMx() call. After the directory scan it only reflects the *last*
+	// file parsed, so converting any other file in a multi-file series would seek to
+	// the wrong fragment positions. Re-scan the encapsulated fragment headers of the
+	// current file to refresh the offsets. dcm.imageStart points to the first
+	// fragment's data, so dcm.imageStart-8 is the first item tag.
+	{
+		FILE *fp = fopen(imgname, "rb");
+		if (!fp) {
+			printError("Unable to open %s\n", imgname);
+			free(hdr2D);
+			free(img);
+			return NULL;
+		}
+		size_t pos = (size_t)dcm.imageStart - 8;
+		for (int i = 0; i < frames; i++) {
+			unsigned char itemHdr[8];
+			if ((fseek(fp, (long)pos, SEEK_SET) != 0) || (fread(itemHdr, 1, 8, fp) != 8)) {
+				printError("Unable to read fragment %d/%d from %s\n", i+1, frames, imgname);
+				fclose(fp);
+				free(hdr2D);
+				free(img);
+				return NULL;
+			}
+			uint32_t fragLen = (uint32_t)itemHdr[4] | ((uint32_t)itemHdr[5] << 8)
+				| ((uint32_t)itemHdr[6] << 16) | ((uint32_t)itemHdr[7] << 24);
+			dti4D->offsetTable[i] = pos + 8;
+			pos += 8 + fragLen;
+		}
+		fclose(fp);
+	}
 	int lastimageBytes = dcm.imageBytes;
 	for (int i = 0; i < frames; i++) {
 		dcm.imageStart = dti4D->offsetTable[i];
