@@ -1601,6 +1601,46 @@ tse3d: T2*/
 	json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName);
 	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
 	json_Str(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant);
+#ifndef myDisablePulseSequenceType
+	// BIDS PulseSequenceType (Recommended). Spec examples mix vendor jargon ("SPGR", "MPRAGE") with acquisition-class names ("Gradient Echo EPI"); we prefer the class name and only use marketing labels where SequenceVariant flags make them unambiguous. SequenceVariant is a DICOM CS multi-value field delimited by '\\'; isSP anchors to "\\SP" to avoid the OSP (oversampling phase) substring false positive. Define myDisablePulseSequenceType to suppress.
+	{
+		const char *pulseSequenceType = NULL;
+		bool isEPI = (strstr(d.scanningSequence, "EP") != NULL);
+		bool isGRE = (strstr(d.scanningSequence, "GR") != NULL);
+		bool isSEScan = (strstr(d.scanningSequence, "SE") != NULL);
+		bool isIRScan = (strstr(d.scanningSequence, "IR") != NULL);
+		bool isMP = (strstr(d.sequenceVariant, "MP") != NULL); // MP is not a substring of any other Siemens variant (SK/MTC/OSP/SP/SS/TRSS/NONE), so unanchored strstr is safe
+		// SP is contained in OSP (oversampling phase). Match SP at every legal token position: leading (start of field), middle/trailing (delimited by backslash), or sole value
+		bool isSP = (strncmp(d.sequenceVariant, "SP\\", 3) == 0) ||
+					(strcmp(d.sequenceVariant, "SP") == 0) ||
+					(strstr(d.sequenceVariant, "\\SP") != NULL);
+		bool isMB = (d.CSA.multiBandFactor > 1);
+		if (isEPI) {
+			if (isMB && isSEScan)
+				pulseSequenceType = "Multiband Spin Echo EPI";
+			else if (isMB)
+				pulseSequenceType = "Multiband Gradient Echo EPI";
+			else if (isSEScan)
+				pulseSequenceType = "Spin Echo EPI";
+			else
+				pulseSequenceType = "Gradient Echo EPI";
+		} else if (isGRE) {
+			if (isMP && isIRScan)
+				pulseSequenceType = "MPRAGE";
+			else if (isSP)
+				pulseSequenceType = "Spoiled Gradient Echo";
+			else
+				pulseSequenceType = "Gradient Echo";
+		} else if (isSEScan) {
+			if (isIRScan)
+				pulseSequenceType = "Inversion Recovery Spin Echo";
+			else
+				pulseSequenceType = "Spin Echo";
+		}
+		if (pulseSequenceType != NULL)
+			fprintf(fp, "\t\"PulseSequenceType\": \"%s\",\n", pulseSequenceType);
+	}
+#endif
 	json_Str(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions);
 	if (strlen(d.sequenceName) < 1) {
 		// XA60 fMRI populates (0018,9005) PulseSequenceName but not (0018,0024) SequenceName;
@@ -2418,9 +2458,14 @@ tse3d: T2*/
 				fprintf(fp, "\t\"MatrixCoilMode\": \"SENSE\",\n");
 			if (csaAscii.patMode == 2)
 				fprintf(fp, "\t\"MatrixCoilMode\": \"GRAPPA\",\n");
+			if ((csaAscii.patMode != 1) && (csaAscii.patMode != 2))
+				// e.g. pure SMS (patMode=32) on XA-line: no in-plane channel reduction. Emit "None" so BIDS validator's MatrixCoilMode recommendation is satisfied without claiming an iPAT mode the scan did not use
+				fprintf(fp, "\t\"MatrixCoilMode\": \"None\",\n");
 			d.accelFactPE = csaAscii.parallelReductionFactorInPlane; // issue672: csa precedence over value found in DICOM (0051,1011)
 			if ((csaAscii.accelFact3D < 1.01) && (csaAscii.parallelReductionFactorInPlane != (int)(d.accelFactPE)))
 				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), csaAscii.parallelReductionFactorInPlane);
+		} else {
+			fprintf(fp, "\t\"MatrixCoilMode\": \"None\",\n");
 		}
 		if ((csaAscii.patMode == 256) && (!isnan(csaAscii.accelFactTotal)) && (csaAscii.accelFactTotal > (d.accelFactPE * d.accelFactOOP)))
 			d.compressedSensingFactor = csaAscii.accelFactTotal; // see dcm_qa_cs_dl

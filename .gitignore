@@ -31,3 +31,6 @@ niivue-dcm2niix-*.tgz
 # Audit transcripts — written by the /audit slash command, not source.
 audit_*.md
 cpfiles.command
+
+# Session scratch — DICOM samples and JSON sidecars dropped here during /audit, regression triage, and ad-hoc analysis. Never commit; may contain PHI.
+/temp/

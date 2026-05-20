@@ -78,6 +78,12 @@ A passing run of all three submodules is the baseline expectation before any com
 
 Wider regression at [`dcm_validate`](https://github.com/neurolabusc/dcm_validate) (~35 `dcm_qa_*` submodules). Run before releases or when a change touches vendor-specific code the in-tree trio doesn't cover. **Read each `batch.sh` before running** — they vary in `-f` format, zip/gz handling, and `dcm_qa_sag` is a single-file `dtifits.py` check rather than a Ref diff.
 
+### Session scratch: `temp/`
+
+`temp/` at the repo root is session scratch — DICOM samples, dcmdump output, and JSON sidecars dropped here during `/audit`, regression triage, and ad-hoc analysis. Gitignored (`/temp/` in `.gitignore`) so it cannot be committed, but **the gitignore is defence in depth, not a privacy fix**: the data on disk still bears PHI from live scans, and a hidden directory can mask sensitive material from normal `git status` review.
+
+Retention rule: clean `temp/` (e.g. `rm -rf temp/`) at the end of every analysis cycle that placed files there — do not let it accumulate across unrelated sessions. If the user has not explicitly authorised retention, an audit-time cleanup is correct. The convention exists so `/audit` agents and the user share one drop zone; it does not exempt the contents from privacy scrutiny.
+
 ## Architecture
 
 All source is in `console/`. Key files:
@@ -151,6 +157,41 @@ The JSON sidecar writer in `nii_dicom_batch.cpp` formats the seconds field with 
 ### SequenceName fallback for XA60 fMRI
 
 XA60 (and other Siemens XA-line) fMRI populates `(0018,9005) PulseSequenceName` but leaves `(0018,0024) SequenceName` empty. The JSON sidecar writer promotes `pulseSequenceName` into the `SequenceName` slot when `d.sequenceName` is empty so the BIDS validator's recommended `SequenceName` field is satisfied. The principle: when a tag the validator expects is empty on a known scanner, prefer a documented fallback over emitting an empty string — but only when the tag is actually empty, so VE-line acquisitions that populate both keep their distinct values.
+
+### MatrixCoilMode "None" fallback
+
+`nii_SaveBIDSX` in `nii_dicom_batch.cpp` always emits `MatrixCoilMode` on the Siemens CSA path. `csaAscii.patMode == 1` → `"SENSE"`, `== 2` → `"GRAPPA"`, anything else (e.g. `32` = pure SMS, `256` = CompressedSense, `-1` = not found) → `"None"`. If the CSA acceleration block is unreadable, the outer `else` branch also writes `"None"`.
+
+Why: pure-SMS XA60 acquisitions (MB>1 with no in-plane iPAT) previously omitted `MatrixCoilMode` entirely and tripped the BIDS validator recommendation. `"None"` is honest — SMS does not perform in-plane channel reduction — and the change introduced zero diffs in the in-tree Siemens Ref/ set.
+
+Known wart: for `patMode == 256` (CompressedSense) the same series will emit both `MatrixCoilMode: "None"` and `CompressedSensingFactor: N`. This is not strictly contradictory — BIDS `MatrixCoilMode` is analog channel combination, `CompressedSensingFactor` is k-space undersampling/reconstruction — but the pair looks odd. No in-tree CS reference data exercises this path; `dcm_qa_cs_dl` lives outside the in-tree gate. Do not "fix" this by suppressing the `"None"` for patMode==256 without first deciding whether CompressedSense scans should advertise a distinct MatrixCoilMode value.
+
+Deliberate trade-off, flagged by external review (audit_temp.md 2026-05-20): emitting `"None"` for the catch-all (`patMode` ∉ {1,2} or CSA unreadable) conflates "absence of analog matrix coil mode" with "unknown / not parsed". Honest absence (omit field) would be strictly more accurate; we chose to emit `"None"` because the BIDS validator's recommendation nag is what most users actually feel, and the catch-all is reached only when iPAT is not in use. Revisit only with a positive vendor source for the analog channel-combine mode (e.g. `sCoilSelectMeas.aRxCoilSelectData[0].ucMode`) — not by reverting to silent omission.
+
+Do not "tidy" the `(patMode != 1) && (patMode != 2)` arm into a single ternary or drop the outer `else`; both are load-bearing for validator compliance.
+
+### PulseSequenceType heuristic
+
+`nii_SaveBIDSX` in `nii_dicom_batch.cpp` emits the BIDS-recommended `PulseSequenceType` derived from `d.scanningSequence`, `d.sequenceVariant`, and `d.CSA.multiBandFactor`. Mapping (first match wins):
+
+- `EP` + MB + `SE` → `"Multiband Spin Echo EPI"`
+- `EP` + MB → `"Multiband Gradient Echo EPI"`
+- `EP` + `SE` → `"Spin Echo EPI"`
+- `EP` → `"Gradient Echo EPI"`
+- `GR` + `MP` + `IR` → `"MPRAGE"`
+- `GR` + `\SP` → `"Spoiled Gradient Echo"`
+- `GR` → `"Gradient Echo"`
+- `SE` + `IR` → `"Inversion Recovery Spin Echo"`
+- `SE` → `"Spin Echo"`
+- otherwise → field omitted (do not write `"Unknown"` or an empty string)
+
+Why: the BIDS spec's own examples mix vendor marketing labels (`"SPGR"`, `"MPRAGE"`) with acquisition-class names (`"Gradient Echo EPI"`); we prefer the class name and only emit a marketing label (`"MPRAGE"`) where the `ScanningSequence`/`SequenceVariant` combination is unambiguous.
+
+The `isSP` test anchors on `"\\SP"` (matching the existing `SpoilingState` idiom) because the bare substring `"SP"` would false-positive on `OSP` (oversampling phase). Token-boundary matching is required for any future `isXX` test against DICOM CS multi-value fields delimited by `\\`. `isMP` does not need anchoring — no other Siemens variant code (SK/MTC/OSP/SP/SS/TRSS/NONE) contains `MP`.
+
+Limitations to keep in mind: `d.CSA.multiBandFactor` is reliably populated only on Siemens and GE; UIH multiband EPI will be labeled `"Gradient Echo EPI"` without the multiband qualifier. Non-Siemens MPRAGE-equivalents (e.g. UIH `t1_gre_fsp_3d`) will fall through to `"Gradient Echo"` because the MPRAGE detector requires the Siemens-style `MP` variant flag. The `"MPRAGE"` label is also an **overgeneralization within Siemens**: MP2RAGE, PSIR, and vendor-specific magnetisation-prepared GRE all satisfy the same `GR\IR + MP` flag pair. If a future audit asks for more precision, tighten by gating on `d.sequenceName` / `d.pulseSequenceName` matching a `tfl*` allowlist rather than dropping the label outright — the user has explicitly approved `"MPRAGE"` as the default name for this pattern.
+
+Compile-time opt-out: `#define myDisablePulseSequenceType` suppresses the entire block, matching the file's existing `myXxx` opt-out convention.
 
 ## Git Workflow
 
