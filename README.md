@@ -35,7 +35,7 @@ DICOM provides many ways to store/compress image data, known as [transfer syntax
 
 ## ReproIn one-pass naming (`-f %H`)
 
-dcm2niix can emit ReproIn/heudiconv-style BIDS filenames in a single pass via the `-f %H` format specifier, with the optional `-bi` (subject), `-bv` (session), and `-br` (project subdirectory) flags. A companion script `tools/reproinx.py` handles cross-series concerns (fmap pairing, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`, session backfill, root scaffolding). See [REPROIN.md](./REPROIN.md) for the full grammar, defaults, privacy considerations, and known limitations.
+dcm2niix can emit ReproIn/heudiconv-style BIDS filenames in a single pass via the `-f %H` format specifier, with the optional `-bi` (subject), `-bv` (session), and `-br` (project subdirectory) flags. A companion script `tools/reproinx.py` handles cross-series concerns (fmap pairing, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`, session backfill, root scaffolding) and accepts `--anonymize`, `--strict`, `--keep-derivatives`, and `--no-convert` flags. The anonymisation flag `-ba` has three modes: `y` (default; strip dates and patient PII), `n` (keep both), `o` (omit patient PII only — keep acquisition timestamps so reproinx's `_scans.tsv` and fmap closest-time pairing still work). See [REPROIN.md](./REPROIN.md) for the full grammar, defaults, privacy considerations, and known limitations.
 
 ## Versions
 
@@ -43,7 +43,7 @@ dcm2niix can emit ReproIn/heudiconv-style BIDS filenames in a single pass via th
 
 ## Contribute
 
-dcm2niix is developed by the community for the community and everybody can become a part of the [community](./CONTRIBUTE.md).
+dcm2niix is developed by the community for the community and everybody can become a part of the [community](./CONTRIBUTE.md). Pull requests should target the `development` branch — `master` is reserved for tagged stable releases.
 
 ## Running
 
