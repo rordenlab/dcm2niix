@@ -2080,7 +2080,11 @@ tse3d: T2*/
 	bool isSpoiled = (d.spoiling > kSPOILING_NONE);
 	if (d.spoiling == kSPOILING_NONE)
 		json_Bool(fp, "\t\"SpoilingState\": %s,\n", false);
-	if ((d.spoiling == kSPOILING_UNKNOWN) && (strstr(d.sequenceVariant, "\\SP") != NULL)) // BIDS suggests 0018,9016 Siemens V-series do not populate this, (0018,0021) CS [SK\MTC\SP]
+	// BIDS suggests 0018,9016 but Siemens V-series do not populate this, fall back to (0018,0021) CS [SK\MTC\SP]. Match SP at every legal token position (leading, sole, or delimited) so isSP and SpoilingState stay in sync with the PulseSequenceType heuristic
+	if ((d.spoiling == kSPOILING_UNKNOWN) &&
+		((strncmp(d.sequenceVariant, "SP\\", 3) == 0) ||
+		 (strcmp(d.sequenceVariant, "SP") == 0) ||
+		 (strstr(d.sequenceVariant, "\\SP") != NULL)))
 		isSpoiled = true;
 	if (isSpoiled)
 		json_Bool(fp, "\t\"SpoilingState\": %s,\n", true); // Siemens reports SpoilingState but not SpoilingType
@@ -2586,11 +2590,13 @@ tse3d: T2*/
 		bandwidthPerPixelPhaseEncode = d.CSA.bandwidthPerPixelPhaseEncode;
 	json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode);
 	// if ((!d.is3DAcq) && (d.accelFactPE > 1.0)) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-	if (d.accelFactPE > 1.0)
+	// Emit whenever a real source populated the value (default sentinel is 0.0). Reporting "1.0" (no in-plane reduction) is honest and silences the BIDS validator's recommendation when (0018,9069) is present in DICOM; previous "> 1.0" gate dropped it for un-accelerated scans.
+	if (d.accelFactPE >= 1.0)
 		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
 	json_Str(fp, "\t\"ParallelAcquisitionTechnique\": \"%s\",\n", d.parallelAcquisitionTechnique);
 	// https://github.com/rordenlab/dcm2niix/issues/314
-	if (d.accelFactOOP > 1.0)
+	// Same ">= 1.0" policy as ParallelReductionFactorInPlane above; (0018,9155) commonly reports 1.0 for 2D acquisitions and the validator wants it stated explicitly.
+	if (d.accelFactOOP >= 1.0)
 		json_Float(fp, "\t\"ParallelReductionFactorOutOfPlane\": %g,\n", d.accelFactOOP); // issue672
 	if (d.compressedSensingFactor > 1.0)
 		json_Float(fp, "\t\"CompressedSensingFactor\": %g,\n", d.compressedSensingFactor);

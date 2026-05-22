@@ -904,21 +904,106 @@ def _write_text_if_absent(path: Path, content: str) -> None:
 _DCM2NIIX_DDESC_NAME = "dcm2niix dummy dataset"
 
 
+_DDESC_SKIP_FILENAMES = {"dataset_description.json", "participants.json", "scans.json"}
+
+
+def _discover_dcm2niix_version(bids_root: Path) -> Optional[str]:
+    """Read `ConversionSoftwareVersion` from a raw dcm2niix sidecar in the
+    BIDS tree. Returns None if no sidecar carries it (e.g. --no-convert
+    run on an empty tree); callers should then omit the Version field
+    rather than writing a literal 'unknown'. The search is sorted (so
+    mixed-version reruns pick a deterministic winner) and skips
+    `derivatives/` to avoid mistaking a downstream pipeline's sidecar for
+    a dcm2niix conversion stamp."""
+    candidates = []
+    for jp in bids_root.rglob("*.json"):
+        if jp.name in _DDESC_SKIP_FILENAMES:
+            continue
+        if "derivatives" in jp.parts:
+            continue
+        candidates.append(jp)
+    candidates.sort()
+    for jp in candidates:
+        try:
+            data = _load_json(jp)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        sw = data.get("ConversionSoftware")
+        if isinstance(sw, str) and sw and sw != "dcm2niix":
+            continue
+        v = data.get("ConversionSoftwareVersion")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _dcm2niix_generated_by(version: Optional[str]) -> dict:
+    """Single GeneratedBy entry for dcm2niix. `version` should be the cached
+    output of `_discover_dcm2niix_version`; the Version key is omitted when
+    no sidecar carries `ConversionSoftwareVersion`."""
+    entry = {
+        "Name": "dcm2niix",
+        "Description": "DICOM to NIfTI converter",
+        "CodeURL": "https://github.com/rordenlab/dcm2niix",
+    }
+    if version is not None:
+        entry["Version"] = version
+    return entry
+
+
 def _upgrade_dataset_description(bids_root: Path) -> None:
     """Replace dcm2niix's dummy `dataset_description.json` with the heudiconv
-    reproin template. Hand-edited files are preserved: we only overwrite when
-    the on-disk JSON's `Name` is the literal placeholder `_DCM2NIIX_DDESC_NAME`.
+    reproin template, extended with the `GeneratedBy`, `SourceDatasets`, and
+    `DatasetType` keys that the BIDS validator recommends but heudiconv's
+    stock template omits. `DatasetType` is explicitly set to "raw": the
+    validator (context.ts) infers "derivative" whenever `GeneratedBy` is
+    present and `DatasetType` is absent, which forces dozens of
+    derivative-mode rules (e.g. `SkullStripped` required on anat .nii.gz).
+    Hand-edited files keep their curated values; we only *backfill* the
+    recommended keys when missing. `_discover_dcm2niix_version` is invoked
+    lazily so curated files that already carry the recommended keys do not
+    pay a recursive scan of the BIDS tree.
     """
     p = bids_root / "dataset_description.json"
+    cached_version: list = []  # 1-slot cache: lazy, computed at most once
+    def gen_by() -> dict:
+        if not cached_version:
+            cached_version.append(_discover_dcm2niix_version(bids_root))
+        return _dcm2niix_generated_by(cached_version[0])
     if not p.exists():
-        _save_json(p, _DATASET_DESCRIPTION)
+        desc = dict(_DATASET_DESCRIPTION)
+        desc["DatasetType"] = "raw"
+        desc["GeneratedBy"] = [gen_by()]
+        desc["SourceDatasets"] = []
+        _save_json(p, desc)
         return
     try:
         data = _load_json(p)
     except (OSError, ValueError, json.JSONDecodeError):
         return
-    if isinstance(data, dict) and data.get("Name") == _DCM2NIIX_DDESC_NAME:
-        _save_json(p, _DATASET_DESCRIPTION)
+    if not isinstance(data, dict):
+        return
+    if data.get("Name") == _DCM2NIIX_DDESC_NAME:
+        desc = dict(_DATASET_DESCRIPTION)
+        desc["DatasetType"] = "raw"
+        desc["GeneratedBy"] = [gen_by()]
+        desc["SourceDatasets"] = []
+        _save_json(p, desc)
+        return
+    changed = False
+    if "DatasetType" not in data:
+        data["DatasetType"] = "raw"
+        changed = True
+    if "GeneratedBy" not in data:
+        data["GeneratedBy"] = [gen_by()]
+        changed = True
+    if "SourceDatasets" not in data:
+        data["SourceDatasets"] = []
+        changed = True
+    if changed:
+        _save_json(p, data)
 
 
 def _write_root_scaffolding(out_root: Path) -> None:

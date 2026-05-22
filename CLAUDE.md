@@ -187,11 +187,28 @@ Do not "tidy" the `(patMode != 1) && (patMode != 2)` arm into a single ternary o
 
 Why: the BIDS spec's own examples mix vendor marketing labels (`"SPGR"`, `"MPRAGE"`) with acquisition-class names (`"Gradient Echo EPI"`); we prefer the class name and only emit a marketing label (`"MPRAGE"`) where the `ScanningSequence`/`SequenceVariant` combination is unambiguous.
 
-The `isSP` test anchors on `"\\SP"` (matching the existing `SpoilingState` idiom) because the bare substring `"SP"` would false-positive on `OSP` (oversampling phase). Token-boundary matching is required for any future `isXX` test against DICOM CS multi-value fields delimited by `\\`. `isMP` does not need anchoring — no other Siemens variant code (SK/MTC/OSP/SP/SS/TRSS/NONE) contains `MP`.
+The `isSP` test checks all three legal token positions (leading `"SP\\"`, sole `"SP"`, mid-or-trailing `"\\SP"`) because the bare substring `"SP"` would false-positive on `OSP` (oversampling phase) and a single anchored check would miss `SP` when it is the leading token. The matching `SpoilingState` fallback at `nii_dicom_batch.cpp:2083` now uses the same three-clause check, so the two sites no longer disagree on leading-token `SP`. `isMP` does not need anchoring — no other Siemens variant code (SK/MTC/OSP/SP/SS/TRSS/NONE) contains `MP`. A future cleanup may extract a small token-aware helper unifying this with the BidsGuess block's inline `strstr` idioms; the project's CLAUDE.md "do no harm" guidance discourages introducing it for just two sites today.
 
 Limitations to keep in mind: `d.CSA.multiBandFactor` is reliably populated only on Siemens and GE; UIH multiband EPI will be labeled `"Gradient Echo EPI"` without the multiband qualifier. Non-Siemens MPRAGE-equivalents (e.g. UIH `t1_gre_fsp_3d`) will fall through to `"Gradient Echo"` because the MPRAGE detector requires the Siemens-style `MP` variant flag. The `"MPRAGE"` label is also an **overgeneralization within Siemens**: MP2RAGE, PSIR, and vendor-specific magnetisation-prepared GRE all satisfy the same `GR\IR + MP` flag pair. If a future audit asks for more precision, tighten by gating on `d.sequenceName` / `d.pulseSequenceName` matching a `tfl*` allowlist rather than dropping the label outright — the user has explicitly approved `"MPRAGE"` as the default name for this pattern.
 
 Compile-time opt-out: `#define myDisablePulseSequenceType` suppresses the entire block, matching the file's existing `myXxx` opt-out convention.
+
+### ParallelReductionFactor* "1.0 is informative" emit gate
+
+`nii_SaveBIDSX` in `nii_dicom_batch.cpp` (~line 2589) emits both `ParallelReductionFactorInPlane` and `ParallelReductionFactorOutOfPlane` whenever `d.accelFactPE`/`d.accelFactOOP` is `>= 1.0` — i.e. any time a real source populated the field, including a value of exactly `1.0` (no reduction in that axis). The previous gate was `> 1.0`, which silently dropped the field for un-accelerated axes even when the DICOM standard tags `(0018,9069)` / `(0018,9155)` were explicitly present. The BIDS validator emits `JSON_KEY_RECOMMENDED` for the missing-but-informative case, so the wider gate is the honest fix.
+
+Default sentinel for both fields is `0.0` (set by `clear_dicom_data`), so the wider gate does not introduce spurious emissions on non-MR or non-parsed paths. Sources that legitimately set the value to exactly `1.0` include: the DICOM standard tags `(0018,9069)` / `(0018,9155)` themselves, GE ASSET R-factor reciprocals, Siemens CSA `sPat.lAccelFactPE` / `sPat.lAccelFact3D` (which the scanner always populates), and Philips PAR/REC PhaseSlice values. Reviewer wanted source-presence boolean flags; we deferred — the `>= 1.0` gate is sufficient signal in practice, and adding flags would require touching every setter site.
+
+### dataset_description.json BIDS validator compatibility (reproinx.py)
+
+`tools/reproinx.py:_upgrade_dataset_description` writes the heudiconv template extended with three keys the BIDS validator recommends but heudiconv's stock template omits: `DatasetType: "raw"`, `GeneratedBy` (single dcm2niix entry with `ConversionSoftwareVersion` from a per-series sidecar), and `SourceDatasets: []`.
+
+Why each is load-bearing:
+- `DatasetType: "raw"` is **mandatory** when `GeneratedBy` is present. The validator's `src/schema/context.ts:80-84` infers `DatasetType = "derivative"` whenever `GeneratedBy` exists and `DatasetType` is absent, contradicting the schema's documented "default raw" behaviour. Without the explicit `"raw"`, dozens of derivative-mode rules fire (e.g. `SkullStripped` required on every anat `.nii.gz` — observed cascade: 36 spurious errors). This is the single most important key in the upgrade.
+- `GeneratedBy.Version` is discovered lazily via `_discover_dcm2niix_version`, which sorts the candidate list (deterministic for mixed-version reruns), skips `derivatives/`, and prefers sidecars whose `ConversionSoftware` is literally `"dcm2niix"`. When no sidecar carries the field (e.g. `--no-convert` on an empty tree), the `Version` key is omitted rather than written as `"unknown"`.
+- `SourceDatasets: []` silences the validator's recommendation; the empty array is semantically "explicitly no sources known," which is honest for DICOM-only inputs. Reviewer flagged this as "weaker than omission"; the user has approved keeping the empty array to satisfy the validator.
+
+Hand-edited `dataset_description.json` (Name not the dcm2niix placeholder) is preserved, but the three recommended keys are *backfilled* when missing — never overwriting any other curated keys. This is a deliberate divergence from heudiconv's exact-bytes reproin scaffolding (the 7-file byte-identity property now holds for 6/7; `dataset_description.json` diverges by design).
 
 ## Git Workflow
 
