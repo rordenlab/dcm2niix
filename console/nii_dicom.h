@@ -57,7 +57,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20260519"
+#define kDCMdate "v1.0.20260527"
 #define kDCMvers kDCMdate " " kJP2suf kTurbosuf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -146,6 +146,7 @@ static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI dir
 #define kEXIT_RENAME_ERROR 9
 #define kEXIT_INCOMPLETE_VOLUMES_FOUND 10 // issue 515
 #define kEXIT_NOMINAL 11				  // did not expect to convert files
+#define kEXIT_INVALID_PARAM 12			  // issue 1020: bad CLI option or missing value
 
 // 0043,10A3  ---: PSEUDOCONTINUOUS
 // 0043,10A4  ---: 3D pulsed continuous ASL technique
