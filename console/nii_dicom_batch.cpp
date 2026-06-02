@@ -1543,7 +1543,11 @@ tse3d: T2*/
 	//	printWarning("Validate results for custom ABCD GE pepolar sequence\n");
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
-	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
+	// BIDS recommends InstitutionalDepartmentName; Siemens XA60 leaves the DICOM tag empty. Emit "None" when absent so the validator's recommendation is satisfied (honest absence, matching the MatrixCoilMode "None" convention).
+	if (strlen(d.institutionalDepartmentName) > 0)
+		json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
+	else
+		fprintf(fp, "\t\"InstitutionalDepartmentName\": \"None\",\n");
 	json_Str(fp, "\t\"InstitutionAddress\": \"%s\",\n", d.institutionAddress);
 	json_Str(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber);
 	json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);

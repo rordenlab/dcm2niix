@@ -56,21 +56,21 @@ These fields are present regardless of modality (e.g. MR, CT, PET).
 
 These fields should be the same for all images acquired on a specific scanner.
 
-| Field                       | Unit | Comments             | Defined By |
-|-----------------------------|------|----------------------|------------|
-| Manufacturer                |      | DICOM tag 0008,0070  | B          |
-| DeviceSerialNumber          |      | DICOM tag 0018,1000  | B          |
-| StationName                 |      | DICOM tag 0008,1010  | B          |
-| SoftwareVersions            |      | DICOM tag 0018,1020  | B          |
-| Modality                    |      | DICOM tag 0008,1060  | D          |
-| ManufacturersModelName      |      | DICOM tag 0008,1090  | B          |
-| InstitutionName             |      | DICOM tag 0008,0080  | B          |
-| InstitutionalDepartmentName |      | DICOM tag 0008,1040  | B          |
-| InstitutionAddress          |      | DICOM tag 0008,0081  | B          |
-| DeviceSerialNumber          |      | DICOM tag 0018,1000  | B          |
-| StationName                 |      | DICOM tag 0008,1010  | B          |
-| ConversionSoftware          |      | e.g. `dcm2niix`      | D          |
-| ConversionSoftwareVersion   |      | e.g. `v1.0.20210317` | D          |
+| Field                         | Unit | Comments             | Defined By |
+|-------------------------------|------|----------------------|------------|
+| Manufacturer                  |      | DICOM tag 0008,0070  | B          |
+| DeviceSerialNumber            |      | DICOM tag 0018,1000  | B          |
+| StationName                   |      | DICOM tag 0008,1010  | B          |
+| SoftwareVersions              |      | DICOM tag 0018,1020  | B          |
+| Modality                      |      | DICOM tag 0008,0060  | D          |
+| ManufacturersModelName        |      | DICOM tag 0008,1090  | B          |
+| InstitutionName               |      | DICOM tag 0008,0080  | B          |
+| InstitutionalDepartmentName * |      | DICOM tag 0008,1040  | B          |
+| InstitutionAddress            |      | DICOM tag 0008,0081  | B          |
+| ConversionSoftware            |      | e.g. `dcm2niix`      | D          |
+| ConversionSoftwareVersion     |      | e.g. `v1.0.20210317` | D          |
+
+* Recent scanners (e.g. Siemens XA60) do not define 0008,1040. dcm2niix sets this value to `None` if this tag is absent.
 
 ### Global Series Information
 
