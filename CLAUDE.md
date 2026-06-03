@@ -148,7 +148,25 @@ The C code in `createDummyBidsBoilerplate(char *pth, bool isFunc, const char *ta
 
 ### JPEG Lossless multi-fragment gate (issue #1013)
 
-`nii_loadImgXL()` in `nii_dicom.cpp` short-circuits to `nii_loadImgXLCore()` when `dcm.compressionScheme == kCompressC3` and the offset table has >1 item. `kCompressC3` (JPEG Lossless 1.2.840.10008.1.2.4.7x) has its own working multi-fragment decoder in `nii_loadImgJPEGC3` → `decode_JPEG_SOF_0XC3_stack` that walks the file directly for SOI markers; the generic per-frame `dti4D->offsetTable[]` loop above the gate cannot be trusted for C3 because the `dti4D` reaching the decode site is not always the one the parser filled (e.g. `saveDcm2Nii` copies `*dti4Ds = *dti4D` from a stage-1 dti4D). Do **not** "clean up" this gate or merge the C3 path back into the generic loop — it will reintroduce the regression.
+`nii_loadImgXL()` in `nii_dicom.cpp` short-circuits to `nii_loadImgXLCore()` when `dcm.compressionScheme == kCompressC3` and the offset table has >1 item. `kCompressC3` (JPEG Lossless 1.2.840.10008.1.2.4.7x) has its own working multi-fragment decoder in `nii_loadImgJPEGC3` -> `decode_JPEG_SOF_0XC3_stack` that walks the file directly for SOI markers; the generic per-frame `dti4D->offsetTable[]` loop above the gate cannot be trusted for C3 because the `dti4D` reaching the decode site is not always the one the parser filled (e.g. `saveDcm2Nii` copies `*dti4Ds = *dti4D` from a stage-1 dti4D). Do **not** "clean up" this gate or merge the C3 path back into the generic loop — it will reintroduce the regression.
+
+### Multi-fragment single-frame encapsulation (issue #1017)
+
+A single compressed frame can be split across multiple `(FFFE,E000)` Items inside encapsulated DICOM pixel data. The reassembly is codec-agnostic but each codec's loader site is its own wrapper.
+
+Shared helper: `console/dicom_fragments.{h,cpp}` exposes `reassembleEncapsulatedFragments(fn, firstFragmentDataOffset, *outLen)` which walks the file in two passes (count + bound-check, then copy), returning a malloc'd heap buffer with the concatenated codec bitstream. **Returns NULL on single-fragment OR on error** — the codec wrapper treats NULL as "decode the original file from imageStart" (i.e. fall back to the pre-1017 path). Lengths are overflow- and file-length-bounded to reject malformed declarations before allocation.
+
+Per-codec wrappers (5-15 lines each):
+- `kCompressC3` (JPEG Lossless): `nii_loadImgJPEGC3` calls the helper, then `decode_JPEG_SOF_0XC3_mem(buf, len, ...)`. The decoder was split into a static `_core` plus a file wrapper and a buffer wrapper (`_mem`); see `jpg_0XC3.cpp`.
+- `kCompressJP2K` (JPEG2000): `nii_loadImgCoreOpenJPEG` substitutes the reassembled buffer for the file-read block; OpenJPEG was already buffer-driven via `opj_stream_create_buffer_stream`.
+
+Parser gate at `nii_dicom.cpp:~8190` ONLY admits multi-fragment when `numberOfFrames <= 1`. Multi-frame with multiple fragments per frame still errors out — the helper concatenates ALL following fragments, so without real frame-to-fragment boundary parsing it would mix frames. Do **not** widen this gate without persisting per-frame fragment ranges in `dti4D`.
+
+Transfer-syntax classification rename (kCompressYes -> kCompressJP2K): the old name was confusingly used for both "JPEG2000 transfer syntax" and "decompression-enabled flag". Now `kCompressJP2K` is strictly the compressionScheme tag, and `compressFlag` (set in `nii_dicom_batch.cpp:~12024`) is the runtime decode-enabled toggle. A historical regression of this round (audit_temp.md 2026-06-03 H1) was that the global rename caught the `1.2.840.10008.1.2.5` (DICOM RLE Lossless) branch by accident — it must stay `kCompressRLE`. Double-check transfer-syntax-to-scheme assignments in `nii_dicom.cpp:~5615-5640` if you ever rename a compression constant again.
+
+Known pre-existing items the external review surfaced but were not introduced this round: (a) `hdr2D` is heap-allocated in the per-frame loop at `nii_dicom.cpp:~3994-4020` and not freed on every exit path — small per-series leak in multi-frame encapsulated decode. (b) JPEG2000 `.91` (lossy) is gated on `compressFlag != kCompressNone` while `.90`/`.201`/`.203` are not, so build/runtime classification is asymmetric. (c) `nii_loadImgCoreOpenJPEG` has a couple of unchecked codec/stream allocations and `fopen` results. Leave for a separate codec-hygiene pass.
+
+**Source-list fanout warning.** dcm2niix has FIVE source-list surfaces that must all agree: `console/CMakeLists.txt` (3 blocks), `console/makefile`, `console/windows.bat`, `console/notarize.sh`, and `COMPILE.md`. When `dicom_fragments.cpp` was added for issue #1017 it was wired into CMake + makefile only; the audit in 2026-06-03 (round 7 H1) caught the omission in windows.bat / notarize.sh / COMPILE.md before release. Any new `.cpp` added to `nii_dicom.cpp`'s call graph needs the same five-place update. The refactor path is to make CMake/makefile authoritative and have the manual scripts delegate; out of scope for now.
 
 ### AcquisitionTime / AcquisitionDateTime zero-pad (BIDS validator)
 

@@ -11443,6 +11443,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 	opts2Prefs(opts, &prefs);
 	bool compressionWarning = false;
 	bool convertError = false;
+	bool isAnyJP2K = false;
 	bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
 	if (isDcmExt)
 		opts->filename[strlen(opts->filename) - 4] = 0; // "%s_%r.dcm" -> "%s_%r"
@@ -11460,6 +11461,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 			continue;
 		}
 		dcmList[i] = readDICOMx(nameList.str[i], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
+		if (dcmList[i].compressionScheme == kCompressJP2K)
+			isAnyJP2K = true;
 		// dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
 		if (opts->isIgnoreSeriesInstanceUID)
 			dcmList[i].seriesUidCrc = dcmList[i].seriesNum;
@@ -11480,6 +11483,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 		}
 		if (opts->isProgress)
 			progressPct = reportProgress(progressPct, kStage1Frac + (kStage2Frac * (float)i / (float)nDcm)); // proportion correct, 0..100
+	}
+	if ((kCompressSupport != kCompressJP2K) && isAnyJP2K ) {
+		printWarning("Unsupported JPEG2000 transfer syntax (use dcm2niix compiled with OpenJPEG)\n");
 	}
 #ifdef myTimer
 	if (opts->isProgress > 1)
@@ -12015,12 +12021,12 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 		readFindPigz(opts, argv);
 #endif
 #ifdef myEnableJasper
-	opts->compressFlag = kCompressYes; // JASPER for JPEG2000
+	opts->compressFlag = kCompressJP2K; // JASPER for JPEG2000
 #else
 #ifdef myDisableOpenJPEG
 	opts->compressFlag = kCompressNone; // no decompressor
 #else
-	opts->compressFlag = kCompressYes; // OPENJPEG for JPEG2000
+	opts->compressFlag = kCompressJP2K; // OPENJPEG for JPEG2000
 #endif
 #endif
 	// printMessage("%d %s\n",opts->compressFlag, opts->compressname);

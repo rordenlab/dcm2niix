@@ -91,6 +91,7 @@ set(DCM2NIIX_SRCS
     main_console.cpp
     nii_dicom.cpp
     jpg_0XC3.cpp
+    dicom_fragments.cpp
     nifti1_io_core.cpp
     nii_foreign.cpp
     nii_ortho.cpp
@@ -115,6 +116,7 @@ if(BUILD_DCM2NIIXFSLIB)
         dcm2niix_fswrapper.cpp
         nii_dicom.cpp
         jpg_0XC3.cpp
+        dicom_fragments.cpp
         ujpeg.cpp
         nifti1_io_core.cpp
         nii_foreign.cpp
@@ -214,6 +216,7 @@ if(BATCH_VERSION)
         main_console_batch.cpp
         nii_dicom.cpp
         jpg_0XC3.cpp
+        dicom_fragments.cpp
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp

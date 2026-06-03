@@ -57,7 +57,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20260527"
+#define kDCMdate "v1.0.20260603"
 #define kDCMvers kDCMdate " " kJP2suf kTurbosuf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -172,7 +172,7 @@ static const int kSliceOrientSag = 2;
 static const int kSliceOrientCor = 3;
 static const int kSliceOrientMosaicNegativeDeterminant = 4;
 static const int kCompressNone = 0;
-static const int kCompressYes = 1;
+static const int kCompressJP2K = 1;
 static const int kCompressC3 = 2;		  // obsolete JPEG lossless
 static const int kCompress50 = 3;		  // obsolete JPEG lossy
 static const int kCompressRLE = 4;		  // run length encoding
@@ -180,12 +180,12 @@ static const int kCompressPMSCT_RLE1 = 5; // see rle2img: Philips/ELSCINT1 run-l
 static const int kCompressJPEGLS = 6;	  // LoCo JPEG-LS
 static const int kMaxOverlay = 16;		  // even group values 0x6000..0x601E
 #ifdef myEnableJasper
-static const int kCompressSupport = kCompressYes; // JASPER for JPEG2000
+static const int kCompressSupport = kCompressJP2K; // JASPER for JPEG2000
 #else
 #ifdef myDisableOpenJPEG
 static const int kCompressSupport = kCompressNone; // no decompressor
 #else
-static const int kCompressSupport = kCompressYes; // OPENJPEG for JPEG2000
+static const int kCompressSupport = kCompressJP2K; // OPENJPEG for JPEG2000
 #endif
 #endif
 

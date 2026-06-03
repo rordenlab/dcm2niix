@@ -24,6 +24,7 @@
 #include "nifti1.h"
 #endif
 #include "jpg_0XC3.h"
+#include "dicom_fragments.h"
 #include "nifti1_io_core.h"
 #include "nii_dicom.h"
 #include "print.h"
@@ -218,17 +219,29 @@ unsigned char *nii_loadImgCoreOpenJPEG(char *imgname, struct nifti_1_header hdr,
 	opj_codec_t *codec;
 	opj_image_t *jpx;
 	opj_stream_t *stream;
-	FILE *reader = fopen(imgname, "rb");
-	fseek(reader, 0, SEEK_END);
-	long size = ftell(reader) - dcm.imageStart;
-	if (size <= 8)
-		return NULL;
-	fseek(reader, dcm.imageStart, SEEK_SET);
-	unsigned char *data = (unsigned char *)malloc(size);
-	size_t sz = fread(data, 1, size, reader);
-	fclose(reader);
-	if (sz < size)
-		return NULL;
+	// Issue 1017: if the codestream is split across multiple (FFFE,E000) items, reassemble in RAM. NULL means single fragment; read the file from imageStart as before.
+	size_t fragLen = 0;
+	unsigned char *data = reassembleEncapsulatedFragments(imgname, dcm.imageStart, &fragLen);
+	long size;
+	if (data != NULL) {
+		size = (long)fragLen;
+	} else {
+		FILE *reader = fopen(imgname, "rb");
+		fseek(reader, 0, SEEK_END);
+		size = ftell(reader) - dcm.imageStart;
+		if (size <= 8) {
+			fclose(reader);
+			return NULL;
+		}
+		fseek(reader, dcm.imageStart, SEEK_SET);
+		data = (unsigned char *)malloc(size);
+		size_t sz = fread(data, 1, size, reader);
+		fclose(reader);
+		if (sz < (size_t)size) {
+			free(data);
+			return NULL;
+		}
+	}
 	OPJ_CODEC_FORMAT format = OPJ_CODEC_JP2;
 	// DICOM JPEG2k is SUPPOSED to start with codestream, but some vendors include a header
 	if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51)
@@ -3463,7 +3476,16 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	// ftp://medical.nema.org/medical/dicom/final/cp900_ft.pdf
 	if (65536 == dcm.imageBytes)
 		printError("One frame may span multiple fragments. SOFxC3 lossless JPEG. Please extract with dcmdjpeg or gdcmconv.\n");
-	unsigned char *ret = decode_JPEG_SOF_0XC3(imgname, dcm.imageStart, isVerbose, &dimX, &dimY, &bits, &frames, 0);
+	// Issue 1017: if a single frame is split across multiple (FFFE,E000) items, reassemble the codec bitstream in RAM and decode from the buffer. NULL means single fragment; decode the original file as before.
+	size_t fragBufLen = 0;
+	unsigned char *fragBuf = reassembleEncapsulatedFragments(imgname, dcm.imageStart, &fragBufLen);
+	unsigned char *ret = NULL;
+	if (fragBuf != NULL) {
+		ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, 0, isVerbose, &dimX, &dimY, &bits, &frames, 0);
+		free(fragBuf);
+	} else {
+		ret = decode_JPEG_SOF_0XC3(imgname, dcm.imageStart, isVerbose, &dimX, &dimY, &bits, &frames, 0);
+	}
 	if (ret == NULL) {
 		printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
 		return NULL;
@@ -3890,7 +3912,7 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		
 	} else
 #ifndef myDisableOpenJPEG
-		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone)) {
+		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressJP2K)) && (compressFlag != kCompressNone)) {
 			img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
 			if (dcm.isYBRfull)
 				img = nii_ybr2rgb(img, hdr);
@@ -3898,12 +3920,12 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 	else
 #else
 #ifdef myEnableJasper
-		if ((dcm.compressionScheme == kCompressYes) && (compressFlag != kCompressNone))
+		if ((dcm.compressionScheme == kCompressJP2K) && (compressFlag != kCompressNone))
 		img = nii_loadImgCoreJasper(imgname, *hdr, dcm, compressFlag);
 	else
 #endif
 #endif
-		if (dcm.compressionScheme == kCompressYes) {
+		if (dcm.compressionScheme == kCompressJP2K) {
 		printMessage("%d Unable to decompress DICOM transfer syntax '%s'\n", compressFlag, dcm.transferSyntax);
 		return NULL;
 	} else
@@ -3956,6 +3978,9 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	int frames = dcm.xyzDim[3];
 	if (dcm.xyzDim[4] > 1)
 		frames *= dcm.xyzDim[4];
+	// issue 1017: JPEG2000 single-frame split across multiple (FFFE,E000) items. nii_loadImgXLCore -> nii_loadImgCoreOpenJPEG reassembles via reassembleEncapsulatedFragments; the per-frame loop below would read only the first fragment.
+	if ((dcm.compressionScheme == kCompressJP2K) && (frames <= 1))
+		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
 	if (frames != dcm.offsetTableItems)
 	printMessage("Number of frames %d does not match offset table %d\n", frames, dcm.offsetTableItems);
 	size_t bpp = hdr->bitpix / 8;
@@ -5539,8 +5564,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isRawDataStorage = true; // Siemens CSA Non-Image Storage (legacy CMRR PMU lives here)
 			if (d.isRawDataStorage)
 				d.isDerived = true;
+			// n.b. we now handle Siemens physio, so we do not skip all files
 			if (d.isRawDataStorage)
-				printMessage("Skipping non-image DICOM: %s\n", fname);
+				printMessage("non-image DICOM: %s\n", fname);
 			// Philips "PS_" files
 			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.11.1") != NULL)
 				d.isGrayscaleSoftcopyPresentationState = true;
@@ -5587,13 +5613,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.compressionScheme = kCompressPMSCT_RLE1;
 				// printMessage("Unsupported transfer syntax '%s' (decode with rle2img)\n",transferSyntax);
 				// d.imageStart = 1; //abort as invalid (imageStart MUST be >128)
-			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0)) {
-				d.compressionScheme = kCompressYes;
+			} else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.90") == 0) {
+				d.compressionScheme = kCompressJP2K;
 				// printMessage("JPEG2000 Lossless support is new: please validate conversion\n");
-			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.201") == 0)) {
-				d.compressionScheme = kCompressYes; //High-Throughput JPEG 2000 issue 897
-			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.203") == 0)) {
-				d.compressionScheme = kCompressYes; //High-Throughput JPEG 2000 issue 897
+			} else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.201") == 0) {
+				d.compressionScheme = kCompressJP2K; //High-Throughput JPEG 2000 issue 897
+			} else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.203") == 0) {
+				d.compressionScheme = kCompressJP2K; //High-Throughput JPEG 2000 issue 897
 			} else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.1.99") == 0)) {
 				// n.b. Deflate compression applied applies to the encoding of the **entire** DICOM Data Set, not just image data
 				//  see https://www.medicalconnections.co.uk/kb/Transfer-Syntax/
@@ -5604,10 +5630,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.imageStart = 1; // abort as invalid (imageStart MUST be >128)
 								  // #endif
 			} else if ((compressFlag != kCompressNone) && (strcmp(transferSyntax, "1.2.840.10008.1.2.4.91") == 0)) {
-				d.compressionScheme = kCompressYes;
+				d.compressionScheme = kCompressJP2K;
 				// printMessage("JPEG2000 support is new: please validate conversion\n");
 			} else if (strcmp(transferSyntax, "1.2.840.10008.1.2.5") == 0)
-				d.compressionScheme = kCompressRLE; // run length
+				d.compressionScheme = kCompressRLE; // DICOM RLE Lossless: must NOT be kCompressJP2K (the global kCompressYes -> kCompressJP2K rename caught this by accident; the RLE decoder lives at the kCompressRLE branch in nii_loadImgXL)
 			else if (strcmp(transferSyntax, "1.2.840.10008.1.2.2") == 0)
 				isSwitchToBigEndian = true; // isExplicitVR=true;
 			else if (strcmp(transferSyntax, "1.2.840.10008.1.2") == 0)
@@ -5619,6 +5645,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					printWarning("Unsupported transfer syntax '%s' (see www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)\n", transferSyntax);
 					d.imageStart = 1; // abort as invalid (imageStart MUST be >128)
 				}
+			}
+			if ((kCompressSupport != kCompressJP2K) && (d.compressionScheme == kCompressJP2K)) {
+				// printWarning("Unsupported JPEG2000 transfer syntax (use dcm2niix compiled with OpenJPEG)\n");
+				d.imageStart = 1;
 			}
 			break;
 		} //{} provide scope for variable 'transferSyntax
@@ -8156,7 +8186,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				printWarning("Compressed image stored as %d fragments: if conversion fails decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
 			d.imageStart = encapsulatedDataFragmentStart;
 		} else if (encapsulatedDataFragments > 1) {
-			printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);
+			// issue 1017: a single frame split across multiple fragments. Reassembly happens at decode time (see dicom_fragments.cpp). Limited to numberOfFrames <= 1: multi-frame with fragments-per-frame > 1 would need real frame-to-fragment boundary parsing, which the reassembly helper does not provide (it concatenates ALL following fragments).
+			if ((numberOfFrames <= 1) && (d.compressionScheme == kCompressC3 || d.compressionScheme == kCompressJP2K)) {
+				d.imageStart = encapsulatedDataFragmentStart;
+			} else {
+				printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);
+			}
 		} else {
 			d.imageStart = encapsulatedDataFragmentStart;
 			// dti4D->fragmentOffset[0] = -1;
