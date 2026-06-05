@@ -1335,7 +1335,7 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 	// fresh with the current schema. Full anonymisation removes stale files
 	// instead of backing them up, so the output tree cannot retain demographics.
 	bool emitDemographicsPeek = !opts.isAnonymizeBIDS;
-	int expectedTabs = emitDemographicsPeek ? 9 : 5; // 10 or 6 columns
+	int expectedTabs = emitDemographicsPeek ? 10 : 5; // 11 or 6 columns
 	bool schemaMismatch = false;
 	FILE *peek = fopen(tsvPath, "r");
 	if (peek != NULL) {
@@ -1370,7 +1370,7 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 	bool emitDemographics = !opts.isAnonymizeBIDS;
 	if (ftell(tp) == 0) {
 		if (emitDemographics)
-			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\tPatientAge\tPatientSex\tStudyDate\tStudyTime\n");
+			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\tPatientAge\tPatientSex\tStudyDate\tStudyTime\tPatientID\n");
 		else
 			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\n");
 	}
@@ -1382,14 +1382,22 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 	reproinTsvField(d.studyDescription, f4, sizeof(f4));
 	reproinTsvField(relStem, f5, sizeof(f5));
 	if (emitDemographics) {
-		char f6[kDICOMStr], f7[kDICOMStr], f8[kDICOMStr];
+		// PatientID lives at column 11 so older 10-col readers that key on
+		// header names see it as an extra field they can ignore; the
+		// schema-mismatch peek above will rotate any pre-11-col TSV to .bak
+		// so a fresh run can't mix old/new rows under one header. Withheld
+		// in -ba y (anonymize) where the 6-col header omits the whole
+		// demographics block; PatientID is the strongest identifier the
+		// provenance carries and must follow the same privacy rule.
+		char f6[kDICOMStr], f7[kDICOMStr], f8[kDICOMStr], f9[kDICOMStr];
 		reproinTsvField(d.patientAge, f6, sizeof(f6));
 		reproinTsvField(d.studyDate, f7, sizeof(f7));
 		reproinTsvField(d.studyTime, f8, sizeof(f8));
+		reproinTsvField(d.patientID, f9, sizeof(f9));
 		char sexBuf[2] = "";
 		if (d.patientSex == 'M' || d.patientSex == 'F' || d.patientSex == 'O')
 			sexBuf[0] = d.patientSex;
-		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5, f6, sexBuf, f7, f8);
+		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5, f6, sexBuf, f7, f8, f9);
 	} else {
 		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5);
 	}

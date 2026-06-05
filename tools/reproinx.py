@@ -112,7 +112,7 @@ def _which_dcm2niix() -> str:
 
 def _run_dcm2niix(indir: str, outdir: str,
                   subject: Optional[str], session: Optional[str],
-                  anonymize: bool, bidsguess: bool = False) -> None:
+                  anonymize: bool) -> None:
     bin_path = _which_dcm2niix()
     # -ba o: omit PII (PatientName/ID/BirthDate/Sex/Age/Size/Weight,
     # AccessionNumber, ReferringPhysicianName) but keep AcquisitionDateTime
@@ -124,12 +124,7 @@ def _run_dcm2niix(indir: str, outdir: str,
     # No "-w 1": dcm2niix's default ADD_SUFFIX (a/b/c) preserves colliding
     # series; the post-pass below renames them to heudiconv-style __dup-NN
     # using the .reproin_provenance.tsv written by the C side.
-    #
-    # bidsguess=True swaps `-f %H` → `-f %h` (legacy hazardous BIDS naming).
-    # The C side falls back to a heudiconv-style PatientID-derived subject
-    # and a "YYYYMMDDTHHMMSS" session when -bi/-bv are omitted.
-    fmt = "%h" if bidsguess else "%H"
-    cmd = [bin_path, "-f", fmt, "-z", "y", "-o", outdir]
+    cmd = [bin_path, "-f", "%H", "-z", "y", "-o", outdir]
     cmd.extend(["-ba", "y" if anonymize else "o"])
     if subject:
         cmd.extend(["-bi", subject])
@@ -747,6 +742,166 @@ def _inject_session_into_name(fname: str, sub_token: str, ses: str) -> str:
     if fname.startswith(prefix):
         return f"{sub_token}_ses-{ses}_{fname[len(prefix):]}"
     return fname
+
+
+def _heudiconv_subject_token(patient_id: str) -> str:
+    """Mirror reproinFixupSubjectId in console/reproin.cpp: lowercase, strip
+    '-'/'_', then keep alphanumerics only. Empty input → ""."""
+    s = (patient_id or "").lower()
+    s = "".join(c for c in s if c not in "-_")
+    s = "".join(c for c in s if c.isalnum())
+    return s
+
+
+def _session_token_from_studydatetime(study_date: str, study_time: str) -> str:
+    """Mirror the C-side %h fallback: "YYYYMMDDTHHMMSS". studyTime is the raw
+    DICOM "HHMMSS.fff" string; trim to first 6 chars. Empty input → ""."""
+    sd = (study_date or "").strip()
+    st = (study_time or "").strip()
+    if not sd or len(st) < 6:
+        return ""
+    return f"{sd}T{st[:6]}"
+
+
+def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
+    """Move files out of `<bids_root>/Unknown/` into proper BIDS layout using
+    the JSON sidecar's `BidsGuess` field plus `PatientID`/`StudyDate`/
+    `StudyTime` from `.reproin_provenance.tsv`. Series whose ProtocolName
+    didn't parse as ReproIn land in `Unknown/` from the C side; this rescue
+    promotes them to `sub-<patientId>/ses-<YYYYMMDDTHHMMSS>/<datatype>/`
+    using the BIDS dataType + entity suffix dcm2niix already guessed.
+
+    Per-series independent: each Unknown/ file is rescued on its own. No-op
+    on the typical ReproIn-only conversion (no Unknown/ dir, returns 0).
+
+    Skip rules (file stays in Unknown/):
+    - JSON missing or unreadable.
+    - `BidsGuess` absent or not a 2-element list.
+    - `BidsGuess[0]` is "discard" or "derived" (the C side already routed
+      these correctly; we shouldn't promote a scout into the BIDS root).
+    - Provenance row missing for (StudyInstanceUID, SeriesNumber).
+    - `PatientID`, `StudyDate`, or `StudyTime` empty (e.g. -ba y mode).
+
+    Collision policy: if the target stem already exists, append `_run-NN`
+    (heudiconv-style, zero-padded) before the entity suffix.
+
+    Returns the number of file-stems rescued."""
+    unknown = bids_root / "Unknown"
+    if not unknown.is_dir():
+        return 0
+    rows = _load_provenance(bids_root)
+    if not rows:
+        return 0
+    prov_idx: dict[tuple[str, int], dict[str, object]] = {}
+    for r in rows:
+        suid = str(r.get("StudyInstanceUID", ""))
+        try:
+            sn = int(str(r.get("SeriesNumber", "0")))
+        except (TypeError, ValueError):
+            sn = 0
+        prov_idx[(suid, sn)] = r
+
+    rescued = 0
+    task_re = re.compile(r"task-([A-Za-z0-9]+)")
+    for jp in sorted(unknown.glob("*.json")):
+        try:
+            data = _load_json(jp)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        guess = data.get("BidsGuess")
+        if not isinstance(guess, list) or len(guess) < 2:
+            continue
+        datatype = str(guess[0]).strip()
+        entity_suffix = str(guess[1])  # leading "_" is included by C side
+        if datatype.lower() in ("", "discard", "derived"):
+            continue
+        # func/_bold and func/_sbref REQUIRE _task-X_ per BIDS spec. The C
+        # BidsGuess heuristic does not extract task from ProtocolName, so
+        # we recover it here: prefer ProtocolName, fall back to
+        # SeriesDescription, default to "rest" (matches the C %h
+        # createDummyBidsBoilerplate fallback).
+        if datatype.lower() == "func" and "_task-" not in entity_suffix:
+            task = ""
+            for src in (str(data.get("ProtocolName", "")),
+                        str(data.get("SeriesDescription", ""))):
+                m = task_re.search(src)
+                if m:
+                    task = m.group(1)
+                    break
+            if not task:
+                task = "rest"
+            entity_suffix = f"_task-{task}{entity_suffix}"
+        suid = str(data.get("StudyInstanceUID", ""))
+        try:
+            sn = int(data.get("SeriesNumber", 0))
+        except (TypeError, ValueError):
+            sn = 0
+        prov_row = prov_idx.get((suid, sn))
+        if prov_row is None:
+            continue
+        subj = _heudiconv_subject_token(str(prov_row.get("PatientID", "")))
+        sess = _session_token_from_studydatetime(
+            str(prov_row.get("StudyDate", "")),
+            str(prov_row.get("StudyTime", "")))
+        if not subj or not sess:
+            continue
+        sub_token = f"sub-{subj}"
+        ses_token = f"ses-{sess}"
+        new_base = f"{sub_token}_{ses_token}{entity_suffix}"
+        target_dir = bids_root / sub_token / ses_token / datatype
+        # Choose run-NN suffix collectively across the file family so all
+        # siblings (.nii/.nii.gz/.json/.bvec/.bval) land at the same stem.
+        run_idx = 0
+        chosen = new_base
+        while True:
+            collide = False
+            for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"):
+                if (target_dir / f"{chosen}{ext}").exists():
+                    collide = True
+                    break
+            if not collide:
+                break
+            run_idx += 1 if run_idx else 2
+            # _run-NN goes BEFORE the suffix; entity_suffix ends with the
+            # BIDS suffix (e.g. "_T1w"), so we splice _run- before it.
+            if entity_suffix and "_" in entity_suffix:
+                # Drop last "_<suffix>" and reattach after _run-NN.
+                head, _, tail = entity_suffix.rpartition("_")
+                chosen = f"{sub_token}_{ses_token}{head}_run-{run_idx:02d}_{tail}"
+            else:
+                chosen = f"{new_base}_run-{run_idx:02d}"
+            if run_idx > 99:
+                # Pathological — give up and leave the file in Unknown/.
+                chosen = ""
+                break
+        if not chosen:
+            continue
+        # Identify the source stem (strip the .json extension).
+        src_stem_name = jp.name[:-len(".json")]
+        moves: list[tuple[Path, Path]] = []
+        for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"):
+            src = unknown / f"{src_stem_name}{ext}"
+            if src.is_file():
+                moves.append((src, target_dir / f"{chosen}{ext}"))
+        if not moves:
+            continue
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for src, dst in moves:
+                src.rename(dst)
+            rescued += 1
+        except OSError as e:
+            print(f"reproinx: Unknown/-rescue failed for {jp.name}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+    # If Unknown/ is empty after rescue, prune it.
+    try:
+        if unknown.is_dir() and not any(unknown.iterdir()):
+            unknown.rmdir()
+    except OSError:
+        pass
+    return rescued
 
 
 def _apply_dup_naming(bids_root: Path) -> int:
@@ -1478,6 +1633,26 @@ def _bidsguess_collision_files(bids_root: Path) -> list[str]:
     return sorted(hits)
 
 
+def _bidsguess_unknown_leftover_files(bids_root: Path) -> list[str]:
+    """List files still living under `<bids_root>/Unknown/` after the rescue
+    pass (e.g. series whose `BidsGuess` was `discard`/`derived`, or whose
+    provenance row lacked PatientID under `-ba y`). Adding them to
+    .bidsignore prevents NOT_INCLUDED while preserving the files on disk.
+    Returns POSIX paths relative to `bids_root`."""
+    unknown = bids_root / "Unknown"
+    if not unknown.is_dir():
+        return []
+    hits: list[str] = []
+    for path in sorted(unknown.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            hits.append(path.relative_to(bids_root).as_posix())
+        except ValueError:
+            pass
+    return hits
+
+
 def _bidsguess_write_bidsignore(bids_root: Path, patterns: list[str]) -> int:
     """Append (or create) `.bidsignore` listing the collision-suffix files.
     Preserves any user-curated patterns already in the file (line-equality
@@ -1502,7 +1677,7 @@ def _bidsguess_write_bidsignore(bids_root: Path, patterns: list[str]) -> int:
     lines = existing[:]
     if lines and lines[-1].strip() != "":
         lines.append("")
-    lines.append("# bidsguess: dcm2niix a/b/c collision-suffix files")
+    lines.append("# reproinx: files dcm2niix could not place cleanly in BIDS")
     lines.extend(added)
     ignore.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return len(added)
@@ -1523,7 +1698,7 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
             if n > 0:
                 print(f"  {ses}: removed discard/", file=sys.stderr)
         except Exception as e:
-            print(f"bidsguess: discard removal failed for {ses}: {e}",
+            print(f"reproinx: discard removal failed for {ses}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
@@ -1533,7 +1708,7 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
                 print(f"  {ses}: demoted {n} 3D _bold → _sbref",
                       file=sys.stderr)
         except Exception as e:
-            print(f"bidsguess: 3D bold demote failed for {ses}: {e}",
+            print(f"reproinx: 3D bold demote failed for {ses}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
@@ -1544,32 +1719,66 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
                 print(f"  {ses}: marked {len(pats)} single-volume dwi "
                       "artifact file(s) for .bidsignore", file=sys.stderr)
         except Exception as e:
-            print(f"bidsguess: single-vol dwi scan failed for {ses}: {e}",
+            print(f"reproinx: single-vol dwi scan failed for {ses}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
-    for root in _bids_roots(_walk_subjects(out_root)):
+    # Include any subject-less bids_roots that only have Unknown/ leftovers,
+    # so their .bidsignore picks up the residual files.
+    candidate_roots = set(_bids_roots(_walk_subjects(out_root)))
+    for unknown in out_root.rglob("Unknown"):
+        if unknown.is_dir() and not any(part == "derivatives" for part in unknown.parts):
+            candidate_roots.add(unknown.parent)
+    for root in sorted(candidate_roots):
         try:
             collision = _bidsguess_collision_files(root)
             singlevol = by_root.get(root, [])
-            patterns = sorted(set(collision) | set(singlevol))
+            leftover = _bidsguess_unknown_leftover_files(root)
+            patterns = sorted(set(collision) | set(singlevol) | set(leftover))
             n = _bidsguess_write_bidsignore(root, patterns)
             if n > 0:
                 print(f"  {root}: added {n} entries to .bidsignore",
                       file=sys.stderr)
         except Exception as e:
-            print(f"bidsguess: .bidsignore write failed for {root}: {e}",
+            print(f"reproinx: .bidsignore write failed for {root}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
 
 
-def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
-                  bidsguess: bool = False) -> None:
-    # Bidsguess pre-pass: clean up legacy %h artefacts (discard/, single-vol
-    # dwi bvecs, 3D bold) before generic passes inspect the tree.
-    if bidsguess:
-        _bidsguess_cleanup(out_root, strict)
+def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) -> None:
+    # Pre-pass: rescue files from <bids_root>/Unknown/ using JSON BidsGuess
+    # plus PatientID/StudyDate/StudyTime from the provenance TSV. Runs for
+    # BOTH -f %H and -f %h modes (the latter rarely produces Unknown/ but it
+    # can if BidsGuess classification fails entirely). Must run before all
+    # other passes so they see the rescued layout. Discovered by rglob so we
+    # find Unknown/ even in studies where every series landed there (no
+    # sub-* exists yet).
+    seen_roots: set[Path] = set()
+    for unknown in sorted(out_root.rglob("Unknown")):
+        if not unknown.is_dir():
+            continue
+        if any(part == "derivatives" for part in unknown.parts):
+            continue
+        root = unknown.parent
+        if root in seen_roots:
+            continue
+        seen_roots.add(root)
+        try:
+            n = _rescue_unknown_dir(root, strict)
+            if n > 0:
+                print(f"  {root}: rescued {n} file-stem(s) from Unknown/",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: Unknown/-rescue failed for {root}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+    # Generic BIDS hygiene pass: discard/ removal, 3D _bold -> _sbref,
+    # single-volume DWI to .bidsignore, a/b/c collision files to
+    # .bidsignore, residual Unknown/ files to .bidsignore. Each cleanup is
+    # no-op when its target is absent.
+    _bidsguess_cleanup(out_root, strict)
     # Pass 0: rename dcm2niix's a/b/c collision suffix to heudiconv __dup-NN.
     # Must run before session backfill so the rename happens at the as-written
     # paths recorded in the provenance TSV.
@@ -1668,13 +1877,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "session detection and then removed by default to "
                         "match heudiconv's layout. Pass this flag to retain "
                         "them for inspection.")
-    p.add_argument("--bidsguess", action="store_true",
-                   help="Use legacy hazardous BIDS naming (-f %%h) instead of "
-                        "ReproIn (-f %%H), and apply bidsguess-specific "
-                        "cleanups: remove discard/ subdirs, drop bvec/bval "
-                        "for single-volume dwi, rename 3D *_bold to *_sbref, "
-                        "and add a/b/c collision-suffix files to .bidsignore. "
-                        "Used by tools/bidsguess.py.")
     args = p.parse_args(argv)
 
     indir = Path(args.indir).resolve()
@@ -1687,11 +1889,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not args.no_convert:
         _run_dcm2niix(str(indir), str(outdir), args.subject, args.session,
-                      anonymize=args.anonymize, bidsguess=args.bidsguess)
+                      anonymize=args.anonymize)
 
     _post_process(outdir, strict=args.strict,
-                  keep_derivatives=args.keep_derivatives,
-                  bidsguess=args.bidsguess)
+                  keep_derivatives=args.keep_derivatives)
     return 0
 
 
