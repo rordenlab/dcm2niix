@@ -8064,6 +8064,21 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcpy(modalityBIDS, "epi");
 		isDirLabel = true;
 	}
+	// SWI override: any image whose ImageType array contains the token
+	// "SWI" is T2*-weighted gradient-echo data per BIDS (T2starw). Fires
+	// regardless of which sequence-name branch above matched (or whether
+	// the trailing `if (isDerived)` would otherwise clobber to "derived").
+	// Covers EPI-based SWI (e.g. *swi3d_epr on XA80) that does not match
+	// any of the fl3d/gre/ep_seg_fid patterns, plus MINIMUM and SWI_Images
+	// derived projections that the user wants surfaced as anat rather than
+	// routed to derivatives/scanner/. ImageType is underscore-joined so
+	// `_SWI` only matches the token (not e.g. "SWIRL").
+	if (strstr(d->imageType, "_SWI") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2starw");
+		isPart = true;
+		isDerived = false;
+	}
 	strcpy(acqStr, "_acq-");
 	strcat(acqStr, preAcqStr);
 	int len = strlen(seqName);
