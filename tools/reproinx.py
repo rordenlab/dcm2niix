@@ -755,12 +755,37 @@ def _heudiconv_subject_token(patient_id: str) -> str:
 
 def _session_token_from_studydatetime(study_date: str, study_time: str) -> str:
     """Mirror the C-side %h fallback: "YYYYMMDDTHHMMSS". studyTime is the raw
-    DICOM "HHMMSS.fff" string; trim to first 6 chars. Empty input → ""."""
+    DICOM "HHMMSS.fff" string; trim to first 6 chars. Empty/invalid → "".
+
+    Strict DICOM VR validation: StudyDate VR=DA is exactly 8 digits, StudyTime
+    VR=TM starts with 6 digits. Rejecting non-digit input here blocks path
+    traversal (e.g. a malicious DICOM with StudyDate="../../etc" would
+    otherwise reach Path.rename via the rescue caller). The C-side
+    reproinTsvField strips only \\t\\r\\n from these fields when writing the
+    provenance TSV, so this Python validator is the privacy/safety boundary
+    on the consumption side."""
     sd = (study_date or "").strip()
     st = (study_time or "").strip()
-    if not sd or len(st) < 6:
+    if len(sd) < 8 or not sd[:8].isdigit():
         return ""
-    return f"{sd}T{st[:6]}"
+    if len(st) < 6 or not st[:6].isdigit():
+        return ""
+    return f"{sd[:8]}T{st[:6]}"
+
+
+# Known BIDS top-level datatype directories. Restricting datatype to this set
+# blocks path traversal via a malicious BidsGuess[0] (e.g. "../etc") that
+# would otherwise become a directory component below the BIDS root.
+_BIDS_DATATYPES = frozenset({
+    "anat", "func", "dwi", "fmap", "perf", "pet", "meg", "eeg", "ieeg",
+    "beh", "micr", "nirs", "motion",
+})
+
+# BIDS entity-suffix charset: alphanumerics, hyphens, and underscores only.
+# `_acq-X_dir-AP_run-1_bold` is the canonical shape; anything outside this
+# alphabet (slashes, dots, control chars, NUL, ...) is rejected before the
+# stem is concatenated into a path.
+_BIDS_ENTITY_SUFFIX_RE = re.compile(r"\A[A-Za-z0-9_-]*\Z")
 
 
 def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
@@ -815,6 +840,17 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
         entity_suffix = str(guess[1])  # leading "_" is included by C side
         if datatype.lower() in ("", "discard", "derived"):
             continue
+        # Path-safety validation. BidsGuess is written by the C side from
+        # parsed DICOM strings; both fields flow into a Path component
+        # below, so reject anything outside the BIDS charset BEFORE the
+        # rename. datatype must be a known BIDS top-level directory;
+        # entity_suffix must be alphanumeric + '-' + '_'. Either failure
+        # leaves the file in Unknown/ where _bidsguess_unknown_leftover_files
+        # will route it to .bidsignore — no data loss, no traversal.
+        if datatype.lower() not in _BIDS_DATATYPES:
+            continue
+        if not _BIDS_ENTITY_SUFFIX_RE.fullmatch(entity_suffix):
+            continue
         # func/_bold and func/_sbref REQUIRE _task-X_ per BIDS spec. The C
         # BidsGuess heuristic does not extract task from ProtocolName, so
         # we recover it here: prefer ProtocolName, fall back to
@@ -847,35 +883,36 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
             continue
         sub_token = f"sub-{subj}"
         ses_token = f"ses-{sess}"
-        new_base = f"{sub_token}_{ses_token}{entity_suffix}"
         target_dir = bids_root / sub_token / ses_token / datatype
+        # _run-NN goes BEFORE the BIDS suffix word (e.g. "_T1w", "_bold").
+        # entity_suffix has shape "[_<entity>-<value>]*_<suffix>"; if it
+        # has no underscore we fall back to appending _run-NN at the end.
+        if "_" in entity_suffix:
+            entity_head, _, entity_tail = entity_suffix.rpartition("_")
+            run_template = f"{sub_token}_{ses_token}{entity_head}_run-{{idx:02d}}_{entity_tail}"
+        else:
+            run_template = f"{sub_token}_{ses_token}{entity_suffix}_run-{{idx:02d}}"
+
+        def _has_family(stem: str) -> bool:
+            return any((target_dir / f"{stem}{ext}").exists()
+                       for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"))
+
         # Choose run-NN suffix collectively across the file family so all
         # siblings (.nii/.nii.gz/.json/.bvec/.bval) land at the same stem.
-        run_idx = 0
-        chosen = new_base
-        while True:
-            collide = False
-            for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"):
-                if (target_dir / f"{chosen}{ext}").exists():
-                    collide = True
+        # First-collision case is _run-01 (not _run-02); the un-numbered
+        # file already on disk is the implicit run-zero / canonical copy.
+        chosen = f"{sub_token}_{ses_token}{entity_suffix}"
+        if _has_family(chosen):
+            chosen = ""
+            for idx in range(1, 100):
+                candidate = run_template.format(idx=idx)
+                if not _has_family(candidate):
+                    chosen = candidate
                     break
-            if not collide:
-                break
-            run_idx += 1 if run_idx else 2
-            # _run-NN goes BEFORE the suffix; entity_suffix ends with the
-            # BIDS suffix (e.g. "_T1w"), so we splice _run- before it.
-            if entity_suffix and "_" in entity_suffix:
-                # Drop last "_<suffix>" and reattach after _run-NN.
-                head, _, tail = entity_suffix.rpartition("_")
-                chosen = f"{sub_token}_{ses_token}{head}_run-{run_idx:02d}_{tail}"
-            else:
-                chosen = f"{new_base}_run-{run_idx:02d}"
-            if run_idx > 99:
-                # Pathological — give up and leave the file in Unknown/.
-                chosen = ""
-                break
-        if not chosen:
-            continue
+            if not chosen:
+                # Pathological (>99 collisions). Leave the file in
+                # Unknown/ where the .bidsignore sweep will catch it.
+                continue
         # Identify the source stem (strip the .json extension).
         src_stem_name = jp.name[:-len(".json")]
         moves: list[tuple[Path, Path]] = []
