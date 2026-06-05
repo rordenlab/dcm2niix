@@ -880,6 +880,51 @@ def _maybe_collapse_nonreproin_root(out_root: Path, strict: bool) -> bool:
     return True
 
 
+def _purge_all_discard_unknown(bids_root: Path, strict: bool) -> bool:
+    """Delete `<bids_root>/Unknown/` when every JSON inside has
+    `BidsGuess[0] == "discard"` AND every non-JSON file has a matching
+    JSON sidecar (no orphans). Runs after the Unknown/-rescue, so files
+    the rescue couldn't promote (CT, missing provenance, malformed
+    BidsGuess) preserve the folder. Returns True on delete."""
+    unknown = bids_root / "Unknown"
+    if not unknown.is_dir():
+        return False
+    json_files = sorted(unknown.glob("*.json"))
+    if not json_files:
+        return False
+    discard_stems: set[str] = set()
+    for jp in json_files:
+        try:
+            data = _load_json(jp)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        guess = data.get("BidsGuess")
+        if not (isinstance(guess, list) and guess and
+                str(guess[0]).strip().lower() == "discard"):
+            return False
+        discard_stems.add(jp.name[:-len(".json")])
+    # Every non-JSON file must have a discard-classified sidecar.
+    for p in unknown.iterdir():
+        if not p.is_file() or p.suffix.lower() == ".json":
+            continue
+        stem = p.name
+        if stem.endswith(".nii.gz"):
+            stem = stem[:-len(".nii.gz")]
+        else:
+            stem = stem[:-len(p.suffix)] if p.suffix else stem
+        if stem not in discard_stems:
+            return False
+    try:
+        shutil.rmtree(unknown)
+    except OSError as e:
+        print(f"reproinx: all-discard Unknown/ purge failed for {bids_root}: {e}",
+              file=sys.stderr)
+        if strict:
+            raise
+        return False
+    return True
+
+
 def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
     """Move files out of `<bids_root>/Unknown/` into proper BIDS layout using
     the JSON sidecar's `BidsGuess` field plus `PatientID`/`StudyDate`/
@@ -1911,6 +1956,17 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) 
                       file=sys.stderr)
         except Exception as e:
             print(f"reproinx: Unknown/-rescue failed for {root}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+        # After rescue: if every remaining Unknown/ file is "discard"
+        # (scout / Phoenix / non-image DICOM), drop the whole folder.
+        try:
+            if _purge_all_discard_unknown(root, strict):
+                print(f"  {root}: removed all-discard Unknown/",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: all-discard purge failed for {root}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
