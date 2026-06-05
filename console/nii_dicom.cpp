@@ -4694,6 +4694,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kDimensionIndexPointer 0x0020 + uint32_t(0x9165 << 16)
 // Private Group 21 as Used by Siemens:
 #define kRelTablePosition 0x0021 + (0x1005 << 16)		 // IS Siemens XA
+#define kAutoAlignData 0x0021 + (0x103F << 16)		 // UT Siemens XA
 #define kScanningSequenceSiemens 0x0021 + (0x105A << 16) // CS n.b. for GE this is Diffusion direction of SL!
 #define kSequenceVariant21 0x0021 + (0x105B << 16)		 // CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16)		 // CS Siemens ONLY
@@ -5977,6 +5978,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodeMeaning);
 				d.deID_CS_n++;
 			}
+			// localizer used in many non-scout images, see https://ancplaboldenburg.github.io/bids_manager_documentation/
+			/*
+			char codeMeaningStr[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], codeMeaningStr);
+			for (int i = 0; codeMeaningStr[i] != '\0'; i++)
+				codeMeaningStr[i] = toupper(codeMeaningStr[i]);
+			if (strstr(codeMeaningStr, "LOCALIZER") != NULL)
+				d.isLocalizer = true;
+			*/
 			break;
 		}
 		case kPatientID:
@@ -7167,6 +7177,20 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 3, &d.CSA.tablePos[0]); // slice position
 			d.CSA.tablePos[3] = -d.CSA.tablePos[3];								  // reverse Z polarity, issue 726
 			d.CSA.tablePos[0] = 1.0;											  // set
+			break;
+		}
+		case kAutoAlignData: {
+			if (d.manufacturer != kMANUFACTURER_SIEMENS)
+				break;
+			if (lLength < 2)
+				break;
+			// observed value "Head_Localizer"; case-insensitive because the casing of this Siemens XA private tag (0021,103F) is not documented and may vary across XA10/XA30/XA60 firmware revisions.
+			char autoAlignStr[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], autoAlignStr);
+			for (int i = 0; autoAlignStr[i] != '\0'; i++)
+				autoAlignStr[i] = toupper(autoAlignStr[i]);
+			if (strstr(autoAlignStr, "LOCALIZER") != NULL)
+				d.isLocalizer = true;
 			break;
 		}
 		case kScanningSequenceSiemens:
@@ -8689,7 +8713,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// volume. It would miss the case of a true enhanced partial volume
 	// with just 1 slice, but that seems much less likely than unenhanced
 	// DICOM with unmodified ICEDims tags.
-	if ((numberOfFramesICEdims > 0) && (d.xyzDim[3] > 1) && (d.xyzDim[3] != numberOfFramesICEdims)) {
+	if ((!d.isLocalizer) && (numberOfFramesICEdims > 0) && (d.xyzDim[3] > 1) && (d.xyzDim[3] != numberOfFramesICEdims)) {
 		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
 		d.seriesNum += 1000;
 		d.isDerived = true;

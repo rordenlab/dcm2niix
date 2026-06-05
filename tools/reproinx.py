@@ -112,7 +112,7 @@ def _which_dcm2niix() -> str:
 
 def _run_dcm2niix(indir: str, outdir: str,
                   subject: Optional[str], session: Optional[str],
-                  anonymize: bool) -> None:
+                  anonymize: bool, bidsguess: bool = False) -> None:
     bin_path = _which_dcm2niix()
     # -ba o: omit PII (PatientName/ID/BirthDate/Sex/Age/Size/Weight,
     # AccessionNumber, ReferringPhysicianName) but keep AcquisitionDateTime
@@ -124,7 +124,12 @@ def _run_dcm2niix(indir: str, outdir: str,
     # No "-w 1": dcm2niix's default ADD_SUFFIX (a/b/c) preserves colliding
     # series; the post-pass below renames them to heudiconv-style __dup-NN
     # using the .reproin_provenance.tsv written by the C side.
-    cmd = [bin_path, "-f", "%H", "-z", "y", "-o", outdir]
+    #
+    # bidsguess=True swaps `-f %H` → `-f %h` (legacy hazardous BIDS naming).
+    # The C side falls back to a heudiconv-style PatientID-derived subject
+    # and a "YYYYMMDDTHHMMSS" session when -bi/-bv are omitted.
+    fmt = "%h" if bidsguess else "%H"
+    cmd = [bin_path, "-f", fmt, "-z", "y", "-o", outdir]
     cmd.extend(["-ba", "y" if anonymize else "o"])
     if subject:
         cmd.extend(["-bi", subject])
@@ -132,7 +137,18 @@ def _run_dcm2niix(indir: str, outdir: str,
         cmd.extend(["-bv", session])
     cmd.append(indir)
     print("+ " + " ".join(cmd), file=sys.stderr)
-    subprocess.run(cmd, check=True)
+    # kEXIT_SOME_OK_SOME_BAD=8 and kEXIT_INCOMPLETE_VOLUMES_FOUND=10 mean
+    # partial-success: most files converted, a few failed. The post-pass
+    # can still run against what landed on disk. Other non-zero codes
+    # (input/output folder errors, no valid files, invalid params, ...)
+    # are real failures and should propagate.
+    PARTIAL_OK = (8, 10)
+    proc = subprocess.run(cmd, check=False)
+    if proc.returncode != 0 and proc.returncode not in PARTIAL_OK:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+    if proc.returncode in PARTIAL_OK:
+        print(f"dcm2niix exited {proc.returncode} (partial conversion); "
+              "continuing with post-pass.", file=sys.stderr)
 
 
 # --- ported helpers from heudiconv/bids.py ----------------------------------
@@ -427,6 +443,37 @@ def _series_randstr(data: dict) -> str:
     return hashlib.md5("".join(sorted(pieces)).encode()).hexdigest()[:8]
 
 
+def _load_bidsignore_patterns(bids_root: Path) -> list[str]:
+    """Return non-empty, non-comment lines from `<bids_root>/.bidsignore`.
+    Used by scans.tsv (and any other writer) to skip files the user has
+    asked the validator to ignore; otherwise scans.tsv would reference
+    .bidsignored files and trip SCANS_FILENAME_NOT_MATCH_DATASET."""
+    p = bids_root / ".bidsignore"
+    if not p.is_file():
+        return []
+    patterns: list[str] = []
+    try:
+        for raw in p.read_text(encoding="utf-8").splitlines():
+            s = raw.strip()
+            if s and not s.startswith("#"):
+                patterns.append(s)
+    except OSError:
+        return []
+    return patterns
+
+
+def _is_bidsignored(rel_posix: str, patterns: list[str]) -> bool:
+    """Test a root-relative POSIX path against .bidsignore patterns. Patterns
+    follow the BIDS validator convention: gitignore-style globs, matched
+    against either the basename or the full root-relative path."""
+    import fnmatch
+    basename = rel_posix.rsplit("/", 1)[-1]
+    for pat in patterns:
+        if fnmatch.fnmatch(rel_posix, pat) or fnmatch.fnmatch(basename, pat):
+            return True
+    return False
+
+
 def _write_scans_tsv(session_dir: Path) -> None:
     """Aggregate AcquisitionDateTime + per-series randstr from JSON sidecars
     into `<sub>[_<ses>]_scans.tsv`. Columns mirror heudiconv reproin:
@@ -434,13 +481,26 @@ def _write_scans_tsv(session_dir: Path) -> None:
     PerformingPhysicianName/OperatorsName carry real human names and are
     intentionally not threaded through dcm2niix's provenance TSV. Users who
     want them can populate the column manually post-conversion.
+
+    NIfTI files matching `.bidsignore` patterns at the bids-root are skipped
+    so the scans.tsv doesn't reference files the validator was told to
+    ignore (which would otherwise emit SCANS_FILENAME_NOT_MATCH_DATASET).
     """
+    bids_root = session_dir.parent.parent  # <root>/sub-X/ses-Y -> <root>
+    ignore_patterns = _load_bidsignore_patterns(bids_root)
     rows: list[tuple[str, str, str]] = []  # (filename, acq, randstr)
     for jp in sorted(session_dir.glob("*/*.json")):
         nii_pattern = _globlib.escape(jp.stem) + ".nii*"
         nii = next(iter(jp.parent.glob(nii_pattern)), None)
         if nii is None:
             continue
+        if ignore_patterns:
+            try:
+                rel = nii.relative_to(bids_root).as_posix()
+            except ValueError:
+                rel = nii.name
+            if _is_bidsignored(rel, ignore_patterns):
+                continue
         try:
             data = _load_json(jp)
         except (OSError, ValueError, json.JSONDecodeError):
@@ -1295,7 +1355,221 @@ def _drop_derivatives(out_root: Path) -> int:
     return removed
 
 
-def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) -> None:
+def _nifti_ndim(nii_path: Path) -> Optional[int]:
+    """Return the NIfTI volume count (dim[4]) from the header, treating dim[0]<4
+    or dim[4]<=1 as 3D. None on read error."""
+    hdr = _read_nifti_header(nii_path)
+    if hdr is None:
+        return None
+    if struct.unpack("<i", hdr[:4])[0] == 348:
+        bo = "<"
+    elif struct.unpack(">i", hdr[:4])[0] == 348:
+        bo = ">"
+    else:
+        return None
+    dim = struct.unpack(bo + "8h", hdr[40:56])
+    if int(dim[0]) < 4:
+        return 1
+    return int(dim[4]) if dim[4] > 0 else 1
+
+
+def _bidsguess_remove_discard(session_dir: Path) -> int:
+    """Drop the entire `discard/` subdir under a session (localizers + scouts).
+    BIDS has no `discard` datatype; bids-validator emits NOT_INCLUDED for every
+    file inside. Returns 1 if a directory was removed, else 0."""
+    d = session_dir / "discard"
+    if not d.is_dir():
+        return 0
+    shutil.rmtree(d)
+    return 1
+
+
+def _bidsguess_singlevol_dwi_patterns(session_dir: Path,
+                                       bids_root: Path) -> list[str]:
+    """Find single-volume `*_dwi.nii*` artifacts under a session and return
+    their full sidecar set as POSIX paths relative to `bids_root`. Single-vol
+    DWI is BIDS-invalid two ways at once (DWI requires bvec/bval, but having
+    them with <2 volumes triggers VOLUME_COUNT_MISMATCH); listing the whole
+    artifact in .bidsignore is the cleanest pragmatic resolution. Returns
+    [] when the dwi/ dir is absent or no single-volume DWI exists."""
+    dwi_dir = session_dir / "dwi"
+    if not dwi_dir.is_dir():
+        return []
+    patterns: list[str] = []
+    for nii in sorted(list(dwi_dir.glob("*_dwi.nii")) +
+                      list(dwi_dir.glob("*_dwi.nii.gz"))):
+        n = _nifti_ndim(nii)
+        if n is None or n >= 2:
+            continue
+        stem = nii.name[:-len(".nii.gz")] if nii.name.endswith(".nii.gz") else nii.stem
+        for ext in (".nii", ".nii.gz", ".json", ".bvec", ".bval"):
+            companion = dwi_dir / f"{stem}{ext}"
+            if companion.is_file():
+                try:
+                    patterns.append(companion.relative_to(bids_root).as_posix())
+                except ValueError:
+                    pass
+    return patterns
+
+
+def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
+    """Rename 3D `*_bold` files to `*_sbref` (single-band reference). BIDS
+    requires `_bold` scans to be 4D; dcm2niix's legacy %h heuristics can route
+    single-volume EPI into func/. `_sbref` is the closest BIDS-compliant suffix
+    for an EPI scan paired with a multi-volume bold acquisition. Renames the
+    .nii/.nii.gz, .json, .bvec, .bval, and any _events.tsv together. Returns
+    the number of stems renamed."""
+    func_dir = session_dir / "func"
+    if not func_dir.is_dir():
+        return 0
+    renamed = 0
+    for nii in sorted(list(func_dir.glob("*_bold.nii")) +
+                      list(func_dir.glob("*_bold.nii.gz"))):
+        n = _nifti_ndim(nii)
+        if n is None or n >= 2:
+            continue
+        if nii.name.endswith(".nii.gz"):
+            stem = nii.name[:-len(".nii.gz")]
+            nii_ext = ".nii.gz"
+        else:
+            stem = nii.stem
+            nii_ext = ".nii"
+        if not stem.endswith("_bold"):
+            continue
+        new_stem = stem[:-len("_bold")] + "_sbref"
+        # _events.tsv is a bold-only sidecar and would now be orphaned;
+        # _sbref has no events. Drop it rather than carry it forward.
+        events = func_dir / f"{stem}_events.tsv"
+        if events.is_file():
+            events.unlink()
+        for ext in (nii_ext, ".json"):
+            src = func_dir / f"{stem}{ext}"
+            dst = func_dir / f"{new_stem}{ext}"
+            if src.is_file():
+                src.rename(dst)
+        renamed += 1
+    return renamed
+
+
+_BIDSGUESS_COLLISION_RE = re.compile(
+    r"_(magnitude\d|phasediff|phase\d|fieldmap|bold|sbref|T1w|T2w|FLAIR|"
+    r"PDw|T2starw|UNIT1|inplaneT[12]|MEGRE|MESE|VFA|IRT1|MP2RAGE|MPM|MTS|MTR|"
+    r"dwi|epi|m0scan|asl|aslcontext|cbv|defacemask)[a-z]"
+    r"(\.json|\.nii(\.gz)?|\.bvec|\.bval|\.tsv)$"
+)
+
+
+def _bidsguess_collision_files(bids_root: Path) -> list[str]:
+    """Locate files where dcm2niix appended an `a`/`b`/`c` collision suffix to
+    a known BIDS modality token (e.g. `_magnitude1a.json`, `_phasediffb.nii.gz`).
+    The %H path renames these to `__dup-NN` using provenance; the %h path has
+    no provenance, so we list them for .bidsignore instead. Returns paths
+    relative to `bids_root`, POSIX form."""
+    hits = []
+    for path in bids_root.rglob("sub-*"):
+        if not path.is_file():
+            continue
+        if _BIDSGUESS_COLLISION_RE.search(path.name):
+            try:
+                rel = path.relative_to(bids_root).as_posix()
+            except ValueError:
+                continue
+            hits.append(rel)
+    return sorted(hits)
+
+
+def _bidsguess_write_bidsignore(bids_root: Path, patterns: list[str]) -> int:
+    """Append (or create) `.bidsignore` listing the collision-suffix files.
+    Preserves any user-curated patterns already in the file (line-equality
+    dedup). Returns the number of new lines added."""
+    if not patterns:
+        return 0
+    ignore = bids_root / ".bidsignore"
+    existing: list[str] = []
+    if ignore.is_file():
+        try:
+            existing = ignore.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            existing = []
+    seen = set(s.strip() for s in existing if s.strip())
+    added = []
+    for p in patterns:
+        if p not in seen:
+            added.append(p)
+            seen.add(p)
+    if not added:
+        return 0
+    lines = existing[:]
+    if lines and lines[-1].strip() != "":
+        lines.append("")
+    lines.append("# bidsguess: dcm2niix a/b/c collision-suffix files")
+    lines.extend(added)
+    ignore.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return len(added)
+
+
+def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
+    """Bidsguess-specific second pass over a %h-converted tree. Runs BEFORE
+    the generic reproinx passes so scans.tsv / participants.tsv see the
+    cleaned layout."""
+    # Aggregate .bidsignore patterns per bids-root across all sessions, then
+    # write once. The session loop computes its bids_root as ses.parent.parent
+    # (sub-X/ses-Y/), which mirrors how reproinx _bids_roots discovers roots.
+    by_root: dict[Path, list[str]] = {}
+    for ses in _walk_sessions(out_root):
+        bids_root = ses.parent.parent
+        try:
+            n = _bidsguess_remove_discard(ses)
+            if n > 0:
+                print(f"  {ses}: removed discard/", file=sys.stderr)
+        except Exception as e:
+            print(f"bidsguess: discard removal failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+        try:
+            n = _bidsguess_demote_3d_bold(ses)
+            if n > 0:
+                print(f"  {ses}: demoted {n} 3D _bold → _sbref",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"bidsguess: 3D bold demote failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+        try:
+            pats = _bidsguess_singlevol_dwi_patterns(ses, bids_root)
+            if pats:
+                by_root.setdefault(bids_root, []).extend(pats)
+                print(f"  {ses}: marked {len(pats)} single-volume dwi "
+                      "artifact file(s) for .bidsignore", file=sys.stderr)
+        except Exception as e:
+            print(f"bidsguess: single-vol dwi scan failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+    for root in _bids_roots(_walk_subjects(out_root)):
+        try:
+            collision = _bidsguess_collision_files(root)
+            singlevol = by_root.get(root, [])
+            patterns = sorted(set(collision) | set(singlevol))
+            n = _bidsguess_write_bidsignore(root, patterns)
+            if n > 0:
+                print(f"  {root}: added {n} entries to .bidsignore",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"bidsguess: .bidsignore write failed for {root}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+
+
+def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
+                  bidsguess: bool = False) -> None:
+    # Bidsguess pre-pass: clean up legacy %h artefacts (discard/, single-vol
+    # dwi bvecs, 3D bold) before generic passes inspect the tree.
+    if bidsguess:
+        _bidsguess_cleanup(out_root, strict)
     # Pass 0: rename dcm2niix's a/b/c collision suffix to heudiconv __dup-NN.
     # Must run before session backfill so the rename happens at the as-written
     # paths recorded in the provenance TSV.
@@ -1394,6 +1668,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "session detection and then removed by default to "
                         "match heudiconv's layout. Pass this flag to retain "
                         "them for inspection.")
+    p.add_argument("--bidsguess", action="store_true",
+                   help="Use legacy hazardous BIDS naming (-f %%h) instead of "
+                        "ReproIn (-f %%H), and apply bidsguess-specific "
+                        "cleanups: remove discard/ subdirs, drop bvec/bval "
+                        "for single-volume dwi, rename 3D *_bold to *_sbref, "
+                        "and add a/b/c collision-suffix files to .bidsignore. "
+                        "Used by tools/bidsguess.py.")
     args = p.parse_args(argv)
 
     indir = Path(args.indir).resolve()
@@ -1406,10 +1687,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not args.no_convert:
         _run_dcm2niix(str(indir), str(outdir), args.subject, args.session,
-                      anonymize=args.anonymize)
+                      anonymize=args.anonymize, bidsguess=args.bidsguess)
 
     _post_process(outdir, strict=args.strict,
-                  keep_derivatives=args.keep_derivatives)
+                  keep_derivatives=args.keep_derivatives,
+                  bidsguess=args.bidsguess)
     return 0
 
 

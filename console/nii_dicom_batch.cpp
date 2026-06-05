@@ -4199,17 +4199,41 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 						strcat(outname, dcm.protocolName);
 					}
 				} else {
-					// Legacy hazardous (%h) path: unchanged.
+					// Legacy hazardous (%h) path.
+					// Subject: -bi when set, else heudiconv-style PatientID
+					// fixup, else literal "1" (legacy fallback).
 					char bidsSubject[kOptsStr] = "sub-";
-					if (strlen(opts.bidsSubject) <= 0)
-						strcat(bidsSubject, "1");
-					else
+					if (strlen(opts.bidsSubject) > 0) {
 						strcat(bidsSubject, opts.bidsSubject);
+					} else {
+						char subjGuess[kOptsStr] = "";
+						if (strlen(dcm.patientID) > 0)
+							reproinFixupSubjectId(dcm.patientID, subjGuess, sizeof(subjGuess));
+						if (strlen(subjGuess) > 0)
+							strcat(bidsSubject, subjGuess);
+						else
+							strcat(bidsSubject, "1");
+					}
+					// Session: -bv when set, else "YYYYMMDDTHHMMSS" from
+					// studyDate+studyTime when both present (studyTime is
+					// "HHMMSS.fff", truncate to first 6 chars). 'T' separator
+					// matches ISO 8601 compact form and keeps the label
+					// alphanumeric — BIDS forbids '-'/'_' in session labels
+					// (bids-validator error code 63).
 					char bidsSession[kOptsStr] = "ses-";
-					if (strlen(opts.bidsSession) <= 0)
-						strcat(bidsSession, "1");
-					else
+					if (strlen(opts.bidsSession) > 0) {
 						strcat(bidsSession, opts.bidsSession);
+					} else if (strlen(dcm.studyDate) > 0 && strlen(dcm.studyTime) >= 6) {
+						char sessGuess[kOptsStr];
+						snprintf(sessGuess, sizeof(sessGuess), "%sT%.6s", dcm.studyDate, dcm.studyTime);
+						reproinSanitizeLabel(sessGuess);
+						if (strlen(sessGuess) > 0)
+							strcat(bidsSession, sessGuess);
+						else
+							strcat(bidsSession, "1");
+					} else {
+						strcat(bidsSession, "1");
+					}
 					createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL), NULL, NULL);
 					if (strlen(dcm.CSA.bidsDataType) < 1) {
 						strcat(outname, "Unknown");
@@ -11477,7 +11501,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 			else
 				convertError = true;
 		}
-		if ((dcmList[i].compressionScheme != kCompressNone) && (!compressionWarning) && (opts->compressFlag != kCompressNone)) {
+		if ((dcmList[i].compressionScheme != kCompressNone) && (!compressionWarning) && (opts->compressFlag != kCompressNone) && ((opts->isVerbose > 1))) {
 			compressionWarning = true; // generate once per conversion rather than once per image
 			printMessage("Image Decompression is new: please validate conversions\n");
 		}
