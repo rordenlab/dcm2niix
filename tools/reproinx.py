@@ -784,8 +784,15 @@ _BIDS_DATATYPES = frozenset({
 # BIDS entity-suffix charset: alphanumerics, hyphens, and underscores only.
 # `_acq-X_dir-AP_run-1_bold` is the canonical shape; anything outside this
 # alphabet (slashes, dots, control chars, NUL, ...) is rejected before the
-# stem is concatenated into a path.
-_BIDS_ENTITY_SUFFIX_RE = re.compile(r"\A[A-Za-z0-9_-]*\Z")
+# stem is concatenated into a path. `+` (not `*`) so an empty suffix is
+# also rejected — an empty BidsGuess[1] would otherwise produce a malformed
+# `<datatype>/sub-X_ses-Y` filename with no suffix word.
+_BIDS_ENTITY_SUFFIX_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
+
+# OutputStem prefix that means the one-pass ReproIn writer successfully
+# parsed the protocol. Rows under `Unknown/` failed reproin; rows under
+# `derivatives/scanner/` are silent (scouts / DERIVED-flagged data).
+_REPROIN_SUCCESS_PREFIX = "sub-"
 
 
 def _maybe_collapse_nonreproin_root(out_root: Path, strict: bool) -> bool:
@@ -825,7 +832,7 @@ def _maybe_collapse_nonreproin_root(out_root: Path, strict: bool) -> bool:
     # Walk back up from study_root to out_root, verifying each
     # intermediate is single-child. Bail if anything else lives at
     # any level (would clobber on the move).
-    chain: list[Path] = []  # ordered child->parent: [study_root, ..., out_root's direct child]
+    chain: list[Path] = []
     cursor = study_root
     while cursor != out_root:
         chain.append(cursor)
@@ -846,7 +853,7 @@ def _maybe_collapse_nonreproin_root(out_root: Path, strict: bool) -> bool:
     # data to derivatives/scanner/ regardless of reproin parsing — both
     # are silent about reproin discipline, so neither blocks the collapse.
     for r in rows:
-        if str(r.get("OutputStem", "")).startswith("sub-"):
+        if str(r.get("OutputStem", "")).startswith(_REPROIN_SUCCESS_PREFIX):
             return False  # at least one series parsed as ReproIn; keep hierarchy
     # Pre-flight: refuse if any study_root child name collides with an
     # existing entry in out_root (shouldn't happen given single-child
@@ -858,8 +865,7 @@ def _maybe_collapse_nonreproin_root(out_root: Path, strict: bool) -> bool:
     try:
         for child in children:
             shutil.move(str(child), str(out_root / child.name))
-        # chain[0]=study_root (now empty), chain[-1]=out_root's direct child.
-        # Remove in order so each rmdir sees an empty target.
+        # Iterate chain child-first so each rmdir sees an empty target.
         for d in chain:
             try:
                 d.rmdir()
