@@ -788,6 +788,92 @@ _BIDS_DATATYPES = frozenset({
 _BIDS_ENTITY_SUFFIX_RE = re.compile(r"\A[A-Za-z0-9_-]*\Z")
 
 
+def _maybe_collapse_nonreproin_root(out_root: Path, strict: bool) -> bool:
+    """Collapse a single redundant `<StudyDescription>` hierarchy into
+    `out_root` when the provenance shows ZERO ReproIn-parsed series.
+
+    Background: dcm2niix `-f %H` writes to `<out>/<StudyDescription>/...`,
+    and reproinPathify in console/reproin.cpp splits spaces and
+    underscores in StudyDescription into path separators. So a real
+    reproin user with StudyDescription = "Smith_Aging" gets the useful
+    `<out>/Smith/Aging/sub-X/...` two-level grouping (mirroring the
+    heudiconv reproin `<locator>/<study>` convention seen in
+    /Users/chris/src/reproin/reproout_*). But a non-reproin user whose
+    StudyDescription is just a descriptive label (or worse, a
+    space-separated duplicate like "Studyname Studyname") gets
+    `<out>/Studyname/Studyname/sub-X/` — content-free filler.
+
+    Detection: every row in `.reproin_provenance.tsv` whose `OutputStem`
+    starts with `Unknown/` means that series did NOT parse as ReproIn.
+    If every row is Unknown/, no series benefited from the hierarchy,
+    and we can move the study contents up to `out_root`. Conservative:
+    only collapses when exactly one provenance TSV exists below
+    out_root (multi-study trees are left alone), and only when the
+    chain from out_root down to the study root is single-child at every
+    level (so we never clobber sibling content with the rename).
+
+    Returns True on collapse, False on any reason to skip (multi-study,
+    partial reproin, sibling content present, target-name collision in
+    out_root, no provenance at all).
+    """
+    tsvs = list(out_root.rglob(_PROVENANCE_TSV))
+    if len(tsvs) != 1:
+        return False
+    study_root = tsvs[0].parent
+    if study_root == out_root:
+        return False  # already at the BIDS root; nothing to collapse
+    # Walk back up from study_root to out_root, verifying each
+    # intermediate is single-child. Bail if anything else lives at
+    # any level (would clobber on the move).
+    chain: list[Path] = []  # ordered child->parent: [study_root, ..., out_root's direct child]
+    cursor = study_root
+    while cursor != out_root:
+        chain.append(cursor)
+        parent = cursor.parent
+        if parent == cursor:
+            return False  # walked off the top without hitting out_root
+        siblings = list(parent.iterdir())
+        if len(siblings) != 1 or siblings[0] != cursor:
+            return False  # other content at this level — refuse to clobber
+        cursor = parent
+    rows = _load_provenance(study_root)
+    if not rows:
+        return False
+    # Reproin-success indicator: an OutputStem starting with "sub-" (the
+    # one-pass ReproIn writer produces sub-X/ses-Y/<datatype>/...). Rows
+    # under "Unknown/" mean reproin failed for that series, and rows
+    # under "derivatives/" mean dcm2niix routed scouts/DERIVED-flagged
+    # data to derivatives/scanner/ regardless of reproin parsing — both
+    # are silent about reproin discipline, so neither blocks the collapse.
+    for r in rows:
+        if str(r.get("OutputStem", "")).startswith("sub-"):
+            return False  # at least one series parsed as ReproIn; keep hierarchy
+    # Pre-flight: refuse if any study_root child name collides with an
+    # existing entry in out_root (shouldn't happen given single-child
+    # chain check, but defence in depth).
+    children = list(study_root.iterdir())
+    for child in children:
+        if (out_root / child.name).exists():
+            return False
+    try:
+        for child in children:
+            shutil.move(str(child), str(out_root / child.name))
+        # chain[0]=study_root (now empty), chain[-1]=out_root's direct child.
+        # Remove in order so each rmdir sees an empty target.
+        for d in chain:
+            try:
+                d.rmdir()
+            except OSError:
+                pass  # best-effort cleanup; partial chains are harmless
+    except OSError as e:
+        print(f"reproinx: study-root collapse mid-move failed: {e}",
+              file=sys.stderr)
+        if strict:
+            raise
+        return False
+    return True
+
+
 def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
     """Move files out of `<bids_root>/Unknown/` into proper BIDS layout using
     the JSON sidecar's `BidsGuess` field plus `PatientID`/`StudyDate`/
@@ -1784,6 +1870,17 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
 
 
 def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) -> None:
+    # Pre-pass 0: collapse a redundant <StudyDescription> hierarchy when
+    # the provenance shows ZERO ReproIn-parsed series. Must run before
+    # any rglob-based discovery so subsequent passes see the final paths.
+    try:
+        if _maybe_collapse_nonreproin_root(out_root, strict):
+            print(f"  {out_root}: collapsed redundant non-reproin study hierarchy",
+                  file=sys.stderr)
+    except Exception as e:
+        print(f"reproinx: study-root collapse failed: {e}", file=sys.stderr)
+        if strict:
+            raise
     # Pre-pass: rescue files from <bids_root>/Unknown/ using JSON BidsGuess
     # plus PatientID/StudyDate/StudyTime from the provenance TSV. Runs for
     # BOTH -f %H and -f %h modes (the latter rarely produces Unknown/ but it
