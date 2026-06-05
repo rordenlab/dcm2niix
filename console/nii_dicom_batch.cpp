@@ -7979,9 +7979,18 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	} else if (strstr(d->pulseSequenceName, "spcR") != NULL) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2w");
-	} else if (strstr(seqDetails, "tse_vfl") != NULL) { // prog_tse_vfl
+	} else if ((strstr(seqDetails, "tse_vfl") != NULL) || (strstr(seqDetails, "\\space") != NULL)) { // prog_tse_vfl / Siemens SPACE
+		// SPACE = Sampling Perfection with Application-optimized Contrasts —
+		// same variable-flip-angle TSE family as tse_vfl, marketing name on
+		// XA-line scanners. Match `\space` (backslash-prefixed) to avoid
+		// false-positives on substrings like "spaceship".
 		strcpy(dataTypeBIDS, "anat");
-		if ((strstr(seqDetails, "spcir") != NULL) || (strstr(d->sequenceName, "spcir") != NULL))
+		// pulseSequenceName must be in the FLAIR check too: on XA-line Siemens,
+		// d->sequenceName can be empty while d->pulseSequenceName carries
+		// "*spcir_220ns" (the inversion-recovery variant signal).
+		if ((strstr(seqDetails, "spcir") != NULL) ||
+			(strstr(d->sequenceName, "spcir") != NULL) ||
+			(strstr(d->pulseSequenceName, "spcir") != NULL))
 			strcpy(modalityBIDS, "FLAIR");
 		else
 			strcpy(modalityBIDS, "T2w");
@@ -8076,8 +8085,12 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	} else if ((strstr(seqDetails, "AALScout") != NULL) || (strstr(seqDetails, "haste") != NULL)) { // localizer: unused
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
-	} else if ((strstr(seqDetails, "_bold")) || (strstr(seqDetails, "pace")) || (strstr(d->imageType, "FMRI")) || (strstr(seqDetails, "ep2d_fid"))) { // prog_bold
-		// n.b. "Space" is not "pace"
+	} else if ((strstr(seqDetails, "_bold")) || (strstr(seqDetails, "_pace")) || (strstr(d->imageType, "FMRI")) || (strstr(seqDetails, "ep2d_fid"))) { // prog_bold
+		// Anchor "pace" on "_pace" so "Space" / "_space" no longer match —
+		// Siemens PACE (Prospective Acquisition Correction) sequences are
+		// always written as e.g. ep2d_bold_PACE / ep2d_pace, never bare
+		// "pace". The pre-fix substring match was the bug behind the FLAIR
+		// (`*spcir_220ns` over `\space`) being misclassified as func/bold.
 		strcpy(dataTypeBIDS, "func");
 		strcpy(modalityBIDS, "bold");
 		isDirLabel = true;
