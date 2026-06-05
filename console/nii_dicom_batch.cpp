@@ -1268,6 +1268,256 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 #endif
 }
 
+// ---- BIDS heuristic helpers (port of BIDS-Manager sequence_dict.py) -------
+// Vendor-agnostic post-pass refinements run after setBidsSiemens/Philips/GE
+// to add DWI-derivative routing, task-name hints, and acq-/dir- entity
+// extraction. See setBidsHeuristics() below for the policy and CLAUDE.md
+// "BIDS-Manager-derived heuristics" section for the design rationale.
+
+static void bidsStrLower(char *dst, const char *src, size_t cap) {
+	if (cap == 0)
+		return;
+	size_t i = 0;
+	for (; i + 1 < cap && src != NULL && src[i] != '\0'; i++)
+		dst[i] = (char)tolower((unsigned char)src[i]);
+	dst[i] = '\0';
+}
+
+// Word-boundary character for BIDS-Manager regex (?:^|[_-]) and (?=$|[_-]).
+// Mirrors the Python `_DIR_TOKEN` regex spirit: non-alphanumeric = boundary.
+static bool bidsIsBoundary(char c) {
+	return c == '\0' || c == '_' || c == '-' || c == ' ' ||
+		   c == '/' || c == '\\' || c == '.' || c == ',';
+}
+
+// Return pointer to first word-boundary occurrence of token in haystack,
+// or NULL. Both args must be lowercase. Mirrors `(?:^|[_-])token(?=$|[_-])`.
+static const char *bidsFindTokenBdy(const char *haystack, const char *token) {
+	if (haystack == NULL || token == NULL || token[0] == '\0')
+		return NULL;
+	size_t tlen = strlen(token);
+	const char *p = haystack;
+	while ((p = strstr(p, token)) != NULL) {
+		bool startOK = (p == haystack) || bidsIsBoundary(*(p - 1));
+		bool endOK = bidsIsBoundary(p[tlen]);
+		if (startOK && endOK)
+			return p;
+		p += 1;
+	}
+	return NULL;
+}
+
+// Splice `_<entity>-<value>` into suffix at canonical BIDS-2 entity order:
+//   _task- _acq- _ce- _rec- _dir- _run- _echo- _flip- _inv- _part- _<suffix>
+// No-op when the entity is already present. value must be already sanitised
+// (alphanumeric only). suffix is the in-place buffer holding the entity
+// suffix (e.g. "_dir-AP_run-3_bold"); cap is its byte capacity.
+static void bidsInsertEntity(char *suffix, const char *entity, const char *value, size_t cap) {
+	if (suffix == NULL || entity == NULL || value == NULL || value[0] == '\0')
+		return;
+	char marker[16];
+	snprintf(marker, sizeof(marker), "_%s-", entity);
+	if (strstr(suffix, marker) != NULL)
+		return; // already present
+	static const char *order[] = {
+		"_task-", "_acq-", "_ce-", "_rec-", "_dir-", "_run-",
+		"_echo-", "_flip-", "_inv-", "_part-", NULL};
+	int myIdx = -1;
+	for (int i = 0; order[i] != NULL; i++) {
+		if (strcmp(order[i], marker) == 0) {
+			myIdx = i;
+			break;
+		}
+	}
+	if (myIdx < 0)
+		return;
+	char *insertAt = NULL;
+	for (int i = myIdx + 1; order[i] != NULL; i++) {
+		char *found = strstr(suffix, order[i]);
+		if (found != NULL && (insertAt == NULL || found < insertAt))
+			insertAt = found;
+	}
+	if (insertAt == NULL) {
+		// No later entity. Insert before the trailing _<suffix> word.
+		insertAt = strrchr(suffix, '_');
+	}
+	char tail[kDICOMStrLarge];
+	if (insertAt == NULL) {
+		// No underscore at all (very short suffix); prepend.
+		snprintf(tail, sizeof(tail), "%s", suffix);
+		snprintf(suffix, cap, "_%s-%s%s", entity, value, tail);
+		return;
+	}
+	snprintf(tail, sizeof(tail), "%s", insertAt);
+	*insertAt = '\0';
+	char tmp[kDICOMStrLarge];
+	snprintf(tmp, sizeof(tmp), "%s_%s-%s%s", suffix, entity, value, tail);
+	snprintf(suffix, cap, "%s", tmp);
+}
+
+// Apply BIDS-Manager-derived vendor-agnostic refinements. Runs after the
+// per-vendor setBidsSiemens/Philips/GE so vendor decisions are honoured
+// except where a clear text marker overrides (DWI scanner derivatives).
+static void setBidsHeuristics(struct TDICOMdata *d) {
+	if (d == NULL)
+		return;
+	if (d->modality != kMODALITY_MR)
+		return;
+	if (strstr(d->CSA.bidsDataType, "discard") != NULL)
+		return;
+	// Combine ProtocolName + SeriesDescription, lowercased, for matching.
+	char nameLower[kDICOMStrLarge * 2];
+	{
+		char tmp[kDICOMStrLarge * 2];
+		snprintf(tmp, sizeof(tmp), "%s %s", d->protocolName, d->seriesDescription);
+		bidsStrLower(nameLower, tmp, sizeof(nameLower));
+	}
+	if (nameLower[0] == '\0')
+		return;
+	// (1) DWI scanner-derivative override. Tokens at word boundary force
+	// the routing regardless of what the vendor heuristic chose. TENSOR
+	// goes to dataTypeBIDS="derived" so the file lands under
+	// derivatives/scanner/ (see setBids return-value gate). Order matters:
+	// "tracew" before "trace" so the longer form wins.
+	static const struct {
+		const char *token;
+		const char *suffix;
+		const char *dataType;
+	} kDwiDeriv[] = {
+		{"colfa", "colFA", "dwi"},
+		{"col_fa", "colFA", "dwi"},
+		{"col-fa", "colFA", "dwi"},
+		{"expadc", "expADC", "dwi"},
+		{"exp_adc", "expADC", "dwi"},
+		{"exp-adc", "expADC", "dwi"},
+		{"tracew", "trace", "dwi"},
+		{"trace", "trace", "dwi"},
+		{"tensor", "TENSOR", "derived"},
+		{"s0map", "S0map", "dwi"},
+		{"s0_map", "S0map", "dwi"},
+		{"s0-map", "S0map", "dwi"},
+		{"fa", "FA", "dwi"},
+		{"adc", "ADC", "dwi"},
+	};
+	for (size_t i = 0; i < sizeof(kDwiDeriv) / sizeof(kDwiDeriv[0]); i++) {
+		if (bidsFindTokenBdy(nameLower, kDwiDeriv[i].token) != NULL) {
+			snprintf(d->CSA.bidsDataType, sizeof(d->CSA.bidsDataType), "%s", kDwiDeriv[i].dataType);
+			snprintf(d->CSA.bidsEntitySuffix, sizeof(d->CSA.bidsEntitySuffix), "_%s", kDwiDeriv[i].suffix);
+			break;
+		}
+	}
+	// (2) Task-name hints. Only fires for func when no _task- already known.
+	// Explicit _task-<label> (word boundary) wins; else walk the curated
+	// hint dict (simple substring per BIDS-Manager).
+	if (strstr(d->CSA.bidsDataType, "func") != NULL && d->CSA.bidsTask[0] == '\0' &&
+		strstr(d->CSA.bidsEntitySuffix, "_task-") == NULL) {
+		char taskOut[kDICOMStr] = "";
+		// Explicit "_task-X" or "task-X" at word boundary.
+		const char *needle = "task-";
+		const char *p = nameLower;
+		while ((p = strstr(p, needle)) != NULL) {
+			bool startOK = (p == nameLower) || bidsIsBoundary(*(p - 1));
+			if (startOK) {
+				const char *q = p + strlen(needle);
+				size_t j = 0;
+				while (j + 1 < sizeof(taskOut) &&
+					   ((q[j] >= '0' && q[j] <= '9') ||
+						(q[j] >= 'a' && q[j] <= 'z') ||
+						(q[j] >= 'A' && q[j] <= 'Z'))) {
+					taskOut[j] = q[j];
+					j++;
+				}
+				taskOut[j] = '\0';
+				if (j > 0)
+					break;
+			}
+			p += 1;
+		}
+		// Fallback: curated hints dict (port of TASK_HINT_PATTERNS).
+		if (taskOut[0] == '\0') {
+			static const struct {
+				const char *label;
+				const char *patterns[6];
+			} kTaskHints[] = {
+				{"rest", {"rs", "_rs", "rs_", "rest", "resting", NULL}},
+				{"movie", {"movie", NULL}},
+				{"nback", {"nback", "n-back", NULL}},
+				{"flanker", {"flanker", NULL}},
+				{"stroop", {"stroop", NULL}},
+				{"motor", {"motor", NULL}},
+				{"checkerboard", {"checker", "checkerboard", NULL}},
+				{"exec", {"exec", NULL}},
+				{"paradigm", {"paradigm", "paradigma", NULL}},
+				{"sparse", {"sparse", NULL}},
+				{"activation", {"activation", NULL}},
+				{"task", {"task", NULL}},
+			};
+			for (size_t i = 0; i < sizeof(kTaskHints) / sizeof(kTaskHints[0]); i++) {
+				bool hit = false;
+				for (size_t k = 0; kTaskHints[i].patterns[k] != NULL; k++) {
+					if (strstr(nameLower, kTaskHints[i].patterns[k]) != NULL) {
+						hit = true;
+						break;
+					}
+				}
+				if (hit) {
+					snprintf(taskOut, sizeof(taskOut), "%s", kTaskHints[i].label);
+					break;
+				}
+			}
+		}
+		if (taskOut[0] != '\0')
+			snprintf(d->CSA.bidsTask, sizeof(d->CSA.bidsTask), "%s", taskOut);
+	}
+	// (3) acq-X token extraction (word-boundary, longest wins).
+	if (strstr(d->CSA.bidsEntitySuffix, "_acq-") == NULL) {
+		const char *needle = "acq-";
+		const char *p = nameLower;
+		char best[kDICOMStr] = "";
+		size_t bestLen = 0;
+		while ((p = strstr(p, needle)) != NULL) {
+			bool startOK = (p == nameLower) || bidsIsBoundary(*(p - 1));
+			if (startOK) {
+				const char *q = p + strlen(needle);
+				size_t j = 0;
+				char tok[kDICOMStr] = "";
+				while (j + 1 < sizeof(tok) &&
+					   ((q[j] >= '0' && q[j] <= '9') ||
+						(q[j] >= 'a' && q[j] <= 'z') ||
+						(q[j] >= 'A' && q[j] <= 'Z'))) {
+					tok[j] = q[j];
+					j++;
+				}
+				tok[j] = '\0';
+				if (j > bestLen) {
+					bestLen = j;
+					snprintf(best, sizeof(best), "%s", tok);
+				}
+			}
+			p += 1;
+		}
+		if (best[0] != '\0')
+			bidsInsertEntity(d->CSA.bidsEntitySuffix, "acq", best, sizeof(d->CSA.bidsEntitySuffix));
+	}
+	// (4) Phase-encoding direction (AP/PA/LR/RL) — word boundary on both sides.
+	if (strstr(d->CSA.bidsEntitySuffix, "_dir-") == NULL) {
+		static const char *kDirs[] = {"ap", "pa", "lr", "rl", NULL};
+		const char *found = NULL;
+		const char *foundUpper = NULL;
+		for (int i = 0; kDirs[i] != NULL; i++) {
+			const char *hit = bidsFindTokenBdy(nameLower, kDirs[i]);
+			if (hit != NULL && (found == NULL || hit < found)) {
+				found = hit;
+				foundUpper = (kDirs[i][0] == 'a') ? "AP"
+						   : (kDirs[i][0] == 'p') ? "PA"
+						   : (kDirs[i][0] == 'l') ? "LR" : "RL";
+			}
+		}
+		if (foundUpper != NULL)
+			bidsInsertEntity(d->CSA.bidsEntitySuffix, "dir", foundUpper, sizeof(d->CSA.bidsEntitySuffix));
+	}
+}
+
 // Replace tab/CR/LF with space so a value can land in a single TSV cell.
 static void reproinTsvField(const char *src, char *dst, size_t cap) {
 	size_t j = 0;
@@ -8265,6 +8515,10 @@ bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVer
 		setBidsPhilips(d, nConvert, isVerbose);
 	if (d->manufacturer == kMANUFACTURER_GE)
 		setBidsGE(d, nConvert, isVerbose, filename);
+	// Vendor-agnostic refinement (DWI derivative override + task / acq / dir
+	// fallbacks). Sources: ProtocolName + SeriesDescription. See BIDS-Manager
+	// `sequence_dict.py` for the canonical patterns.
+	setBidsHeuristics(d);
 	return ((!strstr(d->CSA.bidsDataType, "discard")) && (!strstr(d->CSA.bidsDataType, "derived")));
 	// printf("%s\\%s\n", d->CSA.bidsDataType, d->CSA.bidsEntitySuffix);
 }
