@@ -8023,6 +8023,34 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		// nb ToF fl3d1r_ts fl3d1r_t70 fl3d1r7t but check for fl3d1r SWI
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "angio");
+	} else if (strstr(seqDetails, "fl3d_vibe") != NULL) {
+		// Siemens VIBE (Volumetric Interpolated Breath-hold) — fl3d_vibe
+		// can be tuned as T1w (high FA), PDw (low FA), or T2*-weighted
+		// (long TE). Classify by Ernst-angle physics so the BIDS suffix
+		// reflects the actual contrast rather than the marketing label
+		// (which is always "vibe"). Defaults to PDw on mixed / edge cases.
+		// Guards: TR/TE/fieldStrength must be positive; otherwise leave
+		// the cascade fall through to the trailing "derived" clobber.
+		if ((d->TR > 0.0) && (d->TE > 0.0) && (d->fieldStrength > 0.0) && (d->flipAngle > 0.0)) {
+			double tr_sec = d->TR / 1000.0;
+			double te_sec = d->TE / 1000.0;
+			// T1 estimate at field strength via Bottomley's approximation;
+			// T2* estimate scales inversely with field strength.
+			double t1_est = 0.8 * pow(d->fieldStrength, 0.38);
+			double t2star_est = 0.050 / d->fieldStrength;
+			double ernst_rad = acos(exp(-tr_sec / t1_est));
+			double ernst_deg = ernst_rad * (180.0 / M_PI);
+			strcpy(dataTypeBIDS, "anat");
+			if (te_sec >= 0.5 * t2star_est)
+				strcpy(modalityBIDS, "T2starw");
+			else if (d->flipAngle >= 1.3 * ernst_deg)
+				strcpy(modalityBIDS, "T1w");
+			else if (d->flipAngle <= 0.7 * ernst_deg)
+				strcpy(modalityBIDS, "PDw");
+			else
+				strcpy(modalityBIDS, "PDw"); // mixed structural default
+			isPart = true;
+		}
 	} else if (strstr(seqDetails, "ep_seg_fid") != NULL) {
 		// n.b. large echoTrainLength even for single echo acquisition
 		strcpy(dataTypeBIDS, "anat");
