@@ -7964,7 +7964,26 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		d->CSA.sliceTiming[i] = d1->CSA.sliceTiming[i] * d1scale;
 	}
 	if ((mbFactor > 1) && (mbFactor > d1->CSA.multiBandFactor)) {
-		printWarning("Issue870 ParallelReductionFactorOutOfPlane estimated as %d but DICOM reports %d\n", mbFactor, d1->CSA.multiBandFactor);
+		// Issue870: slice-timing analysis estimated a higher multiband
+		// factor than the DICOM CSA reports. On Siemens scanners (esp.
+		// XA-line running CMRR multiband sequences) the CSA tag is often
+		// stale (reports 1 even when the sequence is MB4), so the estimate
+		// is the truth. Override CSA but suppress the warning when we have
+		// independent positive evidence the data IS multiband:
+		//   1. d->imageTypeText contains "_MB_" — the Siemens private
+		//      per-frame ImageType marker (0021,1175 / 0021,1075 after
+		//      private-creator remap; e.g. "ORIGINAL_PRIMARY_M_MB_DIS2D").
+		//   2. d->imageComments contains "Unaliased MB" — the CMRR text
+		//      marker the sequence writes into (0020,4000) ImageComments
+		//      (e.g. "Not for diagnostic use, Unaliased MB4/PE4/LB").
+		// Either signal alone is a deliberate vendor declaration that the
+		// acquisition is multiband; the CSA report of 1 is the false
+		// alarm, not the estimate.
+		bool hasMbEvidence =
+			(strstr(d1->imageTypeText, "_MB_") != NULL) ||
+			(strstr(d1->imageComments, "Unaliased MB") != NULL);
+		if (!hasMbEvidence)
+			printWarning("Issue870 ParallelReductionFactorOutOfPlane estimated as %d but DICOM reports %d\n", mbFactor, d1->CSA.multiBandFactor);
 		d1->CSA.multiBandFactor = mbFactor;
 	}
 	d->CSA.multiBandFactor = d1->CSA.multiBandFactor;
