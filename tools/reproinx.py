@@ -1688,6 +1688,106 @@ def _emit_events_tsv(session_dir: Path) -> None:
         events.write_text("onset\tduration\ttrial_type\n")
 
 
+# Modality suffixes that dcm2niix `-f %H` inserts between the run entity
+# and `_recording-LABEL` for physio files routed to derivatives/scanner/.
+# Per the BIDS physiological-recordings spec the physio filename must inherit
+# only the modality-shared entities (sub/ses/task/acq/ce/rec/dir/run) and the
+# `_recording-LABEL` token — the parent modality suffix (`_bold`, `_sbref`, ...)
+# does NOT belong in the physio filename. Strip it here.
+_PHYSIO_INFIX_RE = re.compile(
+    r"_(?:bold|sbref|dwi|asl|epi|m0scan|cbv|T1w|T2w|T2starw|FLAIR|PDw|angio)"
+    r"(?=_recording-)"
+)
+
+
+def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
+    """Move physio recordings out of `derivatives/scanner/<sub>/[<ses>/]func/`
+    into the main BIDS tree, normalising the filename to BIDS spec.
+
+    dcm2niix `-f %H` routes physio (`(7FE1,1010)` payload from Siemens Raw
+    Data Storage SOPs) into the `derivatives/scanner/` subtree with a name
+    like
+        sub-X_task-Y_acq-Z_run-N_bold_recording-LABEL_physio.tsv.gz
+    The `_bold` (or `_sbref`/`_dwi`/...) infix is non-spec — per
+    https://bids-specification.readthedocs.io/en/stable/modality-specific-files/physiological-recordings.html
+    the physio filename inherits sub/ses/task/acq/ce/rec/dir/run but NOT the
+    modality suffix. This pass:
+      1. Walks `derivatives/scanner/sub-X/.../func/` for `*_recording-*_physio.{tsv.gz,json}`.
+      2. Strips the non-spec modality infix (`_PHYSIO_INFIX_RE`).
+      3. Injects `_ses-Y` into the filename when the main tree pinned a
+         session (single-session subjects only — multi-session detection
+         needs acquisition-time matching that the source TSV doesn't expose).
+      4. Moves the file into `<bids_root>/sub-X/[ses-Y/]func/`.
+
+    Must run BEFORE `_drop_derivatives` so the source files still exist.
+    Collision (destination already present from a curated re-run) leaves
+    the source in place — non-destructive on hand-built trees.
+
+    Known limitation: when dcm2niix produces multiple physio series whose
+    ProtocolName/SeriesDescription share a stem after reproin parsing
+    (e.g. a main BOLD's PhysioLog + the matching SBRef's PMU), the C side
+    writes both to the same filename and the second overwrites the first.
+    The rescue here recovers whatever survived in derivatives/scanner/.
+    Splitting them needs a dcm2niix-side filename disambiguation; tracked
+    separately.
+
+    Returns the number of physio files rescued."""
+    deriv_root = bids_root / "derivatives" / "scanner"
+    if not deriv_root.is_dir():
+        return 0
+    rescued = 0
+    for sub_dir in sorted(deriv_root.iterdir()):
+        if not sub_dir.is_dir() or not sub_dir.name.startswith("sub-"):
+            continue
+        sub_token = sub_dir.name
+        # Determine destination session from the main tree (this runs AFTER
+        # _propagate_session has moved files into sub-X/ses-Y/).
+        main_sub_dir = bids_root / sub_token
+        ses_token: Optional[str] = None
+        if main_sub_dir.is_dir():
+            ses_dirs = sorted(d for d in main_sub_dir.iterdir()
+                              if d.is_dir() and d.name.startswith("ses-"))
+            if len(ses_dirs) == 1:
+                ses_token = ses_dirs[0].name.split("-", 1)[1]
+            elif len(ses_dirs) > 1:
+                # Multi-session subject — defer; the rescue would need
+                # acquisition-time matching against the provenance TSV.
+                print(f"reproinx: physio rescue skipped for {sub_token} "
+                      f"(multi-session subjects not yet supported)",
+                      file=sys.stderr)
+                continue
+        # Walk derivatives for physio files. rglob covers both
+        # derivatives/scanner/sub-X/func/ and derivatives/scanner/sub-X/ses-Y/func/.
+        for func_dir in sub_dir.rglob("func"):
+            if not func_dir.is_dir():
+                continue
+            physios = sorted(
+                list(func_dir.glob("*_recording-*_physio.tsv.gz")) +
+                list(func_dir.glob("*_recording-*_physio.json")))
+            for src in physios:
+                try:
+                    new_name = _PHYSIO_INFIX_RE.sub("", src.name)
+                    if ses_token is not None:
+                        new_name = _inject_session_into_name(new_name, sub_token, ses_token)
+                    if ses_token is not None:
+                        dest_dir = bids_root / sub_token / f"ses-{ses_token}" / "func"
+                    else:
+                        dest_dir = bids_root / sub_token / "func"
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    dest = dest_dir / new_name
+                    if dest.exists():
+                        # Don't clobber a curated file from a previous run.
+                        continue
+                    src.rename(dest)
+                    rescued += 1
+                except OSError as e:
+                    print(f"reproinx: physio rescue failed for {src}: {e}",
+                          file=sys.stderr)
+                    if strict:
+                        raise
+    return rescued
+
+
 def _drop_derivatives(out_root: Path) -> int:
     """Remove `derivatives/scanner/` ONLY — the literal subdir dcm2niix `-f %H`
     routes scouts and DERIVED-flagged images (FA, ColFA, TENSOR_B0, scout
@@ -2049,6 +2149,22 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) 
                 print(f"  {sub}: propagated _ses-{resolved}", file=sys.stderr)
         except Exception as e:
             print(f"reproinx: session backfill failed for {sub}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+    # Pass 1b: rescue physio recordings from derivatives/scanner/ into the
+    # main BIDS tree, stripping the non-spec modality infix from the
+    # dcm2niix-emitted filename. Must run after Pass 1 (session backfill)
+    # so the destination ses-Y dir exists, and BEFORE Pass 4
+    # (_drop_derivatives) which would otherwise discard the source files.
+    for root in _bids_roots(_walk_subjects(out_root)):
+        try:
+            n = _rescue_physio_recordings(root, strict)
+            if n > 0:
+                print(f"  {root}: rescued {n} physio file(s) from derivatives/scanner/",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: physio rescue failed for {root}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
