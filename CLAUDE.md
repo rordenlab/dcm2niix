@@ -283,6 +283,20 @@ Compile-time opt-out: there is none — the helper is too small and the call sit
 
 After the sequence-name cascade in `setBidsSiemens` (just before the `_acq-` entity construction in `nii_dicom_batch.cpp`), an `ImageType` token check fires: any series whose ImageType array contains `SWI` is classified as `anat/_T2starw` regardless of which sequence-name branch above matched, and `isDerived` is cleared so the trailing `if (isDerived) dataTypeBIDS = "derived"` clobber at the end of the function does not flip it back. Covers EPI-based SWI sequences (e.g. `*swi3d_epr` on Siemens XA80) that do not match the existing `fl3d` / `gre` / `ep_seg_fid` patterns, plus MINIMUM / SWI_Images derived projections. Test: `strstr(d->imageType, "_SWI")` — the underscore prefix ensures `SWI` matches as a token (DICOM ImageType is underscore-joined) and not as a substring of `SWIRL` etc. The pre-existing `ep_seg_fid` mIP / SWI_Images demote at line ~8031 is now reachable only when the SWI override doesn't fire (i.e. ImageType lacks `_SWI` but seriesDescription contains those tokens) — a narrow secondary path retained for back-compat.
 
+### Philips ASL detection via `aslFlags` in `setBidsPhilips`
+
+The ASL gate at the head of the `setBidsPhilips` cascade now fires on `(strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE)`. The `aslFlags` field is populated by the Philips private tag `(2005,1429) MRImageLabelType` (CS `LABEL` / `CONTROL`) parsed at `nii_dicom.cpp:~7600`, gated on `manufacturer == PHILIPS`; only the first character (`L` or `C`) is checked, so the value space is small and ASL-specific.
+
+Why both signals are needed: "SOURCE -" raw label/control series (e.g. `SOURCE - pCASL`, `SOURCE - 3D_pCASL_6mm`, `WIP SOURCE - 3DpCASL`) strip the `PERFUSION` token from per-frame ImageType — Classic Philips emits `M_FFE\M\FFE` or `M_SE\M\SE`, Enhanced Philips emits per-frame `M\SE\M\SE` instead of the shared `PERFUSION\NONE`. The ImageType check alone misclassified them as `func/_bold` (SK+GR fall-through) or `anat/_PDw` (SK+SE fall-through). The private-tag check is the positive identifier and is safe to widen the gate with because Philips only writes `LABEL`/`CONTROL` to that tag on ASL acquisitions.
+
+Validated against the four affected `dcm_validate` references:
+- `dcm_qa_philips_asl/202_SOURCE_-_pCASL_classic` — was `func/_bold` → now `perf/_asl`
+- `dcm_qa_philips_asl/302_SOURCE_-_ASL_MultiPhase_classic` — was `func/_bold` → now `perf/_asl`
+- `dcm_qa_philips_asl/402_SOURCE_-_3D_pCASL_6mm_classic` — was `anat/_PDw` → now `perf/_asl`
+- `dcm_qa_philips_enh/1903_WIP_SOURCE_-_3DpCASL_cl` — was `anat/_PDw` → now `perf/_asl`
+
+The corresponding Ref/ files in those submodules need a refresh after this change lands; the new outputs are the correct ones.
+
 ### BIDS-Manager-derived heuristics (`setBidsHeuristics`)
 
 `setBidsHeuristics(d)` in `nii_dicom_batch.cpp` runs at the end of `setBids` as a vendor-agnostic refinement pass over `bidsDataType` / `bidsEntitySuffix` / `bidsTask`. Ported from BIDS-Manager (`bidsmgr/classifier/sequence_dict.py`, MIT). Gated on `d->modality == kMODALITY_MR` and skipped when `bidsDataType` already contains `"discard"`. Source for all matching is the lowercased `ProtocolName + " " + SeriesDescription`. Four sub-passes, in order:

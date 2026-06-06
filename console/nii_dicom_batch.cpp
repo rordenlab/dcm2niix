@@ -8432,8 +8432,18 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 	} else if ((d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
 		strcpy(dataTypeBIDS, "dwi");
 		strcpy(modalityBIDS, "dwi");
-	} else if (strstr(d->imageType, "PERFUSION") != NULL) {
-		// scanSeq:'GR' seqVariant:'SK'
+	} else if ((strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE)) {
+		// scanSeq:'GR' seqVariant:'SK'.
+		// aslFlags is set by the Philips private tag (2005,1429) MRImageLabelType
+		// when its value starts with 'L' (LABEL) or 'C' (CONTROL). "SOURCE -"
+		// raw label/control series strip "PERFUSION" from the ImageType
+		// (per-frame imagetype becomes "M\SE\M\SE" / "M\FFE\M\FFE") so the
+		// ImageType check alone misses them and they used to fall through to
+		// SK+SE -> PDw or SK+GR -> bold. The private-tag check is a positive
+		// ASL identification (LBL/CTL never appears on non-ASL Philips
+		// acquisitions) so widening the gate is safe across the dcm_validate
+		// dcm_qa_philips_asl, dcm_qa_philips_asl_enh, and dcm_qa_philips_enh
+		// pCASL reference sets.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if ((strstr(d->pulseSequenceName, "SEEPI") != NULL) && (!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
