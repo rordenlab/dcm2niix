@@ -20,13 +20,20 @@ if(NOT CMAKE_BUILD_TYPE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS  "Debug;Release;RelWithDebInfo;MinSizeRel")
 endif()
 
-if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
-    # using Clang
+if((${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang") OR (${CMAKE_CXX_COMPILER_ID} STREQUAL "AppleClang"))
+    # using Clang or AppleClang. Match both — Apple's clang reports the id
+    # "AppleClang", which would otherwise skip this entire block silently.
     add_definitions(-fno-caret-diagnostics)
-    # issue867 reduce stack pressure
-    # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip -Wl,-stack_size -Wl,0x1000000")
     if(APPLE)
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
+        # issue867: macOS main-thread stack defaults to 8 MB. The console
+        # makefile build uses -flto and hits ___chkstk_darwin on multi-study
+        # Siemens XA datasets; raise the stack to 16 MB there. cmake currently
+        # does not enable LTO, so the same dataset passes today — but the
+        # corpus keeps widening (deident sequences, dense diffusion, MRS) and
+        # readDICOMx is already ~1.5 MB stack frame at -fstack-usage measure.
+        # Matching the makefile here keeps both builds tracking each other.
+        # Per-frame source-side reductions (heap deID_CS, etc.) stay in place.
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip -Wl,-stack_size -Wl,0x1000000")
     endif()
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     # using GCC
