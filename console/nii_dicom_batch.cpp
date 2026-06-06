@@ -132,16 +132,25 @@ MRIFSSTRUCT *nii_getMrifsStruct() {
 	return &mrifsStruct;
 }
 
-// free the memory used for the image and dti
+// free the memory used for the image and dti.
+// dicomlst[] entries and the array itself are allocated with new[]
+// (see line ~11431, ~13154), so they must be released with delete[],
+// NOT free(). Fields are NULLed/zeroed after release so repeat calls
+// are safe.
 void nii_clrMrifsStruct() {
 	free(mrifsStruct.imgM);
+	mrifsStruct.imgM = NULL;
 	free(mrifsStruct.tdti);
-
-	for (int n = 0; n < mrifsStruct.nDcm; n++)
-		free(mrifsStruct.dicomlst[n]);
-
-	if (mrifsStruct.dicomlst != NULL)
-		free(mrifsStruct.dicomlst);
+	mrifsStruct.tdti = NULL;
+	if (mrifsStruct.dicomlst != NULL) {
+		for (int n = 0; n < mrifsStruct.nDcm; n++) {
+			delete[] mrifsStruct.dicomlst[n];
+			mrifsStruct.dicomlst[n] = NULL;
+		}
+		delete[] mrifsStruct.dicomlst;
+		mrifsStruct.dicomlst = NULL;
+	}
+	mrifsStruct.nDcm = 0;
 }
 
 // retrieve the struct
@@ -149,19 +158,31 @@ std::vector<MRIFSSTRUCT> *nii_getMrifsStructVector() {
 	return &mrifsStruct_vector;
 }
 
-// free the memory used for the image and dti
+// free the memory used for the image and dti for every retained item in
+// the vector, then clear the vector. Three bugs in the previous version
+// (caught in the 2026-06-06 audit): inner loop variable `n` shadowed the
+// outer one (so vector indexing used a DICOM-file index), inner bound used
+// the global `mrifsStruct.nDcm` instead of the vector item's own `nDcm`,
+// and entries allocated with new[] were released via free() (UB in C++).
 void nii_clrMrifsStructVector() {
 	int nitem = mrifsStruct_vector.size();
-	for (int n = 0; n < nitem; n++) {
-		free(mrifsStruct_vector[n].imgM);
-		free(mrifsStruct_vector[n].tdti);
-
-		for (int n = 0; n < mrifsStruct.nDcm; n++)
-			free(mrifsStruct_vector[n].dicomlst[n]);
-
-		if (mrifsStruct_vector[n].dicomlst != NULL)
-			free(mrifsStruct_vector[n].dicomlst);
+	for (int i = 0; i < nitem; i++) {
+		MRIFSSTRUCT &item = mrifsStruct_vector[i];
+		free(item.imgM);
+		item.imgM = NULL;
+		free(item.tdti);
+		item.tdti = NULL;
+		if (item.dicomlst != NULL) {
+			for (int n = 0; n < item.nDcm; n++) {
+				delete[] item.dicomlst[n];
+				item.dicomlst[n] = NULL;
+			}
+			delete[] item.dicomlst;
+			item.dicomlst = NULL;
+		}
+		item.nDcm = 0;
 	}
+	mrifsStruct_vector.clear();
 }
 #endif
 
@@ -1435,6 +1456,21 @@ static void bidsInsertEntity(char *suffix, const char *entity, const char *value
 // a scanner DWI FA map with AC=DIFFUSION stays derivatives/scanner (setBidsHeuristics
 // caught it via the fa/adc/colfa text tokens). The fallback only catches files
 // the cascade couldn't classify at all.
+//
+// PERFUSION is intentionally NOT routed here — the DICOM enumeration is
+// AcquisitionContrast=PERFUSION, which covers both ASL and DSC/DCE (gad-bolus)
+// acquisitions. Routing all of them to perf/_asl would mis-label DSC/DCE files
+// with the ASL suffix and produce sidecars missing the required ASL metadata
+// (postLabelDelay, ArterialSpinLabelingType, m0scan pairing). The per-vendor
+// AC=Perfusion gates in setBidsSiemens/Philips/GE coexist with vendor-specific
+// ASL evidence (Philips aslFlags / ImageType=PERFUSION, sequence-name asl/
+// pcasl) so they remain safe; the unsupported (e.g. Canon DSC) case prefers
+// "Unknown/" over a misleading _asl filename.
+//
+// DIFFUSION is gated on `d->isDiffusion` having other corroborating evidence
+// (CSA.numDti > 0 OR a real DTI structure populated by the vendor parser),
+// so a bare AC=DIFFUSION without parsed gradients does NOT produce a _dwi
+// file with empty .bval/.bvec.
 static void setBidsFromAcquisitionContrast(struct TDICOMdata *d) {
 	if (d == NULL || d->modality != kMODALITY_MR)
 		return;
@@ -1456,11 +1492,19 @@ static void setBidsFromAcquisitionContrast(struct TDICOMdata *d) {
 			// (BEPs may add a dedicated STIR suffix later).
 			dataType = "anat"; modality = "T2w"; break;
 		case kMRWeightingDiffusion:
+			// Require corroborating diffusion evidence: parsed gradient count
+			// (Siemens CSA, Canon enhanced, Philips PAR/REC) OR a populated
+			// dti4D structure exposed via dim[4]>1. Otherwise a bare DIFFUSION
+			// tag produces a _dwi file with no .bval/.bvec.
+			if (d->CSA.numDti < 1)
+				return;
 			dataType = "dwi"; modality = "dwi"; break;
-		case kMRWeightingPerfusion:
-			dataType = "perf"; modality = "asl"; break;
 		case kMRWeightingTOF:
 			dataType = "anat"; modality = "angio"; break;
+		case kMRWeightingPerfusion:
+			// See block comment above — not routed here. The per-vendor
+			// ASL gates already handle Philips ASL alongside aslFlags/ImageType.
+			return;
 		default:
 			return; // Unknown/Mixed/Other/Flow/Tagging — leave file in Unknown/
 	}
@@ -10298,6 +10342,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #ifdef USING_DCM2NIIXFSWRAPPER
 	std::vector<float> ascalefactors;
 	mrifsStruct.tdicomData = dcmList[indx]; // first in sorted list dcmSort
+	// dcmList[indx] owns its heap-allocated deID_CS[] (freed in
+	// nii_loadDirCore's cleanup). The shallow copy here would otherwise
+	// expose a dangling pointer once dcmList is freed. Issue #877.
+	mrifsStruct.tdicomData.deID_CS = NULL;
+	mrifsStruct.tdicomData.deID_CS_n = 0;
 #endif
 
 	struct nifti_1_header hdr0 = {0};
@@ -11428,6 +11477,9 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 
 	if (opts.isDumpNotConvert) {
 		mrifsStruct.tdicomData = dcmList[indx0]; // first in sorted list dcmSort
+		// dcmList owns deID_CS[]; null the shallow copy. Issue #877.
+		mrifsStruct.tdicomData.deID_CS = NULL;
+		mrifsStruct.tdicomData.deID_CS_n = 0;
 		mrifsStruct.dicomlst = new char *[nConvert];
 		mrifsStruct.nDcm = nConvert;
 
@@ -12171,6 +12223,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 						printWarning("Unable to copy to path %s\n", targetPath.c_str());
 					}
 				}
+				free_TDICOMdata_deID_CS(&dcm); // dcm goes out of scope; release its heap deID_CS[]
 			}
 		}
 	}
@@ -12238,6 +12291,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 						printMessage("Renaming %s -> %s\n", filename, outname);
 				}
 			}
+			free_TDICOMdata_deID_CS(&dcm); // dcm goes out of scope; release its heap deID_CS[]
 		}
 		tinydir_next(&dir);
 	}
@@ -12458,6 +12512,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 		nii_createFilename(dcmList[0], firstSeriesName, *opts);
 		firstSeries.name = firstSeriesName;
 		firstSeries.representativeData = dcmList[0];
+		// dcmList[0] owns deID_CS[]; null the shallow copy in the retained R-side struct.
+		firstSeries.representativeData.deID_CS = NULL;
+		firstSeries.representativeData.deID_CS_n = 0;
 		firstSeries.files.push_back(nameList.str[0]);
 		opts->series.push_back(firstSeries);
 		// Iterate over the remaining files
@@ -12479,6 +12536,9 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				nii_createFilename(dcmList[i], nextSeriesName, *opts);
 				nextSeries.name = nextSeriesName;
 				nextSeries.representativeData = dcmList[i];
+				// dcmList[i] owns deID_CS[]; null the shallow copy in the retained R-side struct.
+				nextSeries.representativeData.deID_CS = NULL;
+				nextSeries.representativeData.deID_CS_n = 0;
 				nextSeries.files.push_back(nameList.str[i]);
 				opts->series.push_back(nextSeries);
 			}

@@ -197,6 +197,20 @@ The reproinx post-pass reads `<studyRoot>/.reproin_provenance.tsv`, written by `
 
 The C code in `createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, const char *acqName)` in `nii_dicom_batch.cpp` writes the task sidecar with the *actual* entity set of the bold file (`task-<X>_bold.json` or `task-<X>_acq-<Y>_bold.json`). Keep this in lock-step with `spec.task`/`spec.acq` semantics in `reproin.cpp` — the legacy `%h` path passes `NULL/NULL` and still falls back to the historical `task-rest_bold.json` hardcoding. The post-pass must stay non-destructive on existing curated metadata: `README.md` → `README` cleanup is gated on `_is_dcm2niix_readme_stub`; generated root `task-X_bold.json` stubs are removed only when `_acq-` variants for the same task exist, and `TaskName` is written into each per-series BOLD sidecar first so bare task runs remain valid without triggering BIDS v2 multiple-inheritance errors. Hand-written sidecars with extra metadata and READMEs must survive re-runs untouched.
 
+### TDICOMdata `deID_CS` ownership contract (issue #877)
+
+`TDICOMdata.deID_CS` is a heap pointer owned by the original dcmList[] entry that called `readDICOMx`. Every other holder of a TDICOMdata struct (by-value parameters, retained shallow copies in `MRIFSSTRUCT.tdicomData`, R-side `TDicomSeries.representativeData`, ...) gets a NON-OWNING shallow copy that must NOT free it.
+
+Rules:
+- After `readDICOMx`/`readDICOMv`/`readDICOM` populates a `TDICOMdata`, that struct OWNS its `deID_CS` until released via `free_TDICOMdata_deID_CS(&d)`.
+- After assigning `MRIFSSTRUCT.tdicomData = dcmList[indx]` or `series.representativeData = dcmList[i]`, the retained struct MUST set `.deID_CS = NULL; .deID_CS_n = 0;` (currently done at `nii_dicom_batch.cpp:10325-10327, 11459-11461, 12485-12487, 12506-12508`). The original dcmList[] retains ownership; the retained shallow copy is non-owning.
+- Direct `readDICOM()` callers (where the result is not stored in a dcmList that the cleanup loop sees) MUST `free_TDICOMdata_deID_CS(&d)` before the result goes out of scope. Sites: `dcm2niix_fswrapper.cpp:226-228, 256-258`, `nii_dicom_batch.cpp:12206, 12278`.
+- `free_TDICOMdata_deID_CS` is idempotent (no-op on NULL), so double-call is safe.
+
+By-value parameter copies in function signatures (`nii_SaveBIDSX(... TDICOMdata d ...)`, `nii_createFilename(... TDICOMdata dcm ...)`, `isSameSet(... TDICOMdata d1, TDICOMdata d2 ...)`) are short-lived and reference the owner's deID_CS pointer for read access only. They go out of scope without calling free_TDICOMdata_deID_CS — that's correct because the owner is still live.
+
+The hot-path by-value copy convention is documented as a pre-existing design choice; switching to `const TDICOMdata *` is a separate refactor that doesn't affect correctness given this ownership contract.
+
 ### Audit findings (this session's `/audit` round)
 
 Two-agent audit (Security & Bugs + Refactor) of commits `ca309ef..5ff6508` (MR-weighting helper, deident-stack fix, Philips ASL widening, AcquisitionContrast integration, AC fallback). No CRITICAL / HIGH / MEDIUM security findings; three Refactor wins applied:
@@ -213,6 +227,23 @@ Deferred audit suggestions:
 - **Lazy `calloc` OOM in deident parser** (`nii_dicom.cpp:~5965`): on calloc failure, the first DeidentificationMethodCodeSequence entry's `CodeValue` is silently lost. OOM in practice is unrecoverable; deferred. A `printWarning` would be polite.
 
 Pre-existing items still open from earlier audits:
+
+### Audit findings (2026-06-06 round 2 external review)
+
+External `audit_temp.md` covered `793ad0e..HEAD` and flagged 3 HIGH, 6 MEDIUM, 2 LOW. Response in `audit_response.md`. Summary of fixes applied:
+
+- **H1**: `nii_clrMrifsStructVector()` rewritten — fixed loop-variable shadow, wrong-vector-bound, and `new[]/free()` mismatch. Both clear functions now NULL pointers / reset counts / `mrifsStruct_vector.clear()`. FreeSurfer-wrapper-only path.
+- **H2 + L2**: `TDICOMdata.deID_CS` ownership contract enforced — retained shallow copies in `MRIFSSTRUCT.tdicomData` and R-side `TDicomSeries.representativeData` get `.deID_CS = NULL; .deID_CS_n = 0;` immediately after the shallow copy. Direct `readDICOM()` callers (`dcm2niix_fswrapper.cpp`, R rename paths) now release the result before going out of scope. Full contract documented in the "TDICOMdata `deID_CS` ownership contract" section above.
+- **H3**: AC=PERFUSION removed from the fallback `setBidsFromAcquisitionContrast` — `PERFUSION` is the DICOM enumeration for ASL AND DSC/DCE, so the bare-tag fallback would mis-label DSC/DCE files. Per-vendor AC=Perfusion gates remain because each coexists with vendor-specific ASL evidence (Philips `aslFlags`/`ImageType=PERFUSION`, Siemens/GE sequence-name asl/pcasl).
+- **M1**: AC=DIFFUSION fallback now gated on `d->CSA.numDti >= 1` — bare AC=DIFFUSION without parsed gradients no longer produces a `_dwi` file with empty `.bval/.bvec`. Canon Enhanced MR DTI still classifies correctly because Canon's parser populates `CSA.numDti`.
+
+Audit-deferred (response in audit_response.md):
+- **M2 MRS `kMRSAcqNone` inconsistency** — pre-existing MRS edge case, separate concern.
+- **M3 deident parser tag-order / CodeMeaning dependency** — real hardening concern but only triggers on malformed DICOMs (tags within a sequence item are spec-required to be tag-number-ordered) or items missing CodeMeaning. dcm_qa_deident's 5 entries verified byte-identical vs Ref. Fix requires item-delimiter `(FFFE,E00D)` tracking interaction with parser's SQ-depth.
+- **M4 `copyFile` errors as success + handle leaks** — pre-existing, not from review window.
+- **M5 `readDICOMx` early-exit resource leaks** — pre-existing, three early-return paths leak file/buffer/dcmDim. Unified-cleanup refactor is a focused project.
+- **M6 by-value `TDICOMdata` in hot paths** — pre-existing convention. The ownership angle is now mitigated by the H2 fix; CPU/cache angle is a separate refactor.
+- **L1 AC policy spread across 5 sites** — accepted as documented; the spread reflects the conceptual structure (parse / weighting consume / fallback consume / vendor gates consume).
 
 ### Audit-deferred items from 2026-06-06 follow-up review
 

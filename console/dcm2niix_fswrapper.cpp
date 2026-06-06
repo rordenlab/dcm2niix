@@ -222,6 +222,10 @@ int dcm2niix_fswrapper::dcm2NiiOneSeries(const char *dcmfile, bool convert) {
 	if (tdcmOpts.isIgnoreSeriesInstanceUID)
 		seriesNo = (double)tdicomData.seriesNum;
 
+	// tdicomData was read for series-number discovery only; release its
+	// heap-allocated deID_CS[] before going out of scope (issue #877).
+	free_TDICOMdata_deID_CS(&tdicomData);
+
 	// set TDCMopts to convert just one series
 	tdcmOpts.seriesNumber[0] = seriesNo;
 	tdcmOpts.numSeries = 1;
@@ -244,12 +248,16 @@ int dcm2niix_fswrapper::dcm2NiiSingleFile(const char* dcmfile)
   if (tdcmOpts.isIgnoreSeriesInstanceUID)
     seriesNo = (double)tdicomData.seriesNum;
 
+  // tdicomData was read for series-number discovery only; release its
+  // heap-allocated deID_CS[] before going out of scope (issue #877).
+  free_TDICOMdata_deID_CS(&tdicomData);
+
   // set TDCMopts to convert just one series
   tdcmOpts.seriesNumber[0] = seriesNo;
   tdcmOpts.numSeries = 1;
 
   tdcmOpts.isOnlySingleFile = true;
-  
+
   return singleDICOM(&tdcmOpts, (char*)dcmfile);
 }
 
