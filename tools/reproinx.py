@@ -112,7 +112,7 @@ def _which_dcm2niix() -> str:
 
 def _run_dcm2niix(indir: str, outdir: str,
                   subject: Optional[str], session: Optional[str],
-                  anonymize: bool) -> None:
+                  anonymize: bool) -> int:
     bin_path = _which_dcm2niix()
     # -ba o: omit PII (PatientName/ID/BirthDate/Sex/Age/Size/Weight,
     # AccessionNumber, ReferringPhysicianName) but keep AcquisitionDateTime
@@ -144,6 +144,12 @@ def _run_dcm2niix(indir: str, outdir: str,
     if proc.returncode in PARTIAL_OK:
         print(f"dcm2niix exited {proc.returncode} (partial conversion); "
               "continuing with post-pass.", file=sys.stderr)
+    # Propagate the partial-success code so automation can distinguish
+    # "every series converted cleanly" from "some series failed". Callers
+    # that want post-pass output regardless can still consume the BIDS tree
+    # on disk; they just shouldn't treat reproinx.py exit==0 as a contract
+    # that nothing failed.
+    return proc.returncode
 
 
 # --- ported helpers from heudiconv/bids.py ----------------------------------
@@ -469,6 +475,17 @@ def _is_bidsignored(rel_posix: str, patterns: list[str]) -> bool:
     return False
 
 
+def _bids_root_for_session(session_dir: Path) -> Path:
+    """Return the BIDS root above a session-equivalent directory. Handles
+    both `<root>/sub-X/ses-Y/` (root = ses.parent.parent) and the sessionless
+    `<root>/sub-X/` (root = ses.parent). The previous `session_dir.parent.parent`
+    one-liner silently returned `<root>'s parent` for sessionless trees, which
+    broke .bidsignore lookups and singlevol-DWI pattern paths."""
+    if session_dir.name.startswith("ses-"):
+        return session_dir.parent.parent
+    return session_dir.parent
+
+
 def _write_scans_tsv(session_dir: Path) -> None:
     """Aggregate AcquisitionDateTime + per-series randstr from JSON sidecars
     into `<sub>[_<ses>]_scans.tsv`. Columns mirror heudiconv reproin:
@@ -481,7 +498,7 @@ def _write_scans_tsv(session_dir: Path) -> None:
     so the scans.tsv doesn't reference files the validator was told to
     ignore (which would otherwise emit SCANS_FILENAME_NOT_MATCH_DATASET).
     """
-    bids_root = session_dir.parent.parent  # <root>/sub-X/ses-Y -> <root>
+    bids_root = _bids_root_for_session(session_dir)
     ignore_patterns = _load_bidsignore_patterns(bids_root)
     rows: list[tuple[str, str, str]] = []  # (filename, acq, randstr)
     for jp in sorted(session_dir.glob("*/*.json")):
@@ -502,7 +519,9 @@ def _write_scans_tsv(session_dir: Path) -> None:
             continue
         acq = _acq_iso(data) or "n/a"
         rand = _series_randstr(data)
-        rows.append((str(nii.relative_to(session_dir)), acq, rand))
+        # POSIX-style separators in scans.tsv per the BIDS spec — even on
+        # Windows the filename column must use forward slashes.
+        rows.append((nii.relative_to(session_dir).as_posix(), acq, rand))
     if not rows:
         return
     rows.sort(key=lambda r: (r[1] == "n/a", r[1]))
@@ -1766,6 +1785,19 @@ def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
         if not stem.endswith("_bold"):
             continue
         new_stem = stem[:-len("_bold")] + "_sbref"
+        # Preflight: refuse to clobber a pre-existing _sbref family. POSIX
+        # rename silently replaces the target, so without this check a
+        # demote could overwrite a real single-band reference.
+        collision = False
+        for ext in (nii_ext, ".json", ".bvec", ".bval"):
+            if (func_dir / f"{new_stem}{ext}").exists():
+                collision = True
+                break
+        if collision:
+            print(f"reproinx: skipping 3D bold demote for {stem} — "
+                  f"{new_stem} target already exists",
+                  file=sys.stderr)
+            continue
         # _events.tsv is a bold-only sidecar and would now be orphaned;
         # _sbref has no events. Drop it rather than carry it forward.
         events = func_dir / f"{stem}_events.tsv"
@@ -1781,9 +1813,15 @@ def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
 
 
 _BIDSGUESS_COLLISION_RE = re.compile(
+    # BIDS suffix tokens that the C-side setBidsHeuristics / vendor BidsGuess
+    # paths can emit. Must include the DWI scanner-derivative suffixes added
+    # in commit 2dad442 (FA / ADC / colFA / expADC / trace / S0map / TENSOR);
+    # without them a duplicate FA series collapses to e.g. `_FAa.nii.gz` and
+    # the .bidsignore sweep would miss it.
     r"_(magnitude\d|phasediff|phase\d|fieldmap|bold|sbref|T1w|T2w|FLAIR|"
     r"PDw|T2starw|UNIT1|inplaneT[12]|MEGRE|MESE|VFA|IRT1|MP2RAGE|MPM|MTS|MTR|"
-    r"dwi|epi|m0scan|asl|aslcontext|cbv|defacemask)[a-z]"
+    r"dwi|epi|m0scan|asl|aslcontext|cbv|defacemask|"
+    r"FA|ADC|colFA|expADC|trace|S0map|TENSOR|svs|mrsi|unloc|mrsref)[a-z]"
     r"(\.json|\.nii(\.gz)?|\.bvec|\.bval|\.tsv)$"
 )
 
@@ -1866,7 +1904,7 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
     # (sub-X/ses-Y/), which mirrors how reproinx _bids_roots discovers roots.
     by_root: dict[Path, list[str]] = {}
     for ses in _walk_sessions(out_root):
-        bids_root = ses.parent.parent
+        bids_root = _bids_root_for_session(ses)
         try:
             n = _bidsguess_remove_discard(ses)
             if n > 0:
@@ -2083,13 +2121,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 2
     outdir.mkdir(parents=True, exist_ok=True)
 
+    dcm2niix_rc = 0
     if not args.no_convert:
-        _run_dcm2niix(str(indir), str(outdir), args.subject, args.session,
-                      anonymize=args.anonymize)
+        dcm2niix_rc = _run_dcm2niix(str(indir), str(outdir), args.subject,
+                                     args.session, anonymize=args.anonymize)
 
     _post_process(outdir, strict=args.strict,
                   keep_derivatives=args.keep_derivatives)
-    return 0
+    # Propagate dcm2niix's partial-success exit codes (8, 10) so automation
+    # can distinguish a clean run from one that lost series mid-batch. The
+    # post-pass still runs against whatever landed on disk.
+    return dcm2niix_rc
 
 
 if __name__ == "__main__":

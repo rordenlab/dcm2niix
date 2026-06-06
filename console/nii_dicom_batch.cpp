@@ -1435,27 +1435,43 @@ static void setBidsHeuristics(struct TDICOMdata *d) {
 		}
 		// Fallback: curated hints dict (port of TASK_HINT_PATTERNS).
 		if (taskOut[0] == '\0') {
+			// Each entry: label, then a NULL-terminated list of (pattern,
+			// boundary?) pairs. Short tokens (<=4 chars: "rs", "exec",
+			// "task", "motor") use bidsFindTokenBdy so substring drift in
+			// unrelated protocol names doesn't trigger them — "diverse"
+			// must not relabel as "rest" via the bare "rs" pattern; "ep_
+			// expert_task" must not relabel as "task" via bare substring.
+			// Longer / unique tokens (movie, flanker, stroop, paradigm,
+			// sparse, activation, nback, checkerboard) stay on plain
+			// strstr — they're long enough that drift is implausible.
 			static const struct {
 				const char *label;
 				const char *patterns[6];
+				bool wordBoundary;
 			} kTaskHints[] = {
-				{"rest", {"rs", "_rs", "rs_", "rest", "resting", NULL}},
-				{"movie", {"movie", NULL}},
-				{"nback", {"nback", "n-back", NULL}},
-				{"flanker", {"flanker", NULL}},
-				{"stroop", {"stroop", NULL}},
-				{"motor", {"motor", NULL}},
-				{"checkerboard", {"checker", "checkerboard", NULL}},
-				{"exec", {"exec", NULL}},
-				{"paradigm", {"paradigm", "paradigma", NULL}},
-				{"sparse", {"sparse", NULL}},
-				{"activation", {"activation", NULL}},
-				{"task", {"task", NULL}},
+				{"rest", {"rs", "rest", "resting", NULL, NULL, NULL}, true},
+				{"movie", {"movie", NULL, NULL, NULL, NULL, NULL}, false},
+				{"nback", {"nback", "n-back", NULL, NULL, NULL, NULL}, false},
+				{"flanker", {"flanker", NULL, NULL, NULL, NULL, NULL}, false},
+				{"stroop", {"stroop", NULL, NULL, NULL, NULL, NULL}, false},
+				{"motor", {"motor", NULL, NULL, NULL, NULL, NULL}, true},
+				{"checkerboard", {"checker", "checkerboard", NULL, NULL, NULL, NULL}, false},
+				{"exec", {"exec", NULL, NULL, NULL, NULL, NULL}, true},
+				{"paradigm", {"paradigm", "paradigma", NULL, NULL, NULL, NULL}, false},
+				{"sparse", {"sparse", NULL, NULL, NULL, NULL, NULL}, false},
+				{"activation", {"activation", NULL, NULL, NULL, NULL, NULL}, false},
+				{"task", {"task", NULL, NULL, NULL, NULL, NULL}, true},
 			};
 			for (size_t i = 0; i < sizeof(kTaskHints) / sizeof(kTaskHints[0]); i++) {
 				bool hit = false;
 				for (size_t k = 0; kTaskHints[i].patterns[k] != NULL; k++) {
-					if (strstr(nameLower, kTaskHints[i].patterns[k]) != NULL) {
+					const char *pat = kTaskHints[i].patterns[k];
+					if (kTaskHints[i].wordBoundary) {
+						if (bidsFindTokenBdy(nameLower, pat) != NULL) {
+							hit = true;
+							break;
+						}
+					} else if (strstr(nameLower, pat) != NULL) {
 						hit = true;
 						break;
 					}
@@ -1599,11 +1615,21 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 		fclose(peek);
 	}
 	if (schemaMismatch) {
+		// Audit L1: if the rotation fails the appender would otherwise
+		// silently mix new-schema rows under the stale header. Bail
+		// when the OS won't let us cleanly stage the rename so the
+		// caller can re-try rather than accumulating broken rows.
 		if (opts.isAnonymizeBIDS) {
-			remove(tsvPath);
+			if (remove(tsvPath) != 0) {
+				printWarning("reproin provenance: could not remove stale %s; skipping append\n", tsvPath);
+				return;
+			}
 		} else {
-			remove(bakPath);
-			rename(tsvPath, bakPath);
+			(void)remove(bakPath); // best-effort: a prior .bak may exist
+			if (rename(tsvPath, bakPath) != 0) {
+				printWarning("reproin provenance: could not rotate %s -> %s; skipping append\n", tsvPath, bakPath);
+				return;
+			}
 		}
 	}
 	FILE *tp = fopen(tsvPath, "a");
@@ -4495,9 +4521,22 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					// Legacy hazardous (%h) path.
 					// Subject: -bi when set, else heudiconv-style PatientID
 					// fixup, else literal "1" (legacy fallback).
+					// Subject/session sanitization: the %H path already filters
+					// -bi/-bv through reproinSanitizeLabel; the %h path now does
+					// the same so a hostile CLI value can't inject path
+					// separators or `..` segments. snprintf bounds the copy so
+					// strcat of "sub-"/"ses-" + the scrubbed value can't overflow
+					// the local kOptsStr buffer (audit H6).
 					char bidsSubject[kOptsStr] = "sub-";
 					if (strlen(opts.bidsSubject) > 0) {
-						strcat(bidsSubject, opts.bidsSubject);
+						char subjScrub[kOptsStr];
+						snprintf(subjScrub, sizeof(subjScrub), "%s", opts.bidsSubject);
+						reproinSanitizeLabel(subjScrub);
+						if (strlen(subjScrub) > 0 &&
+							strlen(bidsSubject) + strlen(subjScrub) < sizeof(bidsSubject))
+							strcat(bidsSubject, subjScrub);
+						else
+							strcat(bidsSubject, "1");
 					} else {
 						char subjGuess[kOptsStr] = "";
 						if (strlen(dcm.patientID) > 0)
@@ -4515,7 +4554,14 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					// (bids-validator error code 63).
 					char bidsSession[kOptsStr] = "ses-";
 					if (strlen(opts.bidsSession) > 0) {
-						strcat(bidsSession, opts.bidsSession);
+						char sessScrub[kOptsStr];
+						snprintf(sessScrub, sizeof(sessScrub), "%s", opts.bidsSession);
+						reproinSanitizeLabel(sessScrub);
+						if (strlen(sessScrub) > 0 &&
+							strlen(bidsSession) + strlen(sessScrub) < sizeof(bidsSession))
+							strcat(bidsSession, sessScrub);
+						else
+							strcat(bidsSession, "1");
 					} else if (strlen(dcm.studyDate) > 0 && strlen(dcm.studyTime) >= 6) {
 						char sessGuess[kOptsStr];
 						snprintf(sessGuess, sizeof(sessGuess), "%sT%.6s", dcm.studyDate, dcm.studyTime);
