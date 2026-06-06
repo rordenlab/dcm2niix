@@ -850,6 +850,10 @@ struct TDICOMdata clear_dicom_data() {
 	d.acquisitionDuration = 0.0;
 	d.mrsAcqType = kMRSAcqNone;
 	d.numberOfKSpaceTrajectories = 0;
+	d.isMRS = false;
+	d.dataPointColumns = 0;
+	d.spectralWidth = 0.0;
+	strcpy(d.resonantNucleus, "");
 	d.imagingFrequency = 0.0;
 	d.numberOfAverages = 0.0;
 	d.fieldStrength = 0.0;
@@ -4623,6 +4627,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kFrameAcquisitionDateTime 0x0018 + uint32_t(0x9074 << 16)			 // DT "20181019212528.232500"
 #define kNumberOfKSpaceTrajectories 0x0018 + uint32_t(0x9093 << 16)			 // US
 #define kMRSpectroscopyAcquisitionType 0x0018 + uint32_t(0x9200 << 16)		 // CS NONE|SINGLE_VOXEL|ROW|PLANE|VOLUME
+#define kSpectralWidth 0x0018 + uint32_t(0x9052 << 16)						 // FD Hz
+#define kResonantNucleus 0x0018 + uint32_t(0x9100 << 16)					 // CS "1H" etc.
+#define kSpectroscopyAcquisitionDataColumns 0x0028 + uint32_t(0x9002 << 16)	 // UL N complex points per FID
 #define kDiffusionDirectionality 0x0018 + uint32_t(0x9075 << 16)			 // NONE, ISOTROPIC, or DIRECTIONAL
 #define kParallelAcquisitionTechnique 0x0018 + uint32_t(0x9078 << 16)		 // CS: SENSE, SMASH
 #define kInversionTimes 0x0018 + uint32_t(0x9079 << 16)						 // FD
@@ -5567,6 +5574,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isRawDataStorage = true; // Private MR Examcard Storage
 			if (strstr(mediaUID, "1.3.12.2.1107.5.9.1") != NULL)
 				d.isRawDataStorage = true; // Siemens CSA Non-Image Storage (legacy CMRR PMU lives here)
+			// MR Spectroscopy Storage SOP — not a regular image, but dcm2niix
+			// has a dedicated MRS converter (see saveDcm2NiiMRS in nii_dicom_batch.cpp)
+			// that turns FID data from (5600,0020) into a complex 5D NIfTI.
+			// Marking isMRS suppresses the standard image pipeline at the batch
+			// level; isRawDataStorage stays FALSE so the dispatch isn't routed
+			// to the non-image skip path.
+			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.4.2") != NULL)
+				d.isMRS = true;
 			if (d.isRawDataStorage)
 				d.isDerived = true;
 			// n.b. we now handle Siemens physio, so we do not skip all files
@@ -6205,6 +6220,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		case kNumberOfKSpaceTrajectories: // (0018,9093) US — MRS k-space trajectory count
 			d.numberOfKSpaceTrajectories = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kSpectralWidth: // (0018,9052) FD — MRS spectral width (Hz)
+			d.spectralWidth = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kResonantNucleus: // (0018,9100) CS — e.g. "1H"
+			dcmStr(lLength, &buffer[lPos], d.resonantNucleus);
+			break;
+		case kSpectroscopyAcquisitionDataColumns: // (0028,9002) UL — complex points per FID
+			d.dataPointColumns = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kMRSpectroscopyAcquisitionType: { // (0018,9200) CS — MRS acquisition type enum
 			char acqType[kDICOMStr];
@@ -7615,10 +7639,19 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.imageStart = 1; // abort!!!
 			printMessage("Skipping DICOM (audio not image) '%s'\n", fname);
 			break;
-		case kSpectroscopyData: // kSpectroscopyDataPointColumns
-			printMessage("Skipping Spectroscopy DICOM '%s'\n", fname);
-			d.xyzDim[1] = 0; // issue606
+		case kSpectroscopyData: // (5600,0020) OF — MR Spectroscopy FID payload
+			// Capture the offset of the FID block so saveDcm2NiiMRS can
+			// mmap/fread it later. Interleaved real/imag float32, byte length
+			// = 8 * DataPointColumns (1024 cplx pts -> 8192 bytes is typical
+			// for XA60 SVS). For NumarisX (XA) the phase convention is
+			// real - 1j*imag (handled at write time); VX (Numaris4) is
+			// real + 1j*imag. dcm2niix marks the file as an MRS DICOM here
+			// (in case the SOP class check at the top of the file did not
+			// catch it for some odd vendor variant), and the standard
+			// image pipeline at saveDcm2Nii routes by d.isMRS.
+			d.isMRS = true;
 			d.imageStart = (int)lPos + (int)lFileOffset;
+			d.imageBytes = lLength;
 			break;
 		case kSiemensXAPhysio:
 			// Detect Siemens physio payloads at the Siemens "MR IMA" private
@@ -8324,8 +8357,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if ((d.imageStart > 144) && (d.xyzDim[1] > 1) && (d.xyzDim[2] > 1))
 		d.isValid = true;
-	// if ((d.imageStart > 144) && (d.xyzDim[1] >= 1) && (d.xyzDim[2] >= 1) && (d.xyzDim[4] > 1)) //Spectroscopy
-	//	d.isValid = true;
+	// MR Spectroscopy: a 1x1x1 SVS file has no spatial dims but does carry
+	// FID data at imageStart; the dedicated MRS writer handles it.
+	if ((d.imageStart > 144) && d.isMRS)
+		d.isValid = true;
 	if ((d.xyzMM[1] > FLT_EPSILON) && (d.xyzMM[2] < FLT_EPSILON)) {
 		printMessage("Please check voxel size\n");
 		d.xyzMM[2] = d.xyzMM[1];

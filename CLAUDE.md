@@ -170,6 +170,22 @@ The reproinx post-pass reads `<studyRoot>/.reproin_provenance.tsv`, written by `
 
 The C code in `createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, const char *acqName)` in `nii_dicom_batch.cpp` writes the task sidecar with the *actual* entity set of the bold file (`task-<X>_bold.json` or `task-<X>_acq-<Y>_bold.json`). Keep this in lock-step with `spec.task`/`spec.acq` semantics in `reproin.cpp` — the legacy `%h` path passes `NULL/NULL` and still falls back to the historical `task-rest_bold.json` hardcoding. The post-pass must stay non-destructive on existing curated metadata: `README.md` → `README` cleanup is gated on `_is_dcm2niix_readme_stub`; generated root `task-X_bold.json` stubs are removed only when `_acq-` variants for the same task exist, and `TaskName` is written into each per-series BOLD sidecar first so bare task runs remain valid without triggering BIDS v2 multiple-inheritance errors. Hand-written sidecars with extra metadata and READMEs must survive re-runs untouched.
 
+### MR Spectroscopy (MRS) pipeline (`saveDcm2NiiMRS`)
+
+dcm2niix handles MR Spectroscopy Storage SOP DICOMs (UID `1.2.840.10008.5.1.4.1.1.4.2`) through a dedicated converter that lives at `nii_dicom_batch.cpp:~saveDcm2NiiMRS`. SOP class detection at `nii_dicom.cpp:~5577` sets `d.isMRS = true`; the `(5600,0020)` Spectroscopy Data handler at `nii_dicom.cpp:~7618` captures the FID payload offset (was previously a "Skipping Spectroscopy DICOM" rejection); the `isValid` gate at `nii_dicom.cpp:~8358` admits `1×1×1` MRS files; and `saveDcm2Nii` dispatches to `saveDcm2NiiMRS` at its top when the lead DICOM has `isMRS`.
+
+Input: N DICOMs of one series, each carrying a single FID (interleaved real/imag float32) in `(5600,0020)`. Output: a complex-valued NIfTI-1 with `datatype=DT_COMPLEX64 (32)`, `dim=[5,1,1,1,DataPointColumns,N,1,1]` (4D when N=1), `pixdim=[1, vox_x, vox_y, vox_z, 1/SpectralWidth, 1, 1, 1]`, and `sform_code=2` with the affine computed via the spec2nii formula: `Q^T @ diag([PixelSpacing[1], PixelSpacing[0], SliceThickness])` then LPS→RAS negation of rows 0–1.
+
+NumarisX phase convention: XA-line Siemens stores the FID as `real - 1j·imag`; the writer negates each odd-indexed (imag) float **except when it's already zero**, so `+0.0` is preserved (avoids byte differences from `-0.0` vs `+0.0` versus the spec2nii reference). VE/VX scanners use `real + 1j·imag` and the negation is skipped.
+
+JSON sidecar (alongside the standard fields): `SpectralWidth`, `DwellTime = 1/SpectralWidth`, `TransmitterFrequency` (reuses `imagingFrequency`), `ResonantNucleus`, `SpectroscopyAcquisitionDataColumns`. The existing Siemens-EPI `DwellTime` emitter at `nii_dicom_batch.cpp:~2960` is gated `!d.isMRS` so the MRS-derived DwellTime is the only one written.
+
+BidsGuess: `["mrs","_svs"]` for SVS (currently the only path). MRSI / Unloc / mrsref variants will land when reference data is available.
+
+Validated against `/Users/chris/src/spec2nii/XA60/Ref/series{30,31}.nii.gz` (64-DICOM and 1-DICOM SVS series): image-data payloads are **byte-identical**, sform values match to float32 precision (spec2nii uses NIfTI-2/float64). In-tree regression (`dcm_qa`, `dcm_qa_nih`, `dcm_qa_uih`) is clean — the MRS path is entered only when `isMRS` fires, which no regression sample triggers.
+
+Attribution: ported from spec2nii (BSD-3-Clause, William Clarke, U. Oxford 2020; `spec2nii/Siemens/dicomfunctions.py` for the parse / phase logic, `spec2nii/dcm2niiOrientation/orientationFuncs.py` for the affine).
+
 ### Siemens SPACE / FLAIR detection in `setBidsSiemens`
 
 Two related fixes for variable-flip-angle TSE FLAIR misclassification:

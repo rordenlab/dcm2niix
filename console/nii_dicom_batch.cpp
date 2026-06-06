@@ -2953,6 +2953,21 @@ tse3d: T2*/
 		json_Float(fp, "\t\"AcquisitionDuration\": %g,\n", d.acquisitionDuration);
 	if (d.numberOfKSpaceTrajectories > 0)
 		fprintf(fp, "\t\"NumberOfKSpaceTrajectories\": %d,\n", d.numberOfKSpaceTrajectories);
+	if (d.isMRS) {
+		// MR Spectroscopy-specific fields (BIDS-MRS BEP005-style). dwell
+		// time is 1/SpectralWidth in seconds; TransmitterFrequency reuses
+		// imagingFrequency (both come from DICOM 0018,9098 FD).
+		if (d.spectralWidth > 0.0) {
+			json_Float(fp, "\t\"SpectralWidth\": %g,\n", d.spectralWidth);
+			json_Float(fp, "\t\"DwellTime\": %g,\n", 1.0 / d.spectralWidth);
+		}
+		if (d.imagingFrequency > 0.0)
+			json_Float(fp, "\t\"TransmitterFrequency\": %g,\n", d.imagingFrequency);
+		if (strlen(d.resonantNucleus) > 0)
+			fprintf(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
+		if (d.dataPointColumns > 0)
+			fprintf(fp, "\t\"SpectroscopyAcquisitionDataColumns\": %d,\n", d.dataPointColumns);
+	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.
 	switch (d.mrsAcqType) {
@@ -2976,7 +2991,7 @@ tse3d: T2*/
 	else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
 		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
 	json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth);
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0) && !d.isMRS)
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
 	/*
@@ -10830,7 +10845,167 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	return returnCode;								 // EXIT_SUCCESS;
 } // saveDcm2NiiCore()
 
+// MR Spectroscopy converter — handles MR Spectroscopy Storage SOP class
+// DICOMs (SOP UID 1.2.840.10008.5.1.4.1.1.4.2). Each input DICOM carries a
+// single FID (free-induction decay) in the (5600,0020) Spectroscopy Data
+// tag as interleaved real/imag float32. N input DICOMs are stacked along
+// NIfTI dim[5] as separate "averages" / coil channels / repetitions; output
+// shape is [1, 1, 1, DataPointColumns, N] with datatype DT_COMPLEX64.
+//
+// Affine, dwell time, spectral metadata, and the XA-vs-VX phase convention
+// are ported from spec2nii (BSD-3-Clause, William Clarke, U. Oxford 2020).
+// Reference: spec2nii/Siemens/dicomfunctions.py and
+// spec2nii/dcm2niiOrientation/orientationFuncs.py. Only the XA SVS path is
+// covered here; MRSI / Unloc / mrsref will be added when sample data is
+// available.
+static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
+						   struct TDICOMdata dcmList[],
+						   struct TSearchList *nameList,
+						   struct TDCMopts opts) {
+	if (nConvert < 1)
+		return EXIT_FAILURE;
+	struct TDICOMdata *d0 = &dcmList[dcmSort[0].indx];
+	int N_pts = d0->dataPointColumns;
+	if (N_pts <= 0) {
+		printError("MRS: DataPointColumns (0028,9002) not set; cannot determine FID length\n");
+		return EXIT_FAILURE;
+	}
+	int N_files = nConvert;
+	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag
+	size_t total_bytes = bytes_per_dicom * (size_t)N_files;
+	float *fid = (float *)malloc(total_bytes);
+	if (fid == NULL) {
+		printError("MRS: malloc failed for %zu bytes\n", total_bytes);
+		return EXIT_FAILURE;
+	}
+	// Read each DICOM's FID into the buffer (stacked along dim[5]).
+	for (int i = 0; i < N_files; i++) {
+		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
+		if ((size_t)d->imageBytes != bytes_per_dicom) {
+			printError("MRS: DICOM %d has FID size %d, expected %zu\n",
+					   i, d->imageBytes, (size_t)bytes_per_dicom);
+			free(fid);
+			return EXIT_FAILURE;
+		}
+		FILE *f = fopen(nameList->str[dcmSort[i].indx], "rb");
+		if (f == NULL) {
+			printError("MRS: cannot open %s\n", nameList->str[dcmSort[i].indx]);
+			free(fid);
+			return EXIT_FAILURE;
+		}
+		if (fseek(f, d->imageStart, SEEK_SET) != 0) {
+			printError("MRS: fseek failed in %s\n", nameList->str[dcmSort[i].indx]);
+			fclose(f);
+			free(fid);
+			return EXIT_FAILURE;
+		}
+		float *slot = fid + (size_t)i * N_pts * 2;
+		if (fread(slot, 1, bytes_per_dicom, f) != bytes_per_dicom) {
+			printError("MRS: short read from %s\n", nameList->str[dcmSort[i].indx]);
+			fclose(f);
+			free(fid);
+			return EXIT_FAILURE;
+		}
+		fclose(f);
+		// NumarisX (Siemens XA) phase convention: complex = real - 1j*imag,
+		// i.e. negate the odd-indexed (imag) floats. Older VE/VX systems use
+		// real + 1j*imag — no negation needed. See spec2nii
+		// process_siemens_svs_xa vs process_siemens_svs_vx.
+		if ((d->manufacturer == kMANUFACTURER_SIEMENS) && d->isXA) {
+			// Preserve +0.0 in the imag channel — unconditional negation
+			// produces -0.0, which is mathematically identical but differs
+			// byte-for-byte from spec2nii's reference output.
+			for (int p = 0; p < N_pts; p++)
+				if (slot[2 * p + 1] != 0.0f)
+					slot[2 * p + 1] = -slot[2 * p + 1];
+		}
+	}
+	// Build NIfTI-1 header.
+	struct nifti_1_header hdr;
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.sizeof_hdr = 348;
+	memcpy(hdr.magic, "n+1\0", 4);
+	hdr.datatype = DT_COMPLEX64; // 32; bitpix 64 = 2*float32
+	hdr.bitpix = 64;
+	hdr.dim[0] = (N_files > 1) ? 5 : 4;
+	hdr.dim[1] = 1;
+	hdr.dim[2] = 1;
+	hdr.dim[3] = 1;
+	hdr.dim[4] = (short)N_pts;
+	hdr.dim[5] = (short)N_files;
+	hdr.dim[6] = 1;
+	hdr.dim[7] = 1;
+	hdr.pixdim[0] = 1.0f;
+	hdr.pixdim[1] = (float)d0->xyzMM[1];
+	hdr.pixdim[2] = (float)d0->xyzMM[2];
+	hdr.pixdim[3] = (float)d0->xyzMM[3];
+	hdr.pixdim[4] = (d0->spectralWidth > 0.0) ? (float)(1.0 / d0->spectralWidth) : 1.0f;
+	hdr.pixdim[5] = 1.0f;
+	hdr.pixdim[6] = 1.0f;
+	hdr.pixdim[7] = 1.0f;
+	hdr.xyzt_units = NIFTI_UNITS_MM | NIFTI_UNITS_SEC;
+	hdr.vox_offset = 352.0f;
+	hdr.scl_slope = 1.0f;
+	// Affine: port of spec2nii.dcm_to_nifti_orientation for XA SVS.
+	// d->orient[1..6] = ImageOrientationPatient (row1 then row2, both unit
+	// vectors in LPS). Third row = cross(row1, row2). spec2nii multiplies
+	// by diag([PixelSpacing[1], PixelSpacing[0], SliceThickness]) — note
+	// the row1/row2 pixdim swap — then negates the first two rows for the
+	// LPS -> RAS conversion that NIfTI requires.
+	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
+	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	double rz0 = rx1 * ry2 - rx2 * ry1;
+	double rz1 = rx2 * ry0 - rx0 * ry2;
+	double rz2 = rx0 * ry1 - rx1 * ry0;
+	double px = d0->xyzMM[1], py = d0->xyzMM[2], pz = d0->xyzMM[3];
+	double m00 = rx0 * py, m01 = ry0 * px, m02 = rz0 * pz;
+	double m10 = rx1 * py, m11 = ry1 * px, m12 = rz1 * pz;
+	double m20 = rx2 * py, m21 = ry2 * px, m22 = rz2 * pz;
+	double tx = d0->patientPosition[1];
+	double ty = d0->patientPosition[2];
+	double tz = d0->patientPosition[3];
+	hdr.srow_x[0] = (float)(-m00); hdr.srow_x[1] = (float)(-m01); hdr.srow_x[2] = (float)(-m02); hdr.srow_x[3] = (float)(-tx);
+	hdr.srow_y[0] = (float)(-m10); hdr.srow_y[1] = (float)(-m11); hdr.srow_y[2] = (float)(-m12); hdr.srow_y[3] = (float)(-ty);
+	hdr.srow_z[0] = (float)m20;	   hdr.srow_z[1] = (float)m21;	   hdr.srow_z[2] = (float)m22;	   hdr.srow_z[3] = (float)tz;
+	hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT; // 2
+	hdr.qform_code = NIFTI_XFORM_UNKNOWN;	   // qform left empty (matches spec2nii)
+	// BidsGuess: emit ["mrs","_svs"] (currently SVS-only; MRSI/Unloc/mrsref
+	// land in future commits when reference data is available).
+	strcpy(d0->CSA.bidsDataType, "mrs");
+	strcpy(d0->CSA.bidsEntitySuffix, "_svs");
+	// Generate filename + save NIfTI body via the standard writer (handles
+	// .nii vs .nii.gz, output-dir, conflict resolution).
+	char pathoutname[2048] = "";
+	if (nii_createFilename(*d0, pathoutname, opts) == EXIT_FAILURE) {
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	if (strlen(pathoutname) < 1) {
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0);
+	// JSON sidecar via the existing writer — most fields (TR, TE, FlipAngle,
+	// ProtocolName, ...) are still meaningful for MRS, and the MRS-specific
+	// emissions (SpectralWidth, DwellTime, TransmitterFrequency,
+	// ResonantNucleus, DataPointColumns) are gated on d.isMRS inside
+	// nii_SaveBIDSX.
+	if (ret == EXIT_SUCCESS) {
+		struct TDTI4D dti4D_local;
+		memset(&dti4D_local, 0, sizeof(dti4D_local));
+		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
+					  nameList->str[dcmSort[0].indx], &dti4D_local);
+	}
+	free(fid);
+	return ret;
+}
+
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
+	// MRS dispatch: a series of MR Spectroscopy DICOMs uses its own pipeline
+	// (FID extraction + complex-valued 5D output). The image-data branch
+	// below assumes scalar pixel data and would mangle the FID.
+	if ((nConvert > 0) && dcmList[dcmSort[0].indx].isMRS)
+		return saveDcm2NiiMRS(nConvert, dcmSort, dcmList, nameList, opts);
 #ifdef USING_DCM2NIIXFSWRAPPER
 	memset(&mrifsStruct, 0, sizeof(mrifsStruct));
 
