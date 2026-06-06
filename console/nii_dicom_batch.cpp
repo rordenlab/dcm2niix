@@ -2979,21 +2979,41 @@ tse3d: T2*/
 	if (d.numberOfKSpaceTrajectories > 0)
 		fprintf(fp, "\t\"NumberOfKSpaceTrajectories\": %d,\n", d.numberOfKSpaceTrajectories);
 	if (d.isMRS) {
-		// MR Spectroscopy-specific fields (BIDS-MRS BEP005-style). dwell
-		// time is 1/SpectralWidth in seconds; TransmitterFrequency reuses
-		// imagingFrequency (both come from DICOM 0018,9098 FD).
+		// MR Spectroscopy-specific fields, matched to BIDS-MRS:
+		// https://bids-specification.readthedocs.io/en/stable/modality-specific-files/magnetic-resonance-spectroscopy.html
+		// REQUIRED per BIDS-MRS: ResonantNucleus, SpectrometerFrequency,
+		// SpectralWidth, EchoTime. (EchoTime is emitted by the general
+		// path further down; the other three land here.)
 		if (d.spectralWidth > 0.0) {
 			json_Float(fp, "\t\"SpectralWidth\": %g,\n", d.spectralWidth);
 			json_Float(fp, "\t\"DwellTime\": %g,\n", 1.0 / d.spectralWidth);
 		}
+		// SpectrometerFrequency is the BIDS-MRS name for the proton (or
+		// other nucleus) resonance frequency in MHz. dcm2niix already
+		// parses DICOM (0018,9098) FD into d.imagingFrequency.
 		if (d.imagingFrequency > 0.0)
-			json_Float(fp, "\t\"TransmitterFrequency\": %g,\n", d.imagingFrequency);
+			json_Float(fp, "\t\"SpectrometerFrequency\": %g,\n", d.imagingFrequency);
 		// Audit L1: use json_Str so a malformed DICOM CS containing a quote
 		// or backslash gets escaped rather than breaking the JSON. Standard
 		// values like "1H" / "31P" / "13C" pass through unchanged.
 		json_Str(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
+		// RECOMMENDED per BIDS-MRS:
+		// - NumberOfSpectralPoints = complex data points per FID, sourced
+		//   from DICOM (0028,9002) SpectroscopyAcquisitionDataColumns.
+		// - AcquisitionVoxelSize = SVS voxel dimensions in mm, [x, y, z],
+		//   sourced from PixelSpacing[0/1] + SliceThickness projected into
+		//   d.xyzMM[1..3] by the parser.
+		// - NumberOfTransients = averages stacked along NIfTI dim[5]
+		//   (1 when the file is 4D).
 		if (d.dataPointColumns > 0)
-			fprintf(fp, "\t\"SpectroscopyAcquisitionDataColumns\": %d,\n", d.dataPointColumns);
+			fprintf(fp, "\t\"NumberOfSpectralPoints\": %d,\n", d.dataPointColumns);
+		if ((d.xyzMM[1] > 0.0f) && (d.xyzMM[2] > 0.0f) && (d.xyzMM[3] > 0.0f))
+			fprintf(fp, "\t\"AcquisitionVoxelSize\": [%g, %g, %g],\n",
+					d.xyzMM[1], d.xyzMM[2], d.xyzMM[3]);
+		if (h != NULL) {
+			int transients = (h->dim[0] >= 5 && h->dim[5] > 0) ? h->dim[5] : 1;
+			fprintf(fp, "\t\"NumberOfTransients\": %d,\n", transients);
+		}
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.
