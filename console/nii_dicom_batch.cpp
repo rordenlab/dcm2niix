@@ -8430,11 +8430,18 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		strcpy(dataTypeBIDS, "func");
 		strcpy(modalityBIDS, "bold");
 		isDirLabel = true;
-		char *p = strstr(d->protocolName, "func_");
-		if (p == d->protocolName)
-			// todo issue753 infer task from d->protocolName
-			if (strstr(d->seriesDescription, "_SBRef") != NULL)
-				strcpy(modalityBIDS, "sbref");
+		// _SBRef in SeriesDescription is the single-pass clue that a BOLD-EPI
+		// series is actually the Single-Band Reference (SBRef) volume that
+		// pairs with the main multiband acquisition. The previous gate
+		// required d->protocolName to start with "func_" (old Siemens
+		// convention) which silently skipped ReproIn-style "func-..." names
+		// (and any other modern protocol naming). Match the unconditional
+		// DWI-branch pattern at line 8308: SeriesDescription contains "_SBRef"
+		// → sbref, regardless of protocol prefix.
+		if (strstr(d->seriesDescription, "_SBRef") != NULL)
+			strcpy(modalityBIDS, "sbref");
+		// todo issue753: infer task from d->protocolName here (was the original
+		// purpose of the gate; leave the TODO so the inference work is tracked).
 	} else if (strstr(d->sequenceName, "*epse2d") != NULL) {
 		// pepolar?
 		strcpy(dataTypeBIDS, "fmap");
@@ -10372,7 +10379,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	if (opts.isIgnoreDerivedAnd2D && dcmList[indx].isDerived) {
 		isSkip = true;
 	}
-	if ((opts.isVerbose > 1) && (opts.isIgnoreDerivedAnd2D) && ((dcmList[indx].isLocalizer) || (strcmp(dcmList[indx].sequenceName, "_tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1") == 0))) {
+	if ((opts.isIgnoreDerivedAnd2D) && ((dcmList[indx].isLocalizer) || (strcmp(dcmList[indx].sequenceName, "_tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1") == 0))) {
 		isSkip = true;
 	}
 	if ((opts.isIgnoreDerivedAnd2D) && ((strcmp(dcmList[indx].sequenceName, "*tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "*fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "*fl2d1") == 0))) {
