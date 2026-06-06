@@ -257,17 +257,24 @@ Two related fixes for variable-flip-angle TSE FLAIR misclassification:
 
 Together: `/Users/chris/src/dcm_qa_xb10/flair/in/` with `seqDetails="%SiemensSeq%\\space"`, `pulseSequenceName="*spcir_220ns"` now correctly produces `["anat","_acq-spcir2p2_run-5_FLAIR"]` (was misclassified as `["func","_acq-spcir2p2_dir-RL_run-5_bold"]` via the `pace`-substring path).
 
-### `MRWeightingGuess` shared classifier
+### `MRWeightingGuess` shared classifier + DICOM AcquisitionContrast
 
-`MRWeightingGuess(fieldStrength, TR, TE, flipAngle, isSpinEcho, isVariableFlipAngle)` in [`nii_dicom_batch.cpp`](console/nii_dicom_batch.cpp) (prototype + `kMRWeighting{Unknown,T1,T2,PD,T2starw}` enum in [`nii_dicom_batch.h`](console/nii_dicom_batch.h)) is the single source of truth for physics-based MR weighting estimation, shared by the four sites below. Returns `kMRWeightingUnknown` whenever a required input is non-positive — callers default to a vendor-appropriate fallback (e.g. `PDw` on the SE PD/T2 splits, falling through to `derived` on the GRE fl3d_vibe site).
+`MRWeightingGuess(d, isSpinEcho, isVariableFlipAngle)` in [`nii_dicom_batch.cpp`](console/nii_dicom_batch.cpp) (prototype in [`nii_dicom_batch.h`](console/nii_dicom_batch.h); `kMRWeighting{Unknown,T1,T2,PD,T2starw,FLAIR,STIR,Diffusion,Perfusion,TOF,Flow,Tagging,Mixed,Other}` enum in [`nii_dicom.h`](console/nii_dicom.h)) is the single source of truth for MR weighting classification, shared by the four sites below.
 
-Physics:
-- T1 estimated via Bottomley's approximation `0.8 * fieldStrength^0.38` (sec) — scales correctly across ultra-low-field (Hyperfine ~0.064 T) and ultra-high-field (7 T+).
-- T2* estimated as `0.050 / fieldStrength` (sec) — susceptibility scales inversely with B0.
-- True T2 changes minimally with B0 vs T2*, so the SE T2 arm uses a **fixed 45 ms TE threshold** rather than a B0-scaled one.
-- GRE thresholds match the historical fl3d_vibe classifier verbatim: `TE >= 0.5 * T2*_est` → T2starw; `flipAngle >= 1.3 * Ernst` → T1; `flipAngle <= 0.7 * Ernst` → PD; default PD.
+**Source-of-truth order inside the helper:**
 
-SE arm requires only `TE > 0`; GRE/Ernst arm additionally requires positive TR, fieldStrength, flipAngle. `isVariableFlipAngle=true` forces `Unknown` because SPACE / tse_vfl / FLAIR carry a nominal DICOM flipAngle that does NOT predict contrast (the refocusing train is shaped).
+1. **DICOM (0008,9209) Acquisition Contrast** if populated to a weighting value (`T1` / `T2` / `PROTON_DENSITY` / `T2_STAR` / `FLUID_ATTENUATED` / `STIR`). Vendor-agnostic and authoritative — trust it over the physics estimate. The parser at `nii_dicom.cpp:~5902` maps the CS string to the enum and stores on `d.acquisitionContrast`. AC values like `DIFFUSION` / `PERFUSION` / `TOF` / `FLOW_ENCODED` / `TAGGING` / `MIXED` / `OTHER` / `UNKNOWN` are acquisition-class markers (routed at the dataType level by the BIDS classifiers, not here) — they fall through to physics so the legacy `T1`/`T2`/`PD`/`T2starw` return space is preserved for the four call sites.
+2. **Bottomley + Ernst-angle physics:**
+   - T1 estimated via Bottomley's approximation `0.8 * fieldStrength^0.38` (sec) — scales correctly across ultra-low-field (Hyperfine ~0.064 T) and ultra-high-field (7 T+).
+   - T2* estimated as `0.050 / fieldStrength` (sec) — susceptibility scales inversely with B0.
+   - True T2 changes minimally with B0 vs T2*, so the SE T2 arm uses a **fixed 45 ms TE threshold** rather than a B0-scaled one.
+   - GRE thresholds match the historical fl3d_vibe classifier verbatim: `TE >= 0.5 * T2*_est` → T2starw; `flipAngle >= 1.3 * Ernst` → T1; `flipAngle <= 0.7 * Ernst` → PD; default PD.
+
+SE arm only consumes TE; GRE/Ernst arm additionally requires positive TR, fieldStrength, flipAngle. `isVariableFlipAngle=true` forces `Unknown` on the physics fallback because SPACE / tse_vfl / FLAIR carry a nominal DICOM flipAngle that does NOT predict contrast — but the AC short-circuit fires first, so e.g. AC=FLUID_ATTENUATED still returns `kMRWeightingFLAIR` on a VFL-flagged SPACE-FLAIR series.
+
+**Vendor-agnostic Acquisition Contrast routing for ASL.** The ASL detection branches in `setBidsSiemens`, `setBidsPhilips`, and `setBidsGE` also fire on `d->acquisitionContrast == kMRWeightingPerfusion` (alongside their vendor sequence-name / ImageType / private-tag checks). The DICOM standard tag is the cleanest vendor-agnostic signal when present; the existing per-vendor checks cover Classic MR DICOMs where the tag is absent.
+
+The AC=DIFFUSION case sets `d.isDiffusion = true` alongside `d.acquisitionContrast = kMRWeightingDiffusion` — back-compat for non-AC-aware code paths that already gate on `isDiffusion`.
 
 **Call sites (PD/T2 SE migrations changed the threshold from per-vendor 40/50 ms to the unified 45 ms):**
 - Siemens `fl3d_vibe` (GRE): T1w / PDw / T2starw classifier. The marketing label is constant ("vibe") regardless of contrast; physics decides. Verified on `/Users/chris/src/dcm_qa_xb10/fx/10_t1_vibe_tra_cs22/` (3T, TR=5.18ms, TE=2.46ms, FA=20°): Ernst ≈ 5.3°, FA/Ernst = 3.8 → T1w.

@@ -1020,6 +1020,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.CSA.bidsTask, "");
 	d.deID_CS_n = 0;
 	d.deID_CS = NULL; // allocated lazily on first kCodeValue inside kDeidentificationMethodCodeSequence; freed by free_TDICOMdata_deID_CS()
+	d.acquisitionContrast = kMRWeightingUnknown;
 	return d;
 } // clear_dicom_data()
 
@@ -5898,14 +5899,47 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (isMagnitude)
 				d.isHasMagnitude = true;
 			break;
-		case kAcquisitionContrast:
+		case kAcquisitionContrast: {
+			// DICOM (0008,9209) Acquisition Contrast — enumerated CS values per
+			// PS3.3 (DIFFUSION, FLOW_ENCODED, FLUID_ATTENUATED, PERFUSION,
+			// PROTON_DENSITY, STIR, T1, T2, T2_STAR, TAGGING, TOF, MIXED, OTHER,
+			// UNKNOWN). Map to kMRWeighting* on TDICOMdata so the vendor BIDS
+			// classifiers and MRWeightingGuess() share one source of truth.
+			// Populated on Enhanced MR Image SOPs and some Classic Philips
+			// (often nested inside (0018,9226) MRImageFrameTypeSequence — the
+			// SQ is already in isSQ()'s allowlist so this case is reached).
 			char acqContrast[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], acqContrast);
-			if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "DIFFUSION") != NULL))
-				d.isDiffusion = true;
-			// if (((int)strlen(acqContrast) > 8) && (strstr(acqContrast, "PERFUSION") != NULL))
-			//	isASL = true; //see series 301 of dcm_qa_philips_asl
+			if (strcmp(acqContrast, "DIFFUSION") == 0) {
+				d.acquisitionContrast = kMRWeightingDiffusion;
+				d.isDiffusion = true; // preserve existing back-compat for non-AC-aware code paths
+			} else if (strcmp(acqContrast, "PERFUSION") == 0)
+				d.acquisitionContrast = kMRWeightingPerfusion;
+			else if (strcmp(acqContrast, "FLUID_ATTENUATED") == 0)
+				d.acquisitionContrast = kMRWeightingFLAIR;
+			else if (strcmp(acqContrast, "PROTON_DENSITY") == 0)
+				d.acquisitionContrast = kMRWeightingPD;
+			else if (strcmp(acqContrast, "T2_STAR") == 0)
+				d.acquisitionContrast = kMRWeightingT2starw;
+			else if (strcmp(acqContrast, "T1") == 0)
+				d.acquisitionContrast = kMRWeightingT1;
+			else if (strcmp(acqContrast, "T2") == 0)
+				d.acquisitionContrast = kMRWeightingT2;
+			else if (strcmp(acqContrast, "STIR") == 0)
+				d.acquisitionContrast = kMRWeightingSTIR;
+			else if (strcmp(acqContrast, "TOF") == 0)
+				d.acquisitionContrast = kMRWeightingTOF;
+			else if (strcmp(acqContrast, "FLOW_ENCODED") == 0)
+				d.acquisitionContrast = kMRWeightingFlow;
+			else if (strcmp(acqContrast, "TAGGING") == 0)
+				d.acquisitionContrast = kMRWeightingTagging;
+			else if (strcmp(acqContrast, "MIXED") == 0)
+				d.acquisitionContrast = kMRWeightingMixed;
+			else if (strcmp(acqContrast, "OTHER") == 0)
+				d.acquisitionContrast = kMRWeightingOther;
+			// "UNKNOWN" and unrecognised values leave d.acquisitionContrast at default kMRWeightingUnknown
 			break;
+		}
 		case kAcquisitionTime: {
 			char acquisitionTimeTxt[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], acquisitionTimeTxt);

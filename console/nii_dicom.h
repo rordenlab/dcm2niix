@@ -282,6 +282,7 @@ struct TDICOMdata {
 	char deidentificationMethod[kDICOMStr], prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], studyDescription[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStrLarge], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr], sequenceVariant[kDICOMStr], scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr], studyDate[kDICOMStr], studyTime[kDICOMStr];
 	char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
+	int acquisitionContrast; // DICOM (0008,9209), kMRWeighting* int; kMRWeightingUnknown when tag absent or value unrecognised
 	int deID_CS_n;
 	// Per-file pointer to DeidentificationMethodCodeSequence strings, NULL when
 	// the file has no deident block (the common case). Heap-allocated on first
@@ -310,6 +311,30 @@ size_t nii_ImgBytes(struct nifti_1_header hdr);
 void setDefaultPrefs(struct TDCMprefs *prefs);
 int isSameFloatGE(float a, float b);
 void getFileNameX(char *pathParent, const char *path, int maxLen);
+// MR weighting / acquisition-contrast class.
+// Values 0..4 are the legacy MRWeightingGuess return space (kept stable so
+// the four call sites — fl3d_vibe, tse2d, Philips SK+SE, GE FSE — do not need
+// re-thresholding). The extended values mirror the DICOM enumerated values
+// for (0008,9209) AcquisitionContrast (see PS3.3 / dicom.innolitics.com
+// /ciods/enhanced-mr-image/enhanced-mr-image/00089209). When the tag is
+// populated the parser stores its mapped integer on TDICOMdata.acquisitionContrast;
+// MRWeightingGuess short-circuits to that value before running physics, and the
+// vendor BIDS classifiers consult it for vendor-agnostic ASL routing.
+#define kMRWeightingUnknown 0  // DICOM "UNKNOWN" or tag absent
+#define kMRWeightingT1 1       // DICOM "T1"
+#define kMRWeightingT2 2       // DICOM "T2"
+#define kMRWeightingPD 3       // DICOM "PROTON_DENSITY"
+#define kMRWeightingT2starw 4  // DICOM "T2_STAR"
+#define kMRWeightingFLAIR 5    // DICOM "FLUID_ATTENUATED"
+#define kMRWeightingSTIR 6     // DICOM "STIR"
+#define kMRWeightingDiffusion 7  // DICOM "DIFFUSION"
+#define kMRWeightingPerfusion 8  // DICOM "PERFUSION"
+#define kMRWeightingTOF 9      // DICOM "TOF"
+#define kMRWeightingFlow 10    // DICOM "FLOW_ENCODED"
+#define kMRWeightingTagging 11 // DICOM "TAGGING"
+#define kMRWeightingMixed 12   // DICOM "MIXED"
+#define kMRWeightingOther 13   // DICOM "OTHER" (reserved for future enum additions)
+
 struct TDICOMdata readDICOMv(char *fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
 struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D *dti4D);
 void free_TDICOMdata_deID_CS(struct TDICOMdata *d);

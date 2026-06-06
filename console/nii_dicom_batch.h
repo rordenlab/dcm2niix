@@ -71,16 +71,10 @@ struct TDicomSeries {
 #define kSaveFormatJNII 3
 #define kSaveFormatBNII 4
 
-// Coarse MR weighting classes returned by MRWeightingGuess(). Used by
-// vendor-specific BIDS modality heuristics to share a single physics-based
-// estimate of contrast (T1w / T2w / PDw / T2*w) rather than duplicating
-// hardcoded TE/TR/flipAngle thresholds across each sequence-name branch.
-#define kMRWeightingUnknown 0
-#define kMRWeightingT1 1
-#define kMRWeightingT2 2
-#define kMRWeightingPD 3
-#define kMRWeightingT2starw 4
-int MRWeightingGuess(float fieldStrength, float TR, float TE, float flipAngle, bool isSpinEcho, bool isVariableFlipAngle);
+// kMRWeighting* enum moved to nii_dicom.h so TDICOMdata.acquisitionContrast
+// (parsed from DICOM (0008,9209)) and MRWeightingGuess() share the same value
+// space.
+int MRWeightingGuess(struct TDICOMdata *d, bool isSpinEcho, bool isVariableFlipAngle);
 
 #define MAX_NUM_SERIES 16
 #define kOptsStr 512

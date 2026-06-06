@@ -1268,45 +1268,69 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 #endif
 }
 
-// Coarse MR-weighting classifier shared by vendor-specific BIDS modality
-// heuristics. Returns kMRWeighting{Unknown,T1,T2,PD,T2starw}.
+// MR-weighting classifier shared by vendor-specific BIDS modality heuristics.
+// Returns one of kMRWeighting{Unknown,T1,T2,PD,T2starw,FLAIR,STIR}.
 //
-// Physics: T1 estimated via Bottomley's approximation 0.8 * B0^0.38 (sec,
-// gray/white matter); T2* estimated as 0.050 / B0 (sec) — both field-scaled
-// so ultra-low-field (Hyperfine ~0.064 T) and ultra-high-field (7 T+) cases
-// behave correctly. True T2 changes minimally with B0 vs T2*, so the SE T2
-// arm uses a fixed 45 ms TE threshold rather than a B0-scaled one.
+// Source-of-truth order:
+//   1. DICOM (0008,9209) AcquisitionContrast if populated to a weighting value
+//      (T1/T2/PROTON_DENSITY/T2_STAR/FLUID_ATTENUATED/STIR). Standard tag is
+//      vendor-agnostic and authoritative; trust it over the physics estimate.
+//      AC values like DIFFUSION / PERFUSION / TOF / FLOW_ENCODED / TAGGING are
+//      acquisition-class markers (routed at the dataType level by the BIDS
+//      classifiers) — they fall through to physics here so the historical
+//      T1/T2/PD/T2starw return space is preserved for legacy callers.
+//   2. Bottomley + Ernst-angle physics. T1 = 0.8 * B0^0.38 (sec, gray/white
+//      matter), T2* = 0.050 / B0 (sec) — field-scaled so ultra-low field
+//      (Hyperfine ~0.064 T) and ultra-high field (7 T+) behave correctly. True
+//      T2 changes minimally with B0 vs T2*, so the SE T2 arm uses a fixed
+//      45 ms TE threshold rather than a B0-scaled one.
 //
 // SE arm only needs TE; GRE/Ernst arm additionally requires TR, fieldStrength,
-// and flipAngle. Returns kMRWeightingUnknown when any required input is
-// non-positive (caller should fall through to other heuristics) or when
-// isVariableFlipAngle is set — SPACE / tse_vfl / FLAIR carry a nominal
-// DICOM flipAngle that does NOT predict contrast (refocusing train is shaped).
-// GRE thresholds (T1: flipAngle >= 1.3*Ernst, PD: flipAngle <= 0.7*Ernst,
-// T2*: TE >= 0.5*T2*_est) match the historical fl3d_vibe classifier verbatim.
-int MRWeightingGuess(float fieldStrength, float TR, float TE, float flipAngle, bool isSpinEcho, bool isVariableFlipAngle) {
-	if (TE <= 0.0f)
+// and flipAngle. Returns kMRWeightingUnknown when no AC value applies AND any
+// required input is non-positive (caller falls through to other heuristics),
+// or when isVariableFlipAngle is set on the physics fallback — SPACE / tse_vfl
+// / FLAIR carry a nominal DICOM flipAngle that does NOT predict contrast (the
+// refocusing train is shaped). GRE thresholds (T1: flipAngle >= 1.3*Ernst,
+// PD: flipAngle <= 0.7*Ernst, T2*: TE >= 0.5*T2*_est) match the historical
+// fl3d_vibe classifier verbatim.
+int MRWeightingGuess(struct TDICOMdata *d, bool isSpinEcho, bool isVariableFlipAngle) {
+	if (d == NULL)
+		return kMRWeightingUnknown;
+	// (1) DICOM AcquisitionContrast short-circuit for weighting-class values.
+	switch (d->acquisitionContrast) {
+		case kMRWeightingT1:
+		case kMRWeightingT2:
+		case kMRWeightingPD:
+		case kMRWeightingT2starw:
+		case kMRWeightingFLAIR:
+		case kMRWeightingSTIR:
+			return d->acquisitionContrast;
+		default:
+			break;
+	}
+	// (2) Physics fallback.
+	if (d->TE <= 0.0f)
 		return kMRWeightingUnknown;
 	if (isVariableFlipAngle)
 		return kMRWeightingUnknown;
-	double te_sec = (double)TE / 1000.0;
+	double te_sec = (double)d->TE / 1000.0;
 	if (isSpinEcho) {
 		if (te_sec >= 0.045)
 			return kMRWeightingT2;
 		return kMRWeightingPD;
 	}
-	if ((TR <= 0.0f) || (fieldStrength <= 0.0f) || (flipAngle <= 0.0f))
+	if ((d->TR <= 0.0f) || (d->fieldStrength <= 0.0f) || (d->flipAngle <= 0.0f))
 		return kMRWeightingUnknown;
-	double tr_sec = (double)TR / 1000.0;
-	double t2star_est = 0.050 / (double)fieldStrength;
+	double tr_sec = (double)d->TR / 1000.0;
+	double t2star_est = 0.050 / (double)d->fieldStrength;
 	if (te_sec >= 0.5 * t2star_est)
 		return kMRWeightingT2starw;
-	double t1_est = 0.8 * pow((double)fieldStrength, 0.38);
+	double t1_est = 0.8 * pow((double)d->fieldStrength, 0.38);
 	double ernst_rad = acos(exp(-tr_sec / t1_est));
 	double ernst_deg = ernst_rad * (180.0 / M_PI);
-	if ((double)flipAngle >= 1.3 * ernst_deg)
+	if ((double)d->flipAngle >= 1.3 * ernst_deg)
 		return kMRWeightingT1;
-	if ((double)flipAngle <= 0.7 * ernst_deg)
+	if ((double)d->flipAngle <= 0.7 * ernst_deg)
 		return kMRWeightingPD;
 	return kMRWeightingPD; // mixed structural default
 }
@@ -8163,7 +8187,11 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(modalityBIDS, "sbref");
 		// if seriesDesc trace", "fa", "adc"  isDerived = true;
 		isDirLabel = true;
-	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { // prog_asl
+	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL) || (d->acquisitionContrast == kMRWeightingPerfusion)) { // prog_asl
+		// AC=Perfusion is the DICOM-standard (0008,9209) marker, populated on
+		// Enhanced MR / Philips Classic ASL. Vendor-agnostic, so reusing the
+		// same gate here, in setBidsPhilips, and in setBidsGE keeps ASL
+		// detection consistent regardless of the sequence-name heuristics.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 		if (strstr(d->seriesDescription, "_m0") != NULL)
@@ -8194,7 +8222,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		if ((strstr(d->sequenceName, "tse2d") != NULL) || (strstr(d->pulseSequenceName, "tse2d") != NULL)) {
 			// Siemens tse2d is regular spin echo, not VFL (tse_vfl branch above
 			// handles SPACE). Threshold moves 50ms -> 45ms with the unified helper.
-			int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, true, false);
+			int w = MRWeightingGuess(d, true, false);
 			if (w == kMRWeightingT2)
 				strcpy(modalityBIDS, "T2w");
 			else
@@ -8235,7 +8263,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		// (which is always "vibe"). MRWeightingGuess returns Unknown when
 		// any input is missing — cascade then falls through to the trailing
 		// "derived" clobber. fl3d_vibe is GRE, not VFL.
-		int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, false, false);
+		int w = MRWeightingGuess(d, false, false);
 		if (w != kMRWeightingUnknown) {
 			strcpy(dataTypeBIDS, "anat");
 			if (w == kMRWeightingT2starw)
@@ -8432,18 +8460,16 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 	} else if ((d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
 		strcpy(dataTypeBIDS, "dwi");
 		strcpy(modalityBIDS, "dwi");
-	} else if ((strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE)) {
-		// scanSeq:'GR' seqVariant:'SK'.
-		// aslFlags is set by the Philips private tag (2005,1429) MRImageLabelType
-		// when its value starts with 'L' (LABEL) or 'C' (CONTROL). "SOURCE -"
-		// raw label/control series strip "PERFUSION" from the ImageType
-		// (per-frame imagetype becomes "M\SE\M\SE" / "M\FFE\M\FFE") so the
-		// ImageType check alone misses them and they used to fall through to
-		// SK+SE -> PDw or SK+GR -> bold. The private-tag check is a positive
-		// ASL identification (LBL/CTL never appears on non-ASL Philips
-		// acquisitions) so widening the gate is safe across the dcm_validate
-		// dcm_qa_philips_asl, dcm_qa_philips_asl_enh, and dcm_qa_philips_enh
-		// pCASL reference sets.
+	} else if ((strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE) || (d->acquisitionContrast == kMRWeightingPerfusion)) {
+		// Three orthogonal ASL signals, in increasing order of generality:
+		//   ImageType "PERFUSION" — top-level CS marker.
+		//   aslFlags (Philips private (2005,1429) MRImageLabelType) — set when
+		//     the per-frame value starts with 'L' (LABEL) or 'C' (CONTROL); the
+		//     "SOURCE -" raw label/control series strip "PERFUSION" from the
+		//     per-frame ImageType ("M\\SE\\M\\SE" / "M\\FFE\\M\\FFE") so the
+		//     top-level check alone misses them.
+		//   acquisitionContrast == kMRWeightingPerfusion — DICOM (0008,9209),
+		//     vendor-agnostic. Catches Enhanced MR ASL series across vendors.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if ((strstr(d->pulseSequenceName, "SEEPI") != NULL) && (!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
@@ -8459,7 +8485,7 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 			strcpy(modalityBIDS, "FLAIR");
 		else {
 			// Philips SK+SE PD/T2 split. Threshold moves 40ms -> 45ms with the unified helper.
-			int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, true, false);
+			int w = MRWeightingGuess(d, true, false);
 			if (w == kMRWeightingT2)
 				strcpy(modalityBIDS, "T2w");
 			else
@@ -8650,7 +8676,7 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 			strcpy(modalityBIDS, "FLAIR");
 		else {
 			// GE FSE PD/T2 split. Threshold moves 40ms -> 45ms with the unified helper.
-			int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, true, false);
+			int w = MRWeightingGuess(d, true, false);
 			if (w == kMRWeightingT2)
 				strcpy(modalityBIDS, "T2w");
 			else
@@ -8662,7 +8688,9 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
 		isPart = true;
-	} else if (strstr(seqName, "asl")) {
+	} else if ((strstr(seqName, "asl")) || (d->acquisitionContrast == kMRWeightingPerfusion)) {
+		// Vendor-agnostic: DICOM (0008,9209) Acquisition Contrast = "PERFUSION".
+		// Mirrors the Siemens / Philips widening.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if (((isEPSE) && (!d->isDiffusion)) || ((strstr(d->seriesDescription, "fieldmap")) && (strstr(seqName, "EPI")))) {
