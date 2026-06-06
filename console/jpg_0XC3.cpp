@@ -151,7 +151,6 @@ static unsigned char *decode_JPEG_SOF_0XC3_core(uint8_t *buf, size_t flen, int s
 		goto done;
 	}
 
-
 	d.xDim = d.frame.xDim;
 	d.yDim = d.frame.yDim;
 	d.precision = d.frame.precision;

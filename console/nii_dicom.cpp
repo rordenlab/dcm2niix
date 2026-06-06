@@ -23,8 +23,8 @@
 #ifndef USING_R
 #include "nifti1.h"
 #endif
-#include "jpg_0XC3.h"
 #include "dicom_fragments.h"
+#include "jpg_0XC3.h"
 #include "nifti1_io_core.h"
 #include "nii_dicom.h"
 #include "print.h"
@@ -604,7 +604,7 @@ mat44 set_nii_header(struct TDICOMdata d) {
 mat44 set_nii_header_x(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int *sliceDir, int isVerbose) {
 	*sliceDir = 0;
 	mat44 Q44 = nifti_dicom2mat(d.orient, d.patientPosition, d.xyzMM);
-	if ((d.isMicroscopy) && (isnan(Q44.m[0][3])) ) {
+	if ((d.isMicroscopy) && (isnan(Q44.m[0][3]))) {
 		for (int c = 0; c < 4; c++)
 			for (int r = 0; r < 4; r++)
 				Q44.m[r][c] = 0.0;
@@ -910,7 +910,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.radionuclideTotalDose = 0.0;
 	d.seriesNum = 1;
 	d.acquNum = 0;
-	d.frameNum = 0; //first shall be one
+	d.frameNum = 0; // first shall be one
 	d.imageNum = 1;
 	d.imageStart = 0;
 	d.offsetTableItems = 0;
@@ -1569,11 +1569,11 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 				CSA->sliceMeasurementDuration = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
 			else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
 				CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-			else if (strcmp(tagCSA.name, "ImaRelTablePosition") == 0) { //issue890
+			else if (strcmp(tagCSA.name, "ImaRelTablePosition") == 0) { // issue890
 				csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
 				CSA->tablePos[0] = 1.0;
 				CSA->tablePos[1] = lFloats[1];
-				CSA->tablePos[2] = lFloats[2];	
+				CSA->tablePos[2] = lFloats[2];
 				CSA->tablePos[3] = -lFloats[3];
 			} else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)) {
 				if (itemsOK > kMaxEPI3D) {
@@ -3107,7 +3107,7 @@ static inline uint8_t clamp255(int x) {
 
 unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr) {
 	// YBR->RGB: PhotometricInterpretation (0028,0004) YBR_FULL
-	// ITU-R BT.601 YCbCr → RGB (full-range) transform 
+	// ITU-R BT.601 YCbCr → RGB (full-range) transform
 	if (bImg == NULL)
 		return NULL;
 	if (hdr->datatype != DT_RGB24)
@@ -3119,16 +3119,16 @@ unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr) {
 	size_t sliceBytes8 = hdr->dim[1] * hdr->dim[2];
 	size_t sliceBytes24 = sliceBytes8 * 3;
 	size_t sliceOffsetR = 0;
-	for (int sl = 0; sl < dim3to7; sl++) {					// for each 2D slice
+	for (int sl = 0; sl < dim3to7; sl++) { // for each 2D slice
 		size_t sliceOffsetG = sliceOffsetR + sliceBytes8;
 		size_t sliceOffsetB = sliceOffsetR + 2 * sliceBytes8;
 		for (int rgb = 0; rgb < sliceBytes8; rgb++) {
 			int Y = bImg[sliceOffsetR + rgb];
 			int Cb = bImg[sliceOffsetG + rgb];
 			int Cr = bImg[sliceOffsetB + rgb];
-			float r = Y + 1.402f   * (Cr - 128);
+			float r = Y + 1.402f * (Cr - 128);
 			float g = Y - 0.344136f * (Cb - 128) - 0.714136f * (Cr - 128);
-			float b = Y + 1.772f   * (Cb - 128);
+			float b = Y + 1.772f * (Cb - 128);
 			bImg[sliceOffsetR + rgb] = (uint8_t)clamp255((int)(r + 0.5f));
 			bImg[sliceOffsetG + rgb] = (uint8_t)clamp255((int)(g + 0.5f));
 			bImg[sliceOffsetB + rgb] = (uint8_t)clamp255((int)(b + 0.5f));
@@ -3904,9 +3904,9 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		img = nii_loadImgJPEG50(imgname, dcm);
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
-		// n.b. turboJPEG and nanoJPEG should both automatically convert YBR to RGB
-		// if (dcm.isYBRfull)
-		//   img = nii_ybr2rgb(img, hdr);
+															 // n.b. turboJPEG and nanoJPEG should both automatically convert YBR to RGB
+															 // if (dcm.isYBRfull)
+															 //   img = nii_ybr2rgb(img, hdr);
 #endif
 	} else if (dcm.compressionScheme == kCompressJPEGLS) {
 #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
@@ -3929,15 +3929,14 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		img = nii_loadImgJPEGC3(imgname, *hdr, dcm, isVerbose, hdr->datatype);
 		if (dcm.isYBRfull)
 			img = nii_ybr2rgb(img, hdr);
-		
+
 	} else
 #ifndef myDisableOpenJPEG
 		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressJP2K)) && (compressFlag != kCompressNone)) {
-			img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
-			if (dcm.isYBRfull)
-				img = nii_ybr2rgb(img, hdr);
-		}
-	else
+		img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
+		if (dcm.isYBRfull)
+			img = nii_ybr2rgb(img, hdr);
+	} else
 #else
 #ifdef myEnableJasper
 		if ((dcm.compressionScheme == kCompressJP2K) && (compressFlag != kCompressNone))
@@ -4002,15 +4001,16 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	if ((dcm.compressionScheme == kCompressJP2K) && (frames <= 1))
 		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
 	if (frames != dcm.offsetTableItems)
-	printMessage("Number of frames %d does not match offset table %d\n", frames, dcm.offsetTableItems);
+		printMessage("Number of frames %d does not match offset table %d\n", frames, dcm.offsetTableItems);
 	size_t bpp = hdr->bitpix / 8;
 	size_t sliceBytes2D = dcm.xyzDim[1] * dcm.xyzDim[2] * bpp;
 	if (sliceBytes2D == 0) {
 		printError("DICOM header does not make sense\n");
 		return NULL;
 	}
-	unsigned char *img  = (unsigned char *)malloc(sliceBytes2D * frames);
-	if (!img) return NULL;
+	unsigned char *img = (unsigned char *)malloc(sliceBytes2D * frames);
+	if (!img)
+		return NULL;
 	struct nifti_1_header *hdr2D = (struct nifti_1_header *)malloc(sizeof(struct nifti_1_header));
 	if (!hdr2D) {
 		printError("Memory allocation failed for hdr2D\n");
@@ -4019,16 +4019,16 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	}
 	memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
 	for (int i = 3; i < 8; i++)
-		 hdr2D->dim[i] = 1;
+		hdr2D->dim[i] = 1;
 	int lastimageBytes = dcm.imageBytes;
 	for (int i = 0; i < frames; i++) {
 		dcm.imageStart = dti4D->offsetTable[i];
 		dcm.imageBytes = lastimageBytes;
 		if (i < (frames - 1))
-			dcm.imageBytes = dti4D->offsetTable[i+1] - dcm.imageStart;
+			dcm.imageBytes = dti4D->offsetTable[i + 1] - dcm.imageStart;
 		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, iVaries, compressFlag, isVerbose, dti4D);
 		if (!img2D) {
-			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i+1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
+			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i + 1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
 			free(img);
 			free(img2D);
 			return NULL;
@@ -4450,7 +4450,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		dti4D->TE[i] = -1.0;
 	}
 	// deID_CS_n / deID_CS already initialised by clear_dicom_data() above.
-	
+
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
 	if (stat(fname, &s) == 0) {
@@ -4529,7 +4529,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kImplementationVersionName 0x0002 + (0x0013 << 16)
 #define kSourceApplicationEntityTitle 0x0002 + (0x0016 << 16)
 #define kDirectoryRecordSequence 0x0004 + (0x1220 << 16)
-//#define kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
+// #define kSpecificCharacterSet 0x0008+(0x0005 << 16 ) //someday we should handle foreign characters...
 #define kImageTypeTag 0x0008 + (0x0008 << 16)
 #define kSOPInstanceUID 0x0008 + (0x0018 << 16) // Philips inserts time as last item, e.g. ?.?.?.YYYYMMDDHHmmSS.SSSS
 // not reliable https://neurostars.org/t/heudiconv-no-extraction-of-slice-timing-data-based-on-philips-dicoms/2201/21
@@ -4562,8 +4562,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kReferencedImageEvidenceSQ (uint32_t)0x0008 + (0x9092 << 16)
 #define kComplexImageComponent (uint32_t)0x0008 + (0x9208 << 16) //'0008' '9208' 'CS' 'ComplexImageComponent'
 #define kAcquisitionContrast (uint32_t)0x0008 + (0x9209 << 16)	 //'0008' '9209' 'CS' 'AcquisitionContrast'
-#define kInjectedVolumeGE 0x0009 + (0x103A << 16) // FL
-#define kReconFilterSizeGE 0x0009 + (0x108F << 16) // FL bp_filter_cutoff
+#define kInjectedVolumeGE 0x0009 + (0x103A << 16)				 // FL
+#define kReconFilterSizeGE 0x0009 + (0x108F << 16)				 // FL bp_filter_cutoff
 #define kIconSQ 0x0009 + (0x1110 << 16)
 #define kPatientName 0x0010 + (0x0010 << 16)
 #define kPatientID 0x0010 + (0x0020 << 16)
@@ -4600,7 +4600,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kDeviceSerialNumber 0x0018 + (0x1000 << 16)	   // LO
 #define kSoftwareVersions 0x0018 + (0x1020 << 16)	   // LO
 #define kProtocolName 0x0018 + (0x1030 << 16)
-#define kTriggerTime 0x0018 + (0x1060 << 16) // DS
+#define kTriggerTime 0x0018 + (0x1060 << 16)				  // DS
 #define kRadiopharmaceuticalStartTime 0x0018 + (0x1072 << 16) // TM, within (0054,0016) RadiopharmaceuticalInformationSequence
 #define kRadionuclideTotalDose 0x0018 + (0x1074 << 16)
 #define kRadionuclideHalfLife 0x0018 + (0x1075 << 16)
@@ -4655,8 +4655,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 // #define kFrameAcquisitionDuration 0x0018+uint32_t(0x9220 << 16 ) //FD
 #define kArterialSpinLabelingContrast 0x0018 + uint32_t(0x9250 << 16) // CS
 #define kASLPulseTrainDuration 0x0018 + uint32_t(0x9258 << 16)		  // UL
-//TODO ASL LabelingOrientation 0018,9255, VascularCrushing 0x0018,9259 CS, VascularCrushingVENC 0018,925A
-#define kDiffusionBValueXX 0x0018 + uint32_t(0x9602 << 16)			  // FD
+// TODO ASL LabelingOrientation 0018,9255, VascularCrushing 0x0018,9259 CS, VascularCrushingVENC 0018,925A
+#define kDiffusionBValueXX 0x0018 + uint32_t(0x9602 << 16) // FD
 // #define kDiffusionBValueXY 0x0018 + uint32_t(0x9603 << 16) //FD
 // #define kDiffusionBValueXZ 0x0018 + uint32_t(0x9604 << 16) //FD
 // #define kDiffusionBValueYY 0x0018 + uint32_t(0x9605 << 16) //FD
@@ -4711,7 +4711,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kDimensionIndexPointer 0x0020 + uint32_t(0x9165 << 16)
 // Private Group 21 as Used by Siemens:
 #define kRelTablePosition 0x0021 + (0x1005 << 16)		 // IS Siemens XA
-#define kAutoAlignData 0x0021 + (0x103F << 16)		 // UT Siemens XA
+#define kAutoAlignData 0x0021 + (0x103F << 16)			 // UT Siemens XA
 #define kScanningSequenceSiemens 0x0021 + (0x105A << 16) // CS n.b. for GE this is Diffusion direction of SL!
 #define kSequenceVariant21 0x0021 + (0x105B << 16)		 // CS Siemens ONLY: For GE this is TaggingFlipAngle
 #define kScanOptionsSiemens 0x0021 + (0x105C << 16)		 // CS Siemens ONLY
@@ -4886,7 +4886,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isHasBVec = false;
 	bool is00540016SQ = false;
 	bool is2005140FSQ = false;
-	bool isSliceOrientVaries = false; //issue894
+	bool isSliceOrientVaries = false; // issue894
 	int sqDepth04000561 = -1;
 	bool is00089092SQ = false; // Referenced Image Evidence SQ
 	bool overlayOK = true;
@@ -5038,7 +5038,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// array for storing DimensionIndexValues
 	int numDimensionIndexValues = 0;
 	bool isSiemensXA = false;
-	//don't use stack! TDCMdim dcmDim[kMaxSlice2D];
+	// don't use stack! TDCMdim dcmDim[kMaxSlice2D];
 	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
 	for (int i = 0; i < kMaxSlice2D; i++) {
 		dcmDim[i].diskPos = i;
@@ -5063,9 +5063,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (sz < MaxBufferSz) {
 				printError("Only loaded %zu of %zu bytes for %s\n", sz, MaxBufferSz, fname);
 				fclose(file);
-				#ifndef USING_R
+#ifndef USING_R
 				free(dcmDim);
-				#endif
+#endif
 				return d;
 			}
 			lPos = 0;
@@ -5121,7 +5121,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_UNKNOWN) || (d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; // triggered
 				//  d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
-				//printf("issue809 %d %d %d\n", inStackPositionNumber, philMRImageDiffBValueNumber, gradientOrientationNumberPhilips);
+				// printf("issue809 %d %d %d\n", inStackPositionNumber, philMRImageDiffBValueNumber, gradientOrientationNumberPhilips);
 				bool isKludge = (swVers > 10) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (inStackPositionNumber > 0);
 				if (isKludge) {
 					isKludgeIssue809 = true;
@@ -5130,9 +5130,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 						phase = 0;
 					int aslFlag = d.aslFlags == kASL_FLAG_PHILIPS_LABEL;
 					int imageType = 0;
-					if (isReal) imageType = 1;
-					if (isImaginary) imageType = 2;
-					if (isPhase) imageType = 3;
+					if (isReal)
+						imageType = 1;
+					if (isImaginary)
+						imageType = 2;
+					if (isPhase)
+						imageType = 3;
 					int bvalNum = philMRImageDiffBValueNumber > 0 ? philMRImageDiffBValueNumber : 0;
 					int gradNum = gradientOrientationNumberPhilips > 0 ? gradientOrientationNumberPhilips : 0;
 					int volume = volumeNumber > 0 ? volumeNumber : 0;
@@ -5143,7 +5146,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					}
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
-					d.dimensionIndexValues[0] = inStackPositionNumber;				   // dim[3] slice changes fastest
+					d.dimensionIndexValues[0] = inStackPositionNumber; // dim[3] slice changes fastest
 					d.dimensionIndexValues[1] = phase;
 					d.dimensionIndexValues[2] = aslFlag;
 					d.dimensionIndexValues[3] = imageType;
@@ -5248,9 +5251,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					printMessage("]\n");
 					// printMessage("B0= %g num=%d\n", B0Philips, gradNum);
 				} else {
-					#ifndef USING_R
-						free(dcmDim);
-					#endif
+#ifndef USING_R
+					free(dcmDim);
+#endif
 					return d;
 				}
 #endif
@@ -5413,7 +5416,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.imageBytes = lLength;
 				if (d.offsetTableItems < kMaxSlice2D)
 					dti4D->offsetTable[d.offsetTableItems] = (int)lPos + (int)lFileOffset;
-				d.offsetTableItems ++;
+				d.offsetTableItems++;
 				if (d.imageBytes <= 0)
 					goto skipRemap;
 				if (d.imageBytes > 24) {
@@ -5632,8 +5635,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
 				d.compressionScheme = kCompressJPEGLS;
 #else
-					printWarning("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n", transferSyntax);
-					d.imageStart = 1; // abort as invalid (imageStart MUST be >128)
+				printWarning("Unsupported transfer syntax '%s' (decode with 'dcmdjpls jpg.dcm raw.dcm' or 'gdcmconv -w jpg.dcm raw.dcm', or recompile dcm2niix with JPEGLS support)\n", transferSyntax);
+				d.imageStart = 1; // abort as invalid (imageStart MUST be >128)
 #endif
 			} else if (strcmp(transferSyntax, "1.3.46.670589.33.1.4.1") == 0) {
 				d.compressionScheme = kCompressPMSCT_RLE1;
@@ -5643,9 +5646,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.compressionScheme = kCompressJP2K;
 				// printMessage("JPEG2000 Lossless support is new: please validate conversion\n");
 			} else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.201") == 0) {
-				d.compressionScheme = kCompressJP2K; //High-Throughput JPEG 2000 issue 897
+				d.compressionScheme = kCompressJP2K; // High-Throughput JPEG 2000 issue 897
 			} else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.203") == 0) {
-				d.compressionScheme = kCompressJP2K; //High-Throughput JPEG 2000 issue 897
+				d.compressionScheme = kCompressJP2K; // High-Throughput JPEG 2000 issue 897
 			} else if ((strcmp(transferSyntax, "1.2.840.10008.1.2.1.99") == 0)) {
 				// n.b. Deflate compression applied applies to the encoding of the **entire** DICOM Data Set, not just image data
 				//  see https://www.medicalconnections.co.uk/kb/Transfer-Syntax/
@@ -6150,15 +6153,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA31") != NULL))
 				d.isXA10A = true;
-			//isXA10A is designed to catch early Siemens bugs, while isSiemensXA also detect modern XA
+			// isXA10A is designed to catch early Siemens bugs, while isSiemensXA also detect modern XA
 			if (d.isXA10A)
 				isSiemensXA = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA5") != NULL))
-				isSiemensXA = true; //XA50/XA51
+				isSiemensXA = true; // XA50/XA51
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA6") != NULL))
-				isSiemensXA = true; //XA60
+				isSiemensXA = true; // XA60
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA7") != NULL))
-				isSiemensXA = true; //XA70
+				isSiemensXA = true; // XA70
 			break;
 		}
 		case kProtocolName: {
@@ -6967,7 +6970,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kEffectiveTE: {
 			TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			// handle multi-echo packed into single enhanced DICOM PR 988
-			//if (d.TE <= 0.0)
+			// if (d.TE <= 0.0)
 			d.TE = TE;
 			break;
 		}
@@ -7180,12 +7183,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kLocationsInAcquisition:
 			d.locationsInAcquisition = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kUnitsPT: {// CS
+		case kUnitsPT: { // CS
 			dcmStr(lLength, &buffer[lPos], d.unitsPT);
 			if (strcmp(d.unitsPT, "BQML") == 0) {
-					const char *replacement = "Bq/mL";
-					strncpy(d.unitsPT, replacement, kDICOMStr);
-					d.unitsPT[kDICOMStr - 1] = '\0';
+				const char *replacement = "Bq/mL";
+				strncpy(d.unitsPT, replacement, kDICOMStr);
+				d.unitsPT[kDICOMStr - 1] = '\0';
 			}
 			break;
 		}
@@ -7540,7 +7543,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				break;
 			echoTrainLengthPhil = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
-		case kPrepulseDelay: {// FL
+		case kPrepulseDelay: { // FL
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
 			float prePulseDelayPhil = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
@@ -7622,8 +7625,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		case kMRImageGradientOrientationNumber:
 			if (d.manufacturer == kMANUFACTURER_PHILIPS) {
-				//n.b. historically VR of 2005,1413 is IS, but with R11 is can be SL
-				// this will cause havoc if Philips data is saved on a PACS with implicit vr
+				// n.b. historically VR of 2005,1413 is IS, but with R11 is can be SL
+				//  this will cause havoc if Philips data is saved on a PACS with implicit vr
 				if (vr[0] == 'S' && vr[1] == 'L') {
 					gradientOrientationNumberPhilips = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 				} else {
@@ -7650,8 +7653,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kMRImageDiffBValueNumber:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
-			//n.b. historically VR of 2005,1412 is IS, but with R11 is can be SL
-			// this will cause havoc if Philips data is saved on a PACS with implicit vr
+			// n.b. historically VR of 2005,1412 is IS, but with R11 is can be SL
+			//  this will cause havoc if Philips data is saved on a PACS with implicit vr
 			if (vr[0] == 'S' && vr[1] == 'L') {
 				philMRImageDiffBValueNumber = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			} else {
@@ -8082,15 +8085,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dcmMultiFloat(lLength, (char *)&buffer[lPos], 6, orient);
 				if ((!isSameFloatGE(d.orient[1], orient[1]) || !isSameFloatGE(d.orient[2], orient[2]) || !isSameFloatGE(d.orient[3], orient[3]) ||
 					 !isSameFloatGE(d.orient[4], orient[4]) || !isSameFloatGE(d.orient[5], orient[5]) || !isSameFloatGE(d.orient[6], orient[6]))) {
-					if (isSliceOrientVaries) {
-						//
-					} else if (prefs->isKeepDirectionVaries)
-						printWarning("Keeping series even though slice orientation varies\n");
-					else if (!d.isLocalizer)
-						printError("DICOM incompatible with NIfTI slice orientation varies (issue 894, localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
-									 d.orient[1], d.orient[2], d.orient[3], d.orient[4], d.orient[5], d.orient[6],
-									 orient[1], orient[2], orient[3], orient[4], orient[5], orient[6]);
-					d.isLocalizer = true;
 					isSliceOrientVaries = true;
 				}
 			}
@@ -8683,8 +8677,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		// Philips puts spatial position as lower item than temporal position, the reverse is true for Bruker and Canon
 		if ((isKludgeIssue809) && (numDimensionIndexValues > 1)) {
 			printWarning("Guessing temporal order for Philips enhanced DICOM ASL, DWI and fMRI (issue 533/809).\n");
-			//artificially insert stack position in first slot
-			// dimensionIndexPointer[0] = kInStackPositionNumber;
+			// artificially insert stack position in first slot
+			//  dimensionIndexPointer[0] = kInStackPositionNumber;
 			stackPositionItem = 0;
 		}
 		if (stackPositionItem < maxVariableItem)
@@ -8796,6 +8790,16 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		//  for examples see https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Diffusion_Tensor_Imaging
 		d.seriesNum += (philMRImageDiffBValueNumber * 1000);
 	}
+	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
+		if (strstr(d.seriesDescription, "AAHScout") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.protocolName, "AAHScout") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.sequenceName, "fl2d1") != NULL)
+			d.isLocalizer = true;
+		if (strstr(d.pulseSequenceName, "fl2d1") != NULL)
+			d.isLocalizer = true;
+	}
 	// if (contentTime != 0.0) && (numDimensionIndexValues < (MAX_NUMBER_OF_DIMENSIONS - 1)){
 	//	uint_32t timeCRC = mz_crc32X((unsigned char*) &contentTime, sizeof(double));
 	// }
@@ -8813,6 +8817,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// volume. It would miss the case of a true enhanced partial volume
 	// with just 1 slice, but that seems much less likely than unenhanced
 	// DICOM with unmodified ICEDims tags.
+
 	if ((!d.isLocalizer) && (numberOfFramesICEdims > 0) && (d.xyzDim[3] > 1) && (d.xyzDim[3] != numberOfFramesICEdims)) {
 		printWarning("Series %ld includes partial volume (issue 742): %d slices acquired but ICE dims (0021,118e) specifies %d \n", d.seriesNum, d.xyzDim[3], numberOfFramesICEdims);
 		d.seriesNum += 1000;
@@ -8889,14 +8894,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			strncat(d.seriesInstanceUID, d.studyTime, kDICOMStr - strlen(d.studyDate));
 		}
 		d.seriesUidCrc = mz_crc32X((unsigned char *)&d.seriesInstanceUID, strlen(d.seriesInstanceUID));
-	}
-	if (d.manufacturer == kMANUFACTURER_SIEMENS) {
-		if (strstr(d.seriesDescription, "AAHScout") != NULL)
-			d.isLocalizer = true;
-		if (strstr(d.protocolName, "AAHScout") != NULL)
-			d.isLocalizer = true;
-		if (strstr(d.sequenceName, "fl2d1") != NULL)
-			d.isLocalizer = true;
 	}
 	// detect GE diffusion gradient cycling mode (see issue 635)
 	// GE diffusion epi
@@ -9014,7 +9011,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	d.rawDataRunNumber = (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
 	if ((d.rawDataRunNumber < 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (d.dimensionIndexValues[nDimIndxVal - 1] > 0))
 		d.rawDataRunNumber = d.dimensionIndexValues[nDimIndxVal - 1]; // Philips enhanced scans converted to classic with dcuncat
-	if ((philMRImageDiffVolumeNumber > 0) && (swVers < 11)) {							  // use 2005,1596 for Philips DWI >= R5.6; issue809
+	if ((philMRImageDiffVolumeNumber > 0) && (swVers < 11)) {		  // use 2005,1596 for Philips DWI >= R5.6; issue809
 		d.rawDataRunNumber = philMRImageDiffVolumeNumber;
 		d.phaseNumber = 0;
 	}
@@ -9034,7 +9031,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// d.rawDataRunNumber =  (d.rawDataRunNumber > d.phaseNumber) ? d.rawDataRunNumber : d.phaseNumber; //will not work: conflict for MultiPhase ASL with multiple averages
 	// end: issue529
 	if ((isSliceOrientVaries) && (!prefs->isKeepDirectionVaries))
-		d.isValid = false; //issue894
+		d.isValid = false; // issue894
 	if (hasDwiDirectionality)
 		d.isVectorFromBMatrix = false; // issue 265: Philips/Siemens have both directionality and bmatrix, Bruker only has bmatrix
 	// printf("%s\t%s\t%s\t%s\t%s_%s\n",d.patientBirthDate, d.procedureStepDescription,d.patientName, fname, d.studyDate, d.studyTime);
@@ -9062,6 +9059,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.isValid = false;
 	}
 
+	if (isSliceOrientVaries) {
+		if (prefs->isKeepDirectionVaries)
+			printWarning("Keeping series even though slice orientation varies\n");
+		else if ((!d.isLocalizer) || (isVerbose > 1))
+			printError("DICOM incompatible with NIfTI slice orientation varies (issue 894, localizer?)\n");
+	}
 	// printf("%g\t%g\t%s\n", d.intenIntercept, d.intenScale, fname);
 	if ((d.isLocalizer) && (strstr(d.seriesDescription, "b1map"))) // issue751 b1map uses same base as scout
 		d.isLocalizer = false;

@@ -563,7 +563,7 @@ int main(int argc, const char *argv[]) {
 					opts.isZStd = true; // ZStd
 				} else
 #endif
-				if ((argv[i][0] == '3')) {
+					if ((argv[i][0] == '3')) {
 					opts.isGz = false; // uncompressed 3D
 					opts.isSave3D = true;
 				} else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {

@@ -69,7 +69,7 @@ void dcm2niix_fswrapper::setOpts(const char *dcmindir, const char *dcm2niixopts)
 	// set the options for freesurfer mgz orientation
 	tdcmOpts.isRotate3DAcq = false;
 	tdcmOpts.isFlipY = false;
-	tdcmOpts.isIgnoreSeriesInstanceUID = true;  // Advanced feature: '-m 2' ignores Series Instance UID
+	tdcmOpts.isIgnoreSeriesInstanceUID = true; // Advanced feature: '-m 2' ignores Series Instance UID
 	tdcmOpts.isCreateBIDS = false;
 	tdcmOpts.isGz = false;
 	tdcmOpts.isForceStackSameSeries = 1; // merge 2D slice '-m y', tdcmOpts.isForceStackSameSeries = 1
@@ -157,8 +157,7 @@ void dcm2niix_fswrapper::__setDcm2niixOpts(const char *dcm2niixopts) {
 				tdcmOpts.isOmitPiiBIDS = true;
 			} else
 				tdcmOpts.isAnonymizeBIDS = true;
-		}
-		else if (strcmp(k, "f") == 0)
+		} else if (strcmp(k, "f") == 0)
 			strcpy(tdcmOpts.filename, v);
 		else if (strcmp(k, "i") == 0)
 			tdcmOpts.isIgnoreDerivedAnd2D = (*v == 'y' || *v == 'Y') ? true : false;
@@ -167,13 +166,11 @@ void dcm2niix_fswrapper::__setDcm2niixOpts(const char *dcm2niixopts) {
 				tdcmOpts.isForceStackSameSeries = 0;
 			else if (*v == 'y' || *v == 'Y' || *v == '1')
 				tdcmOpts.isForceStackSameSeries = 1;
-			else if (*v == '2')
-			{
+			else if (*v == '2') {
 				tdcmOpts.isForceStackSameSeries = 2;
 				tdcmOpts.isIgnoreSeriesInstanceUID = true;
-				//printf("Advanced feature: '-m 2' ignores Series Instance UID.\n");
-			}
-			else if (*v == 'o' || *v == 'O')
+				// printf("Advanced feature: '-m 2' ignores Series Instance UID.\n");
+			} else if (*v == 'o' || *v == 'O')
 				tdcmOpts.isForceStackDCE = false;
 		} else if (strcmp(k, "v") == 0) {
 			if (*v == 'n' || *v == 'N' || *v == '0')
@@ -231,7 +228,7 @@ int dcm2niix_fswrapper::dcm2NiiOneSeries(const char *dcmfile, bool convert) {
 	tdcmOpts.numSeries = 1;
 
 	if (!convert)
-		tdcmOpts.isDumpNotConvert = true;  // retrieve dicom info only
+		tdcmOpts.isDumpNotConvert = true; // retrieve dicom info only
 
 	return nii_loadDirCore(tdcmOpts.indir, &tdcmOpts);
 }
@@ -239,26 +236,25 @@ int dcm2niix_fswrapper::dcm2NiiOneSeries(const char *dcmfile, bool convert) {
 /*
  * interface to singleDICOM() to to convert only the single image provided.
  */
-int dcm2niix_fswrapper::dcm2NiiSingleFile(const char* dcmfile)
-{
-  // get seriesNo for given dicom file
-  struct TDICOMdata tdicomData = readDICOM((char*)dcmfile);
+int dcm2niix_fswrapper::dcm2NiiSingleFile(const char *dcmfile) {
+	// get seriesNo for given dicom file
+	struct TDICOMdata tdicomData = readDICOM((char *)dcmfile);
 
-  double seriesNo = (double)tdicomData.seriesUidCrc;
-  if (tdcmOpts.isIgnoreSeriesInstanceUID)
-    seriesNo = (double)tdicomData.seriesNum;
+	double seriesNo = (double)tdicomData.seriesUidCrc;
+	if (tdcmOpts.isIgnoreSeriesInstanceUID)
+		seriesNo = (double)tdicomData.seriesNum;
 
-  // tdicomData was read for series-number discovery only; release its
-  // heap-allocated deID_CS[] before going out of scope (issue #877).
-  free_TDICOMdata_deID_CS(&tdicomData);
+	// tdicomData was read for series-number discovery only; release its
+	// heap-allocated deID_CS[] before going out of scope (issue #877).
+	free_TDICOMdata_deID_CS(&tdicomData);
 
-  // set TDCMopts to convert just one series
-  tdcmOpts.seriesNumber[0] = seriesNo;
-  tdcmOpts.numSeries = 1;
+	// set TDCMopts to convert just one series
+	tdcmOpts.seriesNumber[0] = seriesNo;
+	tdcmOpts.numSeries = 1;
 
-  tdcmOpts.isOnlySingleFile = true;
+	tdcmOpts.isOnlySingleFile = true;
 
-  return singleDICOM(&tdcmOpts, (char*)dcmfile);
+	return singleDICOM(&tdcmOpts, (char *)dcmfile);
 }
 
 // interface to nii_dicom_batch.cpp::nii_getMrifsStruct()
@@ -268,7 +264,7 @@ MRIFSSTRUCT *dcm2niix_fswrapper::getMrifsStruct(void) {
 
 // interface to nii_dicom_batch.cpp::nii_getAutoScaleFactorVector()
 std::vector<std::vector<float>> *dcm2niix_fswrapper::getAutoScaleFactorVector() {
-        return nii_getAutoScaleFactorVector();
+	return nii_getAutoScaleFactorVector();
 }
 
 // interface to nii_dicom_batch.cpp::nii_getMrifsStructVector()
@@ -277,14 +273,12 @@ std::vector<MRIFSSTRUCT> *dcm2niix_fswrapper::getMrifsStructVector(void) {
 }
 
 // interface to nii_dicom_batch.cpp::nii_clrMrifsStruct()
-void dcm2niix_fswrapper::clrMrifsStruct(void)
-{
+void dcm2niix_fswrapper::clrMrifsStruct(void) {
 	nii_clrMrifsStruct();
 }
-  
+
 // interface to nii_dicom_batch.cpp::nii_clrMrifsStructVector()
-void dcm2niix_fswrapper::clrMrifsStructVector(void)
-{
+void dcm2niix_fswrapper::clrMrifsStructVector(void) {
 	nii_clrMrifsStructVector();
 }
 
@@ -344,7 +338,7 @@ void dcm2niix_fswrapper::dicomDump(const char *dicomdir, const char *series_info
       fprintf(fpout, " max-value");
     }
 #endif
-                // output as csv
+		// output as csv
 		if (extrainfo)
 			fprintf(fpout, ",%s,%s,%s,%s,%f,%s", tdicomData->patientName, tdicomData->studyDate, mfrCode2Str(tdicomData->manufacturer), tdicomData->manufacturersModelName, tdicomData->fieldStrength, tdicomData->deviceSerialNumber);
 

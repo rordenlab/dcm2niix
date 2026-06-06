@@ -14,9 +14,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 /* Public error codes */
 #define HB_OK 0
@@ -444,28 +444,28 @@ static inline int hb_huff_decode_symbol(HuffTable *h, BitReader *br, int *sym) {
 		return HB_ERR_FORMAT;
 	// Fast-path: if fast table exists and we have at least 1 bit (we will request up to fast_bits)
 #if HB_FAST_LOOKUP_BITS > 0
-		int need = h->fast_bits;
-		int r = br_ensure_bits(br, need);
-		if (r == HB_OK) {
-			int shift = br->bits_in_buf - need;
-			uint32_t prefix = (br->bitbuf >> shift) & ((1u << need) - 1u);
-			int32_t packed = h->fast[prefix];
-			if (packed != -1) {
-				int len = (packed >> 24) & 0xFF;
-				int val = packed & 0xFF;
-				// consume 'len' bits
-				br->bits_in_buf -= len;
-				if (br->bits_in_buf == 0)
-					br->bitbuf = 0;
-				else
-					br->bitbuf &= ((1u << br->bits_in_buf) - 1u);
-				*sym = val;
-				return HB_OK;
-			}
-			// else fallthrough to progressive path (do not consume bits)
+	int need = h->fast_bits;
+	int r = br_ensure_bits(br, need);
+	if (r == HB_OK) {
+		int shift = br->bits_in_buf - need;
+		uint32_t prefix = (br->bitbuf >> shift) & ((1u << need) - 1u);
+		int32_t packed = h->fast[prefix];
+		if (packed != -1) {
+			int len = (packed >> 24) & 0xFF;
+			int val = packed & 0xFF;
+			// consume 'len' bits
+			br->bits_in_buf -= len;
+			if (br->bits_in_buf == 0)
+				br->bitbuf = 0;
+			else
+				br->bitbuf &= ((1u << br->bits_in_buf) - 1u);
+			*sym = val;
+			return HB_OK;
+		}
+		// else fallthrough to progressive path (do not consume bits)
 #else
-			// r can be HB_ERR_EOF or HB_ERR_MARKER -> return it
-			return r;
+	// r can be HB_ERR_EOF or HB_ERR_MARKER -> return it
+	return r;
 #endif
 	}
 
@@ -581,17 +581,31 @@ static inline int jpeg_extend(uint32_t v, int n) {
 }
 
 static inline int getn_with_special(Decoder *d, int pred, int n, int *out) {
-	if (n == 0) { if (out) *out = 0; return HB_OK; }
-	if (n < 0 || n > 16) return HB_ERR_BADARG;
+	if (n == 0) {
+		if (out)
+			*out = 0;
+		return HB_OK;
+	}
+	if (n < 0 || n > 16)
+		return HB_ERR_BADARG;
 	if (n == 16) {
 		// original behavior: depending on sign of predictor
-		if (pred >= 0) { if (out) *out = -32768; return HB_OK; }
-		else { if (out) *out = 32768; return HB_OK; }
+		if (pred >= 0) {
+			if (out)
+				*out = -32768;
+			return HB_OK;
+		} else {
+			if (out)
+				*out = 32768;
+			return HB_OK;
+		}
 	}
 	uint32_t v;
 	int r = br_get_bits(&d->br, n, &v);
-	if (r != HB_OK) return r;
-	if (out) *out = jpeg_extend(v, n);
+	if (r != HB_OK)
+		return r;
+	if (out)
+		*out = jpeg_extend(v, n);
 	return HB_OK;
 }
 
@@ -672,7 +686,6 @@ static inline int decode_unit(Decoder *d, int *pred) {
 	return 0;
 }
 
-
 /* helper: find scan component index that matches component id (1-based), or -1 */
 static inline int find_scan_comp_idx_for_component(Decoder *d, int comp_id) {
 	for (int s = 0; s < d->scan.numComp; ++s) {
@@ -689,7 +702,6 @@ static inline int first_nonempty_dctable(Decoder *d) {
 			return t;
 	return -1;
 }
-
 
 static inline int is_sof(uint16_t marker) {
 	if (marker < 0xFFC0 || marker > 0xFFCF)

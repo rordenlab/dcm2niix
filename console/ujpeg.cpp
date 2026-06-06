@@ -582,14 +582,18 @@ NJ_INLINE void njDecodeSOF(void) {
 	nj.isRGB = 0;
 	if (nj.ncomp == 3) {
 		switch (nj.color_transform) {
-			case 1: nj.isRGB = 1; break;
-			case 2: nj.isRGB = 0; break;
-			default:
-				// fallback heuristic
-				if (nj.comp[0].cid == 1 && nj.comp[1].cid == 2 && nj.comp[2].cid == 3)
-					nj.isRGB = 0;
-				else
-					nj.isRGB = 1;
+		case 1:
+			nj.isRGB = 1;
+			break;
+		case 2:
+			nj.isRGB = 0;
+			break;
+		default:
+			// fallback heuristic
+			if (nj.comp[0].cid == 1 && nj.comp[1].cid == 2 && nj.comp[2].cid == 3)
+				nj.isRGB = 0;
+			else
+				nj.isRGB = 1;
 		}
 	}
 	if (nj.ncomp == 1) {
@@ -934,7 +938,7 @@ NJ_INLINE void njConvert(void) {
 				py += nj.comp[0].stride;
 				pcb += nj.comp[1].stride;
 				pcr += nj.comp[2].stride;
-			}		
+			}
 		} else {
 			for (yy = nj.height; yy; --yy) {
 				for (x = 0; x < nj.width; ++x) {

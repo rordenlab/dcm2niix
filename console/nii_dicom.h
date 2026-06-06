@@ -17,7 +17,6 @@ extern "C" {
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
-
 #if defined(myTurboJPEG)
 #define kTurbosuf " (JP:Turbo)"
 #else
@@ -85,7 +84,7 @@ static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI dir
 #define kMANUFACTURER_MEDISO 9
 #define kMANUFACTURER_MRSOLUTIONS 10
 #define kMANUFACTURER_HYPERFINE 11
-#define  kMANUFACTURER_LEICA 12
+#define kMANUFACTURER_LEICA 12
 
 // note: note a complete modality list, e.g. XA,PX, etc
 #define kMODALITY_UNKNOWN 0
@@ -217,9 +216,9 @@ struct TDTI {
 };
 struct TDTI4D {
 	struct TDTI S[kMaxDTI4D];
-	int sliceOrder[kMaxSlice2D]; // [7,3,2] means the first slice on disk should be moved to 7th position
-  size_t offsetTable[kMaxSlice2D]; //basic offset table
-	int gradDynVol[kMaxDTI4D];	 // used to parse dimensions of Philips data, e.g. file with multiple dynamics, echoes, phase+magnitude
+	int sliceOrder[kMaxSlice2D];	 // [7,3,2] means the first slice on disk should be moved to 7th position
+	size_t offsetTable[kMaxSlice2D]; // basic offset table
+	int gradDynVol[kMaxDTI4D];		 // used to parse dimensions of Philips data, e.g. file with multiple dynamics, echoes, phase+magnitude
 	// int fragmentOffset[kMaxDTI4D], fragmentLength[kMaxDTI4D]; //for images with multiple compressed fragments
 	float frameReferenceTime[kMaxDTI4D], frameDuration[kMaxDTI4D], decayFactor[kMaxDTI4D], volumeOnsetTime[kMaxDTI4D], triggerDelayTime[kMaxDTI4D], TE[kMaxDTI4D], TR[kMaxDTI4D], RWVScale[kMaxDTI4D], RWVIntercept[kMaxDTI4D], intenScale[kMaxDTI4D], intenIntercept[kMaxDTI4D], intenScalePhilips[kMaxDTI4D];
 	bool isReal[kMaxDTI4D];
@@ -297,9 +296,9 @@ struct TDICOMdata {
 	struct TCSAdata CSA;
 	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer, isXAPhysio, isCMRRPhysio, isMRS;
 	int xaPhysioOffset, xaPhysioBytes; // file offset and length of the (7FE1,1010) physio payload (gzip-XML when isXAPhysio, raw VE11C blob when isCMRRPhysio)
-	int dataPointColumns; // MRS only: (0028,9002) SpectroscopyAcquisitionDataColumns (complex points per FID)
-	double spectralWidth;   // MRS only: (0018,9052) SpectralWidth in Hz; dwell time = 1/spectralWidth (s). TransmitterFrequency (0018,9098 MHz) reuses imagingFrequency.
-	char resonantNucleus[kDICOMStr]; // MRS only: (0018,9100) e.g. "1H"
+	int dataPointColumns;			   // MRS only: (0028,9002) SpectroscopyAcquisitionDataColumns (complex points per FID)
+	double spectralWidth;			   // MRS only: (0018,9052) SpectralWidth in Hz; dwell time = 1/spectralWidth (s). TransmitterFrequency (0018,9098 MHz) reuses imagingFrequency.
+	char resonantNucleus[kDICOMStr];   // MRS only: (0018,9100) e.g. "1H"
 	char phaseEncodingRC, patientSex;
 };
 
@@ -320,20 +319,20 @@ void getFileNameX(char *pathParent, const char *path, int maxLen);
 // populated the parser stores its mapped integer on TDICOMdata.acquisitionContrast;
 // MRWeightingGuess short-circuits to that value before running physics, and the
 // vendor BIDS classifiers consult it for vendor-agnostic ASL routing.
-#define kMRWeightingUnknown 0  // DICOM "UNKNOWN" or tag absent
-#define kMRWeightingT1 1       // DICOM "T1"
-#define kMRWeightingT2 2       // DICOM "T2"
-#define kMRWeightingPD 3       // DICOM "PROTON_DENSITY"
-#define kMRWeightingT2starw 4  // DICOM "T2_STAR"
-#define kMRWeightingFLAIR 5    // DICOM "FLUID_ATTENUATED"
-#define kMRWeightingSTIR 6     // DICOM "STIR"
-#define kMRWeightingDiffusion 7  // DICOM "DIFFUSION"
-#define kMRWeightingPerfusion 8  // DICOM "PERFUSION"
-#define kMRWeightingTOF 9      // DICOM "TOF"
-#define kMRWeightingFlow 10    // DICOM "FLOW_ENCODED"
-#define kMRWeightingTagging 11 // DICOM "TAGGING"
-#define kMRWeightingMixed 12   // DICOM "MIXED"
-#define kMRWeightingOther 13   // DICOM "OTHER" (reserved for future enum additions)
+#define kMRWeightingUnknown 0	// DICOM "UNKNOWN" or tag absent
+#define kMRWeightingT1 1		// DICOM "T1"
+#define kMRWeightingT2 2		// DICOM "T2"
+#define kMRWeightingPD 3		// DICOM "PROTON_DENSITY"
+#define kMRWeightingT2starw 4	// DICOM "T2_STAR"
+#define kMRWeightingFLAIR 5		// DICOM "FLUID_ATTENUATED"
+#define kMRWeightingSTIR 6		// DICOM "STIR"
+#define kMRWeightingDiffusion 7 // DICOM "DIFFUSION"
+#define kMRWeightingPerfusion 8 // DICOM "PERFUSION"
+#define kMRWeightingTOF 9		// DICOM "TOF"
+#define kMRWeightingFlow 10		// DICOM "FLOW_ENCODED"
+#define kMRWeightingTagging 11	// DICOM "TAGGING"
+#define kMRWeightingMixed 12	// DICOM "MIXED"
+#define kMRWeightingOther 13	// DICOM "OTHER" (reserved for future enum additions)
 
 struct TDICOMdata readDICOMv(char *fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
 struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D *dti4D);
