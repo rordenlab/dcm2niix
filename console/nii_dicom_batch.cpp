@@ -7949,6 +7949,21 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		return;
 	}
 	if ((!d->isLocalizer) && ((minT1 == maxT1) || (maxT1 >= TRms))) { // both first and second image corrupted
+		// Single-volume acquisitions (anatomical T1w/T2w/FLAIR/SPACE/MPRAGE)
+		// have TR == per-slice repetition time, NOT volume time. Slice
+		// acquisitionTimes legitimately span the whole scan duration (many
+		// TRs in TSE) so `maxT1 >= TR` is the normal case there, not a
+		// corruption. The slice timing also isn't meaningful for
+		// non-time-series data downstream. Treat the same way the
+		// localizer/derived branch above does: clear the array silently.
+		// EPI sequences (BOLD/DWI) keep their slice times <= TR (one volume
+		// per TR), so single-volume EPI never falls into this branch —
+		// preserving the Issue870 multiband-factor detection path for
+		// single-volume CMRR multiband scans.
+		if (hdr->dim[4] < 2) {
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
 		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g ms)\n", minT1, maxT1, TRms);
 		return;
 	}
