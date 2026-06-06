@@ -1268,6 +1268,49 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 #endif
 }
 
+// Coarse MR-weighting classifier shared by vendor-specific BIDS modality
+// heuristics. Returns kMRWeighting{Unknown,T1,T2,PD,T2starw}.
+//
+// Physics: T1 estimated via Bottomley's approximation 0.8 * B0^0.38 (sec,
+// gray/white matter); T2* estimated as 0.050 / B0 (sec) — both field-scaled
+// so ultra-low-field (Hyperfine ~0.064 T) and ultra-high-field (7 T+) cases
+// behave correctly. True T2 changes minimally with B0 vs T2*, so the SE T2
+// arm uses a fixed 45 ms TE threshold rather than a B0-scaled one.
+//
+// SE arm only needs TE; GRE/Ernst arm additionally requires TR, fieldStrength,
+// and flipAngle. Returns kMRWeightingUnknown when any required input is
+// non-positive (caller should fall through to other heuristics) or when
+// isVariableFlipAngle is set — SPACE / tse_vfl / FLAIR carry a nominal
+// DICOM flipAngle that does NOT predict contrast (refocusing train is shaped).
+// GRE thresholds (T1: flipAngle >= 1.3*Ernst, PD: flipAngle <= 0.7*Ernst,
+// T2*: TE >= 0.5*T2*_est) match the historical fl3d_vibe classifier verbatim.
+int MRWeightingGuess(float fieldStrength, float TR, float TE, float flipAngle, bool isSpinEcho, bool isVariableFlipAngle) {
+	if (TE <= 0.0f)
+		return kMRWeightingUnknown;
+	if (isVariableFlipAngle)
+		return kMRWeightingUnknown;
+	double te_sec = (double)TE / 1000.0;
+	if (isSpinEcho) {
+		if (te_sec >= 0.045)
+			return kMRWeightingT2;
+		return kMRWeightingPD;
+	}
+	if ((TR <= 0.0f) || (fieldStrength <= 0.0f) || (flipAngle <= 0.0f))
+		return kMRWeightingUnknown;
+	double tr_sec = (double)TR / 1000.0;
+	double t2star_est = 0.050 / (double)fieldStrength;
+	if (te_sec >= 0.5 * t2star_est)
+		return kMRWeightingT2starw;
+	double t1_est = 0.8 * pow((double)fieldStrength, 0.38);
+	double ernst_rad = acos(exp(-tr_sec / t1_est));
+	double ernst_deg = ernst_rad * (180.0 / M_PI);
+	if ((double)flipAngle >= 1.3 * ernst_deg)
+		return kMRWeightingT1;
+	if ((double)flipAngle <= 0.7 * ernst_deg)
+		return kMRWeightingPD;
+	return kMRWeightingPD; // mixed structural default
+}
+
 // ---- BIDS heuristic helpers (port of BIDS-Manager sequence_dict.py) -------
 // Vendor-agnostic post-pass refinements run after setBidsSiemens/Philips/GE
 // to add DWI-derivative routing, task-name hints, and acq-/dir- entity
@@ -8153,10 +8196,13 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		if (strstr(d->sequenceName, "tir") != NULL)
 			strcpy(modalityBIDS, "FLAIR");
 		if ((strstr(d->sequenceName, "tse2d") != NULL) || (strstr(d->pulseSequenceName, "tse2d") != NULL)) {
-			if (d->TE < 50)
-				strcpy(modalityBIDS, "PDw");
-			else
+			// Siemens tse2d is regular spin echo, not VFL (tse_vfl branch above
+			// handles SPACE). Threshold moves 50ms -> 45ms with the unified helper.
+			int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, true, false);
+			if (w == kMRWeightingT2)
 				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
 		}
 	} else if ((strstr(seqDetails, "ep2d_ase") != NULL)) { // prog_ep2d_se
 		// oxygen extraction fraction(OEF) Asymmetric Spin Echo (ASE)
@@ -8190,27 +8236,18 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		// can be tuned as T1w (high FA), PDw (low FA), or T2*-weighted
 		// (long TE). Classify by Ernst-angle physics so the BIDS suffix
 		// reflects the actual contrast rather than the marketing label
-		// (which is always "vibe"). Defaults to PDw on mixed / edge cases.
-		// Guards: TR/TE/fieldStrength must be positive; otherwise leave
-		// the cascade fall through to the trailing "derived" clobber.
-		if ((d->TR > 0.0) && (d->TE > 0.0) && (d->fieldStrength > 0.0) && (d->flipAngle > 0.0)) {
-			double tr_sec = d->TR / 1000.0;
-			double te_sec = d->TE / 1000.0;
-			// T1 estimate at field strength via Bottomley's approximation;
-			// T2* estimate scales inversely with field strength.
-			double t1_est = 0.8 * pow(d->fieldStrength, 0.38);
-			double t2star_est = 0.050 / d->fieldStrength;
-			double ernst_rad = acos(exp(-tr_sec / t1_est));
-			double ernst_deg = ernst_rad * (180.0 / M_PI);
+		// (which is always "vibe"). MRWeightingGuess returns Unknown when
+		// any input is missing — cascade then falls through to the trailing
+		// "derived" clobber. fl3d_vibe is GRE, not VFL.
+		int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, false, false);
+		if (w != kMRWeightingUnknown) {
 			strcpy(dataTypeBIDS, "anat");
-			if (te_sec >= 0.5 * t2star_est)
+			if (w == kMRWeightingT2starw)
 				strcpy(modalityBIDS, "T2starw");
-			else if (d->flipAngle >= 1.3 * ernst_deg)
+			else if (w == kMRWeightingT1)
 				strcpy(modalityBIDS, "T1w");
-			else if (d->flipAngle <= 0.7 * ernst_deg)
-				strcpy(modalityBIDS, "PDw");
 			else
-				strcpy(modalityBIDS, "PDw"); // mixed structural default
+				strcpy(modalityBIDS, "PDw"); // PD or mixed structural default
 			isPart = true;
 		}
 	} else if (strstr(seqDetails, "ep_seg_fid") != NULL) {
@@ -8414,10 +8451,14 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		strcpy(dataTypeBIDS, "anat");
 		if (false) //((strstr(d->scanningSequence, "IR") != NULL))
 			strcpy(modalityBIDS, "FLAIR");
-		else if (d->TE < 40)
-			strcpy(modalityBIDS, "PDw");
-		else
-			strcpy(modalityBIDS, "T2w");
+		else {
+			// Philips SK+SE PD/T2 split. Threshold moves 40ms -> 45ms with the unified helper.
+			int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, true, false);
+			if (w == kMRWeightingT2)
+				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
+		}
 	} else if ((strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "IR") != NULL)) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "FLAIR");
@@ -8601,10 +8642,14 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "anat");
 		if (strstr(d->scanningSequence, "IR"))
 			strcpy(modalityBIDS, "FLAIR");
-		else if (d->TE < 40)
-			strcpy(modalityBIDS, "PDw");
-		else
-			strcpy(modalityBIDS, "T2w");
+		else {
+			// GE FSE PD/T2 split. Threshold moves 40ms -> 45ms with the unified helper.
+			int w = MRWeightingGuess(d->fieldStrength, d->TR, d->TE, d->flipAngle, true, false);
+			if (w == kMRWeightingT2)
+				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
+		}
 		// BIDS validator does not allow "_echo-2", rather PDw/T2w
 		isReportEcho = false;
 	} else if ((strcmp(seqName, "2DFAST") == 0) && (strstr(d->seriesDescription, "STAR"))) {

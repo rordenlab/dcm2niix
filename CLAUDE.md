@@ -230,9 +230,27 @@ Two related fixes for variable-flip-angle TSE FLAIR misclassification:
 
 Together: `/Users/chris/src/dcm_qa_xb10/flair/in/` with `seqDetails="%SiemensSeq%\\space"`, `pulseSequenceName="*spcir_220ns"` now correctly produces `["anat","_acq-spcir2p2_run-5_FLAIR"]` (was misclassified as `["func","_acq-spcir2p2_dir-RL_run-5_bold"]` via the `pace`-substring path).
 
-### fl3d_vibe Ernst-angle physics classifier in `setBidsSiemens`
+### `MRWeightingGuess` shared classifier
 
-`fl3d_vibe` (Siemens VIBE - Volumetric Interpolated Breath-hold) can be tuned as T1w, PDw, or T2*-weighted depending on TR/TE/flip-angle, but the sequence name is constant ("vibe"). A new branch in the `setBidsSiemens` cascade fires on `strstr(seqDetails, "fl3d_vibe")` and classifies by physics rather than pattern: estimate T1 via Bottomley's approximation `0.8 * fieldStrength^0.38`, T2* via `0.050 / fieldStrength`, and the Ernst angle from `acos(exp(-TR/T1))`. Rules: `TE >= 0.5 * T2*` → T2starw; `flipAngle >= 1.3 * Ernst` → T1w; `flipAngle <= 0.7 * Ernst` → PDw; default PDw for mixed structural / edge cases. Guarded on positive TR / TE / fieldStrength / flipAngle — if any are missing, the cascade falls through to the existing `if (isDerived) dataTypeBIDS = "derived"` trailing clobber. Verified on `/Users/chris/src/dcm_qa_xb10/fx/10_t1_vibe_tra_cs22/` (3T, TR=5.18ms, TE=2.46ms, FA=20°): Ernst ≈ 5.3°, FA/Ernst = 3.8 → T1w.
+`MRWeightingGuess(fieldStrength, TR, TE, flipAngle, isSpinEcho, isVariableFlipAngle)` in [`nii_dicom_batch.cpp`](console/nii_dicom_batch.cpp) (prototype + `kMRWeighting{Unknown,T1,T2,PD,T2starw}` enum in [`nii_dicom_batch.h`](console/nii_dicom_batch.h)) is the single source of truth for physics-based MR weighting estimation, shared by the four sites below. Returns `kMRWeightingUnknown` whenever a required input is non-positive — callers default to a vendor-appropriate fallback (e.g. `PDw` on the SE PD/T2 splits, falling through to `derived` on the GRE fl3d_vibe site).
+
+Physics:
+- T1 estimated via Bottomley's approximation `0.8 * fieldStrength^0.38` (sec) — scales correctly across ultra-low-field (Hyperfine ~0.064 T) and ultra-high-field (7 T+).
+- T2* estimated as `0.050 / fieldStrength` (sec) — susceptibility scales inversely with B0.
+- True T2 changes minimally with B0 vs T2*, so the SE T2 arm uses a **fixed 45 ms TE threshold** rather than a B0-scaled one.
+- GRE thresholds match the historical fl3d_vibe classifier verbatim: `TE >= 0.5 * T2*_est` → T2starw; `flipAngle >= 1.3 * Ernst` → T1; `flipAngle <= 0.7 * Ernst` → PD; default PD.
+
+SE arm requires only `TE > 0`; GRE/Ernst arm additionally requires positive TR, fieldStrength, flipAngle. `isVariableFlipAngle=true` forces `Unknown` because SPACE / tse_vfl / FLAIR carry a nominal DICOM flipAngle that does NOT predict contrast (the refocusing train is shaped).
+
+**Call sites (PD/T2 SE migrations changed the threshold from per-vendor 40/50 ms to the unified 45 ms):**
+- Siemens `fl3d_vibe` (GRE): T1w / PDw / T2starw classifier. The marketing label is constant ("vibe") regardless of contrast; physics decides. Verified on `/Users/chris/src/dcm_qa_xb10/fx/10_t1_vibe_tra_cs22/` (3T, TR=5.18ms, TE=2.46ms, FA=20°): Ernst ≈ 5.3°, FA/Ernst = 3.8 → T1w.
+- Siemens `tse2d` (SE): PDw / T2w. Previously `TE < 50` → PDw; now `TE >= 45` → T2w.
+- Philips `SK+SE` (SE): PDw / T2w. Previously `TE < 40` → PDw; now `TE >= 45` → T2w.
+- GE `FSE` (SE): PDw / T2w. Previously `TE < 40` → PDw; now `TE >= 45` → T2w.
+
+Validated against the full `dcm_validate` vendor matrix (~40 submodules): byte-identical JSON sidecar / NIfTI / TSV output vs the pre-refactor build on every suite. No `_PDw` / `_T2w` Ref had TE in the [40, 50) ms drift window — Siemens TSE Refs have 11/92 ms, Philips SK+SE Refs have 9/12 ms — so the threshold change is empirically harmless against the test corpus.
+
+Compile-time opt-out: there is none — the helper is too small and the call sites all dispatch through `if (w == kMRWeighting*)` checks that degrade to legacy `PDw` behavior on `kMRWeightingUnknown`. Future call sites (Hyperfine, 7T+, other vendor sequences) should prefer this helper over fresh hardcoded TE thresholds.
 
 ### SWI ImageType override in `setBidsSiemens`
 
