@@ -1422,6 +1422,58 @@ static void bidsInsertEntity(char *suffix, const char *entity, const char *value
 	snprintf(suffix, cap, "%s", tmp);
 }
 
+// Fallback BIDS routing from DICOM (0008,9209) Acquisition Contrast.
+// Runs after setBidsSiemens/Philips/GE and setBidsHeuristics. Only fires when
+// the vendor cascade and the post-pass both failed to assign a dataType — i.e.
+// the file is otherwise unclassified. AC values map to canonical BIDS dataType
+// + suffix. Modality is appended to the existing suffix so any `_acq-foo_run-N`
+// entity tags the vendor assembly already accumulated are preserved.
+//
+// Deliberately does NOT override an existing classification: an fMRI series
+// with AC=T2 stays func/_bold (vendor cascade caught it via FEEPI); an
+// MP2RAGE with AC=T1 stays anat/_UNIT1 (vendor caught it via mp2rage seqDetails);
+// a scanner DWI FA map with AC=DIFFUSION stays derivatives/scanner (setBidsHeuristics
+// caught it via the fa/adc/colfa text tokens). The fallback only catches files
+// the cascade couldn't classify at all.
+static void setBidsFromAcquisitionContrast(struct TDICOMdata *d) {
+	if (d == NULL || d->modality != kMODALITY_MR)
+		return;
+	const char *dataType = NULL;
+	const char *modality = NULL;
+	switch (d->acquisitionContrast) {
+		case kMRWeightingT1:
+			dataType = "anat"; modality = "T1w"; break;
+		case kMRWeightingT2:
+			dataType = "anat"; modality = "T2w"; break;
+		case kMRWeightingPD:
+			dataType = "anat"; modality = "PDw"; break;
+		case kMRWeightingT2starw:
+			dataType = "anat"; modality = "T2starw"; break;
+		case kMRWeightingFLAIR:
+			dataType = "anat"; modality = "FLAIR"; break;
+		case kMRWeightingSTIR:
+			// STIR has no canonical BIDS suffix; T2w is the closest existing match
+			// (BEPs may add a dedicated STIR suffix later).
+			dataType = "anat"; modality = "T2w"; break;
+		case kMRWeightingDiffusion:
+			dataType = "dwi"; modality = "dwi"; break;
+		case kMRWeightingPerfusion:
+			dataType = "perf"; modality = "asl"; break;
+		case kMRWeightingTOF:
+			dataType = "anat"; modality = "angio"; break;
+		default:
+			return; // Unknown/Mixed/Other/Flow/Tagging — leave file in Unknown/
+	}
+	strcpy(d->CSA.bidsDataType, dataType);
+	char *suffix = d->CSA.bidsEntitySuffix;
+	size_t used = strlen(suffix);
+	size_t modLen = strlen(modality);
+	if (used + 1 + modLen + 1 < kDICOMStrLarge) {
+		suffix[used] = '_';
+		strcpy(suffix + used + 1, modality);
+	}
+}
+
 // Apply BIDS-Manager-derived vendor-agnostic refinements. Runs after the
 // per-vendor setBidsSiemens/Philips/GE so vendor decisions are honoured
 // except where a clear text marker overrides (DWI scanner derivatives).
@@ -8807,6 +8859,12 @@ bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVer
 	// fallbacks). Sources: ProtocolName + SeriesDescription. See BIDS-Manager
 	// `sequence_dict.py` for the canonical patterns.
 	setBidsHeuristics(d);
+	// DICOM-standard fallback: if vendor cascade + heuristics produced no
+	// dataType, fall back to AcquisitionContrast. See
+	// setBidsFromAcquisitionContrast() for the safety rationale (only fires on
+	// the empty-classification case so existing vendor decisions are honoured).
+	if (d->CSA.bidsDataType[0] == '\0')
+		setBidsFromAcquisitionContrast(d);
 	return ((!strstr(d->CSA.bidsDataType, "discard")) && (!strstr(d->CSA.bidsDataType, "derived")));
 	// printf("%s\\%s\n", d->CSA.bidsDataType, d->CSA.bidsEntitySuffix);
 }
