@@ -1435,15 +1435,14 @@ static void setBidsHeuristics(struct TDICOMdata *d) {
 		}
 		// Fallback: curated hints dict (port of TASK_HINT_PATTERNS).
 		if (taskOut[0] == '\0') {
-			// Each entry: label, then a NULL-terminated list of (pattern,
-			// boundary?) pairs. Short tokens (<=4 chars: "rs", "exec",
-			// "task", "motor") use bidsFindTokenBdy so substring drift in
-			// unrelated protocol names doesn't trigger them — "diverse"
-			// must not relabel as "rest" via the bare "rs" pattern; "ep_
-			// expert_task" must not relabel as "task" via bare substring.
-			// Longer / unique tokens (movie, flanker, stroop, paradigm,
-			// sparse, activation, nback, checkerboard) stay on plain
-			// strstr — they're long enough that drift is implausible.
+			// Each entry: label, then a NULL-terminated list of patterns
+			// and a wordBoundary flag. Drift-prone tokens (rs/exec/task/
+			// motor) use bidsFindTokenBdy: "diverse" must not relabel as
+			// "rest" via the bare "rs" pattern; "ep_expert_task" must not
+			// relabel as "task"; "sensorimotor" must not relabel as
+			// "motor". Tokens whose letters do not appear inside common
+			// English words (movie, flanker, stroop, paradigm, sparse,
+			// activation, nback, checkerboard) stay on plain strstr.
 			static const struct {
 				const char *label;
 				const char *patterns[6];
