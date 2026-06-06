@@ -10319,54 +10319,35 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	{
 		uint64_t pIdx = dcmSort[0].indx;
 		if (dcmList[pIdx].isXAPhysio || dcmList[pIdx].isCMRRPhysio) {
+			// Discard SBRef physio. The SBRef (single-band reference) is a
+			// single-volume calibration acquisition; its paired physio
+			// recording is useless for time-series physio modelling
+			// (RETROICOR etc.) and downstream tools (fmriprep) pair physio
+			// with the multi-volume BOLD, not the SBRef. Siemens XA-line
+			// protocols that bundle a legacy CMRR multiband SBRef alongside
+			// a Siemens product BOLD emit BOTH an SBRef physio AND a BOLD
+			// physio with overlapping BIDS stems; keeping the SBRef physio
+			// would either collide (same stem after reproin parsing strips
+			// the SeriesDescription suffix) or clutter the tree. Detection:
+			// the source SeriesDescription includes the "_SBRef" substring
+			// (Siemens convention; matches the same signal we use to
+			// classify the imaging SBRef at line ~8436).
+			//
+			// Note on naming vs format: the SeriesDescription suffix
+			// ("_PhysioLog" / "_SBRef_PMU") reflects the SOURCE acquisition's
+			// role, not the (7FE1,1010) payload binary format. On Siemens
+			// XA60 we observe a "_PhysioLog"-suffixed series carrying CMRR
+			// PMU binary (parser sets isCMRRPhysio=true via the validated
+			// log-fname sniff) and a "_SBRef_PMU"-suffixed series carrying
+			// gzip-XML PhysioLog (parser sets isXAPhysio=true via the gzip
+			// magic). The discard gate is therefore on SeriesDescription,
+			// not on the isXAPhysio/isCMRRPhysio format flags.
+			if (strstr(dcmList[pIdx].seriesDescription, "_SBRef") != NULL)
+				return EXIT_SUCCESS;
 			struct TDICOMdata dPhysio = dcmList[pIdx];
 			dPhysio.isRawDataStorage = false;
 			char baseName[PATH_MAX] = {""};
 			nii_createFilename(dPhysio, baseName, opts);
-			// Disambiguate the physio source format in the filename. When a
-			// single protocol acquires both an XA-line PhysioLog AND a legacy
-			// CMRR PMU blob (e.g. main BOLD's PhysioLog + matching SBRef's
-			// PMU), reproin parsing strips the SeriesDescription suffix
-			// (_PhysioLog / _SBRef_PMU) so both source series produce the
-			// same BIDS stem and the second overwrites the first. Inject
-			// a disambiguating _acq-<tag> into the baseName:
-			//   isXAPhysio  -> _acq-physiolog
-			//   isCMRRPhysio -> _acq-pmu
-			// Trade-off (documented in CLAUDE.md): per BIDS spec the physio
-			// file's entities MUST match the parent NIfTI's. Setting _acq-
-			// to a value different from the parent BOLD's _acq- breaks
-			// entity-based pairing in downstream tools (fmriprep etc.).
-			// Producing two distinguishable files for the user to pair
-			// manually is judged a better outcome than silently overwriting.
-			const char *acq_tag = dcmList[pIdx].isXAPhysio ? "physiolog" : "pmu";
-			char *acq_pos = strstr(baseName, "_acq-");
-			if (acq_pos != NULL) {
-				// Splice acq_tag in as the new acq value, dropping whatever
-				// the parser put there. reproinSanitize strips '_' from acq
-				// values so the next '_' after "_acq-" reliably marks the
-				// end of the existing value.
-				char *val_start = acq_pos + 5; // skip "_acq-"
-				char *val_end = val_start;
-				while (*val_end != '\0' && *val_end != '_')
-					val_end++;
-				char tail[PATH_MAX];
-				snprintf(tail, sizeof(tail), "%s", val_end);
-				size_t avail = (size_t)(PATH_MAX - (val_start - baseName));
-				snprintf(val_start, avail, "%s%s", acq_tag, tail);
-			} else {
-				// No _acq- present. Insert before _run-, else append.
-				char *run_pos = strstr(baseName, "_run-");
-				if (run_pos != NULL) {
-					char tail[PATH_MAX];
-					snprintf(tail, sizeof(tail), "%s", run_pos);
-					size_t avail = (size_t)(PATH_MAX - (run_pos - baseName));
-					snprintf(run_pos, avail, "_acq-%s%s", acq_tag, tail);
-				} else {
-					size_t curlen = strlen(baseName);
-					if (curlen + 5 + strlen(acq_tag) + 1 < PATH_MAX)
-						snprintf(baseName + curlen, PATH_MAX - curlen, "_acq-%s", acq_tag);
-				}
-			}
 			if (dcmList[pIdx].isXAPhysio)
 				return xaPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
 			return cmrrPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
