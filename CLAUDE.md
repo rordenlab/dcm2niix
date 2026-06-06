@@ -170,6 +170,17 @@ The reproinx post-pass reads `<studyRoot>/.reproin_provenance.tsv`, written by `
 
 The C code in `createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, const char *acqName)` in `nii_dicom_batch.cpp` writes the task sidecar with the *actual* entity set of the bold file (`task-<X>_bold.json` or `task-<X>_acq-<Y>_bold.json`). Keep this in lock-step with `spec.task`/`spec.acq` semantics in `reproin.cpp` — the legacy `%h` path passes `NULL/NULL` and still falls back to the historical `task-rest_bold.json` hardcoding. The post-pass must stay non-destructive on existing curated metadata: `README.md` → `README` cleanup is gated on `_is_dcm2niix_readme_stub`; generated root `task-X_bold.json` stubs are removed only when `_acq-` variants for the same task exist, and `TaskName` is written into each per-series BOLD sidecar first so bare task runs remain valid without triggering BIDS v2 multiple-inheritance errors. Hand-written sidecars with extra metadata and READMEs must survive re-runs untouched.
 
+### Audit-deferred items from 2026-06-05 follow-up review
+
+The second 2026-06-05 audit (focused on Phase B MRS) raised four
+architectural / coverage items that were not fixed in code. Persisting them
+so the next audit doesn't re-litigate.
+
+- **`saveDcm2NiiMRS` is a handwritten mini-pipeline** that duplicates allocation, file reading, endian handling, header construction, naming, and sidecar policy. Acceptable for the SVS-only Phase B scope but it will not scale cleanly to MRSI / Unloc / mrsref without extracting shared validation and write helpers. Refactor when Phase C lands.
+- **No in-repo regression coverage for VIBE classifier / SWI override / all-discard Unknown purge.** MRS is covered by `dcm_qa_mrs`. The Siemens-specific classifications (VIBE physics, SWI ImageType override, SPACE/FLAIR detection) and the `_purge_all_discard_unknown` path need synthetic or fixture-based tests. Cite-in-CLAUDE.md is not a replacement for an executable test.
+- **BJNIfTI complex split path has inconsistent header/data shapes** ([nii_dicom_batch.cpp:~5861-5862, ~5895-5897, ~6072-6078](console/nii_dicom_batch.cpp#L5861-L6078)). `_ArraySize_` increments `ndim` and appends a component dimension, but the header `Dim` is written from `hdr.dim + 1` with the incremented count. Complex64 MRS exported via `-e b` would have inconsistent shape — currently moot because the MRS path rejects non-NIfTI save formats at dispatch (audit L2 fix). Worth fixing when BJNIfTI grows complex support; defer until then.
+- **The Siemens BIDS classifier cascade has accumulated special-case policy** (VIBE physics, SWI ImageType override, SPACE FLAIR, multiple seqDetails branches). Next Siemens rule should extract small predicate/classifier helpers rather than add another `else if`. Not done yet because the cost of churning the cascade is real and no individual addition has crossed the threshold.
+
 ### Audit-deferred accepted-risk decisions (2026-06-05 external review)
 
 Several findings from the 2026-06-05 external audit were accepted-with-rationale rather than fixed. Persisting them here so future audits don't re-litigate:

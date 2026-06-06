@@ -795,9 +795,13 @@ def _session_token_from_studydatetime(study_date: str, study_time: str) -> str:
 # Known BIDS top-level datatype directories. Restricting datatype to this set
 # blocks path traversal via a malicious BidsGuess[0] (e.g. "../etc") that
 # would otherwise become a directory component below the BIDS root.
+# Audit M1: "mrs" must be present so MR Spectroscopy files that somehow fall
+# into Unknown/ (rather than going through saveDcm2NiiMRS) can be rescued.
+# The C side emits BidsGuess ["mrs","_svs"]; the rescue allowlist has to
+# match. Keep this set aligned with the C-side bidsDataType emissions.
 _BIDS_DATATYPES = frozenset({
-    "anat", "func", "dwi", "fmap", "perf", "pet", "meg", "eeg", "ieeg",
-    "beh", "micr", "nirs", "motion",
+    "anat", "func", "dwi", "fmap", "perf", "pet", "mrs", "meg", "eeg",
+    "ieeg", "beh", "micr", "nirs", "motion",
 })
 
 # BIDS entity-suffix charset: alphanumerics, hyphens, and underscores only.
@@ -922,8 +926,14 @@ def _purge_all_discard_unknown(bids_root: Path, strict: bool) -> bool:
                 str(guess[0]).strip().lower() == "discard"):
             return False
         discard_stems.add(jp.name[:-len(".json")])
-    # Every non-JSON file must have a discard-classified sidecar.
+    # Every non-JSON file must have a discard-classified sidecar AND there
+    # must be no subdirectories (which would be deleted blindly by rmtree).
+    # Audit H1: the previous code looked at top-level files only and then
+    # rmtree'd the whole tree — a nested dir slipped in by another tool
+    # or by a prior crash would be silently lost.
     for p in unknown.iterdir():
+        if p.is_dir():
+            return False  # refuse to delete an unrecognised nested tree
         if not p.is_file() or p.suffix.lower() == ".json":
             continue
         stem = p.name
@@ -1765,8 +1775,10 @@ def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
     requires `_bold` scans to be 4D; dcm2niix's legacy %h heuristics can route
     single-volume EPI into func/. `_sbref` is the closest BIDS-compliant suffix
     for an EPI scan paired with a multi-volume bold acquisition. Renames the
-    .nii/.nii.gz, .json, .bvec, .bval, and any _events.tsv together. Returns
-    the number of stems renamed."""
+    `.nii`/`.nii.gz` and `.json` together (bold files do not carry
+    `.bvec`/`.bval` so those extensions don't appear at the source). Any
+    `_events.tsv` is dropped — sbref has no events sidecar. Returns the
+    number of stems renamed."""
     func_dir = session_dir / "func"
     if not func_dir.is_dir():
         return 0
@@ -1787,9 +1799,11 @@ def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
         new_stem = stem[:-len("_bold")] + "_sbref"
         # Preflight: refuse to clobber a pre-existing _sbref family. POSIX
         # rename silently replaces the target, so without this check a
-        # demote could overwrite a real single-band reference.
+        # demote could overwrite a real single-band reference. Audit M4:
+        # check BOTH .nii and .nii.gz so a `_sbref.nii` blocks demoting
+        # `_bold.nii.gz` even when their extensions don't match.
         collision = False
-        for ext in (nii_ext, ".json", ".bvec", ".bval"):
+        for ext in (".nii", ".nii.gz", ".json"):
             if (func_dir / f"{new_stem}{ext}").exists():
                 collision = True
                 break

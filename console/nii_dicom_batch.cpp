@@ -2989,8 +2989,10 @@ tse3d: T2*/
 		}
 		if (d.imagingFrequency > 0.0)
 			json_Float(fp, "\t\"TransmitterFrequency\": %g,\n", d.imagingFrequency);
-		if (strlen(d.resonantNucleus) > 0)
-			fprintf(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
+		// Audit L1: use json_Str so a malformed DICOM CS containing a quote
+		// or backslash gets escaped rather than breaking the JSON. Standard
+		// values like "1H" / "31P" / "13C" pass through unchanged.
+		json_Str(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
 		if (d.dataPointColumns > 0)
 			fprintf(fp, "\t\"SpectroscopyAcquisitionDataColumns\": %d,\n", d.dataPointColumns);
 	}
@@ -3138,6 +3140,14 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	if (datatype == DT_RGBA32)
 		return;
 	// n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
+	// DT_COMPLEX64 (datatype 32, bitpix 64) is two interleaved float32
+	// values per voxel; swap as 4-byte components (2*nVox of them) — NOT
+	// as a single 8-byte scalar, which would swap the real/imag pair as
+	// one unit and corrupt the complex data. Audit H3.
+	if (datatype == DT_COMPLEX64) {
+		nifti_swap_4bytes((size_t)nVox * 2, im);
+		return;
+	}
 	if (bitpix == 16)
 		nifti_swap_2bytes(nVox, im);
 	if (bitpix == 32)
@@ -10911,12 +10921,83 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	if (nConvert < 1)
 		return EXIT_FAILURE;
 	struct TDICOMdata *d0 = &dcmList[dcmSort[0].indx];
+	// Audit L2: foreign save formats (MGH / NRRD / BJNIfTI) don't support
+	// DT_COMPLEX64, and the BJNIfTI complex-split path itself has a
+	// header/data shape mismatch (L3). Reject early so we don't read the
+	// FID buffer just to fail at the writer.
+	if (opts.saveFormat != kSaveFormatNIfTI) {
+		printError("MRS: only NIfTI output (-e n) is supported; rerun without alternate save format\n");
+		return EXIT_FAILURE;
+	}
 	int N_pts = d0->dataPointColumns;
 	if (N_pts <= 0) {
 		printError("MRS: DataPointColumns (0028,9002) not set; cannot determine FID length\n");
 		return EXIT_FAILURE;
 	}
 	int N_files = nConvert;
+	// Audit H4: NIfTI-1 stores `dim[k]` as int16. Anything above 32767 wraps
+	// to a negative number after the (short) cast at header construction.
+	// Refuse to write rather than silently produce a corrupt header. The
+	// per-DICOM N_pts of typical SVS is 1024; N_files = number of averages
+	// or coil channels — the 32767 ceiling is well above realistic values.
+	if (N_pts > 32767) {
+		printError("MRS: DataPointColumns %d exceeds NIfTI-1 dim[4] limit (32767)\n", N_pts);
+		return EXIT_FAILURE;
+	}
+	if (N_files > 32767) {
+		printError("MRS: %d input DICOMs exceeds NIfTI-1 dim[5] limit (32767)\n", N_files);
+		return EXIT_FAILURE;
+	}
+	// Audit M2: stack invariants. Every member of the series must agree on
+	// the values the writer assumes from d0 (isMRS, dataPointColumns,
+	// spectralWidth, transfer-syntax endian, XA-vs-VX phase convention,
+	// orientation). Mixed series silently stack under d0's metadata, so
+	// fail loud before reading any FIDs.
+	for (int i = 1; i < N_files; i++) {
+		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
+		if (!d->isMRS) {
+			printError("MRS: DICOM %d is not MR Spectroscopy; refusing to stack\n", i);
+			return EXIT_FAILURE;
+		}
+		if (d->dataPointColumns != N_pts) {
+			printError("MRS: DICOM %d has DataPointColumns %d, expected %d\n",
+					   i, d->dataPointColumns, N_pts);
+			return EXIT_FAILURE;
+		}
+		if (d->spectralWidth != d0->spectralWidth) {
+			printError("MRS: DICOM %d has SpectralWidth %g, expected %g\n",
+					   i, d->spectralWidth, d0->spectralWidth);
+			return EXIT_FAILURE;
+		}
+		if (d->isLittleEndian != d0->isLittleEndian) {
+			printError("MRS: DICOM %d byte order disagrees with series; refusing to stack\n", i);
+			return EXIT_FAILURE;
+		}
+		if (d->manufacturer != d0->manufacturer || d->isXA != d0->isXA) {
+			printError("MRS: DICOM %d vendor/phase convention disagrees with series\n", i);
+			return EXIT_FAILURE;
+		}
+	}
+	// Audit M3: validate the spatial tags before stamping sform_code=2.
+	// Zero orientation, NaN position, or non-positive voxel spacing would
+	// otherwise be written as authoritative geometry. NaN/Inf checks use
+	// the standard self-comparison idiom so we don't need <math.h>.
+	bool orientFinite = true;
+	for (int i = 1; i <= 6; i++)
+		if (d0->orient[i] != d0->orient[i] || d0->orient[i] > 1e30 || d0->orient[i] < -1e30)
+			orientFinite = false;
+	bool orientNonzero = false;
+	for (int i = 1; i <= 6; i++)
+		if (d0->orient[i] != 0.0f)
+			orientNonzero = true;
+	bool posFinite = true;
+	for (int i = 1; i <= 3; i++)
+		if (d0->patientPosition[i] != d0->patientPosition[i] ||
+			d0->patientPosition[i] > 1e30 || d0->patientPosition[i] < -1e30)
+			posFinite = false;
+	bool spacingOK = (d0->xyzMM[1] > 0.0f) && (d0->xyzMM[2] > 0.0f) && (d0->xyzMM[3] > 0.0f);
+	bool geomValid = orientFinite && orientNonzero && posFinite && spacingOK;
+
 	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag
 	size_t total_bytes = bytes_per_dicom * (size_t)N_files;
 	float *fid = (float *)malloc(total_bytes);
@@ -10953,6 +11034,16 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			return EXIT_FAILURE;
 		}
 		fclose(f);
+		// Audit H2: the standard image pipeline byte-swaps non-native
+		// transfer syntaxes via swapEndian; the MRS reader bypasses that.
+		// XA-line Siemens always emits Explicit VR Little Endian, but
+		// Explicit VR Big Endian MRS Storage is legal per the DICOM
+		// standard (rare in practice) and we should not silently produce
+		// corrupt complex data when one shows up. d->isLittleEndian is
+		// populated by the DICOM parser; swap each float32 component
+		// (2*N_pts of them) when the file was big-endian.
+		if (!d->isLittleEndian)
+			nifti_swap_4bytes((size_t)N_pts * 2, slot);
 		// NumarisX (Siemens XA) phase convention: complex = real - 1j*imag,
 		// i.e. negate the odd-indexed (imag) floats. Older VE/VX systems use
 		// real + 1j*imag — no negation needed. See spec2nii
@@ -11010,11 +11101,28 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	double tx = d0->patientPosition[1];
 	double ty = d0->patientPosition[2];
 	double tz = d0->patientPosition[3];
-	hdr.srow_x[0] = (float)(-m00); hdr.srow_x[1] = (float)(-m01); hdr.srow_x[2] = (float)(-m02); hdr.srow_x[3] = (float)(-tx);
-	hdr.srow_y[0] = (float)(-m10); hdr.srow_y[1] = (float)(-m11); hdr.srow_y[2] = (float)(-m12); hdr.srow_y[3] = (float)(-ty);
-	hdr.srow_z[0] = (float)m20;	   hdr.srow_z[1] = (float)m21;	   hdr.srow_z[2] = (float)m22;	   hdr.srow_z[3] = (float)tz;
-	hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT; // 2
+	if (geomValid) {
+		hdr.srow_x[0] = (float)(-m00); hdr.srow_x[1] = (float)(-m01); hdr.srow_x[2] = (float)(-m02); hdr.srow_x[3] = (float)(-tx);
+		hdr.srow_y[0] = (float)(-m10); hdr.srow_y[1] = (float)(-m11); hdr.srow_y[2] = (float)(-m12); hdr.srow_y[3] = (float)(-ty);
+		hdr.srow_z[0] = (float)m20;	   hdr.srow_z[1] = (float)m21;	   hdr.srow_z[2] = (float)m22;	   hdr.srow_z[3] = (float)tz;
+		hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT; // 2
+	} else {
+		// Audit M3: zero / NaN / Inf in orient/position would otherwise be
+		// stamped as authoritative geometry. Leave sform_code=0 and warn so
+		// the user knows the spatial transform is not encoded.
+		printWarning("MRS: spatial tags (orient/position/spacing) missing or invalid; emitting sform_code=0\n");
+		hdr.sform_code = NIFTI_XFORM_UNKNOWN;
+	}
 	hdr.qform_code = NIFTI_XFORM_UNKNOWN;	   // qform left empty (matches spec2nii)
+	// Audit H4 sanity check: the writer derives byte count from the header.
+	// If anything mismatches (e.g. NIfTI internal accounting changes), bail
+	// rather than write a truncated or oversized file.
+	if (nii_ImgBytes(hdr) != total_bytes) {
+		printError("MRS: header byte count (%zu) != FID buffer (%zu); aborting\n",
+				   nii_ImgBytes(hdr), total_bytes);
+		free(fid);
+		return EXIT_FAILURE;
+	}
 	// BidsGuess: emit ["mrs","_svs"] (currently SVS-only; MRSI/Unloc/mrsref
 	// land in future commits when reference data is available).
 	strcpy(d0->CSA.bidsDataType, "mrs");
