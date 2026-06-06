@@ -2951,6 +2951,26 @@ tse3d: T2*/
 	// we do not currently emit. See issue #991 and the PR that introduced this gate for full context.
 	if (d.manufacturer != kMANUFACTURER_UIH)
 		json_Float(fp, "\t\"AcquisitionDuration\": %g,\n", d.acquisitionDuration);
+	if (d.numberOfKSpaceTrajectories > 0)
+		fprintf(fp, "\t\"NumberOfKSpaceTrajectories\": %d,\n", d.numberOfKSpaceTrajectories);
+	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
+	// so non-MRS sidecars are unchanged.
+	switch (d.mrsAcqType) {
+	case kMRSAcqSingleVoxel:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"SINGLE_VOXEL\",\n");
+		break;
+	case kMRSAcqRow:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"ROW\",\n");
+		break;
+	case kMRSAcqPlane:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"PLANE\",\n");
+		break;
+	case kMRSAcqVolume:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"VOLUME\",\n");
+		break;
+	default:
+		break;
+	}
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (effectiveEchoSpacing <= 0.0)) // issue225, issue531
 		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
 	else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))

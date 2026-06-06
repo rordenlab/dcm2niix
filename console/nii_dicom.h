@@ -179,6 +179,14 @@ static const int kCompressRLE = 4;		  // run length encoding
 static const int kCompressPMSCT_RLE1 = 5; // see rle2img: Philips/ELSCINT1 run-length compression 07a1,1011= PMSCT_RLE1
 static const int kCompressJPEGLS = 6;	  // LoCo JPEG-LS
 static const int kMaxOverlay = 16;		  // even group values 0x6000..0x601E
+// MR Spectroscopy acquisition type from (0018,9200) MRSpectroscopyAcquisitionType.
+// Values mirror the DICOM CS enumeration (see PS3.3 C.8.14.4); used by the MRS
+// conversion path to gate single-voxel vs CSI handling.
+static const int kMRSAcqNone = 0;
+static const int kMRSAcqSingleVoxel = 1;
+static const int kMRSAcqRow = 2;
+static const int kMRSAcqPlane = 3;
+static const int kMRSAcqVolume = 4;
 #ifdef myEnableJasper
 static const int kCompressSupport = kCompressJP2K; // JASPER for JPEG2000
 #else
@@ -262,7 +270,8 @@ struct TDICOMdata {
 	int xyzDim[5];
 	uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
 	int overlayStart[kMaxOverlay];
-	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, offsetTableItems, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
+	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, offsetTableItems, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme,
+		mrsAcqType, numberOfKSpaceTrajectories; // MRS only: (0018,9200) kMRSAcq* enum + (0018,9093) k-space trajectory count
 	float compressedSensingFactor, xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, scatterFraction, percentSampling, waterFatShift, numberOfAverages, patientSize, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
 	float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
 	float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor, injectedVolume, reconFilterSize; // PET ISOTOPE MODULE ATTRIBUTES (C.8-57)

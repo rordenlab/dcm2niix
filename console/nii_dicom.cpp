@@ -848,6 +848,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.flipAngle = 0.0;
 	d.bandwidthPerPixelPhaseEncode = 0.0;
 	d.acquisitionDuration = 0.0;
+	d.mrsAcqType = kMRSAcqNone;
+	d.numberOfKSpaceTrajectories = 0;
 	d.imagingFrequency = 0.0;
 	d.numberOfAverages = 0.0;
 	d.fieldStrength = 0.0;
@@ -4619,6 +4621,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kParallelReductionFactorInPlane 0x0018 + uint32_t(0x9069 << 16)		 // FD
 #define kAcquisitionDuration 0x0018 + uint32_t(0x9073 << 16)				 // FD
 #define kFrameAcquisitionDateTime 0x0018 + uint32_t(0x9074 << 16)			 // DT "20181019212528.232500"
+#define kNumberOfKSpaceTrajectories 0x0018 + uint32_t(0x9093 << 16)			 // US
+#define kMRSpectroscopyAcquisitionType 0x0018 + uint32_t(0x9200 << 16)		 // CS NONE|SINGLE_VOXEL|ROW|PLANE|VOLUME
 #define kDiffusionDirectionality 0x0018 + uint32_t(0x9075 << 16)			 // NONE, ISOTROPIC, or DIRECTIONAL
 #define kParallelAcquisitionTechnique 0x0018 + uint32_t(0x9078 << 16)		 // CS: SENSE, SMASH
 #define kInversionTimes 0x0018 + uint32_t(0x9079 << 16)						 // FD
@@ -6199,6 +6203,22 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.acquisitionDuration = dcmFloat(lLength, &buffer[lPos], d.isLittleEndian);
 			d.acquisitionDuration /= 1000000.0; // convert microsec to sec
 			break;
+		case kNumberOfKSpaceTrajectories: // (0018,9093) US — MRS k-space trajectory count
+			d.numberOfKSpaceTrajectories = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kMRSpectroscopyAcquisitionType: { // (0018,9200) CS — MRS acquisition type enum
+			char acqType[kDICOMStr];
+			dcmStr(lLength, &buffer[lPos], acqType);
+			if (strstr(acqType, "SINGLE_VOXEL") != NULL)
+				d.mrsAcqType = kMRSAcqSingleVoxel;
+			else if (strstr(acqType, "VOLUME") != NULL)
+				d.mrsAcqType = kMRSAcqVolume;
+			else if (strstr(acqType, "PLANE") != NULL)
+				d.mrsAcqType = kMRSAcqPlane;
+			else if (strstr(acqType, "ROW") != NULL)
+				d.mrsAcqType = kMRSAcqRow;
+			break;
+		}
 		case kDiffusionDirectionality: { // 0018, 9075
 			set_directionality0018_9075(&volDiffusion, (&buffer[lPos]));
 			if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 10))
