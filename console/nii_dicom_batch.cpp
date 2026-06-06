@@ -9995,8 +9995,12 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 	free(volTics);
 	free(xmlBytes);
 	if (wrote == 0) {
-		printWarning("XA PhysioLogging payload had no recognised streams.\n");
-		return EXIT_FAILURE;
+		// Mirror the CMRR case: an XA PhysioLogging payload with no
+		// cardiac/respiratory streams (sensors not connected) is not a
+		// conversion failure for the user — return success so $? stays 0
+		// and the "Converted X of Y" partial-failure message doesn't fire.
+		printWarning("XA PhysioLogging payload empty — were physio sensors connected? (no cardiac/respiratory streams found)\n");
+		return EXIT_SUCCESS;
 	}
 	return EXIT_SUCCESS;
 }
@@ -10288,8 +10292,15 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	free(volTics);
 	free(blob);
 	if (wrote == 0) {
-		printWarning("CMRR PMU payload had no recognised streams.\n");
-		return EXIT_FAILURE;
+		// CMRR records the slice-timing companion (ACQUISITION_INFO) for
+		// every physio-capable acquisition even when the patient is not
+		// connected to the pulse/respiration belts, so this case means the
+		// (7FE1,1010) blob contains only the Info.log slice-timing table
+		// with no PULS / RESP / ECG / EXT streams. Reporting it as a
+		// conversion failure (kEXIT_SOME_OK_SOME_BAD) misleads downstream
+		// scripts checking $?; return success and let the user decide.
+		printWarning("CMRR PMU payload empty — were physio sensors connected? (no PULS/RESP/ECG streams found)\n");
+		return EXIT_SUCCESS;
 	}
 	return EXIT_SUCCESS;
 }
