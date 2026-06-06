@@ -108,6 +108,33 @@ Bundled libraries (no external install needed): miniz (zlib), cJSON, NanoJPEG, C
 4. `nii_dicom_batch.cpp` groups files by series, assembles volumes
 5. `nifti1_io_core.cpp` writes NIfTI files and JSON sidecars
 
+### TDICOMdata size is load-bearing — do not grow inline arrays
+
+`TDICOMdata` is passed BY VALUE through five functions in the save chain (`saveDcm2NiiCore → nii_loadImgXL → headerDcm2Nii → headerDcm2Nii2 → headerDcm2NiiSForm`), and `readDICOMx` itself allocates `1.5 MB` of stack (mostly the many scattered `char txt[1024]` scratch buffers in its 4600-line body). At ~9.6 KB per struct the chain just fits the macOS 8 MB main-thread stack; growing the struct even by ~4 KB tips `headerDcm2NiiSForm`'s prologue probe (`___chkstk_darwin`) past the guard page and crashes.
+
+If a new per-file payload needs storage on `TDICOMdata` (the natural place, since `dti4D` is reused across all files in the parse loop and won't retain per-file data), use a **heap-allocated pointer** with lazy `calloc` and a `free_TDICOMdata_*` helper called before every `free(dcmList)` site. Pattern (see `deID_CS` for the worked example, added for issue #877):
+
+```c
+// in struct TDICOMdata
+struct TDeIDCodeSequence *deID_CS;  // NULL when unused; 8 bytes vs 4540 inline
+
+// in clear_dicom_data() (or readDICOMx top)
+d.deID_CS = NULL;
+
+// in parse: allocate on first hit
+if (d.deID_CS == NULL)
+    d.deID_CS = (struct TDeIDCodeSequence *)calloc(MAX_DEID_CS, sizeof(struct TDeIDCodeSequence));
+
+// in nii_dicom.cpp: idempotent free helper
+void free_TDICOMdata_deID_CS(struct TDICOMdata *d) { /* checks NULL, frees, NULLs */ }
+
+// before every free(dcmList) in nii_dicom_batch.cpp:
+for (int i = 0; i < (int)nameList.numItems; i++)
+    free_TDICOMdata_deID_CS(&dcmList[i]);
+```
+
+The previous implementation of `DeidentificationMethodCodeSequence` re-read the source DICOM via `readDICOMv` inside `nii_SaveBIDSX` to recover the strings, which added `readDICOMx`'s 1.5 MB frame deep in the save chain and crashed on real deident data (`dcm_validate/dcm_qa_deident`, `dcm_qa_philips`). The pointer approach keeps the struct size unchanged and reads the strings directly. Don't reintroduce inline arrays even when they "feel cleaner" — the stack budget has no headroom.
+
 ### Sequence-filter quirks in `nii_dicom.cpp`
 
 Several DICOM sequences are "filtered out" during parsing because their contents are reference/historical data that would corrupt the main header (issues #599, #655, #639):

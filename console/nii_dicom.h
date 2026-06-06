@@ -226,7 +226,7 @@ struct TDTI4D {
 	bool isImaginary[kMaxDTI4D];
 	bool isPhase[kMaxDTI4D];
 	float repetitionTimeExcitation, repetitionTimeInversion;
-	struct TDeIDCodeSequence deID_CS[MAX_DEID_CS];
+	// deID_CS[] moved to TDICOMdata (per-file, not per-pass) — see comment there.
 };
 
 #ifdef _MSC_VER // Microsoft nomenclature for packed structures is different...
@@ -283,6 +283,16 @@ struct TDICOMdata {
 	char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
 	int deID_CS_n;
+	// Per-file pointer to DeidentificationMethodCodeSequence strings, NULL when
+	// the file has no deident block (the common case). Heap-allocated on first
+	// hit during readDICOMx, freed when the owning dcmList entry is released.
+	// Storage lives off TDICOMdata so the struct's size doesn't grow (the
+	// save chain passes TDICOMdata by value through five functions, and any
+	// inline growth here pushes headerDcm2NiiSForm past the macOS 8 MB stack).
+	// Storage is per-file (not on TDTI4D) because the parse reuses a single
+	// dti4D across every file in the input directory — the strings on TDTI4D
+	// would reflect whichever file was parsed last. Issue #877.
+	struct TDeIDCodeSequence *deID_CS;
 	struct TCSAdata CSA;
 	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer, isXAPhysio, isCMRRPhysio, isMRS;
 	int xaPhysioOffset, xaPhysioBytes; // file offset and length of the (7FE1,1010) physio payload (gzip-XML when isXAPhysio, raw VE11C blob when isCMRRPhysio)
@@ -302,6 +312,7 @@ int isSameFloatGE(float a, float b);
 void getFileNameX(char *pathParent, const char *path, int maxLen);
 struct TDICOMdata readDICOMv(char *fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D);
 struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D *dti4D);
+void free_TDICOMdata_deID_CS(struct TDICOMdata *d);
 struct TDICOMdata readDICOM(char *fname);
 struct TDICOMdata clear_dicom_data(void);
 struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dti4D, bool isReadPhase);

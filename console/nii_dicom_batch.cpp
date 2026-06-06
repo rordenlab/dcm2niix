@@ -2035,29 +2035,25 @@ tse3d: T2*/
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	json_StrList(fp, "DeidentificationMethod", d.deidentificationMethod);
 	if (d.deID_CS_n > 0) {
-		char *fname = (char *)malloc(strlen(filename) + 1);
-		strcpy(fname, filename);
-		if (is_fileexists(fname)) {
-			struct TDTI4D *d4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
-			struct TDICOMdata d2 = readDICOMv(fname, 0, 1, d4D);
-			fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
-			for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++) {
-				fprintf(fp, "\t  { \n");
-				json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d4D->deID_CS[i].CodeValue);
-				json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d4D->deID_CS[i].CodingSchemeDesignator);
-				json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d4D->deID_CS[i].CodingSchemeVersion);
-				json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d4D->deID_CS[i].CodeMeaning);
-				if (i + 1 < d.deID_CS_n)
-					fprintf(fp, "\t  },\n");
-				else
-					fprintf(fp, "\t  }\n");
-			}
-			fprintf(fp, "\t],\n");
-			free(d4D);
-		} else {
-			printWarning("Issue877 unable to find file for DeidentificationMethod: %s\n", fname);
+		// Issue #877: emit DeidentificationMethodCodeSequence from the strings
+		// already captured on TDICOMdata during the initial parse. The previous
+		// implementation re-read the source DICOM via readDICOMv here, which
+		// pushed the call chain past the macOS 8 MB main-thread stack on real
+		// deident data (readDICOMx alone has a ~1.5 MB stack frame). The strings
+		// now live on d.deID_CS[] so the sidecar writer is allocation-free.
+		fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
+		for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++) {
+			fprintf(fp, "\t  { \n");
+			json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d.deID_CS[i].CodeValue);
+			json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d.deID_CS[i].CodingSchemeDesignator);
+			json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d.deID_CS[i].CodingSchemeVersion);
+			json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d.deID_CS[i].CodeMeaning);
+			if (i + 1 < d.deID_CS_n)
+				fprintf(fp, "\t  },\n");
+			else
+				fprintf(fp, "\t  }\n");
 		}
-		free(fname);
+		fprintf(fp, "\t],\n");
 	} // d.deID_CS_n > 0
 	if (d.seriesNum > 0)
 		fprintf(fp, "\t\"SeriesNumber\": %ld,\n", d.seriesNum);
@@ -11838,6 +11834,7 @@ int singleDICOM(struct TDCMopts *opts, char *fname) {
 	freeNameList(nameList);
 	free(dti4D);
 	free(dcmSort);
+	free_TDICOMdata_deID_CS(&dcmList[0]);
 	free(dcmList);
 	return ret;
 } // singleDICOM()
@@ -11960,6 +11957,8 @@ int convert_parRec(char *fnm, struct TDCMopts opts) {
 	if (dcmList[0].isValid)
 		ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, dti4D);
 	free(dti4D);
+	for (int i = 0; i < (int)nameList.numItems; i++)
+		free_TDICOMdata_deID_CS(&dcmList[i]);
 	free(dcmList); // if (nConvertTotal == 0)
 	if (nameList.numItems < 1)
 		printMessage("No valid PAR/REC files were found\n");
@@ -12349,6 +12348,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 	start = clock();
 #endif
 	if ((opts->isRenameNotConvert) || (opts->onlySearchDirForDICOM != 0)) {
+		for (int i = 0; i < (int)nameList.numItems; i++)
+			free_TDICOMdata_deID_CS(&dcmList[i]);
 		free(dcmList);
 		free(dti4D);
 		return EXIT_SUCCESS;
@@ -12554,6 +12555,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 #endif
 	if (opts->isProgress)
 		progressPct = reportProgress(progressPct, 1); // proportion correct, 0..100
+	for (int i = 0; i < (int)nameList.numItems; i++)
+		free_TDICOMdata_deID_CS(&dcmList[i]);
 	free(dcmList);
 	free(dti4D);
 	freeNameList(nameList);

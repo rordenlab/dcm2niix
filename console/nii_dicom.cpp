@@ -1018,8 +1018,21 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.CSA.bidsDataType, "");
 	strcpy(d.CSA.bidsEntitySuffix, "");
 	strcpy(d.CSA.bidsTask, "");
+	d.deID_CS_n = 0;
+	d.deID_CS = NULL; // allocated lazily on first kCodeValue inside kDeidentificationMethodCodeSequence; freed by free_TDICOMdata_deID_CS()
 	return d;
 } // clear_dicom_data()
+
+// Release the heap-allocated DeidentificationMethodCodeSequence array on
+// a TDICOMdata. Idempotent; safe to call on a struct that never had any.
+// MUST be called on each dcmList[] entry before freeing the array (issue #877).
+void free_TDICOMdata_deID_CS(struct TDICOMdata *d) {
+	if (d == NULL || d->deID_CS == NULL)
+		return;
+	free(d->deID_CS);
+	d->deID_CS = NULL;
+	d->deID_CS_n = 0;
+}
 
 int isdigitdot(int c) { // returns true if digit or '.'
 	if (c == '.')
@@ -4435,15 +4448,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		dti4D->S[i].V[0] = -1.0;
 		dti4D->TE[i] = -1.0;
 	}
+	// deID_CS_n and deID_CS are initialised in clear_dicom_data(); kept here for parity with the legacy init block.
 	d.deID_CS_n = 0;
-	for (int i = 0; i < MAX_DEID_CS; i++) {
-		// n.b. knowing deID_CS_n is insufficient to know number of strings
-		// e.g. dcm_qa_deident CodingSchemeVersion (0008,0103) provided for only some entries
-		strcpy(dti4D->deID_CS[i].CodeValue, "");
-		strcpy(dti4D->deID_CS[i].CodeMeaning, "");
-		strcpy(dti4D->deID_CS[i].CodingSchemeDesignator, "");
-		strcpy(dti4D->deID_CS[i].CodingSchemeVersion, "");
-	}
+	d.deID_CS = NULL;
 	
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
@@ -5968,18 +5975,22 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kCodeValue: {
-			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
-				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodeValue);
+			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS) {
+				if (d.deID_CS == NULL)
+					d.deID_CS = (struct TDeIDCodeSequence *)calloc(MAX_DEID_CS, sizeof(struct TDeIDCodeSequence));
+				if (d.deID_CS != NULL)
+					dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodeValue);
+			}
 			break;
 		}
 		case kCodingSchemeDesignator: {
-			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
-				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodingSchemeDesignator);
+			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS && d.deID_CS != NULL)
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeDesignator);
 			break;
 		}
 		case kCodingSchemeVersion: {
-			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS)
-				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodingSchemeVersion);
+			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS && d.deID_CS != NULL)
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeVersion);
 			break;
 		}
 		case kCodeMeaning: {
@@ -5993,8 +6004,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 							d.tracerRadionuclide[w++] = d.tracerRadionuclide[r];
 					d.tracerRadionuclide[w] = '\0';
 				}
-			} else if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS) {
-				dcmStr(lLength, &buffer[lPos], dti4D->deID_CS[d.deID_CS_n].CodeMeaning);
+			} else if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS && d.deID_CS != NULL) {
+				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodeMeaning);
 				d.deID_CS_n++;
 			}
 			// localizer used in many non-scout images, see https://ancplaboldenburg.github.io/bids_manager_documentation/
