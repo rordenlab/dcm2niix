@@ -108,6 +108,14 @@ Bundled libraries (no external install needed): miniz (zlib), cJSON, NanoJPEG, C
 4. `nii_dicom_batch.cpp` groups files by series, assembles volumes
 5. `nifti1_io_core.cpp` writes NIfTI files and JSON sidecars
 
+### macOS console makefile uses 16 MB stack (issue #867)
+
+The macOS `console/makefile` build uses `-O3 -flto`; the cmake build uses `-O3` only. LTO inlines aggressively and inflates per-function stack frames (`readDICOMx` already ~1.5 MB even without LTO). On multi-study Siemens XA datasets — multiple Enhanced-DICOM series, deident sequences, dense diffusion stacks — the conversion chain on the makefile build exceeded the 8 MB default macOS main-thread stack and tripped `___chkstk_darwin` at `0x16f603ff8`. Repro: a real-world XA80 dataset surfaced by an external user (multiple study dates under one input root, ~100 series). The cmake build does NOT crash on the same data.
+
+Mitigation: `LFLAGS=-Wl,-stack_size -Wl,0x1000000` in [console/makefile](console/makefile) doubles the stack to 16 MB. The workaround was originally added for issue #867, commented out at some point during cleanup, and surfaced again when the corpus widened. Both builds otherwise produce byte-identical NIfTI / JSON output.
+
+Per-frame stack-pressure reductions in the C source (heap-allocated `deID_CS`, etc.) remain in place — the 16 MB stack is headroom for LTO inlining specifically. If a future audit finds further frame growth, prefer source-side reduction over raising the stack again.
+
 ### TDICOMdata size is load-bearing — do not grow inline arrays
 
 `TDICOMdata` is passed BY VALUE through five functions in the save chain (`saveDcm2NiiCore → nii_loadImgXL → headerDcm2Nii → headerDcm2Nii2 → headerDcm2NiiSForm`), and `readDICOMx` itself allocates `1.5 MB` of stack (mostly the many scattered `char txt[1024]` scratch buffers in its 4600-line body). At ~9.6 KB per struct the chain just fits the macOS 8 MB main-thread stack; growing the struct even by ~4 KB tips `headerDcm2NiiSForm`'s prologue probe (`___chkstk_darwin`) past the guard page and crashes.
