@@ -197,6 +197,23 @@ The reproinx post-pass reads `<studyRoot>/.reproin_provenance.tsv`, written by `
 
 The C code in `createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, const char *acqName)` in `nii_dicom_batch.cpp` writes the task sidecar with the *actual* entity set of the bold file (`task-<X>_bold.json` or `task-<X>_acq-<Y>_bold.json`). Keep this in lock-step with `spec.task`/`spec.acq` semantics in `reproin.cpp` — the legacy `%h` path passes `NULL/NULL` and still falls back to the historical `task-rest_bold.json` hardcoding. The post-pass must stay non-destructive on existing curated metadata: `README.md` → `README` cleanup is gated on `_is_dcm2niix_readme_stub`; generated root `task-X_bold.json` stubs are removed only when `_acq-` variants for the same task exist, and `TaskName` is written into each per-series BOLD sidecar first so bare task runs remain valid without triggering BIDS v2 multiple-inheritance errors. Hand-written sidecars with extra metadata and READMEs must survive re-runs untouched.
 
+### Audit findings (this session's `/audit` round)
+
+Two-agent audit (Security & Bugs + Refactor) of commits `ca309ef..5ff6508` (MR-weighting helper, deident-stack fix, Philips ASL widening, AcquisitionContrast integration, AC fallback). No CRITICAL / HIGH / MEDIUM security findings; three Refactor wins applied:
+
+- **AC parser → table-driven** (`nii_dicom.cpp:~5902`): 13 sequential `strcmp` cases replaced with a `static const struct { cs, weighting, setDiffusion }` table + single loop. Adding a new DICOM PS3.3 enumerated value is now a one-row addition. `DIFFUSION` keeps its `d.isDiffusion = true` side effect via the `setDiffusion` flag so the back-compat is auditable in the table.
+- **`setBidsFromAcquisitionContrast` snprintf** (`nii_dicom_batch.cpp:~1463`): bounded `snprintf(suffix + used, kDICOMStrLarge - used, "_%s", modality)` replaces raw `strcpy` + pointer math + manual bounds arithmetic. Same semantics, fewer footguns.
+- **Removed redundant `deID_CS` init in `readDICOMx`** (`nii_dicom.cpp:~4450`): `clear_dicom_data()` already sets `d.deID_CS_n = 0; d.deID_CS = NULL;` at the top of `readDICOMx`. The "legacy parity" comment was misleading after the heap-pointer refactor — the legacy loop touched `dti4D->deID_CS[i]` which no longer exists.
+
+Validated: in-tree `dcm_qa` / `dcm_qa_nih` / `dcm_qa_uih` zero drift; spot-checks on Canon DTI (fallback target), Philips SOURCE-pCASL (per-vendor AC gate target), and Philips fcMRI with `AC=T2` (must stay `func/_bold`) all unchanged.
+
+Deferred audit suggestions:
+- **Optional `isAslHintAC(d)` inline helper** to name the three duplicate `d->acquisitionContrast == kMRWeightingPerfusion` checks in vendor classifiers. Mild benefit; the duplication is intentional (each vendor's ASL branch coexists with vendor-specific siblings). Leave until a fourth vendor needs the same gate.
+- **`MRWeightingGuess` / `setBidsFromAcquisitionContrast` shared table extraction.** Both consume `acquisitionContrast` and overlap on T1/T2/PD/T2starw/FLAIR/STIR. Audit reviewer rejected: the two functions have genuinely different jobs (return-int-for-cascade vs. write-strings-wholesale) and the de-dup is six switch arms.
+- **Lazy `calloc` OOM in deident parser** (`nii_dicom.cpp:~5965`): on calloc failure, the first DeidentificationMethodCodeSequence entry's `CodeValue` is silently lost. OOM in practice is unrecoverable; deferred. A `printWarning` would be polite.
+
+Pre-existing items still open from earlier audits:
+
 ### Audit-deferred items from 2026-06-06 follow-up review
 
 - **MRS multi-nucleus / 2D-spectroscopy array fields.** BIDS-MRS allows `ResonantNucleus` and `SpectrometerFrequency` to be arrays for multi-nucleus or 2D-spectral acquisitions. Our DICOM parser collapses VM 1..2 fields to scalars, so multi-nucleus output would only carry the first frequency. Deferred until reference data surfaces.

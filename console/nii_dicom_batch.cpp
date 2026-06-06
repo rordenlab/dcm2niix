@@ -1467,11 +1467,10 @@ static void setBidsFromAcquisitionContrast(struct TDICOMdata *d) {
 	strcpy(d->CSA.bidsDataType, dataType);
 	char *suffix = d->CSA.bidsEntitySuffix;
 	size_t used = strlen(suffix);
-	size_t modLen = strlen(modality);
-	if (used + 1 + modLen + 1 < kDICOMStrLarge) {
-		suffix[used] = '_';
-		strcpy(suffix + used + 1, modality);
-	}
+	// snprintf gives us bounded copy + automatic NUL-termination. If used
+	// already exhausts the buffer, the write is a no-op (snprintf truncates).
+	if (used < kDICOMStrLarge)
+		snprintf(suffix + used, kDICOMStrLarge - used, "_%s", modality);
 }
 
 // Apply BIDS-Manager-derived vendor-agnostic refinements. Runs after the

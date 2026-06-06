@@ -4449,9 +4449,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		dti4D->S[i].V[0] = -1.0;
 		dti4D->TE[i] = -1.0;
 	}
-	// deID_CS_n and deID_CS are initialised in clear_dicom_data(); kept here for parity with the legacy init block.
-	d.deID_CS_n = 0;
-	d.deID_CS = NULL;
+	// deID_CS_n / deID_CS already initialised by clear_dicom_data() above.
 	
 	struct TVolumeDiffusion volDiffusion = initTVolumeDiffusion(&d, dti4D);
 	struct stat s;
@@ -5908,36 +5906,38 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// Populated on Enhanced MR Image SOPs and some Classic Philips
 			// (often nested inside (0018,9226) MRImageFrameTypeSequence — the
 			// SQ is already in isSQ()'s allowlist so this case is reached).
+			// Order is irrelevant (full-string match); adding a new enum value
+			// is a one-row addition. "UNKNOWN" and unrecognised values leave
+			// d.acquisitionContrast at default kMRWeightingUnknown.
+			static const struct {
+				const char *cs;
+				int weighting;
+				bool setDiffusion;
+			} kAcqContrastMap[] = {
+				{"DIFFUSION", kMRWeightingDiffusion, true}, // setDiffusion preserves back-compat for non-AC-aware code paths
+				{"PERFUSION", kMRWeightingPerfusion, false},
+				{"FLUID_ATTENUATED", kMRWeightingFLAIR, false},
+				{"PROTON_DENSITY", kMRWeightingPD, false},
+				{"T2_STAR", kMRWeightingT2starw, false},
+				{"T1", kMRWeightingT1, false},
+				{"T2", kMRWeightingT2, false},
+				{"STIR", kMRWeightingSTIR, false},
+				{"TOF", kMRWeightingTOF, false},
+				{"FLOW_ENCODED", kMRWeightingFlow, false},
+				{"TAGGING", kMRWeightingTagging, false},
+				{"MIXED", kMRWeightingMixed, false},
+				{"OTHER", kMRWeightingOther, false},
+			};
 			char acqContrast[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], acqContrast);
-			if (strcmp(acqContrast, "DIFFUSION") == 0) {
-				d.acquisitionContrast = kMRWeightingDiffusion;
-				d.isDiffusion = true; // preserve existing back-compat for non-AC-aware code paths
-			} else if (strcmp(acqContrast, "PERFUSION") == 0)
-				d.acquisitionContrast = kMRWeightingPerfusion;
-			else if (strcmp(acqContrast, "FLUID_ATTENUATED") == 0)
-				d.acquisitionContrast = kMRWeightingFLAIR;
-			else if (strcmp(acqContrast, "PROTON_DENSITY") == 0)
-				d.acquisitionContrast = kMRWeightingPD;
-			else if (strcmp(acqContrast, "T2_STAR") == 0)
-				d.acquisitionContrast = kMRWeightingT2starw;
-			else if (strcmp(acqContrast, "T1") == 0)
-				d.acquisitionContrast = kMRWeightingT1;
-			else if (strcmp(acqContrast, "T2") == 0)
-				d.acquisitionContrast = kMRWeightingT2;
-			else if (strcmp(acqContrast, "STIR") == 0)
-				d.acquisitionContrast = kMRWeightingSTIR;
-			else if (strcmp(acqContrast, "TOF") == 0)
-				d.acquisitionContrast = kMRWeightingTOF;
-			else if (strcmp(acqContrast, "FLOW_ENCODED") == 0)
-				d.acquisitionContrast = kMRWeightingFlow;
-			else if (strcmp(acqContrast, "TAGGING") == 0)
-				d.acquisitionContrast = kMRWeightingTagging;
-			else if (strcmp(acqContrast, "MIXED") == 0)
-				d.acquisitionContrast = kMRWeightingMixed;
-			else if (strcmp(acqContrast, "OTHER") == 0)
-				d.acquisitionContrast = kMRWeightingOther;
-			// "UNKNOWN" and unrecognised values leave d.acquisitionContrast at default kMRWeightingUnknown
+			for (size_t i = 0; i < sizeof(kAcqContrastMap) / sizeof(kAcqContrastMap[0]); i++) {
+				if (strcmp(acqContrast, kAcqContrastMap[i].cs) == 0) {
+					d.acquisitionContrast = kAcqContrastMap[i].weighting;
+					if (kAcqContrastMap[i].setDiffusion)
+						d.isDiffusion = true;
+					break;
+				}
+			}
 			break;
 		}
 		case kAcquisitionTime: {
