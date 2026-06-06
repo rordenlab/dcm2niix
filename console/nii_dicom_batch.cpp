@@ -1886,7 +1886,11 @@ tse3d: T2*/
 	json_Str(fp, "\t\"StudyDescription\": \"%s\",\n", d.studyDescription);
 	json_Str(fp, "\t\"SeriesDescription\": \"%s\",\n", d.seriesDescription);
 	json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName);
-	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
+	// BIDS-MRS owns ScanningSequence for MRS files (constrained vocab:
+	// "SVS" / "MRSI" / "Unlocalized MRS"). Skip the DICOM-CS emission here
+	// so the MRS block below is the sole writer of that key.
+	if (!d.isMRS)
+		json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
 	json_Str(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant);
 #ifndef myDisablePulseSequenceType
 	// BIDS PulseSequenceType (Recommended). Spec examples mix vendor jargon ("SPGR", "MPRAGE") with acquisition-class names ("Gradient Echo EPI"); we prefer the class name and only use marketing labels where SequenceVariant flags make them unambiguous. SequenceVariant is a DICOM CS multi-value field delimited by '\\'; isSP anchors to "\\SP" to avoid the OSP (oversampling phase) substring false positive. Define myDisablePulseSequenceType to suppress.
@@ -2981,39 +2985,78 @@ tse3d: T2*/
 	if (d.isMRS) {
 		// MR Spectroscopy-specific fields, matched to BIDS-MRS:
 		// https://bids-specification.readthedocs.io/en/stable/modality-specific-files/magnetic-resonance-spectroscopy.html
-		// REQUIRED per BIDS-MRS: ResonantNucleus, SpectrometerFrequency,
-		// SpectralWidth, EchoTime. (EchoTime is emitted by the general
-		// path further down; the other three land here.)
+		// Required per BIDS-MRS: ResonantNucleus, SpectrometerFrequency,
+		// SpectralWidth, EchoTime. The first three land here; EchoTime
+		// is emitted by the general path further down. Warn when any
+		// required value is missing so the user knows the sidecar will
+		// fail bids-validator.
+		bool requiredMissing = false;
 		if (d.spectralWidth > 0.0) {
 			json_Float(fp, "\t\"SpectralWidth\": %g,\n", d.spectralWidth);
 			json_Float(fp, "\t\"DwellTime\": %g,\n", 1.0 / d.spectralWidth);
+		} else {
+			requiredMissing = true;
 		}
-		// SpectrometerFrequency is the BIDS-MRS name for the proton (or
-		// other nucleus) resonance frequency in MHz. dcm2niix already
-		// parses DICOM (0018,9098) FD into d.imagingFrequency.
+		// SpectrometerFrequency: proton (or other nucleus) resonance
+		// frequency in MHz, sourced from DICOM (0018,9098) FD as
+		// d.imagingFrequency. BIDS-MRS calls this SpectrometerFrequency;
+		// the BEP005 NIfTI-MRS extension uses the same name.
 		if (d.imagingFrequency > 0.0)
 			json_Float(fp, "\t\"SpectrometerFrequency\": %g,\n", d.imagingFrequency);
-		// Audit L1: use json_Str so a malformed DICOM CS containing a quote
-		// or backslash gets escaped rather than breaking the JSON. Standard
-		// values like "1H" / "31P" / "13C" pass through unchanged.
-		json_Str(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
-		// RECOMMENDED per BIDS-MRS:
-		// - NumberOfSpectralPoints = complex data points per FID, sourced
-		//   from DICOM (0028,9002) SpectroscopyAcquisitionDataColumns.
-		// - AcquisitionVoxelSize = SVS voxel dimensions in mm, [x, y, z],
-		//   sourced from PixelSpacing[0/1] + SliceThickness projected into
-		//   d.xyzMM[1..3] by the parser.
-		// - NumberOfTransients = averages stacked along NIfTI dim[5]
-		//   (1 when the file is 4D).
+		else
+			requiredMissing = true;
+		// json_Str handles any quote/backslash in the DICOM CS so a
+		// malformed value can't break the JSON. Standard values "1H" /
+		// "31P" / "13C" pass through unchanged.
+		if (d.resonantNucleus[0] != '\0')
+			json_Str(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
+		else
+			requiredMissing = true;
+		// EchoTime is checked below at the general emission site; warn
+		// here only if both stages will be silent.
+		if (d.TE <= 0.0)
+			requiredMissing = true;
+		if (requiredMissing)
+			printWarning("MRS: sidecar is missing one or more BIDS-MRS required fields (ResonantNucleus, SpectrometerFrequency, SpectralWidth, EchoTime); will fail bids-validator.\n");
+		// Recommended per BIDS-MRS:
+		// - NumberOfSpectralPoints = complex data points per FID (DICOM
+		//   0028,9002 SpectroscopyAcquisitionDataColumns -> dataPointColumns).
+		// - AcquisitionVoxelSize = SVS voxel dimensions in mm [x, y, z].
+		//   Use zThick directly for the slice direction: xyzMM[3] is set
+		//   to SpacingBetweenSlices when that tag is present, which
+		//   over-states a single-voxel slab.
+		// - NumberOfTransients = total pulse-sequence applications recorded.
+		//   This is DICOM (0018,0083) NumberOfAverages * (NIfTI dim[5] when
+		//   each input DICOM is one shot). For 64 single-shot DICOMs the
+		//   factors are 1 * 64 = 64; for one DICOM that pre-averaged 32
+		//   shots it would be 32 * 1 = 32. Both factors default to 1 when
+		//   unavailable. If dim[5] later starts encoding coils instead of
+		//   transients (a Phase C MRSI / coil-storage concern), the audit
+		//   M1 deferral note in CLAUDE.md applies and this formula needs
+		//   to switch on the dim_5 semantic.
 		if (d.dataPointColumns > 0)
 			fprintf(fp, "\t\"NumberOfSpectralPoints\": %d,\n", d.dataPointColumns);
-		if ((d.xyzMM[1] > 0.0f) && (d.xyzMM[2] > 0.0f) && (d.xyzMM[3] > 0.0f))
+		if ((d.xyzMM[1] > 0.0f) && (d.xyzMM[2] > 0.0f) && (d.zThick > 0.0f))
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [%g, %g, %g],\n",
-					d.xyzMM[1], d.xyzMM[2], d.xyzMM[3]);
-		if (h != NULL) {
-			int transients = (h->dim[0] >= 5 && h->dim[5] > 0) ? h->dim[5] : 1;
+					d.xyzMM[1], d.xyzMM[2], d.zThick);
+		int avg = (d.numberOfAverages > 0.0f) ? (int)d.numberOfAverages : 1;
+		int dyn = (h != NULL && h->dim[0] >= 5 && h->dim[5] > 0) ? h->dim[5] : 1;
+		int transients = avg * dyn;
+		if (transients > 0)
 			fprintf(fp, "\t\"NumberOfTransients\": %d,\n", transients);
-		}
+		// ScanningSequence: BIDS-MRS constrains this to "SVS", "MRSI", or
+		// "Unlocalized MRS" — different vocabulary from the DICOM (0018,
+		// 0020) CS general path emits. Map from d.mrsAcqType when set,
+		// then suppress the general emission inside the writer (the
+		// general path key would otherwise collide).
+		const char *mrsScan = NULL;
+		if (d.mrsAcqType == kMRSAcqSingleVoxel)
+			mrsScan = "SVS";
+		else if (d.mrsAcqType == kMRSAcqRow || d.mrsAcqType == kMRSAcqPlane || d.mrsAcqType == kMRSAcqVolume)
+			mrsScan = "MRSI";
+		else
+			mrsScan = "Unlocalized MRS";
+		fprintf(fp, "\t\"ScanningSequence\": \"%s\",\n", mrsScan);
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.
@@ -10940,12 +10983,22 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	if (nConvert < 1)
 		return EXIT_FAILURE;
 	struct TDICOMdata *d0 = &dcmList[dcmSort[0].indx];
-	// Audit L2: foreign save formats (MGH / NRRD / BJNIfTI) don't support
-	// DT_COMPLEX64, and the BJNIfTI complex-split path itself has a
-	// header/data shape mismatch (L3). Reject early so we don't read the
-	// FID buffer just to fail at the writer.
+	// Foreign save formats (MGH / NRRD / BJNIfTI) don't support DT_COMPLEX64,
+	// and the BJNIfTI complex-split path has a header/data shape mismatch.
+	// Reject early so we don't read the FID buffer just to fail at the writer.
 	if (opts.saveFormat != kSaveFormatNIfTI) {
 		printError("MRS: only NIfTI output (-e n) is supported; rerun without alternate save format\n");
+		return EXIT_FAILURE;
+	}
+	// Only SVS is implemented. MRSpectroscopyAcquisitionType ROW / PLANE /
+	// VOLUME carry spatial CSI data that needs a different writer (spatial
+	// dims on NIfTI dim[1..3] instead of singleton); refuse rather than
+	// silently mislabel the output as _svs.
+	if (d0->mrsAcqType != kMRSAcqNone && d0->mrsAcqType != kMRSAcqSingleVoxel) {
+		const char *name = (d0->mrsAcqType == kMRSAcqRow) ? "ROW"
+						 : (d0->mrsAcqType == kMRSAcqPlane) ? "PLANE"
+						 : (d0->mrsAcqType == kMRSAcqVolume) ? "VOLUME" : "non-SVS";
+		printError("MRS: MRSpectroscopyAcquisitionType %s (CSI/MRSI) is not yet implemented; only SINGLE_VOXEL is supported\n", name);
 		return EXIT_FAILURE;
 	}
 	int N_pts = d0->dataPointColumns;
@@ -10954,11 +11007,9 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		return EXIT_FAILURE;
 	}
 	int N_files = nConvert;
-	// Audit H4: NIfTI-1 stores `dim[k]` as int16. Anything above 32767 wraps
-	// to a negative number after the (short) cast at header construction.
-	// Refuse to write rather than silently produce a corrupt header. The
-	// per-DICOM N_pts of typical SVS is 1024; N_files = number of averages
-	// or coil channels — the 32767 ceiling is well above realistic values.
+	// NIfTI-1 stores `dim[k]` as int16. Anything above 32767 wraps to a
+	// negative number after the (short) cast at header construction. Refuse
+	// rather than silently produce a corrupt header.
 	if (N_pts > 32767) {
 		printError("MRS: DataPointColumns %d exceeds NIfTI-1 dim[4] limit (32767)\n", N_pts);
 		return EXIT_FAILURE;
@@ -10967,11 +11018,13 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		printError("MRS: %d input DICOMs exceeds NIfTI-1 dim[5] limit (32767)\n", N_files);
 		return EXIT_FAILURE;
 	}
-	// Audit M2: stack invariants. Every member of the series must agree on
-	// the values the writer assumes from d0 (isMRS, dataPointColumns,
-	// spectralWidth, transfer-syntax endian, XA-vs-VX phase convention,
-	// orientation). Mixed series silently stack under d0's metadata, so
-	// fail loud before reading any FIDs.
+	// Stack invariants. Every member of the series must agree on the values
+	// the writer assumes from d0. Mixed series silently stack under d0's
+	// metadata and the first DICOM's affine, so fail loud before reading
+	// any FIDs. Geometry (orient + position + voxel size) is compared with
+	// a float-tolerant epsilon — DICOM-stored values can have last-place
+	// rounding noise across the per-frame entries of a multi-DICOM series.
+	const float kGeomEps = 1e-4f;
 	for (int i = 1; i < N_files; i++) {
 		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
 		if (!d->isMRS) {
@@ -10996,26 +11049,71 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			printError("MRS: DICOM %d vendor/phase convention disagrees with series\n", i);
 			return EXIT_FAILURE;
 		}
+		// Orientation (6 components) + Position (3 components).
+		for (int k = 1; k <= 6; k++) {
+			if (fabsf(d->orient[k] - d0->orient[k]) > kGeomEps) {
+				printError("MRS: DICOM %d ImageOrientationPatient disagrees with d0; refusing to stack\n", i);
+				return EXIT_FAILURE;
+			}
+		}
+		for (int k = 1; k <= 3; k++) {
+			if (fabsf(d->patientPosition[k] - d0->patientPosition[k]) > kGeomEps) {
+				printError("MRS: DICOM %d ImagePositionPatient disagrees with d0; refusing to stack\n", i);
+				return EXIT_FAILURE;
+			}
+		}
+		// Voxel size: PixelSpacing[0/1] (-> xyzMM[1/2]) and SliceThickness
+		// (-> d.zThick). Use zThick rather than xyzMM[3] because the latter
+		// is set to SpacingBetweenSlices when present (gap-inclusive), but
+		// MRS voxels have no slice grid so we want the thickness directly.
+		for (int k = 1; k <= 2; k++) {
+			if (fabsf(d->xyzMM[k] - d0->xyzMM[k]) > kGeomEps) {
+				printError("MRS: DICOM %d PixelSpacing disagrees with d0; refusing to stack\n", i);
+				return EXIT_FAILURE;
+			}
+		}
+		if (fabsf(d->zThick - d0->zThick) > kGeomEps) {
+			printError("MRS: DICOM %d SliceThickness disagrees with d0; refusing to stack\n", i);
+			return EXIT_FAILURE;
+		}
 	}
-	// Audit M3: validate the spatial tags before stamping sform_code=2.
-	// Zero orientation, NaN position, or non-positive voxel spacing would
+	// Validate spatial tags before stamping sform_code=2. Zero / NaN / Inf,
+	// non-positive voxel spacing, or two parallel row vectors would
 	// otherwise be written as authoritative geometry. NaN/Inf checks use
 	// the standard self-comparison idiom so we don't need <math.h>.
 	bool orientFinite = true;
 	for (int i = 1; i <= 6; i++)
 		if (d0->orient[i] != d0->orient[i] || d0->orient[i] > 1e30 || d0->orient[i] < -1e30)
 			orientFinite = false;
-	bool orientNonzero = false;
-	for (int i = 1; i <= 6; i++)
-		if (d0->orient[i] != 0.0f)
-			orientNonzero = true;
+	// Row 1 and Row 2 must each have non-zero magnitude (close to 1 for a
+	// proper DICOM IOP) and their cross product must be non-degenerate —
+	// parallel vectors give a zero cross product and a singular affine.
+	float r1mag = 0.0f, r2mag = 0.0f, crossmag = 0.0f;
+	if (orientFinite) {
+		float r1x = d0->orient[1], r1y = d0->orient[2], r1z = d0->orient[3];
+		float r2x = d0->orient[4], r2y = d0->orient[5], r2z = d0->orient[6];
+		r1mag = sqrtf(r1x * r1x + r1y * r1y + r1z * r1z);
+		r2mag = sqrtf(r2x * r2x + r2y * r2y + r2z * r2z);
+		float cx = r1y * r2z - r1z * r2y;
+		float cy = r1z * r2x - r1x * r2z;
+		float cz = r1x * r2y - r1y * r2x;
+		crossmag = sqrtf(cx * cx + cy * cy + cz * cz);
+	}
+	bool orientShapeOK = (r1mag > 0.5f) && (r1mag < 1.5f) &&
+	                     (r2mag > 0.5f) && (r2mag < 1.5f) &&
+	                     (crossmag > 0.5f); // near-unit + near-orthogonal
 	bool posFinite = true;
 	for (int i = 1; i <= 3; i++)
 		if (d0->patientPosition[i] != d0->patientPosition[i] ||
 			d0->patientPosition[i] > 1e30 || d0->patientPosition[i] < -1e30)
 			posFinite = false;
-	bool spacingOK = (d0->xyzMM[1] > 0.0f) && (d0->xyzMM[2] > 0.0f) && (d0->xyzMM[3] > 0.0f);
-	bool geomValid = orientFinite && orientNonzero && posFinite && spacingOK;
+	// MRS voxel size: PixelSpacing (xyzMM[1..2]) + SliceThickness (zThick).
+	// zThick is the original DICOM SliceThickness (mm) without any
+	// SpacingBetweenSlices gap added; xyzMM[3] is normally the same value
+	// but gets replaced with spacing when SpacingBetweenSlices is set, so
+	// it can over-state the SVS voxel size. Use the thickness directly.
+	bool spacingOK = (d0->xyzMM[1] > 0.0f) && (d0->xyzMM[2] > 0.0f) && (d0->zThick > 0.0f);
+	bool geomValid = orientFinite && orientShapeOK && posFinite && spacingOK;
 
 	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag
 	size_t total_bytes = bytes_per_dicom * (size_t)N_files;
@@ -11094,7 +11192,7 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	hdr.pixdim[0] = 1.0f;
 	hdr.pixdim[1] = (float)d0->xyzMM[1];
 	hdr.pixdim[2] = (float)d0->xyzMM[2];
-	hdr.pixdim[3] = (float)d0->xyzMM[3];
+	hdr.pixdim[3] = (float)d0->zThick; // see px/py/pz comment above re: zThick vs xyzMM[3]
 	hdr.pixdim[4] = (d0->spectralWidth > 0.0) ? (float)(1.0 / d0->spectralWidth) : 1.0f;
 	hdr.pixdim[5] = 1.0f;
 	hdr.pixdim[6] = 1.0f;
@@ -11113,7 +11211,10 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	double rz0 = rx1 * ry2 - rx2 * ry1;
 	double rz1 = rx2 * ry0 - rx0 * ry2;
 	double rz2 = rx0 * ry1 - rx1 * ry0;
-	double px = d0->xyzMM[1], py = d0->xyzMM[2], pz = d0->xyzMM[3];
+	// Use zThick directly for the slice-direction component — xyzMM[3] gets
+	// rewritten to SpacingBetweenSlices when present, which over-states the
+	// SVS voxel size.
+	double px = d0->xyzMM[1], py = d0->xyzMM[2], pz = d0->zThick;
 	double m00 = rx0 * py, m01 = ry0 * px, m02 = rz0 * pz;
 	double m10 = rx1 * py, m11 = ry1 * px, m12 = rz1 * pz;
 	double m20 = rx2 * py, m21 = ry2 * px, m22 = rz2 * pz;
