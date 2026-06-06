@@ -3273,7 +3273,14 @@ tse3d: T2*/
 	bool isSkipPhaseEncodingAxis = d.is3DAcq;
 	if (d.echoTrainLength > 1)
 		isSkipPhaseEncodingAxis = false; // issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
-	if (!d.is3DAcq) {					 // issue849
+	// Gate on isSkipPhaseEncodingAxis directly. Previously the outer guard
+	// was `if (!d.is3DAcq)` (issue849), which made the inner
+	// echoTrainLength>1 escape dead code: 3D MP-RAGE/SPACE were correctly
+	// skipped but 3D EPI and 3D multi-echo GRE QSM (sequences with ETL>1
+	// where in-plane PE direction IS well-defined and downstream-useful)
+	// were also dropped. The QSM consensus reference sidecars from 2022
+	// included PhaseEncodingDirection — restore that.
+	if (!isSkipPhaseEncodingAxis) {
 		int phPos = d.CSA.phaseEncodingDirectionPositive;
 		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
 			// when phase encoding axis is known but we do not know phase encoding polarity
