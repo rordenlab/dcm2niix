@@ -69,13 +69,21 @@ deadline:
   CLAUDE.md MRS section was already current as of this cycle's
   audit-response work.
 
-**Actual end-of-cycle state:** 3/40 PASS, `_mrsref` works, Siemens SVS
-covered (1 `JSON Δ1` M4 RxCoil-alias gap on VB/VE/anon), Philips classic +
-`_mrsref` covered (P2.b orient handedness blocks every PASS on the 8 active
-Philips rows), UIH SVS PRESS PASS. The remaining 27 FAIL + 10 SKIP rows are
-tracked below as deferred — they require non-trivial parser additions
-(MRSI dispatch, Philips orientation handedness, sLASER Phoenix-protocol
-TE summing) that are not deadline-scoped.
+**Actual end-of-cycle state (round-4 close-out, 2026-06-07):** **15/40 PASS**
+(re-measured live post-MEGA-PRESS revert), `_mrsref` works, Siemens SVS
+fully covered (all 5 VB/VE/XA20/XA30/anon PASS + 2 sLASER `_mrsref`
+variants PASS), all 7 Philips classic SVS PASS (incl. 45deg_AP via
+SlabOrientation), Philips Enhanced multi-dynamic `svsWSAntCing` PASS,
+UIH SVS PRESS PASS. The 15 FAIL rows are 6 sLASER multi-DICOM (moving
+to `tools/mrs_post.py`), 6 Siemens MRSI hard-rejects + classic-CSI
+mislabels (Phase 6), 2 UIH MRSI hard-rejects (Phase 6), 1 press_mega
+(post-revert tradeoff — moves to `tools/mrs_post.py`). The 10 SKIP rows
+are 9 `spar_dcm_orientation_tests/` (Raw Data Storage, not actually
+MRS — spec2nii rejects them too in this environment) + 1 HYPER
+`converted_dcm` (spec2nii reference path errors locally). The earlier
+"3/40 PASS" scoreboard was a pre-M4/IOP-negation snapshot that never
+got refreshed; round-4 audit found 12 datasets had silently transitioned
+PASS without anyone re-running the comparator.
 
 ### Next-cycle goal: dcm2niix bundles raw, Python post-tool splits per vendor
 
@@ -192,6 +200,17 @@ separate parity items:
     `ParallelReductionFactor*` at >= 1.0, zero-padded `AcquisitionTime`,
     `SequenceName: epiRT` XA60 fallback, UIH `InstitutionalDepartmentName`).
     Zero MRS-related drift. Bundle lands clean.
+  - **MRS comparator re-run** (post-bundle, audit follow-on): live
+    `spec2nii_compare.py --all` reports **15 pass, 15 fail, 10 skipped**,
+    not the 3/40 the prior scoreboard claimed. M4 RxCoil really is
+    DONE (VB/VE/anon SVS all `JSON✓`); P2.b IOP-negation gave all 7
+    Philips classic SVS `FID✓ sform✓` (the prior "all 8 FID✗" claim
+    was wrong — spec2nii's `conj()` was already mirrored by the
+    Philips classic conjugation block); press_mega expected FAIL
+    post-revert (dim/dim_6 mismatch is the documented tradeoff,
+    moves to `tools/mrs_post.py`). Net +12 PASS for the cycle vs the
+    stale published count. Scoreboard refreshed below; per-vendor
+    breakdown reflects the live state.
 
 ### Deferred to Phase 6 (post-release backlog)
 
@@ -240,10 +259,11 @@ deliverable + why-deferred so the next cycle has a running start.
 - All four `F1`-`F4` items landed and committed to `development`.
 - Build clean; `dcm_qa` / `dcm_qa_nih` / `dcm_qa_uih` show only the
   pre-existing stale Ref diffs.
-- `dcm_qa_mrs/spec2nii_compare.py --all` reports **3 pass, 27 fail, 10
-  skipped (total 40)** with all deferred datasets tagged by reason in this
-  file. (The comparator moved from `dcm2niix/tools/` to `dcm_qa_mrs/` once
-  the MRS port stabilised — see the commit list below.)
+- `dcm_qa_mrs/spec2nii_compare.py --all` reports **15 pass, 15 fail, 10
+  skipped (total 40)** (re-measured at round-4 close-out) with all
+  deferred datasets tagged by reason in this file. (The comparator moved
+  from `dcm2niix/tools/` to `dcm_qa_mrs/` once the MRS port stabilised —
+  see the commit list below.)
 - Scoreboard table refreshed from a post-fix run.
 - This `## Close-out scope` section unchanged except to flip the F1-F4 boxes.
 
@@ -522,35 +542,49 @@ P3.1 is one CSA-equivalent extractor away from PASS — UIH has its own (0065,xx
 - [ ] P3.a UIH SVS sform via private-tag orientation extractor
 - [ ] P3.b UIH 2D + 3D MRSI parsing (Phase 4 dispatch)
 
-### Current session checkpoint (2026-06-07 F1-F4 close-out)
+### Current session checkpoint (2026-06-07 round-4 close-out)
 
-Cumulative scoreboard against the 40-dataset corpus
-(`spec2nii_compare.py --all` reports `3 pass, 27 fail, 10 skipped`;
-inventory grew from 31 → 40 with the 9 `spar_dcm_orientation_tests/`
-added per F3):
+Cumulative scoreboard against the 40-dataset corpus, re-measured live
+after the MEGA-PRESS revert + K4(b) parser fix landed:
+`spec2nii_compare.py --all` reports **15 pass, 15 fail, 10 skipped**.
 
-| Vendor | Total | PASS | suf✓ with parity Δ | suf✗ (MRSI in Unknown) | SKIP |
-|---|---|---|---|---|---|
-| Siemens | 19 | 2 (XA20, XA30) | 11 (3 VB/VE/anon SVS JSON Δ1 RxCoil — M4 Phase 6; 6 sLASER FID/dim/TE; 2 wrsoff `_mrsref` JSON Δ2) | 6 (5 MRSI + voi_in_mrsi — Phase 6) | 0 |
-| Philips | 18 | 0 | 8 (7 now `sform✓` after P2.b partial IOP-negation: 5 classic SVS-minus-45deg_AP + center no-WS `_mrsref` + svsWSAntCing + press_mega; `45deg_AP` still `sform✗`; all 8 still `FID✗` — P2.c trailing-FID) | 0 | 10 (1 HYPER `philips_converted_dcm` spec2nii-ref errors locally + 9 `spar_dcm_orientation_tests/` P2.b) |
-| UIH | 3 | 1 (SVS PRESS — F2) | 0 | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
-| **TOTAL** | **40** | **3** | **19** | **8** | **10** |
+| Vendor | Total | PASS | FAIL | SKIP |
+|---|---|---|---|---|
+| Siemens | 19 | 7 (VB SVS, VE SVS, XA20, XA30, anon, sLASER wrsoff_13 `_mrsref`, sLASER VOI wrsoff_19 `_mrsref`) | 12 (6 sLASER multi-DICOM + 6 MRSI — Phase 6 / Python wrapper) | 0 |
+| Philips | 18 | 7 (5 classic SVS incl. 45deg_AP + center no-WS `_mrsref` + svsWSAntCing) | 1 (press_mega — post-revert tradeoff: dim/dim_6 expected to diverge from spec2nii's reshape) | 10 (1 HYPER `philips_converted_dcm` spec2nii-ref errors locally + 9 `spar_dcm_orientation_tests/` P2.b) |
+| UIH | 3 | 1 (SVS PRESS) | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
+| **TOTAL** | **40** | **15** | **15** | **10** |
 
-Delta vs round-3 scoreboard:
-- PASS 2 → 3 (UIH SVS PRESS landed via F2).
-- VB/VE/anon SVS moved from `pix✗ + JSON Δ1` to `pix✓ + JSON Δ1`; residual
-  Δ is the RxCoil/ReceiveCoilName alias (M4, deferred to Phase 6).
-- Corpus grew 31 → 40 by inventorying the 9 `spar_dcm_orientation_tests/`
-  (all skipped pending P2.b).
-- Philips HYPER `converted_dcm` switched from `FAIL (spec2nii ERR)` to
-  `SKIP (spec2nii ERR documented)` so the noise no longer hides real
-  parity failures.
+Delta vs prior published 3/40 scoreboard (which was a snapshot before
+M4 RxCoil + P2.b SlabOrientation + P2.b IOP-negation + the round-4
+audit landed): **+12 PASS net** (+13 transitions PASS, −1 press_mega
+trade for the MEGA-PRESS revert). M4 RxCoil really is DONE; the
+audit-confirmation comparator run found all 3 VB/VE/anon SVS rows
+already at `JSON✓`, not the `JSON Δ1 RxCoil` the stale scoreboard
+claimed. The P2.b IOP-negation gave all 7 Philips classic SVS rows
+`FID✓ sform✓` (not just `sform✓` — the prior "all 8 still FID✗"
+scoreboard claim was wrong; spec2nii's `conj()` was already mirrored
+by the Philips classic conjugation block at `:11998-12008`).
+
+Per-FAIL breakdown:
+- **Siemens sLASER multi-DICOM (6)** — `_rf_off` / `_rf_grads_ovs_off`
+  reference-grouping; moves to `tools/mrs_post.py` next cycle per the
+  MRS split policy.
+- **Siemens MRSI (6)** — `sm_classic` / `sm_enhanced` / `rk_enhanced` /
+  VB+VE 3D CSI / `voi_in_mrsi`. `sm_enhanced` and `rk_enhanced` are
+  hard-rejected (`MRSpectroscopyAcquisitionType VOLUME/PLANE not yet
+  implemented`); the classic-Siemens CSI variants need the negative
+  evidence gate tightened or a real MRSI writer. Phase 6.
+- **Philips press_mega (1)** — `dim` diverges (spec emits 1024,144,2
+  with edit-axis; we emit raw 1024,297); FID size differs by 9 ref
+  frames spec drops. Expected post-revert state — moves to
+  `tools/mrs_post.py`.
+- **UIH CSI 2D + 3D (2)** — same MRSI hard-reject as Siemens; Phase 6.
 
 `JSON—` sentinel still distinguishes "converter did not produce a
-sidecar" from `JSON✓` (parity-clean) and `JSON Δn` (parity diff). The
-4 `JSON—` rows are `sm_enhanced`, `rk_enhanced`,
-`uih_csi_hise_te144_*`, `uih_csi_hise_3d_te144_*` — all MRSI parser
-rejects pending Phase 6.
+sidecar" from `JSON✓` (parity-clean) and `JSON Δn` (parity diff).
+The `JSON—` rows are all MRSI parser hard-rejects (`sm_enhanced`,
+`rk_enhanced`, both UIH CSI).
 
 `_mrsref` deliverable (P2.c + P4.4) — DONE this session:
 - Philips classic 2× payload now emits paired `<stem>_svs.nii(.gz)` + `<stem>_mrsref.nii(.gz)` (`philips_SV_phantom_center` writes both files; verified manually).
@@ -571,7 +605,9 @@ Commits in this session:
 - `33da307` MRS BEP009 PET-array suppression — restore 4 TDTI4D sentinels in `saveDcm2NiiMRS` (main + `_mrsref`); eliminates 1024×0 `DecayCorrectionFactor` / `FrameTimesStart` from MRS sidecars
 - `54fe303` Audit follow-up — extract `initTDTI4D()` helper at `nii_dicom_batch.cpp:~3470`; use at all four sites (closes latent UB in `nii_SaveBIDS` malloc'd TDTI4D, consolidates 3 inline sentinel blocks). Python defensive guards in `dcm_qa_mrs`: vox_offset + truncated-header validation; chunked big-file compare. New `dcm_qa_mrs_lib.py` shared module. Docs sweep (BEP009 sentinel gotcha, dcm_qa_mrs cross-ref)
 - `4339869` Move `tools/spec2nii_compare.py` → `dcm_qa_mrs/spec2nii_compare.py` — the MRS validation comparator belongs in the QA repo, not the build tree, now that the port has stabilised. `dcm_qa_mrs/{batch.py,compare_spec2nii.py}` find it as a sibling file; `$DCM2NIIX_TOOLS` env var dropped. Dedupes the NIfTI parser / alias map / ignore lists into the canonical sibling.
-- (this) P2.b partial — Philips IOP-negation on the MRS branch of `saveDcm2NiiMRS` mirrors spec2nii's `imageOrientationPatient *= -1` (philips_dcm.py:341). 7 Philips datasets gain `sform✓` (SV_phantom_center / H15mm / R15mm / 45deg_RL / no_Water_Suppression / svsWSAntCing_S002 / press_mega). PASS count unchanged at 3/40 — FID still ✗ on all of them (P2.c trailing-FID work remains the blocker). The 8th classic-SVS (`45deg_AP`) has a more complex axis-permutation pattern, not a simple sign flip; left as P2.b residual.
+- `08f68b7` P2.b partial — Philips IOP-negation on the MRS branch of `saveDcm2NiiMRS` mirrors spec2nii's `imageOrientationPatient *= -1` (philips_dcm.py:341). 7 Philips datasets gain `sform✓` (SV_phantom_center / H15mm / R15mm / 45deg_RL / no_Water_Suppression / svsWSAntCing_S002 / press_mega). PASS count unchanged at 3/40 — FID still ✗ on all of them (P2.c trailing-FID work remains the blocker). The 8th classic-SVS (`45deg_AP`) has a more complex axis-permutation pattern, not a simple sign flip; left as P2.b residual.
+- `e2ff96b` MRS round-4 — MEGA-PRESS revert (~150 lines: `philipsScanMegaPressFrames` helper + `megaPressReshape` branch + `dim_6: DIM_EDIT` sidecar block); SlabOrientation parser K4(b) one-line fix (move `slabOrientCount++` inside the `lLength >= 24` guard); docs sweep (CLAUDE.md MEGA-PRESS block past-tense, TDICOMdata size threshold rule, SlabOrient K4(b) record; spec_plan round-4 audit outcome). press_mega lands raw (1024, 297) all frames intact; svsWSAntCing 32-dyn confirmed on separate code path.
+- (this) Round-4 follow-on — K1 RxCoil comment-vs-code mismatch fixed: comment now accurately states "later nonempty wins; corpus has no divergent case" instead of the misleading "first nonempty wins" (audit-only docs fix, no behaviour change). spec_plan scoreboard refreshed against live `spec2nii_compare.py --all`: actual count is **15/40 PASS** (not the 3/40 the prior scoreboard claimed — 12 datasets had silently transitioned PASS via M4 RxCoil + P2.b IOP-negation + SlabOrientation without anyone re-running the comparator). press_mega lost as expected post-revert; one net +12 PASS for the cycle.
 
 ### Phase 4 MRSI / Unloc / mrsref
 - [ ] P4.1 `saveDcm2NiiMRS` refactor — **DEFERRED to Phase 6** (precondition for MRSI; ~250-line monolith split)

@@ -1869,8 +1869,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// "C:A32" actually lives in ImaCoilString). Both tags carry
 				// the same short-name semantics; spec2nii line 692-697
 				// uses ReceivingCoil[0] when nonempty else ImaCoilString[0].
-				// We mirror that with a tag-name `||` so whichever populated
-				// CSA item we hit first wins.
+				// We accept either tag and write to the same destination.
 				//
 				// This overrides the public (0018,1250) ReceiveCoilName
 				// long marketing label (e.g. "Head_32", "32Ch_Head_7T")
@@ -1881,12 +1880,15 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// MRS files where the CSA and public tag agree (e.g.
 				// svs_se_135sws -> "HeadNeck_64") see no observable change.
 				//
-				// Both names map to the same destination; the first
-				// nonempty hit wins because we already write something
-				// non-NULL on success. The second hit's strcmp at line
-				// ~1856 will still fire (it's a fresh tagCSA.name), but
-				// the value-copy block below only runs when item items
-				// (n > 0) are present, so an empty later tag is a no-op.
+				// Behaviour when both tags are nonempty: the LATER one in
+				// CSA tag order wins (no empty-target guard). The corpus
+				// has not surfaced a file where ReceivingCoil and
+				// ImaCoilString are both nonempty AND disagree — VB/VE
+				// have only ImaCoilString populated, XA-line agrees across
+				// both tags. If a divergent case appears, add an early
+				// `if (d->coilName[0] != '\0') break;` here to lock
+				// spec2nii's ReceivingCoil-first precedence; until then we
+				// avoid the extra branch (audit 2026-06-07 round-4 K1).
 				memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
 				if (!littleEndianPlatform())
 					nifti_swap_4bytes(1, &itemCSA.xx2_Len);
