@@ -259,9 +259,33 @@ Phase 1 final corpus state (5/19 PASS, 14 future-phase):
 - [ ] P2.4 HYPER
 
 ### Phase 3 UIH
-- [ ] P3.1 SVS PRESS
-- [ ] P3.2 2D MRSI
-- [ ] P3.3 3D MRSI
+
+Baseline survey (post Phase 1+2, no UIH-specific code yet):
+- P3.1 **SVS PRESS**: **FID ✓ dim ✓ JSON ✓** ← almost-parity, only sform missing (UIH writes orientation through a private path the public (0020,0037) doesn't carry)
+- P3.2 2D MRSI HISE: parser rejects (Phase 4 work)
+- P3.3 3D MRSI HISE: parser rejects (Phase 4 work)
+
+P3.1 is one CSA-equivalent extractor away from PASS — UIH has its own (0065,xxxx) private tag for VoiPosition/VoiThickness/etc. Phase 3.a deliverable.
+
+- [ ] P3.a UIH SVS sform via private-tag orientation extractor
+- [ ] P3.b UIH 2D + 3D MRSI parsing (Phase 4 dispatch)
+
+### Current session checkpoint (2026-06-06)
+
+Cumulative scoreboard against the 31-dataset corpus:
+
+| Vendor | PASS | FID-parity only | parsed but sform=0 | parsed but sidecar Δ | parser reject |
+|---|---|---|---|---|---|
+| Siemens (19) | 5 | 0 | 0 | 8 sLASER (TE alTE summing) | 6 MRSI |
+| Philips (9) | 0 | 0 | 9 (orientation handedness) | 0 | 0 |
+| UIH (3) | 0 | 1 (SVS PRESS) | 0 | 0 | 2 MRSI |
+| **TOTAL** | **5** | **1** | **9** | **8** | **8** |
+
+Commits in this session:
+- `05815ae` Phase 0 — `tools/spec2nii_compare.py` + 31-dataset inventory
+- `5682953` Phase 1 — (7FE1,1010) FID capture + BIDS-MRS sidecar shape
+- `a9d3dd1` Phase 1 cont'd — CSA SeriesHeader parsing + precision (5/19 Siemens PASS)
+- `55884e8` Phase 2.a — relaxed Philips FID size check (9/9 Philips parses)
 
 ### Phase 4 MRSI / Unloc / mrsref
 - [ ] P4.1 `saveDcm2NiiMRS` refactor
