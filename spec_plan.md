@@ -438,7 +438,9 @@ Commits in this session:
 - `6dabc01` Scoreboard refresh + Phase 3 UIH baseline
 - `00a680b` CLAUDE.md right-size (559 → 168 lines)
 - `04676f9` Phase 2.c / 4.4 `_mrsref` companion + F1-F4 close-out (3/40 PASS)
-- (this) Audit response — H1 UIH-only normalization, H2/M5 shallow-copy reset, M1 comment fix, M2 csaICEdims NUL, M3 size_t pre-walk, R1 `mrsIsStandaloneWaterRef` helper, R2 `_SKIP_P2B_ORIENTATION` constant + F1 pixdim-mirror anchors, docs sweep (CLAUDE.md F2 + parser gotcha, spec2nii URL fix)
+- `8d256f1` Audit response — H1 UIH-only normalization, H2/M5 shallow-copy reset, M1 comment fix, M2 csaICEdims NUL, M3 size_t pre-walk, R1 `mrsIsStandaloneWaterRef` helper, R2 `_SKIP_P2B_ORIENTATION` constant + F1 pixdim-mirror anchors, docs sweep (CLAUDE.md F2 + parser gotcha, spec2nii URL fix)
+- `33da307` MRS BEP009 PET-array suppression — restore 4 TDTI4D sentinels in `saveDcm2NiiMRS` (main + `_mrsref`); eliminates 1024×0 `DecayCorrectionFactor` / `FrameTimesStart` from MRS sidecars
+- (this) Audit follow-up — extract `initTDTI4D()` helper at `nii_dicom_batch.cpp:~3470`; use at all four sites (closes latent UB in `nii_SaveBIDS` malloc'd TDTI4D, consolidates 3 inline sentinel blocks). Python defensive guards in `dcm_qa_mrs`: vox_offset + truncated-header validation; chunked big-file compare. New `dcm_qa_mrs_lib.py` shared module. Docs sweep (BEP009 sentinel gotcha, dcm_qa_mrs cross-ref)
 
 ### Phase 4 MRSI / Unloc / mrsref
 - [ ] P4.1 `saveDcm2NiiMRS` refactor — **DEFERRED to Phase 6** (precondition for MRSI; ~250-line monolith split)

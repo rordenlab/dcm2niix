@@ -31,6 +31,8 @@ for d in dcm_qa dcm_qa_nih dcm_qa_uih; do (cd "$d" && ./batch.sh) || { echo "FAI
 ```
 The diffs ignore `ConversionSoftwareVersion` and `BidsGuess`. **Full vendor matrix** for releases lives in [`dcm_validate`](https://github.com/neurolabusc/dcm_validate) (~35 submodules). **Pre-push**: run `dcm_qa` minimum, plus `git ls-files | xargs codespell` (matches the `Codespell` GH Action; config in `.codespellrc`).
 
+**MR Spectroscopy regression** lives in the sibling [`dcm_qa_mrs`](https://github.com/neurolabusc/dcm_qa_mrs) repo (peer checkout, not a submodule). Two scripts: `python3 batch.py` for `Ref/`-diff against the LFS-tracked XA60 baselines, and `python3 compare_spec2nii.py --corpus={local,spec2nii,both}` for live spec2nii parity. The `spec2nii` corpus delegates to `tools/spec2nii_compare.py` via `$DCM2NIIX_TOOLS` + `$SPEC2NII_DATA` (`$SPEC2NII_DATA` points at a clone of `git.fmrib.ox.ac.uk/wclarke/spec2nii_test_data`; nothing auto-downloads).
+
 **Session scratch** (`temp/`): gitignored drop zone for `/audit` agents and ad-hoc DICOM analysis. Holds real PHI; clean (`rm -rf temp/`) at the end of every cycle that wrote to it.
 
 ## Architecture
@@ -163,6 +165,8 @@ Pipeline at `nii_dicom_batch.cpp:~11324`. SOP detection: standard MR Spectroscop
 **`WaterSuppressed` sidecar field**: BIDS-MRS requires it on `_svs`/`_mrsi`/`_mrsref`. Emitted from `nii_SaveBIDSX` MRS block (`~3285`) as `!d.isMrsRef` — `true` for the main acquisition, `false` for the water-ref. Don't add another emission site; the gate is the single source of truth.
 
 **Stack validation** in `saveDcm2NiiMRS`: every member must agree with `d0` on `isMRS`, `dataPointColumns`, spectral width (canonical `mrsSpectralWidthHz` value, 1e-6 relative tolerance), `isLittleEndian`, `manufacturer`, `isXA`, orient/position/voxel-size (1e-4 absolute). Affine validity gate: zero/NaN/Inf orient or non-positive voxel spacing → `sform_code=0`. Foreign save formats (MGH / NRRD / BJNIfTI) rejected at dispatch.
+
+**BEP009 PET-array suppression / `initTDTI4D()` contract**: `nii_SaveBIDSX` gates several emissions on `dti4D->X[0] >= 0.0` "unset" sentinels. The BEP009 PET arrays (`DecayCorrectionFactor`, `FrameTimesStart`, `FrameDuration`, `FrameReferenceTime`) plus `SliceTiming`, `IntensityScaleFactor`, and the `RepetitionTime` fallback all read these. Every caller that builds a TDTI4D for nii_SaveBIDSX MUST call `initTDTI4D()` first (file-static helper at `nii_dicom_batch.cpp:~3470`). Skipping it on a `memset(0)` stack local leaks `h->dim[4]`-long zero arrays — for MRS that's the spectral-point axis (typically 1024–2048), not a frame count, so the sidecar grows by tens of KB of meaningless zeros (commit `33da307` was the MRS case; commit-after-that consolidated the four sites with `initTDTI4D`). Do NOT init-by-field at a new TDTI4D site — coverage drifted across four sites before the helper landed.
 
 **Philips oversized payload**: classic Philips SVS packs `nframes × spec_points` in `(5600,0020)`; a common variant trails a water-reference FID. Writer accepts integer-multiple sizes, reads first `bytes_per_dicom` into the main FID, warns once per series (audit L1). For the exact 2× case the trailing chunk is captured into the parallel `fidRef` buffer and emitted as the `<stem>_mrsref.nii(.gz)` companion (see the SVS / `_mrsref` writer block above). 3×+ multipliers (dynamics / edit-on/off / multi-coil) are still dropped — Phase 2.d.
 

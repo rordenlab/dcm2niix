@@ -3467,17 +3467,41 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 		nifti_swap_8bytes(nVox, im);
 }
 
-#ifndef USING_R
-
-void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename) {
-	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+// Init every `[0]`-slot sentinel that nii_SaveBIDSX reads as "unset"
+// (`>= 0.0` sentinel arrays + the two scalar repetition-time fields). Every
+// caller that builds a TDTI4D for nii_SaveBIDSX must call this — without it,
+// either heap noise (malloc'd TDTI4D) or a zero-init (stack `memset(0)`) can
+// trip the BEP009 PET emission gates at nii_dicom_batch.cpp:~2390-2457 and
+// leak `h->dim[4]`-long zero arrays into the sidecar (audit 2026-06-07
+// follow-up to 33da307 — the MRS fix was for one such case, this helper
+// closes the same class of bug at the nii_SaveBIDS wrapper).
+//
+// Listed fields are every `[0]`-read or scalar that nii_SaveBIDSX gates on:
+//   sliceOrder[0]          — `SliceTiming` emission (see L2940-ish)
+//   volumeOnsetTime[0]     — `FrameTimesStart` gate (L2403)
+//   decayFactor[0]         — `DecayCorrectionFactor` gate (L2390)
+//   frameDuration[0]       — `FrameDuration` + `RepetitionTime` gates (L2427, 2558)
+//   frameReferenceTime[0]  — `FrameReferenceTime` gate (L2441)
+//   triggerDelayTime[0]    — currently dead-code path (commented at L2987) — defensive
+//   intenScale[0]          — `IntensityScaleFactor` etc.
+//   repetitionTimeExcitation / repetitionTimeInversion — gated via json_Float (== 0 ⇒ skip)
+static void initTDTI4D(struct TDTI4D *dti4D) {
 	dti4D->sliceOrder[0] = -1;
 	dti4D->volumeOnsetTime[0] = -1;
 	dti4D->decayFactor[0] = -1;
+	dti4D->frameDuration[0] = -1;
+	dti4D->frameReferenceTime[0] = -1;
 	dti4D->triggerDelayTime[0] = -1.0;
 	dti4D->intenScale[0] = 0.0;
 	dti4D->repetitionTimeExcitation = 0.0;
 	dti4D->repetitionTimeInversion = 0.0;
+}
+
+#ifndef USING_R
+
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename) {
+	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+	initTDTI4D(dti4D);
 	nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 	free(dti4D);
 } // nii_SaveBIDSX()
@@ -10499,14 +10523,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	// if (nConvert > 1)
 	//	indx1 = dcmSort[1].indx;
 	uint64_t indxEnd = dcmSort[nConvert - 1].indx;
-	dti4D->repetitionTimeInversion = 0.0;  // only set for Siemens and GE 3D T1 "TR"
-	dti4D->repetitionTimeExcitation = 0.0; // only set for Philips 3D T1 "TR"
-	if (nConvert > 0) {					   // issue 616: not enhanced DICOMs: infer these arrays from multiple volumes
-		dti4D->volumeOnsetTime[0] = -1;
-		dti4D->decayFactor[0] = -1;
-		dti4D->frameDuration[0] = -1;
-		dti4D->frameReferenceTime[0] = -1;
-	}
+	// Reset every `nii_SaveBIDSX`-read sentinel before we start filling in
+	// values from this stack of DICOMs (issue 616: not enhanced DICOMs;
+	// downstream emission gates on `[0] >= 0.0` so leftover values would
+	// emit garbage arrays). Helper canonicalised after the audit follow-up
+	// to 33da307.
+	initTDTI4D(dti4D);
 	if ((strlen(dcmList[indx0].patientOrient) < 3) && (!dcmList[indx0].isMicroscopy))
 		printWarning("Patient Position (0018,5100) not specified (issue 642).\n");
 	if (dcmList[indx0].isQuadruped)
@@ -11917,22 +11939,13 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// ResonantNucleus, DataPointColumns) are gated on d.isMRS inside
 	// nii_SaveBIDSX.
 	if (ret == EXIT_SUCCESS) {
+		// Stack-local TDTI4D for the MRS sidecar pass. `initTDTI4D` sets the
+		// full set of "unset" sentinels so the PET-flavored BEP009 emission
+		// gates at ~L2390-2457 don't fire on MRS — without this, dim[4]-long
+		// zero arrays of `DecayCorrectionFactor` / `FrameTimesStart` leak in
+		// (commit 33da307; helper consolidates the pattern with nii_SaveBIDS).
 		struct TDTI4D dti4D_local;
-		memset(&dti4D_local, 0, sizeof(dti4D_local));
-		// nii_SaveBIDSX gates several emissions on `[i][0] < 0.0` ("unset"
-		// sentinels — readDICOMx inits these to -1). A zero-init dti4D_local
-		// trips those gates and either silently drops RepetitionTime
-		// (frameDuration), or — worse — emits a `h->dim[4]`-long array of
-		// zeros for the PET-flavored BEP009 fields. For MRS `h->dim[4]` is
-		// the number of spectral points (typically 1024), not a frame count,
-		// so the resulting `DecayCorrectionFactor` / `FrameTimesStart` arrays
-		// are huge AND meaningless AND not emitted by spec2nii for MRS.
-		// Restore every "unset" sentinel manually so all four PET arrays stay
-		// out of the MRS sidecar.
-		dti4D_local.frameDuration[0] = -1.0f;
-		dti4D_local.decayFactor[0] = -1.0f;
-		dti4D_local.volumeOnsetTime[0] = -1.0f;
-		dti4D_local.frameReferenceTime[0] = -1.0f;
+		initTDTI4D(&dti4D_local);
 		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
 					  nameList->str[dcmSort[0].indx], &dti4D_local);
 	}
@@ -11991,14 +12004,7 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			int retRef = nii_saveNII(refPath, hdr, (unsigned char *)fidRef, opts, dRef);
 			if (retRef == EXIT_SUCCESS) {
 				struct TDTI4D dti4D_ref;
-				memset(&dti4D_ref, 0, sizeof(dti4D_ref));
-				// See the matching block at the main writer (~line 11920):
-				// every BEP009 PET array needs its "unset" sentinel restored
-				// or the MRS sidecar emits h->dim[4]-long zero arrays.
-				dti4D_ref.frameDuration[0] = -1.0f;
-				dti4D_ref.decayFactor[0] = -1.0f;
-				dti4D_ref.volumeOnsetTime[0] = -1.0f;
-				dti4D_ref.frameReferenceTime[0] = -1.0f;
+				initTDTI4D(&dti4D_ref); // see main-writer comment (audit 33da307)
 				nii_SaveBIDSX(refPath, dRef, opts, &hdr,
 							  nameList->str[dcmSort[0].indx], &dti4D_ref);
 			} else {
