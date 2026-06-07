@@ -11,4 +11,6 @@ skip = .git,*.json,dcm_qa*
 # ser - used in  printMessage(" acq %d img %d ser %ld ...
 # puls - Siemens PMU waveform/log naming (PULS = pulse oximeter trace,
 #        e.g. _PULS.log); not a typo for PULSE/PLUS
-ignore-words-list = clen,hep,indx,nd,puls,ser,spoff,tage,te
+# varian - Varian Medical Systems (MRS vendor handled by spec2nii);
+#          not a typo for "variant"
+ignore-words-list = clen,hep,indx,nd,puls,ser,spoff,tage,te,varian

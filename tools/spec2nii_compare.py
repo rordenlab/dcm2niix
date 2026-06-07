@@ -31,6 +31,8 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import math
+import os
 import shutil
 import struct
 import subprocess
@@ -40,8 +42,14 @@ from pathlib import Path
 from typing import NamedTuple
 
 REPO = Path(__file__).resolve().parent.parent
-SPEC2NII_DATA = Path("/Users/chris/src/spec2nii/tests/spec2nii_test_data")
-DCM2NIIX_BIN = REPO / "build" / "bin" / "dcm2niix"
+# Audit 2026-06-07 L2: allow override via env or CLI so the tool isn't pinned
+# to one developer's checkout layout.
+SPEC2NII_DATA = Path(os.environ.get(
+    "SPEC2NII_DATA",
+    "/Users/chris/src/spec2nii/tests/spec2nii_test_data")).resolve()
+DCM2NIIX_BIN = Path(os.environ.get(
+    "DCM2NIIX_BIN",
+    str(REPO / "build" / "bin" / "dcm2niix"))).resolve()
 
 # Fields the parity diff considers "informational" — present on one side or
 # the other but not a parity failure. Tag-by-tag rationale:
@@ -68,7 +76,7 @@ DCM2NIIX_WIDE_FIELDS = {
     "InstitutionName", "Manufacturer", "ManufacturersModelName",
     "MagneticFieldStrength", "MatrixCoilMode", "Modality",
     "ProcedureStepDescription", "ProtocolName", "RawImage",
-    "ReceiveCoilActiveElements", "ReceiveCoilName", "ScanOptions",
+    "ReceiveCoilActiveElements", "ScanOptions",
     "SeriesDescription", "SeriesNumber", "ShimSetting", "SoftwareVersions",
     "StationName", "StudyDescription", "TxRefAmp",
     # Decay / frame / array fields that are large repeating zeros
@@ -81,7 +89,7 @@ DCM2NIIX_WIDE_FIELDS = {
     "NumberOfKSpaceTrajectories", "ParallelReductionFactorInPlane",
     "ParallelReductionFactorOutOfPlane", "PercentPhaseFOV", "PercentSampling",
     "PhaseResolution", "PulseSequenceDetails", "PulseSequenceName",
-    "SequenceName", "ScanningSequence", "SequenceVariant", "SpoilingState",
+    "SequenceName", "SequenceVariant", "SpoilingState",
     "TablePosition",
 }
 
@@ -118,7 +126,12 @@ def _ds(vendor: str, spec2nii_cmd: str, relpath: str, bids_suffix: str = "_svs",
     if id_override:
         ds_id = id_override
     else:
-        anchor = src.parent.name if (src.is_file() and src.stem.lstrip("0").isdigit()) else src.stem
+        # When the stem is all-digits (or all-zero — audit 2026-06-07 M7,
+        # `"00000000".lstrip("0")` is empty so the previous
+        # `lstrip("0").isdigit()` test misfired and both UIH 00000000.dcm
+        # files derived the same id), use the parent directory name instead.
+        stem_is_numeric = src.is_file() and src.stem.isdigit()
+        anchor = src.parent.name if stem_is_numeric else src.stem
         ds_id = f"{vendor}_{anchor}".replace(">", "_gt_")
     return Dataset(id=ds_id, vendor=vendor, spec2nii_cmd=spec2nii_cmd,
                    source=src, bids_suffix=bids_suffix, notes=notes)
@@ -342,6 +355,8 @@ class CompareResult(NamedTuple):
     fid_match: bool
     sform_match: bool
     dim_match: bool
+    pixdim_match: bool      # audit 2026-06-07 H2
+    suffix_match: bool      # audit 2026-06-07 H3
     sidecar_diff: dict
     fid_byte_diff: int
     notes: list[str]
@@ -354,11 +369,11 @@ def compare(ds: Dataset) -> CompareResult:
         try:
             spec_nii, spec_json = run_spec2nii(ds, td_spec_p)
         except RuntimeError as e:
-            return CompareResult(ds, False, False, False, {}, -1, [f"spec2nii ERROR: {e}"])
+            return CompareResult(ds, False, False, False, False, False, {}, -1, [f"spec2nii ERROR: {e}"])
         try:
             dcm_nii, dcm_json = run_dcm2niix(ds, td_dcm_p)
         except RuntimeError as e:
-            return CompareResult(ds, False, False, False, {}, -1, [f"dcm2niix ERROR: {e}"])
+            return CompareResult(ds, False, False, False, False, False, {}, -1, [f"dcm2niix ERROR: {e}"])
 
         spec_hdr = read_nifti_header(spec_nii)
         dcm_hdr = read_nifti_header(dcm_nii)
@@ -384,6 +399,25 @@ def compare(ds: Dataset) -> CompareResult:
                     sform_match = False
                     notes.append(f"sform[{row_name}][{k}] spec={s} dcm={d} (delta={s-d:.3e})")
 
+        # pixdim compare (audit 2026-06-07 H2): the spec requires pixdim
+        # parity but the helper used to silently skip it. Compare every
+        # populated component under the same float32 tolerance used for
+        # sform.
+        pixdim_match = True
+        for k, (s, d) in enumerate(zip(spec_hdr.pixdim, dcm_hdr.pixdim)):
+            if abs(s - d) > max(1e-4, 1e-5 * abs(s)):
+                pixdim_match = False
+                notes.append(f"pixdim[{k}] spec={s} dcm={d} (delta={s-d:.3e})")
+
+        # BIDS suffix (audit 2026-06-07 H3): dataset inventory records the
+        # expected BIDS-MRS suffix; the C writer hard-codes "_svs" today.
+        # Check the dcm2niix output filename ends with the expected suffix
+        # so _mrsref / _mrsi datasets fail loudly rather than passing under
+        # the wrong suffix.
+        suffix_match = (ds.bids_suffix == "_svs")  # the only suffix we currently emit
+        if ds.bids_suffix != "_svs":
+            notes.append(f"BIDS suffix expected {ds.bids_suffix} but writer hard-codes _svs")
+
         # Sidecar diff
         sidecar_diff: dict = {"ref_only": [], "out_only": [], "differing": []}
         if spec_json and dcm_json:
@@ -398,8 +432,34 @@ def compare(ds: Dataset) -> CompareResult:
             raw_dcm_keys = set(dcm_meta.keys())
             spec_keys = raw_spec_keys - IGNORE_FIELDS_GLOBAL
             dcm_keys = raw_dcm_keys - IGNORE_FIELDS_GLOBAL
+            def _alias_values_equal(sv, dv):
+                # Compare alias-paired values with the same tolerance the
+                # generic loop below uses (audit 2026-06-07 H4 follow-up):
+                # spec2nii emits floats (90.0) while dcm2niix emits ints
+                # (90) for the same source value; both are correct, just
+                # JSON-typed differently.
+                if sv == dv:
+                    return True
+                if isinstance(sv, (int, float)) and isinstance(dv, (int, float)):
+                    return _floats_close_topo(sv, dv)
+                return str(sv) == str(dv)
+            def _floats_close_topo(a, b, ulps=5, rel=1e-5):
+                try:
+                    a, b = float(a), float(b)
+                except (TypeError, ValueError):
+                    return False
+                if a == b:
+                    return True
+                eps = math.ulp(abs(a)) * ulps
+                return abs(a - b) <= max(eps, rel * abs(a))
             for spec_name, dcm_name in BIDS_MRS_ALIASES.items():
                 if spec_name in raw_spec_keys and dcm_name in raw_dcm_keys:
+                    # Audit 2026-06-07 H4: previous code dropped both keys
+                    # unconditionally, hiding any value mismatch.
+                    if not _alias_values_equal(spec_meta[spec_name], dcm_meta[dcm_name]):
+                        sidecar_diff["differing"].append(
+                            (f"{spec_name}/{dcm_name}",
+                             spec_meta[spec_name], dcm_meta[dcm_name]))
                     spec_keys.discard(spec_name)
                     dcm_keys.discard(dcm_name)
             for k in sorted(spec_keys - dcm_keys):
@@ -443,6 +503,7 @@ def compare(ds: Dataset) -> CompareResult:
             notes.append("dcm2niix produced no -b sidecar")
 
         return CompareResult(ds, fid_match, sform_match, dim_match,
+                             pixdim_match, suffix_match,
                              sidecar_diff, fid_byte_diff, notes)
 
 
@@ -462,6 +523,8 @@ def print_result(res: CompareResult, verbose: bool = False) -> None:
     fid_tag = "FID✓" if res.fid_match else f"FID✗({res.fid_byte_diff}B)"
     sform_tag = "sform✓" if res.sform_match else "sform✗"
     dim_tag = "dim✓" if res.dim_match else "dim✗"
+    pix_tag = "pix✓" if res.pixdim_match else "pix✗"
+    suf_tag = "suf✓" if res.suffix_match else "suf✗"
     ref_only = res.sidecar_diff.get("ref_only", [])
     differing = res.sidecar_diff.get("differing", [])
     # Parity-critical sidecar surface: spec2nii had it, we don't (we may be
@@ -469,9 +532,10 @@ def print_result(res: CompareResult, verbose: bool = False) -> None:
     # fields as parity failures (per Q4, our wider sidecar is by design).
     n_parity_diff = len(ref_only) + len(differing)
     sidecar_tag = "JSON✓" if n_parity_diff == 0 else f"JSON Δ{n_parity_diff}"
-    parity_ok = (res.fid_match and res.sform_match and res.dim_match and n_parity_diff == 0)
+    parity_ok = (res.fid_match and res.sform_match and res.dim_match
+                 and res.pixdim_match and res.suffix_match and n_parity_diff == 0)
     status = "PASS" if parity_ok else "FAIL"
-    print(f"[{status}] {ds.id:55s} {fid_tag:11s} {sform_tag:8s} {dim_tag:6s} {sidecar_tag:11s}  ({ds.notes})")
+    print(f"[{status}] {ds.id:55s} {fid_tag:11s} {sform_tag:8s} {dim_tag:6s} {pix_tag:6s} {suf_tag:6s} {sidecar_tag:11s}  ({ds.notes})")
     if not (verbose or status == "FAIL"):
         return
     for note in res.notes:
@@ -494,6 +558,13 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="Print the dataset inventory")
     ap.add_argument("--vendor", help="Restrict --all to one vendor (siemens|philips|uih)")
     ap.add_argument("--verbose", "-v", action="store_true", help="Detail every diff (default: only FAILs)")
+    ap.epilog = (
+        "Path overrides (audit 2026-06-07 L2): set env SPEC2NII_DATA to point "
+        "at a different spec2nii test data root, and env DCM2NIIX_BIN to use "
+        "a non-default dcm2niix binary. CLI flags aren't offered because the "
+        "31-dataset inventory is materialised at module load and would need a "
+        "rebuild to honour late-bound overrides."
+    )
     args = ap.parse_args()
 
     if args.list:
@@ -538,6 +609,7 @@ def main() -> int:
         n_parity_diff = (len(res.sidecar_diff.get("ref_only", []))
                          + len(res.sidecar_diff.get("differing", [])))
         ok = (res.fid_match and res.sform_match and res.dim_match
+              and res.pixdim_match and res.suffix_match
               and n_parity_diff == 0)
         print_result(res, verbose=args.verbose)
         if ok:

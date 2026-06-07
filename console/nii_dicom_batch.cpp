@@ -8392,7 +8392,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(modalityBIDS, "sbref");
 		// if seriesDesc trace", "fa", "adc"  isDerived = true;
 		isDirLabel = true;
-	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL) || (d->acquisitionContrast == kMRWeightingPerfusion)) { // prog_asl
+	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { // prog_asl: audit 2026-06-07 — AC=PERFUSION standalone term dropped; the fallback at setBidsFromAcquisitionContrast routes bare AC=PERFUSION to Unknown so DSC/DCE doesn't get misclassified as ASL (the vendor-positive Siemens ASL signals are the asl/pasl/pcasl sequence-name tokens above)
 		// AC=Perfusion is the DICOM-standard (0008,9209) marker, populated on
 		// Enhanced MR / Philips Classic ASL. Vendor-agnostic, so reusing the
 		// same gate here, in setBidsPhilips, and in setBidsGE keeps ASL
@@ -8672,16 +8672,21 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 	} else if ((d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
 		strcpy(dataTypeBIDS, "dwi");
 		strcpy(modalityBIDS, "dwi");
-	} else if ((strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE) || (d->acquisitionContrast == kMRWeightingPerfusion)) {
-		// Three orthogonal ASL signals, in increasing order of generality:
+	} else if ((strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE)) {
+		// Two orthogonal Philips ASL signals:
 		//   ImageType "PERFUSION" — top-level CS marker.
 		//   aslFlags (Philips private (2005,1429) MRImageLabelType) — set when
 		//     the per-frame value starts with 'L' (LABEL) or 'C' (CONTROL); the
 		//     "SOURCE -" raw label/control series strip "PERFUSION" from the
 		//     per-frame ImageType ("M\\SE\\M\\SE" / "M\\FFE\\M\\FFE") so the
 		//     top-level check alone misses them.
-		//   acquisitionContrast == kMRWeightingPerfusion — DICOM (0008,9209),
-		//     vendor-agnostic. Catches Enhanced MR ASL series across vendors.
+		// Audit 2026-06-07: the third historical term `acquisitionContrast ==
+		// kMRWeightingPerfusion` was dropped — DICOM (0008,9209) PERFUSION is
+		// also the modality marker for DSC/DCE (the gad-bolus families), so
+		// using it as a standalone ASL signal mis-classified DSC/DCE series
+		// as ASL. Bare AC=PERFUSION without one of the two Philips signals
+		// now falls through to setBidsFromAcquisitionContrast which routes
+		// PERFUSION to Unknown — safer for non-ASL perfusion variants.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if ((strstr(d->pulseSequenceName, "SEEPI") != NULL) && (!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
@@ -8900,9 +8905,13 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
 		isPart = true;
-	} else if ((strstr(seqName, "asl")) || (d->acquisitionContrast == kMRWeightingPerfusion)) {
-		// Vendor-agnostic: DICOM (0008,9209) Acquisition Contrast = "PERFUSION".
-		// Mirrors the Siemens / Philips widening.
+	} else if (strstr(seqName, "asl")) {
+		// GE-positive ASL evidence: PSD name contains "asl".
+		// Audit 2026-06-07: the historical `d->acquisitionContrast ==
+		// kMRWeightingPerfusion` OR-term was dropped — DICOM (0008,9209)
+		// PERFUSION also covers DSC/DCE, so it can't be a standalone ASL
+		// signal. Bare AC=PERFUSION falls through to
+		// setBidsFromAcquisitionContrast which routes it to Unknown.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if (((isEPSE) && (!d->isDiffusion)) || ((strstr(d->seriesDescription, "fieldmap")) && (strstr(seqName, "EPI")))) {
@@ -11415,7 +11424,14 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 					   i, d->dataPointColumns, N_pts);
 			return EXIT_FAILURE;
 		}
-		if (d->spectralWidth != d0->spectralWidth) {
+		// Tolerance: parse noise across per-file FD reads, or the float→
+		// double promotion noise on CSA-derived widths, can drift the last
+		// digit of d->spectralWidth between files of the same series. 1e-6
+		// relative tolerance still rejects genuine acquisition-parameter
+		// mismatches (audit 2026-06-07 M8).
+		double swEps = fabs(d0->spectralWidth) * 1e-6;
+		if (swEps < 1e-9) swEps = 1e-9;
+		if (fabs(d->spectralWidth - d0->spectralWidth) > swEps) {
 			printError("MRS: DICOM %d has SpectralWidth %g, expected %g\n",
 					   i, d->spectralWidth, d0->spectralWidth);
 			return EXIT_FAILURE;
@@ -11501,6 +11517,12 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		printError("MRS: malloc failed for %zu bytes\n", total_bytes);
 		return EXIT_FAILURE;
 	}
+	// Per-call (per series) warning gate for the oversized-payload partial
+	// conversion case below. Audit 2026-06-07 L1: previous `static bool`
+	// silenced the warning for the rest of the process after the first
+	// series tripped it; now we only suppress on subsequent DICOMs of the
+	// SAME series.
+	bool warned_trailing_this_series = false;
 	// Read each DICOM's FID into the buffer (stacked along dim[5]).
 	for (int i = 0; i < N_files; i++) {
 		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
@@ -11519,14 +11541,11 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			free(fid);
 			return EXIT_FAILURE;
 		}
-		if ((size_t)d->imageBytes > bytes_per_dicom) {
-			static bool warned_trailing = false;
-			if (!warned_trailing) {
-				printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
-							 "(Philips water-reference companion not yet emitted as _ref output)\n",
-							 (int)((size_t)d->imageBytes / bytes_per_dicom));
-				warned_trailing = true;
-			}
+		if (((size_t)d->imageBytes > bytes_per_dicom) && !warned_trailing_this_series) {
+			printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
+						 "(Philips water-reference companion not yet emitted as _ref output)\n",
+						 (int)((size_t)d->imageBytes / bytes_per_dicom));
+			warned_trailing_this_series = true;
 		}
 		FILE *f = fopen(nameList->str[dcmSort[i].indx], "rb");
 		if (f == NULL) {
@@ -11590,7 +11609,15 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	hdr.pixdim[1] = (float)d0->xyzMM[1];
 	hdr.pixdim[2] = (float)d0->xyzMM[2];
 	hdr.pixdim[3] = (float)d0->zThick; // see px/py/pz comment above re: zThick vs xyzMM[3]
-	hdr.pixdim[4] = (d0->spectralWidth > 0.0) ? (float)(1.0 / d0->spectralWidth) : 1.0f;
+	// Spectral width: use the same source-of-truth that the sidecar emits at
+	// nii_dicom_batch.cpp:~3186. The Siemens private (0021,1142) RealDwellTime
+	// is an integer ns count and gives full float64 precision; the CSA-float
+	// d.spectralWidth path loses ~6 sig figs at typical SVS spectral widths
+	// (audit 2026-06-07 H2). Compute once and pass to both writers.
+	double mrsSpectralWidth = d0->spectralWidth;
+	if (d0->dwellTime > 0)
+		mrsSpectralWidth = 1.0e9 / (double)d0->dwellTime;
+	hdr.pixdim[4] = (mrsSpectralWidth > 0.0) ? (float)(1.0 / mrsSpectralWidth) : 1.0f;
 	hdr.pixdim[5] = 1.0f;
 	hdr.pixdim[6] = 1.0f;
 	hdr.pixdim[7] = 1.0f;

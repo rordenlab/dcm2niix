@@ -1654,24 +1654,33 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 	int itemsOK;
 	float lFloats[7];
 	for (int lT = 1; lT <= lnTag; lT++) {
+		// Bounds: refuse to walk past the buffer (audit 2026-06-07 M1).
+		if (lPos + (int)sizeof(tagCSA) > lLength)
+			return;
 		memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA));
 		lPos += sizeof(tagCSA);
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
+		// Sanity-cap nitems to a small constant — the largest legitimate item
+		// counts in the MRS tag set we read are 6 (IOP rows × cols, NumberOf-
+		// Averages-style). A pathological count would walk us off the buffer.
+		if ((tagCSA.nitems < 0) || (tagCSA.nitems > 128))
+			return;
 		if (tagCSA.nitems > 0) {
 			if (strcmp(tagCSA.name, "ImageOrientationPatient") == 0) {
 				// CSA "ImageOrientationPatient" is six float32s in two rows
 				// matching the public (0020,0037) IOP. Write into d->orient
 				// using the 1-indexed convention dcm2niix uses elsewhere.
-				if (d->orient[1] == 0.0f && d->orient[2] == 0.0f && d->orient[3] == 0.0f) {
-					float six[6];
-					int n = (tagCSA.nitems < 6) ? tagCSA.nitems : 6;
-					csaMultiFloat(&buff[lPos], n, lFloats, &itemsOK);
-					six[0] = lFloats[1];
-					for (int k = 1; k < n; k++)
-						six[k] = lFloats[k + 1];
-					for (int k = 0; k < 6; k++)
-						d->orient[k + 1] = six[k];
+				// Refuse the write when fewer than 6 items are present (audit
+				// M1: previously we copied uninitialised six[] entries into
+				// d->orient when the source was truncated).
+				if ((tagCSA.nitems >= 6) &&
+					d->orient[1] == 0.0f && d->orient[2] == 0.0f && d->orient[3] == 0.0f) {
+					csaMultiFloat(&buff[lPos], 6, lFloats, &itemsOK);
+					if (itemsOK >= 6) {
+						for (int k = 0; k < 6; k++)
+							d->orient[k + 1] = lFloats[k + 1];
+					}
 				}
 			} else if (strcmp(tagCSA.name, "VoiPosition") == 0) {
 				// VoiPosition: voxel center in patient coordinates (3 float).
@@ -1749,30 +1758,44 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				}
 			} else if (strcmp(tagCSA.name, "RepetitionTime") == 0) {
 				// VB/VE CSA reports TR in ms — same scale as DICOM (0018,0080).
-				// We're already inside the MRS-gated entry check; overwrite
-				// any public-tag value because for some Siemens spectroscopy
-				// sequences (sLASER multi-DICOM stacks, where (0018,0081)
-				// reports per-shot TE while CSA carries the acquisition-level
-				// echo time) CSA is the source of truth that matches spec2nii.
-				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-				if (v > 0.0f)
-					d->TR = v;
+				// Restore sentinel gate (audit 2026-06-07 M3): only write
+				// when the public-tag path hasn't populated d->TR. The
+				// public DICOM (0018,0080) is usually higher-precision and
+				// the standards-correct source. The CSA-overrides-public
+				// path used to be needed for sLASER multi-DICOM where
+				// (0018,0081) reports per-shot TE while CSA carries the
+				// acquisition-level value; that case is now handled via
+				// the Phoenix Protocol alTE sum (Phase 1.e, deferred), so
+				// re-asserting sentinel precedence here is safe.
+				if (d->TR <= 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->TR = v;
+				}
 			} else if (strcmp(tagCSA.name, "EchoTime") == 0) {
-				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-				if (v > 0.0f)
-					d->TE = v;
+				if (d->TE <= 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->TE = v;
+				}
 			} else if (strcmp(tagCSA.name, "InversionTime") == 0) {
-				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-				if (v >= 0.0f)
-					d->TI = v;
+				if (d->TI <= 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v >= 0.0f)
+						d->TI = v;
+				}
 			} else if (strcmp(tagCSA.name, "FlipAngle") == 0) {
-				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-				if (v > 0.0f)
-					d->flipAngle = v;
+				if (d->flipAngle <= 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->flipAngle = v;
+				}
 			} else if (strcmp(tagCSA.name, "NumberOfAverages") == 0) {
-				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-				if (v > 0.0f)
-					d->numberOfAverages = v;
+				if (d->numberOfAverages <= 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->numberOfAverages = v;
+				}
 			} else if (strcmp(tagCSA.name, "TransmittingCoil") == 0) {
 				// VB/VE CSA string. Layout same as ImagedNucleus above.
 				if (d->transmitCoilName[0] == '\0') {
@@ -1806,13 +1829,23 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 		// item-stride logic). Each item is itemCSA.xx2_Len bytes preceded
 		// by sizeof(itemCSA), 4-byte aligned.
 		for (int lI = 1; lI <= tagCSA.nitems; lI++) {
+			// Bounds: refuse to walk past the buffer (audit 2026-06-07 M1).
+			if (lPos + (int)sizeof(itemCSA) > lLength)
+				return;
 			memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
 			lPos += sizeof(itemCSA);
 			if (!littleEndianPlatform())
 				nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+			// Cap item length to a sane upper bound; malformed CSA can encode
+			// huge stride values that would overflow lPos arithmetic and
+			// walk us past the buffer end on the next iteration.
 			int step = itemCSA.xx2_Len;
+			if ((step < 0) || (step > lLength))
+				return;
 			if ((step % 4) != 0)
 				step += 4 - (step % 4);
+			if (lPos + step > lLength)
+				return;
 			lPos += step;
 		}
 	}
