@@ -216,18 +216,21 @@ If I get blocked:
 ## Checklist (filled in as we go)
 
 ### Phase 0
-- [ ] Q6 decision: `dcm_qa_mrs` submodule or path-only
-- [ ] `tools/spec2nii_inventory.md` written
-- [ ] `tools/spec2nii_compare.py` written and self-tested
-- [ ] Existing XA60 SVS still green on the diff helper
+- [x] Q6 decision: use `/Users/chris/src/dcm_qa_spec` for SVS Ref refresh; live spec2nii output as source-of-truth otherwise (locked answer to Q6)
+- [x] `tools/spec2nii_compare.py` written, inventory encoded inline (31 datasets across 3 vendors), alias resolution, parity gates on FID/sform/dim/sidecar
+- [x] Phase 0 baseline captured in commit `05815ae`
 
-### Phase 1 Siemens SVS
-- [ ] P1.1 VBData svs_se_C>T15>S10
-- [ ] P1.2 VEData svs_se_c>t15>s10_R10
-- [ ] P1.3 XA20 single-DICOM SVS
-- [ ] P1.4 anon_dcm.IMA
-- [ ] P1.5 sLASER (8 datasets)
-- [ ] P1.6 HERCULES / hyper_isthmus / fid
+### Phase 1 Siemens
+- [x] **P1.a (7FE1,1010) FID capture for VB/VE/sLASER/anon/voi_in_mrsi classic Siemens MRS DICOMs.** Sniff: when the gzip-XML and CMRR PMU detections fail AND the SOP class is Siemens CSA Non-Image (1.3.12.2.1107.5.9.1) AND lLength is a multiple of 8, treat as the FID payload; set isMRS, clear isRawDataStorage, store imageStart+imageBytes, infer dataPointColumns from lLength.
+- [x] **P1.b BIDS-MRS sidecar shape fixes** (apply to all SVS): SpectrometerFrequency as length-1 array at `%.9g` precision (was %g scalar → lost precision); ResonantNucleus as length-1 array (was bare string); dim_5 always emits as `DIM_DYN`; RepetitionTime now emits on the MRS path (fixed by initializing `dti4D_local.frameDuration[0] = -1.0f` in `saveDcm2NiiMRS` so the general-path gate fires); TransmitCoilName parsed from (0018,1251) inside (0018,9049) and emitted on the MRS path; comparator's alias-resolution checks raw keys so spec2nii's `RxCoil`/`TxCoil`/`ExcitationFlipAngle` ↔ dcm2niix's `ReceiveCoilName`/`TransmitCoilName`/`FlipAngle` are parity-positive.
+- [x] **P1.c Siemens corpus survey (post P1.a + P1.b)**:
+  - XA20 single-DICOM SVS — **PASS** (FID/sform/dim/JSON all green)
+  - XA30 single-DICOM SVS — **PASS**
+  - VB-line SVS, VE-line SVS, anon, sLASER single-DICOM (wrsoff_13, wrsoff_19) — FID ✓, dim ✓, JSON Δ8-9, **sform ✗ all-zero** (Phase 1.d work)
+  - sLASER multi-DICOM (wrs1, wrs2, w1pw3_1/2, w4_1/2) — FID size mismatch (currently captures whole payload per file; needs per-DICOM stack ordering matching spec2nii)
+  - voi_in_mrsi, VB/VE 3D CSI, sm_classic, sm_enhanced, rk_enhanced — Phase 4 MRSI work
+- [ ] **P1.d CSA SeriesHeader parsing**: extract VoiPosition, VoiPhaseFoV, VoiReadoutFoV, VoiThickness, ImageOrientationPatient, SpectralWidth, RealDwellTime, ImagingFrequency, ResonantNucleus, TE, TR from the (0029,1020) blob currently captured offset-only at `nii_dicom.cpp:7825`. spec2nii's `process_siemens_svs_vx` is the reference. Unblocks orientation for VB/VE single-DICOM SVS + anon. Multi-DICOM sLASER FID stacking is a separate per-DICOM ordering concern, addressed alongside.
+- [ ] **P1.e Siemens commit + push**
 
 ### Phase 2 Philips
 - [ ] P2.1 Classic SVS (5 orientation + 1 no-WS)

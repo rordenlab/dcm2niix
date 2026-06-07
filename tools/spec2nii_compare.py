@@ -388,13 +388,17 @@ def compare(ds: Dataset) -> CompareResult:
         if spec_json and dcm_json:
             spec_meta = json.loads(spec_json.read_text())
             dcm_meta = json.loads(dcm_json.read_text())
-            spec_keys = set(spec_meta.keys()) - IGNORE_FIELDS_GLOBAL
-            dcm_keys = set(dcm_meta.keys()) - IGNORE_FIELDS_GLOBAL
-            # Alias resolution: if spec2nii uses one name and dcm2niix the
-            # other (both BIDS-MRS-acceptable per the spec), and BOTH are
-            # populated, treat the pair as parity-positive and don't report.
+            # Alias resolution runs BEFORE the ignore-list filter so we
+            # catch the spec2nii-name in spec_meta vs the dcm2niix-name in
+            # dcm_meta even when the latter is in our "wide DICOM provenance"
+            # bucket (e.g. ReceiveCoilName is informational on the MRS path
+            # but matches spec2nii's RxCoil one-for-one).
+            raw_spec_keys = set(spec_meta.keys())
+            raw_dcm_keys = set(dcm_meta.keys())
+            spec_keys = raw_spec_keys - IGNORE_FIELDS_GLOBAL
+            dcm_keys = raw_dcm_keys - IGNORE_FIELDS_GLOBAL
             for spec_name, dcm_name in BIDS_MRS_ALIASES.items():
-                if spec_name in spec_keys and dcm_name in dcm_keys:
+                if spec_name in raw_spec_keys and dcm_name in raw_dcm_keys:
                     spec_keys.discard(spec_name)
                     dcm_keys.discard(dcm_name)
             for k in sorted(spec_keys - dcm_keys):
@@ -499,8 +503,13 @@ def main() -> int:
             print(f"[FAIL] {ds.id:60s} exception: {e}")
             n_fail += 1
             continue
+        # Parity-critical: FID + sform + dim, plus sidecar fields that are
+        # either spec-only (we're missing something) or differing-value.
+        # dcm-only entries are by-design dcm2niix-richer-sidecar per Q4.
+        n_parity_diff = (len(res.sidecar_diff.get("ref_only", []))
+                         + len(res.sidecar_diff.get("differing", [])))
         ok = (res.fid_match and res.sform_match and res.dim_match
-              and sum(len(v) for v in res.sidecar_diff.values()) == 0)
+              and n_parity_diff == 0)
         print_result(res, verbose=args.verbose)
         if ok:
             n_pass += 1

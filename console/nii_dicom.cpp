@@ -808,6 +808,7 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.studyInstanceUID, "");
 	strcpy(d.bodyPartExamined, "");
 	strcpy(d.coilName, "");
+	strcpy(d.transmitCoilName, "");
 	strcpy(d.coilElements, "");
 	strcpy(d.pulseSequenceName, "");
 	strcpy(d.radiopharmaceutical, "");
@@ -4612,7 +4613,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kConvolutionKernel 0x0018 + (0x1210 << 16) // SH
 #define kFrameDuration 0x0018 + (0x1242 << 16)	   // IS
 #define kReceiveCoilName 0x0018 + (0x1250 << 16)   // SH
-// #define kTransmitCoilName 0x0018 + (0x1251 << 16) // SH issue527
+#define kTransmitCoilName 0x0018 + (0x1251 << 16) // SH — inside MRTransmitCoilSequence (0018,9049)
 #define kAcquisitionMatrix 0x0018 + (0x1310 << 16)			   // US
 #define kInPlanePhaseEncodingDirection 0x0018 + (0x1312 << 16) // CS
 #define kFlipAngle 0x0018 + (0x1314 << 16)
@@ -7058,6 +7059,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				break;
 			d.coilCrc = mz_crc32X((unsigned char *)&d.coilName, strlen(d.coilName));
 			break;
+		case kTransmitCoilName:
+			// (0018,1251) SH inside MRTransmitCoilSequence (0018,9049 SQ).
+			// BIDS-MRS recommends TransmitCoilName alongside ReceiveCoilName
+			// in MR Spectroscopy sidecars (spec2nii emits as "TxCoil").
+			dcmStr(lLength, &buffer[lPos], d.transmitCoilName);
+			break;
 		case kSlope:
 			d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
 			break;
@@ -7784,6 +7791,29 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 						d.xaPhysioBytes = (int)lLength;
 						d.isValid = true;
 					}
+				}
+				// VB/VE-line classic Siemens MRS fallback. NumarisX puts the
+				// FID at (5600,0020); Numaris4 (VB/VE) writes the same payload
+				// at this private tag (7FE1,1010) under the Siemens "CSA Non-
+				// Image Storage" SOP class (1.3.12.2.1107.5.9.1). spec2nii's
+				// process_siemens_svs_vx reads from here directly. We reach
+				// this block when the gzip-XML and CMRR PMU sniffs above both
+				// fail, the value length is at least 16 bytes AND is a multiple
+				// of 8 (complex64 = 2 floats per point), and the SOP class
+				// matched the Siemens CSA Non-Image route (isRawDataStorage
+				// already true). Anything still indistinguishable from MRS at
+				// this point we admit as the FID — the dispatch downstream
+				// (saveDcm2NiiMRS) re-validates the stack invariants and
+				// rejects any false positive.
+				if ((!d.isValid) && d.isRawDataStorage && (lLength >= 16) &&
+					((lLength % 8) == 0)) {
+					d.isMRS = true;
+					d.isRawDataStorage = false; // route to saveDcm2NiiMRS, not physio
+					d.imageStart = (int)lPos + (int)lFileOffset;
+					d.imageBytes = (int)lLength;
+					if (d.dataPointColumns <= 0)
+						d.dataPointColumns = (int)(lLength / 8);
+					d.isValid = true;
 				}
 			}
 			break;

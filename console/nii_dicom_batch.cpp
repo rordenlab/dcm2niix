@@ -3180,17 +3180,22 @@ tse3d: T2*/
 		}
 		// SpectrometerFrequency: proton (or other nucleus) resonance
 		// frequency in MHz, sourced from DICOM (0018,9098) FD as
-		// d.imagingFrequency. BIDS-MRS calls this SpectrometerFrequency;
-		// the BEP005 NIfTI-MRS extension uses the same name.
+		// d.imagingFrequency. BIDS-MRS specifies an ARRAY (one entry per
+		// nucleus for multi-nucleus 2D-spectral acquisitions). We currently
+		// collapse to a single nucleus on parse — emit as a length-1 array
+		// to match the spec and stay round-trip-equivalent to spec2nii.
+		// Emit at full DICOM-stored precision (%.9g) — the 6-digit %g
+		// truncated 297.219572 -> 297.22, losing parity with the source.
 		if (d.imagingFrequency > 0.0)
-			json_Float(fp, "\t\"SpectrometerFrequency\": %g,\n", d.imagingFrequency);
+			json_Float(fp, "\t\"SpectrometerFrequency\": [%.9g],\n", d.imagingFrequency);
 		else
 			requiredMissing = true;
-		// json_Str handles any quote/backslash in the DICOM CS so a
-		// malformed value can't break the JSON. Standard values "1H" /
-		// "31P" / "13C" pass through unchanged.
+		// ResonantNucleus: BIDS-MRS specifies a CS array (one entry per
+		// nucleus). json_Str handles any quote/backslash in the DICOM CS
+		// so a malformed value can't break the JSON; standard values
+		// "1H" / "31P" / "13C" pass through unchanged.
 		if (d.resonantNucleus[0] != '\0')
-			json_Str(fp, "\t\"ResonantNucleus\": \"%s\",\n", d.resonantNucleus);
+			json_Str(fp, "\t\"ResonantNucleus\": [\"%s\"],\n", d.resonantNucleus);
 		else
 			requiredMissing = true;
 		// EchoTime is checked below at the general emission site; warn
@@ -3238,6 +3243,21 @@ tse3d: T2*/
 		else
 			mrsScan = "Unlocalized MRS";
 		fprintf(fp, "\t\"ScanningSequence\": \"%s\",\n", mrsScan);
+		// dim_5 / dim_6 / dim_7 tag declarations (BIDS-MRS): for NIfTI MRS
+		// data the 5th dimension is the dynamic / averaging axis by default
+		// (DIM_DYN). dim_6 / dim_7 stay implicit unless we extend the
+		// writer to encode edit-on/off (DIM_EDIT) or coil (DIM_COIL) axes.
+		// Emit DIM_DYN unconditionally for SVS — spec2nii does the same
+		// even for single-dynamic series so downstream tools can rely on
+		// the tag's presence.
+		fprintf(fp, "\t\"dim_5\": \"DIM_DYN\",\n");
+		// TransmitCoilName: BIDS-MRS recommended. spec2nii reads from the
+		// CSA header; we parse (0018,1251) inside (0018,9049) MRTransmit-
+		// CoilSequence directly. The general-path emission is gated on
+		// !d.isMRS by absence (we don't emit TransmitCoilName outside MRS)
+		// so this is the sole writer.
+		if (d.transmitCoilName[0] != '\0')
+			json_Str(fp, "\t\"TransmitCoilName\": \"%s\",\n", d.transmitCoilName);
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.
@@ -11622,6 +11642,12 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	if (ret == EXIT_SUCCESS) {
 		struct TDTI4D dti4D_local;
 		memset(&dti4D_local, 0, sizeof(dti4D_local));
+		// The general-path nii_SaveBIDSX gates several emissions on
+		// dti4D->frameDuration[0] < 0.0 (the "no variable TR" sentinel,
+		// readDICOMx inits it to -1). A zero-init dti4D_local trips
+		// those gates and silently drops RepetitionTime etc. from the
+		// MRS sidecar; restore the sentinel manually.
+		dti4D_local.frameDuration[0] = -1.0f;
 		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
 					  nameList->str[dcmSort[0].indx], &dti4D_local);
 	}
