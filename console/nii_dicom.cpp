@@ -5594,7 +5594,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (d.isRawDataStorage)
 				d.isDerived = true;
 			// n.b. we now handle Siemens physio, so we do not skip all files
-			if (d.isRawDataStorage)
+			if ((d.isRawDataStorage) && (isVerbose > 1))
 				printMessage("non-image DICOM: %s\n", fname);
 			// Philips "PS_" files
 			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.11.1") != NULL)
