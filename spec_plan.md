@@ -127,6 +127,14 @@ Deliverable: `tools/spec2nii_inventory.md` + `tools/spec2nii_compare.py` committ
 
 Deliverable: every Siemens SVS family green in the diff helper.
 
+### Phase 2 progress (2026-06-06 mid-session)
+
+- [x] **P2.a Philips classic SVS / multi-dynamic enhanced now parse.** saveDcm2NiiMRS's `(size_t)d->imageBytes != bytes_per_dicom` strict gate widened to "integer multiple of expected": Philips packs `nframes × spec_points` complex points in `(5600,0020)`, and a frequent classic-SVS variant carries a water-reference FID immediately after the main FID (payload is therefore 2× expected for a 1-frame single-dynamic scan). Read only the first `bytes_per_dicom` (main FID); emit a one-shot warning naming the dropped multiplier. The water-reference companion file (`<stem>_ref.nii.gz` matched by spec2nii) is Phase 2.b work.
+- [ ] **P2.b Philips orientation sign convention.** Test corpus survey shows every Philips SVS has matching FID magnitudes but inverted signs on every column of the sform. spec2nii's `_process_philips_svs_new` uses a slightly different DICOM→NIfTI orientation pipeline; needs targeted comparison and fix.
+- [ ] **P2.c Philips `<stem>_ref.nii.gz` water-reference companion.** When the (5600,0020) payload is N× expected, the trailing chunks are water-reference / edit-off / dynamic copies. spec2nii emits them as paired NIfTI files; dcm2niix needs an extended writer to do the same.
+- [ ] **P2.d Philips classic vs enhanced detection + multi-dynamic dim_5/dim_6 emission.** MEGA-PRESS (press_mega) and HYPER are edit-on/edit-off variants that should land with `dim_5: DIM_DYN, dim_6: DIM_EDIT` per BIDS-MRS spec.
+- [ ] **P2.e Philips orientation_tests** — the 9-dataset `philips/spar_dcm_orientation_tests/` family is the torture test for the orientation fix; bring all 9 PASS before declaring Phase 2 done.
+
 ### Phase 2 — Philips DICOM-MRS (~1 week)
 
 spec2nii routes both Classic and Enhanced Philips DICOM-MRS through `philips_dcm.py`. We've never exercised Philips DICOM-MRS in dcm2niix.

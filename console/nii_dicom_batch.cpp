@@ -11504,11 +11504,29 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// Read each DICOM's FID into the buffer (stacked along dim[5]).
 	for (int i = 0; i < N_files; i++) {
 		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
-		if ((size_t)d->imageBytes != bytes_per_dicom) {
-			printError("MRS: DICOM %d has FID size %d, expected %zu\n",
+		// Philips classic SVS packs (5600,0020) with `nframes × spec_points`
+		// complex points and a frequent variant carries a trailing water-
+		// reference FID alongside the main one (the payload is therefore
+		// 2× expected bytes for a single-frame, single-dynamic acquisition).
+		// We accept any integer multiple — read only the first
+		// `bytes_per_dicom` (the main FID) and ignore the rest. spec2nii
+		// splits the trailing chunk into a separate _ref output; doing the
+		// same is Phase 2.b work tracked in spec_plan.md.
+		if ((size_t)d->imageBytes < bytes_per_dicom ||
+			((size_t)d->imageBytes % bytes_per_dicom) != 0) {
+			printError("MRS: DICOM %d has FID size %d, expected %zu (or integer multiple)\n",
 					   i, d->imageBytes, (size_t)bytes_per_dicom);
 			free(fid);
 			return EXIT_FAILURE;
+		}
+		if ((size_t)d->imageBytes > bytes_per_dicom) {
+			static bool warned_trailing = false;
+			if (!warned_trailing) {
+				printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
+							 "(Philips water-reference companion not yet emitted as _ref output)\n",
+							 (int)((size_t)d->imageBytes / bytes_per_dicom));
+				warned_trailing = true;
+			}
 		}
 		FILE *f = fopen(nameList->str[dcmSort[i].indx], "rb");
 		if (f == NULL) {
