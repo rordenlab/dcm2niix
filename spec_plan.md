@@ -86,11 +86,19 @@ deliverable + why-deferred so the next cycle has a running start.
   Protocol `alTE` summing (spec2nii `dicomfunctions.py:649`) + multi-DICOM
   stack ordering. Both require deep DICOM-internals work; the Phoenix
   protocol parser is a significant addition.
-- **P2.b Philips orientation handedness** (5 classic SVS + 9 orientation_tests
-  = 14 datasets blocked) — every Philips SVS has matching FID magnitudes
-  but inverted signs on every sform column; spec2nii's
-  `_process_philips_svs_new` uses a different DICOM→NIfTI pipeline that
-  needs to be ported.
+- **P2.b Philips orientation handedness** (1 classic SVS `45deg_AP` +
+  9 orientation_tests = 10 datasets still blocked) — **PARTIAL FIX
+  landed**: spec2nii's `_enhanced_dcm_svs_to_orientation` does
+  `imageOrientationPatient *= -1` (philips_dcm.py:341), negating both
+  IOP rows before building the rotation. Mirrored in `saveDcm2NiiMRS`
+  on the Philips manufacturer branch — the 6 classic SVS phantom
+  datasets (center, H15mm, R15mm, 45deg_RL, no_Water_Suppression,
+  svsWSAntCing) + `press_mega` are now `sform✓`. **`45deg_AP` still
+  fails sform** with a more complex axis-permutation pattern (not a
+  sign flip), and the **9 orientation_tests** datasets are SKIP'd
+  because spec2nii errors out in this environment on them. None of
+  the now-`sform✓` rows reaches PASS because FID is also ✗ — the
+  trailing-FID payload offset (P2.c) is the remaining blocker.
 - **P2.d Philips Enhanced multi-dynamic** (3 datasets — `svsWSAntCing`,
   `press_mega`, HYPER `converted_dcm`) — Enhanced DICOM per-frame walking
   + `DIM_DYN` / `DIM_EDIT` axis encoding; `saveDcm2NiiMRS` currently asserts
@@ -405,7 +413,7 @@ added per F3):
 | Vendor | Total | PASS | suf✓ with parity Δ | suf✗ (MRSI in Unknown) | SKIP |
 |---|---|---|---|---|---|
 | Siemens | 19 | 2 (XA20, XA30) | 11 (3 VB/VE/anon SVS JSON Δ1 RxCoil — M4 Phase 6; 6 sLASER FID/dim/TE; 2 wrsoff `_mrsref` JSON Δ2) | 6 (5 MRSI + voi_in_mrsi — Phase 6) | 0 |
-| Philips | 18 | 0 | 8 (5 classic SVS + center no-WS `_mrsref` + svsWSAntCing + press_mega — all orient handedness P2.b) | 0 | 10 (1 HYPER `philips_converted_dcm` spec2nii-ref errors locally + 9 `spar_dcm_orientation_tests/` P2.b) |
+| Philips | 18 | 0 | 8 (7 now `sform✓` after P2.b partial IOP-negation: 5 classic SVS-minus-45deg_AP + center no-WS `_mrsref` + svsWSAntCing + press_mega; `45deg_AP` still `sform✗`; all 8 still `FID✗` — P2.c trailing-FID) | 0 | 10 (1 HYPER `philips_converted_dcm` spec2nii-ref errors locally + 9 `spar_dcm_orientation_tests/` P2.b) |
 | UIH | 3 | 1 (SVS PRESS — F2) | 0 | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
 | **TOTAL** | **40** | **3** | **19** | **8** | **10** |
 
@@ -443,7 +451,8 @@ Commits in this session:
 - `8d256f1` Audit response — H1 UIH-only normalization, H2/M5 shallow-copy reset, M1 comment fix, M2 csaICEdims NUL, M3 size_t pre-walk, R1 `mrsIsStandaloneWaterRef` helper, R2 `_SKIP_P2B_ORIENTATION` constant + F1 pixdim-mirror anchors, docs sweep (CLAUDE.md F2 + parser gotcha, spec2nii URL fix)
 - `33da307` MRS BEP009 PET-array suppression — restore 4 TDTI4D sentinels in `saveDcm2NiiMRS` (main + `_mrsref`); eliminates 1024×0 `DecayCorrectionFactor` / `FrameTimesStart` from MRS sidecars
 - `54fe303` Audit follow-up — extract `initTDTI4D()` helper at `nii_dicom_batch.cpp:~3470`; use at all four sites (closes latent UB in `nii_SaveBIDS` malloc'd TDTI4D, consolidates 3 inline sentinel blocks). Python defensive guards in `dcm_qa_mrs`: vox_offset + truncated-header validation; chunked big-file compare. New `dcm_qa_mrs_lib.py` shared module. Docs sweep (BEP009 sentinel gotcha, dcm_qa_mrs cross-ref)
-- (this) Move `tools/spec2nii_compare.py` → `dcm_qa_mrs/spec2nii_compare.py` — the MRS validation comparator belongs in the QA repo, not the build tree, now that the port has stabilised. `dcm_qa_mrs/{batch.py,compare_spec2nii.py}` find it as a sibling file; `$DCM2NIIX_TOOLS` env var dropped. Dedupes the NIfTI parser / alias map / ignore lists into the canonical sibling.
+- `4339869` Move `tools/spec2nii_compare.py` → `dcm_qa_mrs/spec2nii_compare.py` — the MRS validation comparator belongs in the QA repo, not the build tree, now that the port has stabilised. `dcm_qa_mrs/{batch.py,compare_spec2nii.py}` find it as a sibling file; `$DCM2NIIX_TOOLS` env var dropped. Dedupes the NIfTI parser / alias map / ignore lists into the canonical sibling.
+- (this) P2.b partial — Philips IOP-negation on the MRS branch of `saveDcm2NiiMRS` mirrors spec2nii's `imageOrientationPatient *= -1` (philips_dcm.py:341). 7 Philips datasets gain `sform✓` (SV_phantom_center / H15mm / R15mm / 45deg_RL / no_Water_Suppression / svsWSAntCing_S002 / press_mega). PASS count unchanged at 3/40 — FID still ✗ on all of them (P2.c trailing-FID work remains the blocker). The 8th classic-SVS (`45deg_AP`) has a more complex axis-permutation pattern, not a simple sign flip; left as P2.b residual.
 
 ### Phase 4 MRSI / Unloc / mrsref
 - [ ] P4.1 `saveDcm2NiiMRS` refactor — **DEFERRED to Phase 6** (precondition for MRSI; ~250-line monolith split)

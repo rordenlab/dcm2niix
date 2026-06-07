@@ -11813,6 +11813,18 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// LPS -> RAS conversion that NIfTI requires.
 	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
 	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	// P2.b Philips orientation handedness: spec2nii's `_enhanced_dcm_svs_to_orientation`
+	// (philips_dcm.py:341) does `imageOrientationPatient *= -1` on both IOP
+	// rows before building the rotation, so columns 0 and 1 of spec2nii's
+	// sform are sign-flipped relative to dcm2niix's. Column 2 (slice = cross
+	// of two negated rows) stays the same sign. Negating IOP rows here on
+	// the Philips MRS branch lands the 6 classic-SVS + no-WS rows at sform✓
+	// (their FID is also currently ✗ due to phase convention; sform is the
+	// blocker on JSON✓ rows like SV_phantom_center).
+	if (d0->manufacturer == kMANUFACTURER_PHILIPS) {
+		rx0 = -rx0; rx1 = -rx1; rx2 = -rx2;
+		ry0 = -ry0; ry1 = -ry1; ry2 = -ry2;
+	}
 	// F2: UIH MRS encodes IOP as direction * VoxelSize (rows have non-unit
 	// magnitude that equals PixelSpacing). The voxel size is already carried
 	// in xyzMM[]/zThick, so normalize the row vectors so the m_ij scalings
