@@ -11919,12 +11919,20 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	if (ret == EXIT_SUCCESS) {
 		struct TDTI4D dti4D_local;
 		memset(&dti4D_local, 0, sizeof(dti4D_local));
-		// The general-path nii_SaveBIDSX gates several emissions on
-		// dti4D->frameDuration[0] < 0.0 (the "no variable TR" sentinel,
-		// readDICOMx inits it to -1). A zero-init dti4D_local trips
-		// those gates and silently drops RepetitionTime etc. from the
-		// MRS sidecar; restore the sentinel manually.
+		// nii_SaveBIDSX gates several emissions on `[i][0] < 0.0` ("unset"
+		// sentinels — readDICOMx inits these to -1). A zero-init dti4D_local
+		// trips those gates and either silently drops RepetitionTime
+		// (frameDuration), or — worse — emits a `h->dim[4]`-long array of
+		// zeros for the PET-flavored BEP009 fields. For MRS `h->dim[4]` is
+		// the number of spectral points (typically 1024), not a frame count,
+		// so the resulting `DecayCorrectionFactor` / `FrameTimesStart` arrays
+		// are huge AND meaningless AND not emitted by spec2nii for MRS.
+		// Restore every "unset" sentinel manually so all four PET arrays stay
+		// out of the MRS sidecar.
 		dti4D_local.frameDuration[0] = -1.0f;
+		dti4D_local.decayFactor[0] = -1.0f;
+		dti4D_local.volumeOnsetTime[0] = -1.0f;
+		dti4D_local.frameReferenceTime[0] = -1.0f;
 		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
 					  nameList->str[dcmSort[0].indx], &dti4D_local);
 	}
@@ -11984,7 +11992,13 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			if (retRef == EXIT_SUCCESS) {
 				struct TDTI4D dti4D_ref;
 				memset(&dti4D_ref, 0, sizeof(dti4D_ref));
+				// See the matching block at the main writer (~line 11920):
+				// every BEP009 PET array needs its "unset" sentinel restored
+				// or the MRS sidecar emits h->dim[4]-long zero arrays.
 				dti4D_ref.frameDuration[0] = -1.0f;
+				dti4D_ref.decayFactor[0] = -1.0f;
+				dti4D_ref.volumeOnsetTime[0] = -1.0f;
+				dti4D_ref.frameReferenceTime[0] = -1.0f;
 				nii_SaveBIDSX(refPath, dRef, opts, &hdr,
 							  nameList->str[dcmSort[0].indx], &dti4D_ref);
 			} else {
