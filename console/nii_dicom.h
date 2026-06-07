@@ -273,6 +273,19 @@ struct TDICOMdata {
 		mrsAcqType, numberOfKSpaceTrajectories; // MRS only: (0018,9200) kMRSAcq* enum + (0018,9093) k-space trajectory count
 	float compressedSensingFactor, xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, scatterFraction, percentSampling, waterFatShift, numberOfAverages, patientSize, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
 	float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
+	// MRS / Philips Enhanced DICOM: VolumeLocalizationSequence (0018,9126)
+	// SlabOrientation (0018,9105) carries the canonical orientation of the
+	// SVS box. spec2nii reads it directly (philips_dcm.py:~338) because the
+	// per-frame (0020,0037) ImageOrientationPatient on Enhanced Philips MRS
+	// sometimes mirrors slabs[1] + slabs[2] instead of slabs[0] + slabs[1]
+	// (e.g. SV_phantom_45deg_AP), which gives the wrong sform. We stash the
+	// first two SlabOrientations here (1-indexed [1..6] to mirror orient[])
+	// during DICOM parse; saveDcm2NiiMRS prefers it over orient[] for
+	// Philips MRS when populated. slabOrientCount tracks how many items we
+	// have read so we can ignore the third (slice normal — recomputed via
+	// cross product downstream) without losing it to a partial overwrite.
+	float slabOrient[7];
+	int slabOrientCount;
 	float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor, injectedVolume, reconFilterSize; // PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 	float frameReferenceTime, frameDuration, ecat_isotope_halflife, ecat_dosage;
 	float pixelPaddingValue; // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.

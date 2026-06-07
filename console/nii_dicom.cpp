@@ -773,6 +773,12 @@ struct TDICOMdata clear_dicom_data() {
 		d.xyzDim[i] = 1;
 	for (int i = 0; i < 7; i++)
 		d.orient[i] = 0.0f;
+	// SlabOrientation (0018,9105) from Volume Localization Sequence —
+	// MRS-only; consumed by saveDcm2NiiMRS. slabOrientCount == 0 means
+	// "tag absent" so the writer falls back to the per-frame IOP path.
+	for (int i = 0; i < 7; i++)
+		d.slabOrient[i] = 0.0f;
+	d.slabOrientCount = 0;
 	strcpy(d.patientName, "");
 	strcpy(d.deidentificationMethod, "");
 	strcpy(d.patientID, "");
@@ -1853,18 +1859,50 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 							d->transmitCoilName[--n] = '\0';
 					}
 				}
-			} else if (strcmp(tagCSA.name, "ReceivingCoil") == 0) {
-				if (d->coilName[0] == '\0') {
-					memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
-					if (!littleEndianPlatform())
-						nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-					int n = itemCSA.xx2_Len;
-					if (n > 0 && n < kDICOMStr) {
-						memcpy(d->coilName, &buff[lPos + sizeof(itemCSA)], n);
-						d->coilName[n] = '\0';
-						while (n > 0 && (d->coilName[n - 1] == '\0' || d->coilName[n - 1] == ' '))
-							d->coilName[--n] = '\0';
-					}
+			} else if (strcmp(tagCSA.name, "ReceivingCoil") == 0 ||
+					   strcmp(tagCSA.name, "ImaCoilString") == 0) {
+				// MRS parity (M4 audit follow-up): spec2nii's RxCoil reads
+				// CSA ReceivingCoil first, falling back to ImaCoilString
+				// when ReceivingCoil has zero items (the common case on
+				// VB/VE classic Siemens MRS — ReceivingCoil exists but is
+				// empty; the short coil-element identifier "HEA;HEP" /
+				// "C:A32" actually lives in ImaCoilString). Both tags carry
+				// the same short-name semantics; spec2nii line 692-697
+				// uses ReceivingCoil[0] when nonempty else ImaCoilString[0].
+				// We mirror that with a tag-name `||` so whichever populated
+				// CSA item we hit first wins.
+				//
+				// This overrides the public (0018,1250) ReceiveCoilName
+				// long marketing label (e.g. "Head_32", "32Ch_Head_7T")
+				// for MRS-path sidecar emission. The outer readCSAforMRS
+				// gate (isRawDataStorage || isMRS || mrsAcqType) keeps
+				// this off the standard image pipeline; non-MRS Siemens
+				// scans continue to use the public-tag long name. XA-line
+				// MRS files where the CSA and public tag agree (e.g.
+				// svs_se_135sws -> "HeadNeck_64") see no observable change.
+				//
+				// Both names map to the same destination; the first
+				// nonempty hit wins because we already write something
+				// non-NULL on success. The second hit's strcmp at line
+				// ~1856 will still fire (it's a fresh tagCSA.name), but
+				// the value-copy block below only runs when item items
+				// (n > 0) are present, so an empty later tag is a no-op.
+				memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+				if (!littleEndianPlatform())
+					nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+				int n = itemCSA.xx2_Len;
+				if (n > 0 && n < kDICOMStr) {
+					memcpy(d->coilName, &buff[lPos + sizeof(itemCSA)], n);
+					d->coilName[n] = '\0';
+					while (n > 0 && (d->coilName[n - 1] == '\0' || d->coilName[n - 1] == ' '))
+						d->coilName[--n] = '\0';
+					// Keep coilCrc consistent with the overridden name so
+					// the series-stacking decision (nii_dicom_batch.cpp
+					// ~12541 d1.coilCrc != d2.coilCrc) doesn't reference
+					// a stale crc of the original public-tag value. All
+					// DICOMs in a single MRS series share the same CSA
+					// value, so the crc stays equal across the stack.
+					d->coilCrc = mz_crc32X((unsigned char *)&d->coilName, strlen(d->coilName));
 				}
 			}
 		}
@@ -4984,6 +5022,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kImagePositionPatient 0x0020 + (0x0032 << 16) // Actually !
 #define kOrientationACR 0x0020 + (0x0035 << 16)
 #define kOrientation 0x0020 + (0x0037 << 16)
+// Volume Localization Sequence item: SlabOrientation FD vec3 — Philips
+// Enhanced MRS canonical orientation, used by saveDcm2NiiMRS instead of
+// per-frame (0020,0037) when populated (P2.b: 45deg_AP fix).
+#define kSlabOrientation (uint32_t)0x0018 + (0x9105 << 16)
 #define kTemporalPosition 0x0020 + (0x0100 << 16) // IS
 // #define kNumberOfTemporalPositions 0x0020+(0x0105 << 16 ) //IS public tag for NumberOfDynamicScans
 #define kTemporalResolution 0x0020 + (0x0110 << 16)	 // DS
@@ -8419,6 +8461,29 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (!isOrient)
 				dcmMultiFloat(lLength, (char *)&buffer[lPos], 6, d.orient);
 			break;
+		case kSlabOrientation: {
+			// (0018,9105) FD vec3 inside (0018,9126) VolumeLocalizationSequence.
+			// Items 0 + 1 = canonical SVS box orientation rows; item 2 is the
+			// slice normal (we recompute via cross product downstream, so it
+			// can be ignored once items 0/1 are captured). MRS-only consumer:
+			// saveDcm2NiiMRS prefers d.slabOrient over d.orient when populated.
+			// VR FD = 8-byte binary doubles, so use dcmMultiFloatDouble (NOT
+			// dcmMultiFloat which parses DS text strings); the helper writes
+			// 0-indexed output, so map to slabOrient[1..3] / [4..6] manually.
+			// We accept up to 3 slab orientations but only the first two land
+			// in slabOrient[1..6]; further items are silently dropped to
+			// preserve the locked-in pair.
+			if (lLength >= 24 && d.slabOrientCount < 2) {
+				float v[3] = {0.0f, 0.0f, 0.0f};
+				dcmMultiFloatDouble((size_t)lLength, &buffer[lPos], 3, v, d.isLittleEndian);
+				int base = d.slabOrientCount * 3;
+				d.slabOrient[base + 1] = v[0];
+				d.slabOrient[base + 2] = v[1];
+				d.slabOrient[base + 3] = v[2];
+				d.slabOrientCount++;
+			}
+			break;
+		}
 		case kOrientation: {
 			if (isOrient) { // already read orient - read for this slice to see if it varies (localizer)
 				float orient[7];

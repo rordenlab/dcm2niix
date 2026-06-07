@@ -77,40 +77,159 @@ tracked below as deferred — they require non-trivial parser additions
 (MRSI dispatch, Philips orientation handedness, sLASER Phoenix-protocol
 TE summing) that are not deadline-scoped.
 
+### Next-cycle goal: dcm2niix bundles raw, Python post-tool splits per vendor
+
+**Decision (2026-06-07, post-P2 cycle).** dcm2niix's existing per-DICOM
+split criteria (multi-echo `EchoTime`, multi-PLD ASL, coil splitting
+under `-m o`) all key off **standard, public DICOM tags** that vary per
+file. Vendor-sequence-specific reference-scan splits (CMRR sLASER DKD
+`_rf_off` / `_rf_grads_ovs_off`; MEGA-PRESS edit-on/off + water-ref
+crop) live in vendor Phoenix Protocol or per-frame private SQs — that's
+interpretation, not DICOM semantics, and belongs above the converter.
+Next cycle treats this as a single unified design goal rather than three
+separate parity items:
+
+- **Goal.** `dcm2niix` ships **all frames** from a multi-DICOM or multi-
+  frame MRS series as a single bundled NIfTI (`dim[5] = total frames`,
+  no reorder, no drop). A new sibling tool `tools/mrs_post.py` (or
+  equivalent — naming TBD) consumes dcm2niix outputs + source DICOMs
+  and applies the vendor-specific split / crop / reshape that spec2nii
+  bakes in. The wrapper is opt-in; direct dcm2niix users continue to
+  get raw bundled NIfTI which is correct and complete.
+
+- **C-side cleanup (DONE 2026-06-07 round-4 cycle).** Reverted the
+  press_mega MEGA-PRESS reshape, the `philipsScanMegaPressFrames`
+  byte-scanner helper, and the matching `dim_6: DIM_EDIT` /
+  `dim_6_header` sidecar emission. press_mega output now lands as
+  `(1024, 297)` with all frames intact. svsWSAntCing's `dim[5]=32`
+  P2.d stacking confirmed unaffected (separate code path). Bundle also
+  carried the K4(b) SlabOrientation parser fix (`slabOrientCount++`
+  moved inside the `lLength >= 24` guard).
+
+- **`tools/mrs_post.py` deliverable.** Pure-stdlib + pydicom (already a
+  reproinx.py dep). Handles three known cases:
+  1. **CMRR sLASER DKD multi-DICOM** (spec2nii `identify_integrated_references`
+     port): regex-match `tSequenceFileName` against
+     `svs_slaser(voi)?_dkd2?`, read `sSpecPara.lAutoRefScanMode == 8`,
+     `lAutoRefScanNo`, `lAverages`. For each bundled NIfTI frame
+     (correspond to `InstanceNumber`), classify as main / `_rf_off` /
+     `_rf_grads_ovs_off`. Write 2-3 paired NIfTIs with appropriate
+     suffixes.
+  2. **Philips MEGA-PRESS** (spec2nii `_process_philips_svs_new` MEGA
+     branch port): read per-frame `(2005,1304)` and `(2005,1598)` from
+     source DICOM, drop ref frames into a paired `_mrsref`, reorder
+     remaining into `(N_pts, n_dyn, 2)` with edit ON/OFF on dim[6].
+  3. **`_mrsref` companion sanity check.** dcm2niix already emits the
+     Philips classic 2× water-reference companion via the C writer; the
+     Python tool should validate (or migrate) so all `_mrsref`
+     production sits on the same code path long-term.
+
+- **Scoreboard implication.** The spec2nii parity comparator currently
+  rewards spec2nii-style multi-file output. After the revert + Python
+  tool, the C-only PASS count for press_mega goes back to FAIL (16 → 15
+  PASS), but a `--with-mrs-post` invocation of the comparator runs the
+  Python tool first, then compares; we expect 5 sLASER multi-DICOM rows
+  + press_mega to land at PASS via that path. Update the comparator (or
+  add a sibling) to support both modes — bare C dcm2niix output AND
+  post-processed output — so both stories stay green.
+
+- **Files in scope.**
+  - `console/nii_dicom_batch.cpp` — revert MEGA-PRESS reshape +
+    sidecar emission (~150-line delta, all removals).
+  - `tools/mrs_post.py` — new file, ~300 lines.
+  - `tools/reproinx.py` — optional hook to invoke `mrs_post.py` as a
+    `_post_process` step (existing `_rescue_unknown_dir` etc. pattern).
+  - `CLAUDE.md` — new "MRS split policy" subsection naming the
+    boundary and pointing at `tools/mrs_post.py`.
+  - `dcm_qa_mrs/spec2nii_compare.py` — add `--with-mrs-post` so the
+    comparator can test both raw and post-processed outputs.
+
+- **Audit before starting.** The cycle starts with a code audit (run
+  `/audit` skill) over the current C-side MRS state — last cycle landed
+  M4 RxCoil alias, Philips conjugation, P2.d multi-dynamic, P2.b
+  SlabOrientation, MEGA-PRESS edit split, and the `slabOrient[]`
+  TDICOMdata extension. Audit should: (1) sign off on the keepers
+  (M4 / conjugation / P2.d / SlabOrient — these stay), (2) confirm the
+  MEGA-PRESS reshape revert is bounded to the planned removals,
+  (3) check the `slabOrient` field's prime-directive impact (small
+  TDICOMdata growth — should be fine but worth verifying against the
+  9.6KB / 8MB stack ceiling).
+
+- **Audit outcome (2026-06-07 round 4 — DONE).** All three deliverables
+  cleared:
+  - **Keepers signed off**: K1 M4 RxCoil PASS (theoretical "first nonempty
+    wins" comment mismatch is corpus-clean); K2 Philips IOP-negation PASS
+    (`nii_dicom_batch.cpp:12137-12140`, strict Philips gate, after
+    SlabOrient sub); K3 P2.d svsWSAntCing PASS (data-driven mult `>= 3`
+    branch at `:11680-11689`, separate from MEGA-PRESS reshape); K4
+    SlabOrientation parser PASS with one-line fix landed — `slabOrientCount++`
+    moved inside the `lLength >= 24 && slabOrientCount < 2` guard
+    (`nii_dicom.cpp:8484`) so a truncated first item can no longer leave
+    `slabOrient[1..3]={0,0,0}` while the consumer's `>= 2` gate fires.
+    K4 gap (a) (`geomValid` computed from `orient[]` not `slabOrient[]`)
+    remains DEFERRED — theoretical, no corpus driver, well-formed Philips
+    Enhanced data always agrees.
+  - **MEGA-PRESS revert applied — bounded and clean**:
+    `philipsScanMegaPressFrames` helper (~100 lines), `megaPressReshape`
+    branch (~48 lines + ternary collapse), and `dim_6: DIM_EDIT` /
+    `dim_6_header` sidecar block (~13 lines) all removed. `svsWSAntCing`
+    32-dyn stacking confirmed on a separate path (data-driven
+    byte-multiplier, not the per-frame scanner) — unaffected.
+    Net delta ≈ −150 lines in `console/nii_dicom_batch.cpp`. The one-byte
+    OOB read in the deleted scanner is gone; grep confirms zero
+    pattern-replicates elsewhere.
+  - **Struct stack-ceiling check PASS**: `slabOrient[7]` is `float[7]`
+    (not `double[7]` as the user estimated), so the net add is +32 B,
+    not +60 B. That's 0.78% of the issue #877 +4 KB failure margin —
+    two orders of magnitude under the ceiling. Inline POD remains
+    correct; no heap-pointer conversion needed. CLAUDE.md "TDICOMdata
+    size + by-value passing" block updated with the +32 B audit note
+    and an explicit threshold rule for future additions (≳ 1 KB → heap
+    pointer mandatory).
+  - **Regression suite**: `dcm_qa` / `dcm_qa_nih` / `dcm_qa_uih` show
+    only the standing pre-existing baseline diffs (`PulseSequenceType`
+    additions, `PartialFourier` removal at full Fourier,
+    `ParallelReductionFactor*` at >= 1.0, zero-padded `AcquisitionTime`,
+    `SequenceName: epiRT` XA60 fallback, UIH `InstitutionalDepartmentName`).
+    Zero MRS-related drift. Bundle lands clean.
+
 ### Deferred to Phase 6 (post-release backlog)
 
 These are real work but out of scope for this release. Tracked by
 deliverable + why-deferred so the next cycle has a running start.
 
-- **P1.e Siemens sLASER multi-DICOM** (6 datasets blocked) — Phoenix
-  Protocol `alTE` summing (spec2nii `dicomfunctions.py:649`) + multi-DICOM
-  stack ordering. Both require deep DICOM-internals work; the Phoenix
-  protocol parser is a significant addition.
-- **P2.b Philips orientation handedness** (1 classic SVS `45deg_AP` +
-  9 orientation_tests = 10 datasets still blocked) — **PARTIAL FIX
-  landed**: spec2nii's `_enhanced_dcm_svs_to_orientation` does
-  `imageOrientationPatient *= -1` (philips_dcm.py:341), negating both
-  IOP rows before building the rotation. Mirrored in `saveDcm2NiiMRS`
-  on the Philips manufacturer branch — the 6 classic SVS phantom
-  datasets (center, H15mm, R15mm, 45deg_RL, no_Water_Suppression,
-  svsWSAntCing) + `press_mega` are now `sform✓`. **`45deg_AP` still
-  fails sform** with a more complex axis-permutation pattern (not a
-  sign flip), and the **9 orientation_tests** datasets are SKIP'd
-  because spec2nii errors out in this environment on them. None of
-  the now-`sform✓` rows reaches PASS because FID is also ✗ — the
-  trailing-FID payload offset (P2.c) is the remaining blocker.
-- **P2.d Philips Enhanced multi-dynamic** (3 datasets — `svsWSAntCing`,
-  `press_mega`, HYPER `converted_dcm`) — Enhanced DICOM per-frame walking
-  + `DIM_DYN` / `DIM_EDIT` axis encoding; `saveDcm2NiiMRS` currently asserts
-  single-dynamic.
+- **P1.e Siemens sLASER multi-DICOM** (6 datasets) — **MOVED TO PYTHON
+  WRAPPER** (see "Next-cycle goal" above). Phoenix Protocol `alTE`
+  summing already landed C-side (gives correct EchoTime to the bundled
+  output); the multi-DICOM stack ORDERING split (`_rf_off` /
+  `_rf_grads_ovs_off` per `identify_integrated_references`) lives in
+  `tools/mrs_post.py` instead of `saveDcm2NiiMRS`.
+- **P2.b Philips orientation handedness** — **DONE for 45deg_AP via
+  SlabOrientation parser** (`kSlabOrientation = (0018,9105)` reads
+  `VolumeLocalizationSequence` slabs[0]+slabs[1] directly, mirroring
+  spec2nii `philips_dcm.py:339`; `saveDcm2NiiMRS` prefers
+  `d.slabOrient[]` over per-frame IOP when populated). The 9
+  `orientation_tests/` SKIPs are not actually MRS DICOMs (SOP class
+  `1.2.840.10008.5.1.4.1.1.66` Raw Data Storage; spec2nii itself
+  rejects them in this environment), so they stay SKIP'd indefinitely.
+- **P2.d Philips Enhanced multi-dynamic** — **PARTIAL DONE + REST MOVED
+  TO PYTHON WRAPPER**. `svsWSAntCing` 32-dyn stacking landed C-side
+  (`dim[5] = nDynPerFile`, just reads the multi-frame payload correctly,
+  not vendor-state-specific). `press_mega` MEGA-PRESS edit-on/off split
+  + ref-frame crop currently landed C-side too (16/40 PASS) but the
+  "Next-cycle goal" above reverts that to keep the C side raw —
+  `tools/mrs_post.py` will own the edit / ref interpretation. HYPER
+  `converted_dcm` SKIPped (spec2nii reference path errors in this
+  environment).
 - **P4.1-P4.3 MRSI generalization** (8 datasets — 5 Siemens MRSI + 2 UIH
   MRSI + 1 voi_in_mrsi) — full spatial-dim packing rewrite + per-vendor
   MRSI dispatch. Single biggest cost item in the original plan.
 - **P4.5 `_unloc`** — no corpus sample currently exercises it; defer until a
   driver appears.
-- **M4 Coil alias precedence (audit follow-up)** — CSA `ReceivingCoil` vs
-  public coil-name precedence on the MRS path. JSON-only diff; doesn't
-  block any PASS count, but parity gap with spec2nii on multiple datasets.
+- **M4 Coil alias precedence (audit follow-up)** — **DONE.** CSA
+  `ReceivingCoil` + `ImaCoilString` fallback now wins over public
+  `(0018,1250)` ReceiveCoilName on the MRS path (VB/VE/anon sLASER all
+  PASS).
 - **`saveDcm2NiiMRS` extraction refactor (P4.1)** — pre-condition for clean
   MRSI dispatch; ~250 lines of monolith should be split into
   `mrsValidateMembers / mrsBuildHeader / mrsWriteFID / mrsWriteSidecar`

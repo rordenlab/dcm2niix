@@ -733,6 +733,7 @@ typedef struct {
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
 	float alTI[kMaxWipFree];
+	float alTE[kMaxWipFree]; // Phoenix Protocol multi-echo TE list (us); sLASER sums these for total EchoTime (spec2nii dicomfunctions.py:649)
 	float sPostLabelingDelay, ulLabelingDuration, dAveragesDouble, dThickness, ulShape, sPositionDTra, sNormalDTra;
 	vec3 freeDiffusionVec[freeDiffusionMaxN];
 } TCsaAscii;
@@ -916,6 +917,22 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 				char txt[1024] = {""};
 				snprintf(txt, 1024, "%s%d]", keyStrTiFree, k);
 				csaAscii->alTI[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
+			}
+		}
+		// read ALL alTE[*] values. The single-echo DICOM tag (0018,0081)
+		// reports just alTE[0]; multi-echo MRS sequences (e.g. Siemens
+		// sLASER) split the total echo across alTE[0..N] and downstream
+		// tools want the SUM. Mirrors spec2nii dicomfunctions.py:649.
+		// TE0/TE1 above stay populated for back-compat (issue400 phase path).
+		for (int k = 0; k < kMaxWipFree; k++)
+			csaAscii->alTE[k] = NAN;
+		char keyStrTeFree[] = "alTE[";
+		char *keyPosTe = (char *)memmem(keyPos, csaLengthTrim, keyStrTeFree, strlen(keyStrTeFree));
+		if (keyPosTe) {
+			for (int k = 0; k < kMaxWipFree; k++) {
+				char txt[1024] = {""};
+				snprintf(txt, 1024, "%s%d]", keyStrTeFree, k);
+				csaAscii->alTE[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
 			}
 		}
 		// read ALL csaAscii.alFree[*] values
@@ -2916,7 +2933,21 @@ tse3d: T2*/
 		// ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		// if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		// if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
-		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		// M4 audit follow-up: MRS sidecar parity with spec2nii. spec2nii's
+		// RxCoil reads CSA ReceivingCoil (short coil-element identifier,
+		// e.g. "HEA;HEP" on VB/VE sLASER) instead of the Phoenix Protocol
+		// sCoilElementID.tCoilID long marketing label (e.g. "Head_32")
+		// that the non-MRS image path emits as ReceiveCoilName. d.coilName
+		// is overridden to the CSA value by readCSAforMRS on the MRS gate
+		// (nii_dicom.cpp:~1858). For non-MRS Siemens, fall back to the
+		// existing Phoenix Protocol coilID source so the standard image-
+		// pipeline output is unchanged. XA-line MRS files where the CSA
+		// and public tag agree (e.g. svs_se_135sws -> "HeadNeck_64") see
+		// no observable difference either way.
+		char *rxCoilSource = coilID;
+		if (d.isMRS && d.coilName[0] != '\0')
+			rxCoilSource = d.coilName;
+		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", rxCoilSource);
 		if (d.modality == kMODALITY_MR)
 			json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		if (strcmp(coilElements, d.coilName) != 0)
@@ -11432,6 +11463,43 @@ static bool mrsIsStandaloneWaterRef(const struct TDICOMdata *d) {
 	return false;
 }
 
+// Siemens MRS multi-echo total TE: the DICOM EchoTime tag (0018,0081)
+// reports only alTE[0], but multi-echo sequences (e.g. sLASER) split the
+// total echo across alTE[0..N] in the Phoenix Protocol. spec2nii
+// dicomfunctions.py:649 sums alTE[*] until the first missing key — we
+// mirror that here so downstream EchoTime emission matches. Reuses the
+// existing siemensCsaAscii Phoenix parser (TCsaAscii.alTE was extended
+// alongside alTI). Returns sum in microseconds, or 0.0 when CSA series
+// header is absent / no alTE keys are present (no-op for the caller).
+static double siemensMrsTotalEchoTimeUs(const char *filename, struct TDICOMdata *d) {
+	if (d == NULL)
+		return 0.0;
+	if (d->manufacturer != kMANUFACTURER_SIEMENS)
+		return 0.0;
+	if (d->CSA.SeriesHeader_offset < 1 || d->CSA.SeriesHeader_length < 1)
+		return 0.0;
+	float shimSetting[8];
+	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge],
+		coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge],
+		coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge],
+		wipMemBlock[kDICOMStrExtraLarge];
+	TCsaAscii csaAscii;
+	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset,
+					d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo,
+					coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName,
+					wipMemBlock);
+	double sum = 0.0;
+	bool found = false;
+	for (int k = 0; k < kMaxWipFree; k++) {
+		// NaN (readKeyFloatNan sentinel on miss) marks end of contiguous list.
+		if (csaAscii.alTE[k] != csaAscii.alTE[k])
+			break;
+		sum += (double)csaAscii.alTE[k];
+		found = true;
+	}
+	return found ? sum : 0.0;
+}
+
 // MR Spectroscopy converter — handles MR Spectroscopy Storage SOP class
 // DICOMs (SOP UID 1.2.840.10008.5.1.4.1.1.4.2). Each input DICOM carries a
 // single FID (free-induction decay) in the (5600,0020) Spectroscopy Data
@@ -11479,6 +11547,32 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		return EXIT_FAILURE;
 	}
 	int N_files = nConvert;
+	// P2.d Philips Enhanced multi-dynamic SVS: a single Enhanced DICOM packs
+	// `nframes × spec_points` interleaved complex floats in (5600,0020).
+	// spec2nii's _process_philips_svs_new reshapes to (spec_points, nframes);
+	// we mirror that by computing nDynPerFile from the actual payload size
+	// AFTER the _mrsref reference-pair case is excluded. The byte-multiplier
+	// approach (vs reading NumberOfFrames directly) sidesteps the conflict
+	// with the classic 2-frame Philips SVS where NumberOfFrames=2 carries
+	// [main_FID, water_ref_FID] not 2 dynamics — that case has multiplier=2
+	// and stays on the existing _mrsref companion path below. Multipliers
+	// >= 3 are treated as dynamics (svsWSAntCing 32, press_mega 288, etc.).
+	// Multiplier must agree across N_files; otherwise we drop to nDynPerFile=1
+	// and the per-file mismatch is caught by the FID-size check in the read
+	// loop. MEGA-PRESS edit-on/off (`DIM_EDIT` on dim[6]) needs per-frame
+	// classification from private (2005,140f)/(2005,1598) — Phase 6 follow-
+	// on; press_mega will land with dim[5]=288 (single DIM_DYN axis)
+	// instead of dim[5]=144,dim[6]=2 until that lands.
+	size_t single_frame_bytes = (size_t)N_pts * 2 * sizeof(float);
+	int nDynPerFile = 1;
+	if (d0->manufacturer == kMANUFACTURER_PHILIPS && N_files == 1 &&
+		single_frame_bytes > 0 && d0->imageBytes > 0 &&
+		((size_t)d0->imageBytes % single_frame_bytes) == 0) {
+		int mult = (int)((size_t)d0->imageBytes / single_frame_bytes);
+		if (mult >= 3)
+			nDynPerFile = mult;
+	}
+	int N_dyn = nDynPerFile * N_files;
 	// NIfTI-1 stores `dim[k]` as int16. Anything above 32767 wraps to a
 	// negative number after the (short) cast at header construction. Refuse
 	// rather than silently produce a corrupt header.
@@ -11486,8 +11580,8 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		printError("MRS: DataPointColumns %d exceeds NIfTI-1 dim[4] limit (32767)\n", N_pts);
 		return EXIT_FAILURE;
 	}
-	if (N_files > 32767) {
-		printError("MRS: %d input DICOMs exceeds NIfTI-1 dim[5] limit (32767)\n", N_files);
+	if (N_dyn > 32767) {
+		printError("MRS: %d effective dynamics exceeds NIfTI-1 dim[5] limit (32767)\n", N_dyn);
 		return EXIT_FAILURE;
 	}
 	// Stack invariants. Every member of the series must agree on the values
@@ -11615,8 +11709,12 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	bool spacingOK = (d0->xyzMM[1] > 0.0f) && (d0->xyzMM[2] > 0.0f) && (d0->zThick > 0.0f);
 	bool geomValid = orientFinite && orientShapeOK && posFinite && spacingOK;
 
-	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag
-	size_t total_bytes = bytes_per_dicom * (size_t)N_files;
+	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag per single frame
+	// P2.d: when each DICOM packs nDynPerFile frames (Philips Enhanced
+	// multi-dynamic), the FID payload to allocate is bytes_per_dicom *
+	// nDynPerFile per DICOM. Total dynamics across the stack = N_dyn.
+	size_t bytes_per_dicom_total = bytes_per_dicom * (size_t)nDynPerFile;
+	size_t total_bytes = bytes_per_dicom * (size_t)N_dyn;
 	float *fid = (float *)malloc(total_bytes);
 	if (fid == NULL) {
 		printError("MRS: malloc failed for %zu bytes\n", total_bytes);
@@ -11639,14 +11737,18 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	int trailingMultiplier = 0;
 	for (int i = 0; i < N_files; i++) {
 		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
-		if ((size_t)d->imageBytes < bytes_per_dicom ||
-			((size_t)d->imageBytes % bytes_per_dicom) != 0) {
+		if ((size_t)d->imageBytes < bytes_per_dicom_total ||
+			((size_t)d->imageBytes % bytes_per_dicom_total) != 0) {
 			// gate is enforced again in the read loop below; here we just
 			// want a defensible multiplier read.
 			trailingMultiplier = 0;
 			break;
 		}
-		int mult = (int)((size_t)d->imageBytes / bytes_per_dicom);
+		// Multiplier is measured AFTER accounting for the per-file dynamics
+		// pack (P2.d): a Philips Enhanced single-DICOM 32-dyn file with NO
+		// trailing companion has mult=1 (i.e. trail=0). The classic 2× case
+		// (main + water-ref companion) still presents as mult=2 / trail=1.
+		int mult = (int)((size_t)d->imageBytes / bytes_per_dicom_total);
 		int trail = mult - 1;
 		if (i == 0)
 			trailingMultiplier = trail;
@@ -11679,21 +11781,21 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		// `bytes_per_dicom` (the main FID) and ignore the rest. spec2nii
 		// splits the trailing chunk into a separate _ref output; doing the
 		// same is Phase 2.b work tracked in spec_plan.md.
-		if ((size_t)d->imageBytes < bytes_per_dicom ||
-			((size_t)d->imageBytes % bytes_per_dicom) != 0) {
+		if ((size_t)d->imageBytes < bytes_per_dicom_total ||
+			((size_t)d->imageBytes % bytes_per_dicom_total) != 0) {
 			printError("MRS: DICOM %d has FID size %d, expected %zu (or integer multiple)\n",
-					   i, d->imageBytes, (size_t)bytes_per_dicom);
+					   i, d->imageBytes, (size_t)bytes_per_dicom_total);
 			free(fid);
 			free(fidRef);
 			return EXIT_FAILURE;
 		}
-		if (((size_t)d->imageBytes > bytes_per_dicom) && !warned_trailing_this_series) {
+		if (((size_t)d->imageBytes > bytes_per_dicom_total) && !warned_trailing_this_series) {
 			if (emitMrsref) {
 				printMessage("MRS: DICOM payload is 2x expected size; emitting _mrsref water-reference companion\n");
 			} else {
 				printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
 							 "(_mrsref companion only supported for exact 2x case)\n",
-							 (int)((size_t)d->imageBytes / bytes_per_dicom));
+							 (int)((size_t)d->imageBytes / bytes_per_dicom_total));
 			}
 			warned_trailing_this_series = true;
 		}
@@ -11711,8 +11813,10 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			free(fidRef);
 			return EXIT_FAILURE;
 		}
-		float *slot = fid + (size_t)i * N_pts * 2;
-		if (fread(slot, 1, bytes_per_dicom, f) != bytes_per_dicom) {
+		// Each DICOM contributes nDynPerFile sequential frames; pack them
+		// contiguously into the fid buffer starting at slot i × nDynPerFile.
+		float *slot = fid + (size_t)i * nDynPerFile * N_pts * 2;
+		if (fread(slot, 1, bytes_per_dicom_total, f) != bytes_per_dicom_total) {
 			printError("MRS: short read from %s\n", nameList->str[dcmSort[i].indx]);
 			fclose(f);
 			free(fid);
@@ -11722,8 +11826,8 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		// Trailing water-reference FID immediately follows the main FID; read
 		// it into the parallel buffer with the same indexing.
 		if (emitMrsref && fidRef != NULL) {
-			float *refSlot = fidRef + (size_t)i * N_pts * 2;
-			if (fread(refSlot, 1, bytes_per_dicom, f) != bytes_per_dicom) {
+			float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+			if (fread(refSlot, 1, bytes_per_dicom_total, f) != bytes_per_dicom_total) {
 				printWarning("MRS: short read for trailing water-reference FID in %s; dropping _mrsref companion\n",
 							 nameList->str[dcmSort[i].indx]);
 				free(fidRef);
@@ -11741,26 +11845,49 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		// populated by the DICOM parser; swap each float32 component
 		// (2*N_pts of them) when the file was big-endian.
 		if (!d->isLittleEndian) {
-			nifti_swap_4bytes((size_t)N_pts * 2, slot);
+			nifti_swap_4bytes((size_t)N_pts * 2 * nDynPerFile, slot);
 			if (emitMrsref && fidRef != NULL) {
-				float *refSlot = fidRef + (size_t)i * N_pts * 2;
-				nifti_swap_4bytes((size_t)N_pts * 2, refSlot);
+				float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+				nifti_swap_4bytes((size_t)N_pts * 2 * nDynPerFile, refSlot);
 			}
 		}
 		// NumarisX (Siemens XA) phase convention: complex = real - 1j*imag,
 		// i.e. negate the odd-indexed (imag) floats. Older VE/VX systems use
 		// real + 1j*imag — no negation needed. See spec2nii
 		// process_siemens_svs_xa vs process_siemens_svs_vx.
+		// Phase-convention passes operate on all complex samples this DICOM
+		// contributed (nDynPerFile × N_pts points). For single-dynamic stacks
+		// nDynPerFile == 1 and the iteration count is unchanged.
+		int N_complex_this_dicom = N_pts * nDynPerFile;
 		if ((d->manufacturer == kMANUFACTURER_SIEMENS) && d->isXA) {
 			// Preserve +0.0 in the imag channel — unconditional negation
 			// produces -0.0, which is mathematically identical but differs
 			// byte-for-byte from spec2nii's reference output.
-			for (int p = 0; p < N_pts; p++)
+			for (int p = 0; p < N_complex_this_dicom; p++)
 				if (slot[2 * p + 1] != 0.0f)
 					slot[2 * p + 1] = -slot[2 * p + 1];
 			if (emitMrsref && fidRef != NULL) {
-				float *refSlot = fidRef + (size_t)i * N_pts * 2;
-				for (int p = 0; p < N_pts; p++)
+				float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+				for (int p = 0; p < N_complex_this_dicom; p++)
+					if (refSlot[2 * p + 1] != 0.0f)
+						refSlot[2 * p + 1] = -refSlot[2 * p + 1];
+			}
+		}
+		// Philips classic SVS conjugation (P2.c follow-up): spec2nii
+		// philips_dcm.py:91 applies `.conj()` (imag negation) to the FID
+		// before writing, with the comment "Data appears to require
+		// conjugation to meet standard's conventions." The raw (5600,0020)
+		// payload uses the opposite sign convention from NIfTI-MRS, so
+		// without this step the imag channel comes out negated relative
+		// to spec2nii — verified bit-equal on SV_phantom_center after the
+		// negation. Same +0.0 preservation as the XA branch above.
+		if (d->manufacturer == kMANUFACTURER_PHILIPS) {
+			for (int p = 0; p < N_complex_this_dicom; p++)
+				if (slot[2 * p + 1] != 0.0f)
+					slot[2 * p + 1] = -slot[2 * p + 1];
+			if (emitMrsref && fidRef != NULL) {
+				float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+				for (int p = 0; p < N_complex_this_dicom; p++)
 					if (refSlot[2 * p + 1] != 0.0f)
 						refSlot[2 * p + 1] = -refSlot[2 * p + 1];
 			}
@@ -11773,13 +11900,13 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	memcpy(hdr.magic, "n+1\0", 4);
 	hdr.datatype = DT_COMPLEX64; // 32; bitpix 64 = 2*float32
 	hdr.bitpix = 64;
-	hdr.dim[0] = (N_files > 1) ? 5 : 4;
+	hdr.dim[0] = (N_dyn > 1) ? 5 : 4;
+	hdr.dim[5] = (short)N_dyn;
+	hdr.dim[6] = 1;
 	hdr.dim[1] = 1;
 	hdr.dim[2] = 1;
 	hdr.dim[3] = 1;
 	hdr.dim[4] = (short)N_pts;
-	hdr.dim[5] = (short)N_files;
-	hdr.dim[6] = 1;
 	hdr.dim[7] = 1;
 	hdr.pixdim[0] = 1.0f;
 	// F1 pixdim-mirror: pixdim must match the sform column norms below.
@@ -11813,14 +11940,28 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// LPS -> RAS conversion that NIfTI requires.
 	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
 	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	// P2.b VolumeLocalizationSequence override: spec2nii reads SlabOrientation
+	// from (0018,9126) directly (philips_dcm.py:339) instead of the per-frame
+	// (0020,0037) ImageOrientationPatient. The two agree on 5 of 6 classic
+	// Philips SVS phantoms in the corpus, but on SV_phantom_45deg_AP the
+	// per-frame IOP carries slabs[1]+slabs[2] while spec2nii's path reads
+	// slabs[0]+slabs[1]. When the parser captured two SlabOrientations, prefer
+	// them on the Philips MRS branch so 45deg_AP and any other Enhanced-DICOM
+	// MRS with the same quirk lands at sform parity. slabOrientCount == 0
+	// means the tag was absent (classic-format Philips SVS, or non-Philips)
+	// — fall through to the per-frame IOP path.
+	if (d0->manufacturer == kMANUFACTURER_PHILIPS && d0->slabOrientCount >= 2) {
+		rx0 = d0->slabOrient[1]; rx1 = d0->slabOrient[2]; rx2 = d0->slabOrient[3];
+		ry0 = d0->slabOrient[4]; ry1 = d0->slabOrient[5]; ry2 = d0->slabOrient[6];
+	}
 	// P2.b Philips orientation handedness: spec2nii's `_enhanced_dcm_svs_to_orientation`
 	// (philips_dcm.py:341) does `imageOrientationPatient *= -1` on both IOP
 	// rows before building the rotation, so columns 0 and 1 of spec2nii's
 	// sform are sign-flipped relative to dcm2niix's. Column 2 (slice = cross
-	// of two negated rows) stays the same sign. Negating IOP rows here on
-	// the Philips MRS branch lands the 6 classic-SVS + no-WS rows at sform✓
-	// (their FID is also currently ✗ due to phase convention; sform is the
-	// blocker on JSON✓ rows like SV_phantom_center).
+	// of two negated rows) stays the same sign. Negation applies to both the
+	// per-frame IOP source and the SlabOrientation source (spec2nii negates
+	// after reading slabs at philips_dcm.py:341, before passing to
+	// dcm_to_nifti_orientation).
 	if (d0->manufacturer == kMANUFACTURER_PHILIPS) {
 		rx0 = -rx0; rx1 = -rx1; rx2 = -rx2;
 		ry0 = -ry0; ry1 = -ry1; ry2 = -ry2;
@@ -11931,6 +12072,15 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	} else {
 		printWarning("MRS: MRSpectroscopyAcquisitionType absent and CSA VOI evidence missing; not emitting BidsGuess _svs (file lands in Unknown/)\n");
 	}
+	// Siemens multi-echo MRS (e.g. sLASER): the DICOM EchoTime tag (0018,0081)
+	// only reports alTE[0]; the pulse sequence's true total TE is the sum of
+	// alTE[0..N] from the Phoenix Protocol. Override d0->TE before filename
+	// generation + sidecar emission so both reflect the corrected value. For
+	// single-echo MRS the helper returns alTE[0] alone (no-op) and for non-
+	// Siemens vendors it returns 0.0 (skip). Helper definition above.
+	double totalTeUs = siemensMrsTotalEchoTimeUs(nameList->str[dcmSort[0].indx], d0);
+	if (totalTeUs > 0.0)
+		d0->TE = (float)(totalTeUs / 1000.0); // us -> ms (d.TE units)
 	// Generate filename + save NIfTI body via the standard writer (handles
 	// .nii vs .nii.gz, output-dir, conflict resolution).
 	char pathoutname[2048] = "";
