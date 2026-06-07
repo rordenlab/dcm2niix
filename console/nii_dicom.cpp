@@ -8389,6 +8389,29 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.locationsInAcquisition = locationsInAcquisitionGE;
 	if (d.zSpacing > 0.0)
 		d.xyzMM[3] = d.zSpacing; // use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
+	// Single-volume Enhanced-DICOM slice-spacing fallback. When (0018,0088)
+	// SpacingBetweenSlices is absent AND the per-frame InStackPositionNumber
+	// path is blocked (Siemens / GE / UIH per `case kInStackPositionNumber`
+	// gate at ~line 6596, where the vendor exclusion keeps maxInStackPosition-
+	// Number=0 to avoid mis-splitting their 4D Enhanced packings), Slice-
+	// Thickness alone can mis-report the through-plane sampling — most
+	// notably Siemens SWI mIP where (0018,0050)=20mm is the projection slab
+	// depth but adjacent frames are 2.5mm apart. The per-frame IPP parser
+	// has already populated patientPosition[] (first frame) and
+	// patientPositionLast[] (most-recently-read frame). For a single-volume
+	// stack with multiple slices, the mean spacing is the IPP separation
+	// divided by (n-1). xyzDim[4]<2 keeps us out of 4D Enhanced packings
+	// where first-to-last IPP doesn't lie along the slice axis.
+	if ((d.zSpacing <= 0.0) && (d.xyzDim[3] > 1) && (d.xyzDim[4] < 2) &&
+		(patientPositionNum > 1) &&
+		(!isnan(d.patientPosition[1])) && (!isnan(d.patientPositionLast[1]))) {
+		float dx = sqrt(pow(d.patientPosition[1] - d.patientPositionLast[1], 2) +
+						pow(d.patientPosition[2] - d.patientPositionLast[2], 2) +
+						pow(d.patientPosition[3] - d.patientPositionLast[3], 2));
+		dx = dx / (d.xyzDim[3] - 1);
+		if ((dx > 0.0) && (!isSameFloatGE(dx, d.xyzMM[3])))
+			d.xyzMM[3] = dx;
+	}
 	// printMessage("patientPositions = %d XYZT = %d slicePerVol = %d numberOfDynamicScans %d\n",patientPositionNum,d.xyzDim[3], d.locationsInAcquisition, d.numberOfDynamicScans);
 	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (patientPositionNum > d.xyzDim[3])) {
 		d.CSA.numDti = d.xyzDim[3];																																			// issue506
