@@ -18,7 +18,9 @@ deadline:
 - [x] **Phase 0** — `tools/spec2nii_compare.py` + 31-dataset inventory.
 - [x] **Phase 1 Siemens SVS core** — VB/VE/XA20/XA30/anon SVS parse with FID +
   sform + dim parity. 2/19 cleanly PASS today (XA20, XA30); 3 more (VB SVS,
-  VE SVS, anon) are blocked only by the M1 pixdim swap below.
+  VE SVS, anon) now sit at `pix✓ + JSON Δ1` after F1 — residual is the
+  M4 `RxCoil/ReceiveCoilName` precedence (CSA short-name vs public-tag
+  long-name), tracked under "Deferred to Phase 6" below.
 - [x] **Phase 2.a Philips classic parse** — `nframes × spec_points` payloads
   accepted; integer-multiple gate.
 - [x] **Phase 2.c / 4.4 `_mrsref` support** — Philips classic 2× payload now
@@ -67,10 +69,13 @@ deadline:
   CLAUDE.md MRS section was already current as of this cycle's
   audit-response work.
 
-**Target end-of-cycle state:** ~6/31 PASS, `_mrsref` works, Siemens SVS
-fully covered, Philips classic + `_mrsref` covered, UIH SVS covered. The
-remaining 25 datasets are tracked below as deferred — they require
-non-trivial parser additions that are not deadline-scoped.
+**Actual end-of-cycle state:** 3/40 PASS, `_mrsref` works, Siemens SVS
+covered (1 `JSON Δ1` M4 RxCoil-alias gap on VB/VE/anon), Philips classic +
+`_mrsref` covered (P2.b orient handedness blocks every PASS on the 8 active
+Philips rows), UIH SVS PRESS PASS. The remaining 27 FAIL + 10 SKIP rows are
+tracked below as deferred — they require non-trivial parser additions
+(MRSI dispatch, Philips orientation handedness, sLASER Phoenix-protocol
+TE summing) that are not deadline-scoped.
 
 ### Deferred to Phase 6 (post-release backlog)
 
@@ -108,8 +113,8 @@ deliverable + why-deferred so the next cycle has a running start.
 - All four `F1`-`F4` items landed and committed to `development`.
 - Build clean; `dcm_qa` / `dcm_qa_nih` / `dcm_qa_uih` show only the
   pre-existing stale Ref diffs.
-- `tools/spec2nii_compare.py --all` reports the documented target (~6/31
-  PASS), with all 25 deferred datasets tagged by reason in this file.
+- `tools/spec2nii_compare.py --all` reports **3 pass, 27 fail, 10 skipped
+  (total 40)** with all deferred datasets tagged by reason in this file.
 - Scoreboard table refreshed from a post-fix run.
 - This `## Close-out scope` section unchanged except to flip the F1-F4 boxes.
 
@@ -353,12 +358,17 @@ If I get blocked:
 - [x] **P1.d CSA SeriesHeader parsing**: extract ImageOrientationPatient, VoiPosition, VoiPhaseFoV, VoiReadoutFoV, VoiThickness, RealDwellTime, ImagingFrequency, ImagedNucleus, SpectroscopyAcquisitionDataColumns, RepetitionTime, EchoTime, InversionTime, FlipAngle, NumberOfAverages, TransmittingCoil, ReceivingCoil from (0029,1010)/(0029,1020). New `readCSAforMRS()` at `nii_dicom.cpp:~1610`, gated on `isRawDataStorage || isMRS || mrsAcqType` so non-MRS files are untouched. Called from both `case kCSAImageHeaderInfo` and `case kCSASeriesHeaderInfo`.
 - [x] **Final precision pass:** SpectralWidth/DwellTime now derive from `d.dwellTime` (int nanoseconds, Siemens private 0021,1142) when available — preserves full float64 precision vs the float32 CSA RealDwellTime. Sidecar uses `%.17g` for spectral fields and `%.9g` for SpectrometerFrequency to round-trip spec2nii's emission. Comparator gains 5-ULP / 1e-5-relative float tolerance so float32-stage noise no longer flags parity bugs.
 
-Phase 1 final corpus state (5/19 PASS, 14 future-phase):
+Phase 1 final corpus state (historical snapshot at end of Phase 1 — 5/19
+"PASS" reflects the count before F1's pixdim swap shipped, which moved
+VB/VE/anon SVS from `sform✗ all-zero` to `pix✓ + JSON Δ1` and exposed
+the M4 RxCoil-alias gap that now keeps them out of PASS. See current
+end-of-cycle scoreboard above for the authoritative state):
 
 | Status | Datasets | Notes |
 |---|---|---|
-| ✓ **PASS** | VB-line SVS, VE-line SVS, XA20 SVS, XA30 SVS, anon SVS | full FID + sform + dim + JSON parity |
-| FID/sform ✓, Δ1 JSON | sLASER WRSoff_13, WRSoff_19 (single-DICOM) | EchoTime — Phase 1.e needs alTE summing |
+| ✓ **PASS** | XA20 SVS, XA30 SVS | full FID + sform + dim + JSON parity |
+| FID/sform/pix ✓, Δ1 JSON | VB-line SVS, VE-line SVS, anon | RxCoil/ReceiveCoilName M4 alias (Phase 6) |
+| FID/sform ✓, Δ2 JSON | sLASER WRSoff_13, WRSoff_19 (single-DICOM) | EchoTime + RxCoil — Phase 1.e needs alTE summing |
 | FID size ✗ | sLASER WRS1, WRS2, w1pw3_1/2, w4_1/2 (multi-DICOM) | multi-DICOM stack ordering — Phase 1.e |
 | Parser reject | voi_in_mrsi, VB/VE 3D CSI, sm_classic, sm_enhanced, rk_enhanced | MRSI — Phase 4 |
 
@@ -422,10 +432,13 @@ rejects pending Phase 6.
 Commits in this session:
 - `05815ae` Phase 0 — `tools/spec2nii_compare.py` + 31-dataset inventory
 - `5682953` Phase 1 — (7FE1,1010) FID capture + BIDS-MRS sidecar shape
-- `a9d3dd1` Phase 1 cont'd — CSA SeriesHeader parsing + precision (5/19 Siemens PASS)
+- `a9d3dd1` Phase 1 cont'd — CSA SeriesHeader parsing + precision (commit-time scoreboard: 5/19 Siemens "PASS"; F1 later moved 3 of those to `pix✓ + JSON Δ1` instead)
 - `55884e8` Phase 2.a — relaxed Philips FID size check (9/9 Philips parses)
 - `cb9fc19` Audit follow-ups (2026-06-07 external review)
-- (this) Phase 2.c / 4.4 — `_mrsref` companion + standalone water-ref labeling
+- `6dabc01` Scoreboard refresh + Phase 3 UIH baseline
+- `00a680b` CLAUDE.md right-size (559 → 168 lines)
+- `04676f9` Phase 2.c / 4.4 `_mrsref` companion + F1-F4 close-out (3/40 PASS)
+- (this) Audit response — H1 UIH-only normalization, H2/M5 shallow-copy reset, M1 comment fix, M2 csaICEdims NUL, M3 size_t pre-walk, R1 `mrsIsStandaloneWaterRef` helper, R2 `_SKIP_P2B_ORIENTATION` constant + F1 pixdim-mirror anchors, docs sweep (CLAUDE.md F2 + parser gotcha, spec2nii URL fix)
 
 ### Phase 4 MRSI / Unloc / mrsref
 - [ ] P4.1 `saveDcm2NiiMRS` refactor — **DEFERRED to Phase 6** (precondition for MRSI; ~250-line monolith split)

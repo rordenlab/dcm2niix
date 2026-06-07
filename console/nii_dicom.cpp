@@ -1396,8 +1396,13 @@ int csaICEdims(unsigned char buff[]) {
 	int coilNumber = -1;
 	if (itemCSA.xx2_Len > 0) {
 		lPos += sizeof(itemCSA);
-		char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
-		memcpy(cString, &buff[lPos], itemCSA.xx2_Len); // TPX memcpy(&cString, &buff[lPos], sizeof(cString));
+		// Allocate +1 byte for an explicit NUL — dcmStrDigitsOnly (strlen)
+		// and strtol both need a terminator, and CSA item payloads are not
+		// guaranteed to carry one inside xx2_Len. Mirrors the csaMultiFloat
+		// fix at line ~1373 (audit 2026-06-07 round-3 M2 sibling).
+		char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
+		memcpy(cString, &buff[lPos], itemCSA.xx2_Len);
+		cString[itemCSA.xx2_Len] = '\0';
 		lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
 		char c = cString[0];
 		if (c >= '0' && c <= '9') {
@@ -1676,22 +1681,27 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 			// inside lLength BEFORE any handler reads `&buff[lPos]`. csaMultiFloat
 			// and the string handlers below do not bounds-check internally
 			// (audit 2026-06-07 H2 follow-up). The post-handler item walk further
-			// down still advances lPos; this pre-walk only validates.
-			int validatePos = lPos;
+			// down still advances lPos; this pre-walk only validates. Arithmetic
+			// uses size_t throughout so a hostile peek.xx2_Len near INT_MAX
+			// can't wrap (audit 2026-06-07 M3).
+			if (lLength < 0)
+				return;
+			size_t validatePos = (size_t)lPos;
+			size_t lLengthSz = (size_t)lLength;
 			bool itemsValid = true;
 			for (int lI = 0; lI < tagCSA.nitems; lI++) {
-				if (validatePos + (int)sizeof(itemCSA) > lLength) { itemsValid = false; break; }
+				if (validatePos + sizeof(itemCSA) > lLengthSz) { itemsValid = false; break; }
 				TCSAitem peek;
 				memcpy(&peek, &buff[validatePos], sizeof(peek));
 				if (!littleEndianPlatform())
 					nifti_swap_4bytes(1, &peek.xx2_Len);
 				validatePos += sizeof(peek);
 				int peekStep = peek.xx2_Len;
-				if ((peekStep < 0) || (peekStep > lLength)) { itemsValid = false; break; }
+				if ((peekStep < 0) || ((size_t)peekStep > lLengthSz)) { itemsValid = false; break; }
 				if ((peekStep % 4) != 0)
 					peekStep += 4 - (peekStep % 4);
-				if (validatePos + peekStep > lLength) { itemsValid = false; break; }
-				validatePos += peekStep;
+				if (validatePos + (size_t)peekStep > lLengthSz) { itemsValid = false; break; }
+				validatePos += (size_t)peekStep;
 			}
 			if (!itemsValid)
 				return;

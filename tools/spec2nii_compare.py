@@ -107,6 +107,11 @@ BIDS_MRS_ALIASES = {
 
 IGNORE_FIELDS_GLOBAL = SPEC2NII_PII_FIELDS | DCM2NIIX_WIDE_FIELDS
 
+# Skip-reason strings shared across the inventory below. Module-level so the 9
+# spar_dcm_orientation_tests datasets carry the same exact reason.
+_SKIP_P2B_ORIENTATION = (
+    "P2.b Philips orientation handedness (deferred to Phase 6)")
+
 
 class Dataset(NamedTuple):
     id: str
@@ -227,39 +232,39 @@ DATASETS = [
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4002-iso_50-80-30_rot-0-0-0",
         notes="Orientation regression iso 50-80-30 rot 0-0-0",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4102-iso_50-80-30_rot-30-0-0",
         notes="Orientation regression iso 50-80-30 rot 30-0-0",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4202-iso_50-80-30_rot-30-40-0",
         notes="Orientation regression iso 50-80-30 rot 30-40-0",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4302-iso_50-80-30_rot-30-40-20",
         notes="Orientation regression iso 50-80-30 rot 30-40-20",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4402-iso_50-80-30_rot-0-40-20",
         notes="Orientation regression iso 50-80-30 rot 0-40-20",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4502-iso_50-80-30_rot-30-0-20",
         notes="Orientation regression iso 50-80-30 rot 30-0-20",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4602-iso_50-80-30_rot-10-10-44",
         notes="Orientation regression iso 50-80-30 rot 10-10-44",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4702-iso_50-80-30_rot-10-44-10",
         notes="Orientation regression iso 50-80-30 rot 10-44-10",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
     _ds("philips", "philips_dcm",
         "philips/spar_dcm_orientation_tests/4802-iso_50-80-30_rot-44-10-10",
         notes="Orientation regression iso 50-80-30 rot 44-10-10",
-        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+        skip_reason=_SKIP_P2B_ORIENTATION),
 
     # ---- UIH (Phase 3) ----
     _ds("uih", "uih", "UIH/mrs_data/dicom/svs_press_te144_SVS_801/00000001.dcm",

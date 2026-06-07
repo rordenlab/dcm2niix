@@ -3242,10 +3242,12 @@ tse3d: T2*/
 		if (d.dataPointColumns > 0)
 			fprintf(fp, "\t\"NumberOfSpectralPoints\": %d,\n", d.dataPointColumns);
 		if ((d.xyzMM[1] > 0.0f) && (d.xyzMM[2] > 0.0f) && (d.zThick > 0.0f))
-			// AcquisitionVoxelSize follows NIfTI pixdim ordering — saveDcm2NiiMRS
-			// swaps xyzMM[1]/[2] into pixdim[1]/[2] (F1; spec2nii row1/row2 swap),
-			// so x = xyzMM[2] (VoiReadoutFoV / PixelSpacing[1]) and
-			// y = xyzMM[1] (VoiPhaseFoV / PixelSpacing[0]).
+			// F1 pixdim-mirror: AcquisitionVoxelSize follows NIfTI pixdim
+			// ordering — saveDcm2NiiMRS swaps xyzMM[1]/[2] into
+			// pixdim[1]/[2] (spec2nii row1/row2 swap), so x = xyzMM[2]
+			// (VoiReadoutFoV / PixelSpacing[1]) and y = xyzMM[1]
+			// (VoiPhaseFoV / PixelSpacing[0]). MIRROR site: saveDcm2NiiMRS
+			// pixdim assignment (grep "F1 pixdim-mirror" to locate both).
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [%g, %g, %g],\n",
 					d.xyzMM[2], d.xyzMM[1], d.zThick);
 		int avg = (d.numberOfAverages > 0.0f) ? (int)d.numberOfAverages : 1;
@@ -3286,12 +3288,12 @@ tse3d: T2*/
 		// applied"). The general-path emission at ~line 2569 only fires when
 		// d.TI > 0 — bypass via fprintf so the 0.0 case still emits.
 		fprintf(fp, "\t\"InversionTime\": %g,\n", (d.TI > 0.0f) ? (d.TI / 1000.0) : 0.0);
-		// BIDS-MRS WaterSuppressed: required for _svs / _mrsi (true), required
-		// for _mrsref companion (false). The flag is set by saveDcm2NiiMRS:
-		// the main _svs/mrsi path leaves it false, and the companion writer
-		// flips it to true (after which we negate at emission). Note the
-		// inverted polarity: d.isMrsRef means "this DICOM/series is the
-		// water-reference companion".
+		// BIDS-MRS WaterSuppressed: required on _svs / _mrsi (true) and on
+		// _mrsref (false). saveDcm2NiiMRS sets d.isMrsRef = true on both the
+		// `<stem>_mrsref` companion write AND on standalone water-reference
+		// acquisitions (`wrsoff` / `no_Water_Suppression` series-naming);
+		// every other MRS write leaves isMrsRef = false. So the emission is
+		// the negation of isMrsRef — water-ref ⇒ NOT water-suppressed.
 		fprintf(fp, "\t\"WaterSuppressed\": %s,\n", d.isMrsRef ? "false" : "true");
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
@@ -10567,6 +10569,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	// expose a dangling pointer once dcmList is freed. Issue #877.
 	mrifsStruct.tdicomData.deID_CS = NULL;
 	mrifsStruct.tdicomData.deID_CS_n = 0;
+	// isMrsRef is a plain bool that saveDcm2NiiMRS may flip true on the
+	// standalone water-reference path. Reset on shallow-copy retention so
+	// future MRS-aware dump-mode work doesn't inherit stale state (audit
+	// 2026-06-07 H2 follow-up; defensive — current dump-mode short-circuits
+	// before MRS dispatch).
+	mrifsStruct.tdicomData.isMrsRef = false;
 #endif
 
 	struct nifti_1_header hdr0 = {0};
@@ -11373,6 +11381,35 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	return returnCode;								 // EXIT_SUCCESS;
 } // saveDcm2NiiCore()
 
+// Returns true when a single-frame MRS DICOM is named as a standalone
+// water-reference acquisition (no main FID + no trailing companion; the
+// DICOM itself IS the water reference). spec2nii lands these as `_mrsref`.
+// Heuristic: vendor series-naming tokens that explicitly mark water
+// suppression off / water-reference scan. Siemens dkd_von sLASER uses
+// `wrsoff`; Philips uses `no_Water_Suppression`; generic vendors use
+// `noWS` / `_mrsref`. Checks seriesDescription + protocolName +
+// sequenceName + pulseSequenceName. Refactored out of saveDcm2NiiMRS so
+// the same logic can be reused when MRSI / `_mrsiref` lands in Phase 6.
+static bool mrsIsStandaloneWaterRef(const struct TDICOMdata *d) {
+	if (d == NULL)
+		return false;
+	const char *naming[] = {d->seriesDescription, d->protocolName,
+							d->sequenceName, d->pulseSequenceName};
+	for (unsigned k = 0; k < sizeof(naming) / sizeof(naming[0]); k++) {
+		const char *s = naming[k];
+		if (s == NULL || s[0] == '\0')
+			continue;
+		if (strstr(s, "wrsoff") != NULL ||
+			strstr(s, "wrs_off") != NULL ||
+			strstr(s, "no_Water_Suppression") != NULL ||
+			strstr(s, "no_water_suppression") != NULL ||
+			strstr(s, "noWS") != NULL ||
+			strstr(s, "_mrsref") != NULL)
+			return true;
+	}
+	return false;
+}
+
 // MR Spectroscopy converter — handles MR Spectroscopy Storage SOP class
 // DICOMs (SOP UID 1.2.840.10008.5.1.4.1.1.4.2). Each input DICOM carries a
 // single FID (free-induction decay) in the (5600,0020) Spectroscopy Data
@@ -11510,25 +11547,37 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		if (d0->orient[i] != d0->orient[i] || d0->orient[i] > 1e30 || d0->orient[i] < -1e30)
 			orientFinite = false;
 	// Row 1 and Row 2 must each have non-zero magnitude. A proper DICOM IOP
-	// has unit rows, but UIH MRS encodes IOP as direction*VoxelSize (rows
-	// have magnitude == PixelSpacing); test the normalized cross product so
-	// both layouts pass. Parallel rows give a zero cross product and a
-	// singular affine.
-	float r1mag = 0.0f, r2mag = 0.0f;
+	// has unit rows. UIH MRS is the only known vendor that encodes IOP as
+	// direction*VoxelSize (rows have magnitude == PixelSpacing); on that
+	// branch we test the normalized cross product. For every other vendor
+	// stay with the strict unit-magnitude check so a malformed non-UIH IOP
+	// fails closed (sform_code=0 + warning) instead of being silently
+	// renormalized by the writer below (audit 2026-06-07 H1).
+	float r1mag = 0.0f, r2mag = 0.0f, crossmag = 0.0f;
 	bool orientShapeOK = false;
 	if (orientFinite) {
 		float r1x = d0->orient[1], r1y = d0->orient[2], r1z = d0->orient[3];
 		float r2x = d0->orient[4], r2y = d0->orient[5], r2z = d0->orient[6];
 		r1mag = sqrtf(r1x * r1x + r1y * r1y + r1z * r1z);
 		r2mag = sqrtf(r2x * r2x + r2y * r2y + r2z * r2z);
-		if (r1mag > 0.5f && r2mag > 0.5f) {
-			float u1x = r1x / r1mag, u1y = r1y / r1mag, u1z = r1z / r1mag;
-			float u2x = r2x / r2mag, u2y = r2y / r2mag, u2z = r2z / r2mag;
-			float cx = u1y * u2z - u1z * u2y;
-			float cy = u1z * u2x - u1x * u2z;
-			float cz = u1x * u2y - u1y * u2x;
-			float crossUnit = sqrtf(cx * cx + cy * cy + cz * cz); // 1.0 when orthogonal
-			orientShapeOK = (crossUnit > 0.5f);
+		if (d0->manufacturer == kMANUFACTURER_UIH) {
+			if (r1mag > 0.5f && r2mag > 0.5f) {
+				float u1x = r1x / r1mag, u1y = r1y / r1mag, u1z = r1z / r1mag;
+				float u2x = r2x / r2mag, u2y = r2y / r2mag, u2z = r2z / r2mag;
+				float cx = u1y * u2z - u1z * u2y;
+				float cy = u1z * u2x - u1x * u2z;
+				float cz = u1x * u2y - u1y * u2x;
+				float crossUnit = sqrtf(cx * cx + cy * cy + cz * cz); // 1.0 when orthogonal
+				orientShapeOK = (crossUnit > 0.5f);
+			}
+		} else {
+			float cx = r1y * r2z - r1z * r2y;
+			float cy = r1z * r2x - r1x * r2z;
+			float cz = r1x * r2y - r1y * r2x;
+			crossmag = sqrtf(cx * cx + cy * cy + cz * cz);
+			orientShapeOK = (r1mag > 0.5f) && (r1mag < 1.5f) &&
+							(r2mag > 0.5f) && (r2mag < 1.5f) &&
+							(crossmag > 0.5f);
 		}
 	}
 	bool posFinite = true;
@@ -11711,13 +11760,14 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	hdr.dim[6] = 1;
 	hdr.dim[7] = 1;
 	hdr.pixdim[0] = 1.0f;
-	// F1: pixdim[1]/[2] must match the sform column norms below. The sform
-	// build applies spec2nii's row1/row2 pixdim swap (m00 scales the first
-	// column by py = xyzMM[2] = VoiReadoutFoV; m01 scales the second by
-	// px = xyzMM[1] = VoiPhaseFoV), so the NIfTI x-axis carries VoiReadoutFoV
-	// and the y-axis carries VoiPhaseFoV. Mirror that swap in pixdim or the
-	// header reports per-axis voxel sizes that contradict the affine. See
-	// nifti1_io_core.cpp's column-norm computation.
+	// F1 pixdim-mirror: pixdim must match the sform column norms below.
+	// The sform build applies spec2nii's row1/row2 pixdim swap (m00 scales
+	// the first column by py = xyzMM[2] = VoiReadoutFoV; m01 scales the
+	// second by px = xyzMM[1] = VoiPhaseFoV), so the NIfTI x-axis carries
+	// VoiReadoutFoV and the y-axis carries VoiPhaseFoV. Mirror that swap
+	// in pixdim or the header reports per-axis voxel sizes that contradict
+	// the affine. MIRROR site: AcquisitionVoxelSize emission in
+	// nii_SaveBIDSX (grep "F1 pixdim-mirror" to locate both).
 	hdr.pixdim[1] = (float)d0->xyzMM[2];
 	hdr.pixdim[2] = (float)d0->xyzMM[1];
 	hdr.pixdim[3] = (float)d0->zThick; // see px/py/pz comment below re: zThick vs xyzMM[3]
@@ -11744,8 +11794,10 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// F2: UIH MRS encodes IOP as direction * VoxelSize (rows have non-unit
 	// magnitude that equals PixelSpacing). The voxel size is already carried
 	// in xyzMM[]/zThick, so normalize the row vectors so the m_ij scalings
-	// below don't double-count it.
-	{
+	// below don't double-count it. Gated on UIH so a hypothetical pre-scaled
+	// IOP from another vendor doesn't get silently renormalized through this
+	// path (audit 2026-06-07 H1 follow-up).
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
 		double r1n = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
 		double r2n = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
 		if (r1n > 1.001) { rx0 /= r1n; rx1 /= r1n; rx2 /= r1n; }
@@ -11808,34 +11860,12 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	}
 	// Detect a standalone water-reference acquisition (no trailing FID, but
 	// the whole DICOM IS the water reference). spec2nii lands these as
-	// _mrsref. Heuristic: vendor series-naming tokens that explicitly mark
-	// water suppression off / water-reference scan. Siemens dkd_von sLASER
-	// uses "wrsoff" (water-reference scan, suppression off); Philips uses
-	// "no_Water_Suppression" / "no_WS"; generic vendors sometimes use "_ref".
-	// We check seriesDescription + protocolName + sequenceName +
-	// pulseSequenceName. Only fire when the trailing-FID detection above
-	// did NOT already classify the file (emitMrsref==false): if a Philips
-	// classic DICOM is BOTH 2× payload AND named "no_Water_Suppression",
-	// the trailing-FID case wins (main SVS + ref companion).
-	bool isStandaloneMrsRef = false;
-	if (!emitMrsref) {
-		const char *naming[] = {d0->seriesDescription, d0->protocolName,
-								d0->sequenceName, d0->pulseSequenceName};
-		for (unsigned k = 0; k < sizeof(naming) / sizeof(naming[0]); k++) {
-			const char *s = naming[k];
-			if (s == NULL || s[0] == '\0')
-				continue;
-			if (strstr(s, "wrsoff") != NULL ||
-				strstr(s, "wrs_off") != NULL ||
-				strstr(s, "no_Water_Suppression") != NULL ||
-				strstr(s, "no_water_suppression") != NULL ||
-				strstr(s, "noWS") != NULL ||
-				strstr(s, "_mrsref") != NULL) {
-				isStandaloneMrsRef = true;
-				break;
-			}
-		}
-	}
+	// _mrsref. Only fire when the trailing-FID detection above did NOT
+	// already classify the file (emitMrsref==false): if a Philips classic
+	// DICOM is BOTH 2× payload AND named "no_Water_Suppression", the
+	// trailing-FID case wins (main SVS + ref companion). Naming heuristic
+	// lives in `mrsIsStandaloneWaterRef()` above so Phase 6 MRSI can reuse it.
+	bool isStandaloneMrsRef = !emitMrsref && mrsIsStandaloneWaterRef(d0);
 	// BidsGuess: emit ["mrs","_svs"] only when we have positive SVS evidence.
 	// kMRSAcqSingleVoxel is the explicit (0018,9200) signal. For
 	// kMRSAcqNone (Numaris4 / VB/VE classic — no (0018,9200) at all), require
@@ -11988,6 +12018,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		// dcmList owns deID_CS[]; null the shallow copy. Issue #877.
 		mrifsStruct.tdicomData.deID_CS = NULL;
 		mrifsStruct.tdicomData.deID_CS_n = 0;
+		mrifsStruct.tdicomData.isMrsRef = false; // see retention notes at ~line 10567 (audit H2)
 		mrifsStruct.dicomlst = new char *[nConvert];
 		mrifsStruct.nDcm = nConvert;
 
@@ -13034,6 +13065,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 		// dcmList[0] owns deID_CS[]; null the shallow copy in the retained R-side struct.
 		firstSeries.representativeData.deID_CS = NULL;
 		firstSeries.representativeData.deID_CS_n = 0;
+		firstSeries.representativeData.isMrsRef = false; // audit H2 follow-up; see ~line 10567
 		firstSeries.files.push_back(nameList.str[0]);
 		opts->series.push_back(firstSeries);
 		// Iterate over the remaining files
@@ -13058,6 +13090,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				// dcmList[i] owns deID_CS[]; null the shallow copy in the retained R-side struct.
 				nextSeries.representativeData.deID_CS = NULL;
 				nextSeries.representativeData.deID_CS_n = 0;
+				nextSeries.representativeData.isMrsRef = false; // audit H2 follow-up; see ~line 10567
 				nextSeries.files.push_back(nameList.str[i]);
 				opts->series.push_back(nextSeries);
 			}
