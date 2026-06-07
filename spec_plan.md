@@ -99,9 +99,9 @@ separate parity items:
 
 - **Goal.** `dcm2niix` ships **all frames** from a multi-DICOM or multi-
   frame MRS series as a single bundled NIfTI (`dim[5] = total frames`,
-  no reorder, no drop). A new sibling tool `tools/mrs_post.py` (or
-  equivalent — naming TBD) consumes dcm2niix outputs + source DICOMs
-  and applies the vendor-specific split / crop / reshape that spec2nii
+  no reorder, no drop). A new sibling tool `tools/mrs_post.py` (DONE
+  round-5, 2026-06-07) consumes dcm2niix outputs + source DICOMs and
+  applies the vendor-specific split / crop / reshape that spec2nii
   bakes in. The wrapper is opt-in; direct dcm2niix users continue to
   get raw bundled NIfTI which is correct and complete.
 
@@ -113,6 +113,28 @@ separate parity items:
   P2.d stacking confirmed unaffected (separate code path). Bundle also
   carried the K4(b) SlabOrientation parser fix (`slabOrientCount++`
   moved inside the `lLength >= 24` guard).
+
+- **`tools/mrs_post.py` (DONE 2026-06-07 round-5 cycle).** Pure
+  pydicom + numpy; auto-detects from sidecar Manufacturer + source
+  DICOM private tags. Three cases:
+  1. **CMRR sLASER DKD multi-DICOM** — ports
+     `identify_integrated_references` (mode=8 and mode=2 layouts).
+     Reads `tSequenceFileName`, `lAutoRefScanMode`, `lAutoRefScanNo`,
+     `lAverages` from Phoenix Protocol on the first DICOM; classifies
+     each frame by `InstanceNumber`; writes per-group NIfTIs with
+     spec2nii-style filename suffixes (`_svs`, `_svs_rf_off`,
+     `_svs_rf_grads_ovs_off`, `_svs_vapor_ovs_rfoff`).
+  2. **Philips MEGA-PRESS reshape** — port of
+     `_process_philips_svs_new` MEGA branch. Reads
+     `(2005,1597)=='Y'` (is_edited) + per-frame `(2005,1304)`
+     (ref flag) + `(2005,1598)` (edit ON/OFF); writes paired
+     `_svs (1024,144,2)` + `_mrsref (1024,9)`.
+  3. **`_mrsref` companion sanity** — pass-through validation for the
+     Philips classic 2× case dcm2niix's C side already emits paired.
+
+  Sidecar BidsGuess stays canonical (`_svs` / `_mrsref`) so the
+  comparator's BidsGuess-match picks the right file. `--with-mrs-post`
+  mode landed in sibling `dcm_qa_mrs/spec2nii_compare.py`.
 
 - **`tools/mrs_post.py` deliverable.** Pure-stdlib + pydicom (already a
   reproinx.py dep). Handles three known cases:
@@ -260,10 +282,15 @@ deliverable + why-deferred so the next cycle has a running start.
 - Build clean; `dcm_qa` / `dcm_qa_nih` / `dcm_qa_uih` show only the
   pre-existing stale Ref diffs.
 - `dcm_qa_mrs/spec2nii_compare.py --all` reports **15 pass, 15 fail, 10
-  skipped (total 40)** (re-measured at round-4 close-out) with all
-  deferred datasets tagged by reason in this file. (The comparator moved
-  from `dcm2niix/tools/` to `dcm_qa_mrs/` once the MRS port stabilised —
-  see the commit list below.)
+  skipped (total 40)** (re-measured at round-4 close-out) for the bare
+  C-side path. The new **`--with-mrs-post`** mode (round-5, 2026-06-07)
+  runs the sibling `tools/mrs_post.py` post-processor after dcm2niix and
+  reports **22 pass, 8 fail, 10 skipped** — the 7 extra PASS rows are 6
+  Siemens sLASER DKD multi-DICOM (mode=8 and mode=2) + Philips
+  press_mega MEGA-PRESS reshape. All 8 remaining FAILs are MRSI / CSI
+  rows that require the Phase 6 MRSI writer; all 10 SKIPs are bounded
+  by source (9 Raw Data Storage non-MRS + 1 spec2nii ref errors).
+  Deferred datasets are tagged by reason in this file.
 - Scoreboard table refreshed from a post-fix run.
 - This `## Close-out scope` section unchanged except to flip the F1-F4 boxes.
 
@@ -542,18 +569,20 @@ P3.1 is one CSA-equivalent extractor away from PASS — UIH has its own (0065,xx
 - [ ] P3.a UIH SVS sform via private-tag orientation extractor
 - [ ] P3.b UIH 2D + 3D MRSI parsing (Phase 4 dispatch)
 
-### Current session checkpoint (2026-06-07 round-4 close-out)
+### Current session checkpoint (2026-06-07 round-5 close-out)
 
 Cumulative scoreboard against the 40-dataset corpus, re-measured live
-after the MEGA-PRESS revert + K4(b) parser fix landed:
-`spec2nii_compare.py --all` reports **15 pass, 15 fail, 10 skipped**.
+after the round-5 audit fixes + `tools/mrs_post.py` landed:
 
-| Vendor | Total | PASS | FAIL | SKIP |
-|---|---|---|---|---|
-| Siemens | 19 | 7 (VB SVS, VE SVS, XA20, XA30, anon, sLASER wrsoff_13 `_mrsref`, sLASER VOI wrsoff_19 `_mrsref`) | 12 (6 sLASER multi-DICOM + 6 MRSI — Phase 6 / Python wrapper) | 0 |
-| Philips | 18 | 7 (5 classic SVS incl. 45deg_AP + center no-WS `_mrsref` + svsWSAntCing) | 1 (press_mega — post-revert tradeoff: dim/dim_6 expected to diverge from spec2nii's reshape) | 10 (1 HYPER `philips_converted_dcm` spec2nii-ref errors locally + 9 `spar_dcm_orientation_tests/` P2.b) |
-| UIH | 3 | 1 (SVS PRESS) | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
-| **TOTAL** | **40** | **15** | **15** | **10** |
+**Bare** `spec2nii_compare.py --all`: **15 pass, 15 fail, 10 skipped**.
+**With `--with-mrs-post`**: **22 pass, 8 fail, 10 skipped**.
+
+| Vendor | Total | Bare PASS | mrs-post PASS | FAIL | SKIP |
+|---|---|---|---|---|---|
+| Siemens | 19 | 7 | 13 (+6 sLASER multi-DICOM: dkd mode=8 wrs1/wrs2 + dkd2 mode=8 wrsw1pw3 (x2) + dkd2 mode=2 wrsw4 (x2)) | 6 (all MRSI / CSI — Phase 6) | 0 |
+| Philips | 18 | 7 | 8 (+press_mega MEGA-PRESS reshape (1024,144,2) + 9-frame `_mrsref` companion) | 0 | 10 (1 HYPER spec2nii ref errors + 9 `spar_dcm_orientation_tests/` Raw Data Storage non-MRS) |
+| UIH | 3 | 1 | 1 | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
+| **TOTAL** | **40** | **15** | **22** | **8** | **10** |
 
 Delta vs prior published 3/40 scoreboard (which was a snapshot before
 M4 RxCoil + P2.b SlabOrientation + P2.b IOP-negation + the round-4
