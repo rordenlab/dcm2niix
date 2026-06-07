@@ -115,10 +115,14 @@ class Dataset(NamedTuple):
     source: Path
     bids_suffix: str           # "_svs" | "_mrsi" | "_mrsref" | "_unloc"
     notes: str = ""
+    skip_reason: str = ""      # F3: non-empty marks the dataset as a known
+                               # blocker; main() reports [SKIP] and counts
+                               # toward the skipped bucket instead of FAIL.
 
 
 def _ds(vendor: str, spec2nii_cmd: str, relpath: str, bids_suffix: str = "_svs",
-        notes: str = "", id_override: str | None = None) -> Dataset:
+        notes: str = "", id_override: str | None = None,
+        skip_reason: str = "") -> Dataset:
     src = SPEC2NII_DATA / relpath
     # Default id: stem of the source's deepest meaningful dir-or-file name.
     # If the source is a file in a numbered-frame dir (e.g. UIH 00000001.dcm),
@@ -134,7 +138,8 @@ def _ds(vendor: str, spec2nii_cmd: str, relpath: str, bids_suffix: str = "_svs",
         anchor = src.parent.name if stem_is_numeric else src.stem
         ds_id = f"{vendor}_{anchor}".replace(">", "_gt_")
     return Dataset(id=ds_id, vendor=vendor, spec2nii_cmd=spec2nii_cmd,
-                   source=src, bids_suffix=bids_suffix, notes=notes)
+                   source=src, bids_suffix=bids_suffix, notes=notes,
+                   skip_reason=skip_reason)
 
 
 # Phase 1-3 corpus (Phase 4 datasets get added when MRSI lands).
@@ -207,7 +212,54 @@ DATASETS = [
     _ds("philips", "philips_dcm", "philips/DICOM_enhanced_multi_dynamic/press_mega",
         notes="Enhanced multi-dynamic MEGA-PRESS (edit-on/off)"),
     _ds("philips", "philips_dcm", "philips/hyper/converted_dcm.dcm",
-        notes="HYPER edit sequence"),
+        notes="HYPER edit sequence",
+        skip_reason="spec2nii reference path errors in this environment "
+                    "(philips_dcm.py _process_philips_svs_old hits a buffer-size "
+                    "mismatch on tag (2005,1270)). No parity baseline available."),
+    # spar_dcm_orientation_tests — 9 orientation regression datasets that
+    # exercise the Philips orientation handedness fix (P2.b). spec2nii ships
+    # companion _cor/_sag/_tra .nii references in the same folder; bringing
+    # all 9 to PASS is the explicit deliverable for P2.b/P2.e and depends on
+    # porting `_process_philips_svs_new`'s DICOM→NIfTI pipeline (every
+    # Philips SVS currently has matching FID magnitudes but inverted signs on
+    # every sform column). Tracked here so the inventory is complete; main()
+    # reports [SKIP] with this reason until P2.b lands.
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4002-iso_50-80-30_rot-0-0-0",
+        notes="Orientation regression iso 50-80-30 rot 0-0-0",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4102-iso_50-80-30_rot-30-0-0",
+        notes="Orientation regression iso 50-80-30 rot 30-0-0",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4202-iso_50-80-30_rot-30-40-0",
+        notes="Orientation regression iso 50-80-30 rot 30-40-0",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4302-iso_50-80-30_rot-30-40-20",
+        notes="Orientation regression iso 50-80-30 rot 30-40-20",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4402-iso_50-80-30_rot-0-40-20",
+        notes="Orientation regression iso 50-80-30 rot 0-40-20",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4502-iso_50-80-30_rot-30-0-20",
+        notes="Orientation regression iso 50-80-30 rot 30-0-20",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4602-iso_50-80-30_rot-10-10-44",
+        notes="Orientation regression iso 50-80-30 rot 10-10-44",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4702-iso_50-80-30_rot-10-44-10",
+        notes="Orientation regression iso 50-80-30 rot 10-44-10",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
+    _ds("philips", "philips_dcm",
+        "philips/spar_dcm_orientation_tests/4802-iso_50-80-30_rot-44-10-10",
+        notes="Orientation regression iso 50-80-30 rot 44-10-10",
+        skip_reason="P2.b Philips orientation handedness (deferred to Phase 6)"),
 
     # ---- UIH (Phase 3) ----
     _ds("uih", "uih", "UIH/mrs_data/dicom/svs_press_te144_SVS_801/00000001.dcm",
@@ -270,19 +322,15 @@ def _read_nifti1(p: Path) -> NiftiHeader:
 def _read_nifti2(p: Path) -> NiftiHeader:
     with _open_maybe_gz(p) as f:
         h = f.read(540)
-    # NIfTI-2 layout
-    datatype = struct.unpack("<h", h[12:14])[0]
-    bitpix = struct.unpack("<h", h[14:16])[0]
-    dim = struct.unpack("<8q", h[16:80])
-    pixdim_dbl = struct.unpack("<8d", h[112:176])
-    pixdim = tuple(float(v) for v in pixdim_dbl)
-    vox_offset = struct.unpack("<q", h[168:176])[0]  # wait — offset in NIfTI-2 is at 168
-    # Actually for NIfTI-2: dim @16-80 (8x int64), intent_p1/p2/p3 @80-104,
+    # NIfTI-2 layout: dim @16-80 (8x int64), intent_p1/p2/p3 @80-104,
     # pixdim @104-168 (8x double), vox_offset @168-176 (int64),
     # scl_slope/inter @176-192, cal_max/min @192-208, slice_duration @208-216,
     # toffset @216-224, slice_start/end @224-240, descrip @240-320, aux_file @320-344,
     # qform_code/sform_code @344-352, quatern_b/c/d @352-376, qoffset_x/y/z @376-400,
     # srow_x @400-432, srow_y @432-464, srow_z @464-496
+    datatype = struct.unpack("<h", h[12:14])[0]
+    bitpix = struct.unpack("<h", h[14:16])[0]
+    dim = struct.unpack("<8q", h[16:80])
     pixdim = struct.unpack("<8d", h[104:168])
     vox_offset = struct.unpack("<q", h[168:176])[0]
     qform_code = struct.unpack("<i", h[344:348])[0]
@@ -318,10 +366,25 @@ def run_spec2nii(ds: Dataset, outdir: Path) -> tuple[Path, Path | None]:
         subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"spec2nii failed for {ds.id}: {e.stderr or e.stdout}") from e
-    # spec2nii writes <stem>.nii.gz and -j writes <stem>.json
-    nii = next(iter(sorted(outdir.glob(f"{stem}*.nii.gz"))), None)
-    if nii is None:
+    # spec2nii writes <stem>.nii.gz and -j writes <stem>.json. For Philips
+    # classic 2x-payload it ALSO writes <stem>_ref.nii.gz (water-reference
+    # companion). Pick the file whose basename token matches the dataset's
+    # expected BIDS suffix:
+    #   _mrsref   → spec2nii's `*_ref.nii.gz` companion
+    #   _svs etc. → non-`_ref` main file (audit 2026-06-07 round-3 H1).
+    candidates = sorted(outdir.glob(f"{stem}*.nii.gz"))
+    if not candidates:
         raise RuntimeError(f"spec2nii produced no .nii.gz in {outdir}")
+    wants_ref = (ds.bids_suffix == "_mrsref")
+    nii = candidates[0]
+    for cand in candidates:
+        is_ref_file = ("_ref" in cand.name) or cand.name.endswith("_ref.nii.gz")
+        if wants_ref and is_ref_file:
+            nii = cand
+            break
+        if (not wants_ref) and (not is_ref_file):
+            nii = cand
+            break
     sidecar = nii.with_suffix("").with_suffix(".json")
     return nii, (sidecar if sidecar.exists() else None)
 
@@ -343,7 +406,23 @@ def run_dcm2niix(ds: Dataset, outdir: Path) -> tuple[Path, Path | None]:
     niftis = sorted(outdir.glob(f"{stem}*.nii"))
     if not niftis:
         raise RuntimeError(f"dcm2niix produced no .nii in {outdir} (cmd: {' '.join(cmd)})")
+    # When the writer emits multiple outputs (e.g. _svs + _mrsref companion
+    # for Philips classic 2x-payload), pick the file whose JSON BidsGuess
+    # entity-suffix matches the dataset's expected suffix. Falls back to the
+    # first .nii if no sidecar carries a matching suffix.
     nii = niftis[0]
+    for cand in niftis:
+        cand_json = cand.with_suffix(".json")
+        if not cand_json.exists():
+            continue
+        try:
+            cand_meta = json.loads(cand_json.read_text())
+        except (OSError, ValueError):
+            continue
+        guess = cand_meta.get("BidsGuess")
+        if isinstance(guess, list) and len(guess) >= 2 and guess[1] == ds.bids_suffix:
+            nii = cand
+            break
     sidecar = nii.with_suffix(".json")
     return nii, (sidecar if sidecar.exists() else None)
 
@@ -360,6 +439,7 @@ class CompareResult(NamedTuple):
     sidecar_diff: dict
     fid_byte_diff: int
     notes: list[str]
+    json_state: str = "compared"  # audit 2026-06-07 round-3 M5: "compared" | "not-produced"
 
 
 def compare(ds: Dataset) -> CompareResult:
@@ -369,19 +449,28 @@ def compare(ds: Dataset) -> CompareResult:
         try:
             spec_nii, spec_json = run_spec2nii(ds, td_spec_p)
         except RuntimeError as e:
-            return CompareResult(ds, False, False, False, False, False, {}, -1, [f"spec2nii ERROR: {e}"])
+            # Converter error: explicit "not-produced" json_state so the
+            # printer shows `JSON—` instead of `JSON✓` (audit round-3 M5).
+            return CompareResult(ds, False, False, False, False, False, {}, -1,
+                                 [f"spec2nii ERROR: {e}"], json_state="not-produced")
         try:
             dcm_nii, dcm_json = run_dcm2niix(ds, td_dcm_p)
         except RuntimeError as e:
-            return CompareResult(ds, False, False, False, False, False, {}, -1, [f"dcm2niix ERROR: {e}"])
+            return CompareResult(ds, False, False, False, False, False, {}, -1,
+                                 [f"dcm2niix ERROR: {e}"], json_state="not-produced")
 
         spec_hdr = read_nifti_header(spec_nii)
         dcm_hdr = read_nifti_header(dcm_nii)
         spec_fid = read_nifti_payload(spec_nii)
         dcm_fid = read_nifti_payload(dcm_nii)
 
-        # FID payload compare
-        fid_byte_diff = sum(1 for a, b in zip(spec_fid, dcm_fid) if a != b) + abs(len(spec_fid) - len(dcm_fid))
+        # FID payload compare. Audit round-3 L3 fast-path: only walk the bytes
+        # to count differences when the payloads actually differ — multi-MB
+        # FIDs are common and the parity-equal case is the hot path.
+        if spec_fid == dcm_fid:
+            fid_byte_diff = 0
+        else:
+            fid_byte_diff = sum(1 for a, b in zip(spec_fid, dcm_fid) if a != b) + abs(len(spec_fid) - len(dcm_fid))
         fid_match = (fid_byte_diff == 0)
 
         # dim compare — spec2nii NIfTI-2 dim is 8x int64, dcm2niix NIfTI-1 is 8x int16
@@ -410,16 +499,42 @@ def compare(ds: Dataset) -> CompareResult:
                 notes.append(f"pixdim[{k}] spec={s} dcm={d} (delta={s-d:.3e})")
 
         # BIDS suffix (audit 2026-06-07 H3): dataset inventory records the
-        # expected BIDS-MRS suffix; the C writer hard-codes "_svs" today.
-        # Check the dcm2niix output filename ends with the expected suffix
-        # so _mrsref / _mrsi datasets fail loudly rather than passing under
-        # the wrong suffix.
-        suffix_match = (ds.bids_suffix == "_svs")  # the only suffix we currently emit
-        if ds.bids_suffix != "_svs":
-            notes.append(f"BIDS suffix expected {ds.bids_suffix} but writer hard-codes _svs")
+        # expected BIDS-MRS suffix. dcm2niix encodes the resolved suffix in
+        # the JSON BidsGuess field (`[datatype, _suffix]`); compare against
+        # the inventory expectation rather than the .nii filename so the
+        # check works regardless of the user's -f template.
+        dcm_meta_for_suffix = {}
+        if dcm_json:
+            try:
+                dcm_meta_for_suffix = json.loads(dcm_json.read_text())
+            except (OSError, ValueError):
+                pass
+        guess = dcm_meta_for_suffix.get("BidsGuess")
+        dcm_suffix = guess[1] if isinstance(guess, list) and len(guess) >= 2 else None
+        suffix_match = (dcm_suffix == ds.bids_suffix)
+        if not suffix_match:
+            notes.append(f"BIDS suffix expected {ds.bids_suffix} but dcm2niix BidsGuess was {dcm_suffix!r}")
 
         # Sidecar diff
         sidecar_diff: dict = {"ref_only": [], "out_only": [], "differing": []}
+        # Float tolerance helper: spec2nii carries float64 throughout while
+        # dcm2niix's C struct routes some MRS fields through float32 before
+        # re-promotion to double at the JSON sidecar; the last-place noise
+        # (1 float64 ULP — 0.068 emits as 0.06799999999999999 when parsed from
+        # JSON) is not a parity bug. 5 ULPs covers both the JSON-roundtrip
+        # noise AND the modest precision loss from the float32 staging step
+        # (e.g. SpectrometerFrequency 297.219572 vs 297.219574 from a 7T
+        # scanner). Defined before alias resolution so both the alias-value
+        # comparator and the generic diff loop below can use it.
+        def _floats_close(a, b, ulps=5, rel=1e-5):
+            try:
+                a, b = float(a), float(b)
+            except (TypeError, ValueError):
+                return False
+            if a == b:
+                return True
+            eps = math.ulp(abs(a)) * ulps
+            return abs(a - b) <= max(eps, rel * abs(a))
         if spec_json and dcm_json:
             spec_meta = json.loads(spec_json.read_text())
             dcm_meta = json.loads(dcm_json.read_text())
@@ -441,17 +556,8 @@ def compare(ds: Dataset) -> CompareResult:
                 if sv == dv:
                     return True
                 if isinstance(sv, (int, float)) and isinstance(dv, (int, float)):
-                    return _floats_close_topo(sv, dv)
+                    return _floats_close(sv, dv)
                 return str(sv) == str(dv)
-            def _floats_close_topo(a, b, ulps=5, rel=1e-5):
-                try:
-                    a, b = float(a), float(b)
-                except (TypeError, ValueError):
-                    return False
-                if a == b:
-                    return True
-                eps = math.ulp(abs(a)) * ulps
-                return abs(a - b) <= max(eps, rel * abs(a))
             for spec_name, dcm_name in BIDS_MRS_ALIASES.items():
                 if spec_name in raw_spec_keys and dcm_name in raw_dcm_keys:
                     # Audit 2026-06-07 H4: previous code dropped both keys
@@ -466,25 +572,6 @@ def compare(ds: Dataset) -> CompareResult:
                 sidecar_diff["ref_only"].append((k, spec_meta[k]))
             for k in sorted(dcm_keys - spec_keys):
                 sidecar_diff["out_only"].append((k, dcm_meta[k]))
-            # Generic float tolerance: spec2nii carries float64 throughout
-            # while dcm2niix's C struct routes some MRS fields through float32
-            # before re-promotion to double at the JSON sidecar; the last-
-            # place noise (1 float64 ULP — 0.068 emits as 0.06799999999999999
-            # when parsed from JSON) is not a parity bug. 5 ULPs covers both
-            # the JSON-roundtrip noise AND the modest precision loss from the
-            # float32 staging step (e.g. SpectrometerFrequency 297.219572 vs
-            # 297.219574 from a 7T scanner).
-            def _floats_close(a, b, ulps=5, rel=1e-5):
-                try:
-                    a, b = float(a), float(b)
-                except (TypeError, ValueError):
-                    return False
-                import math
-                if a == b:
-                    return True
-                eps = math.ulp(abs(a)) * ulps
-                return abs(a - b) <= max(eps, rel * abs(a))
-
             for k in sorted(spec_keys & dcm_keys):
                 s, d = spec_meta[k], dcm_meta[k]
                 if s == d:
@@ -531,9 +618,18 @@ def print_result(res: CompareResult, verbose: bool = False) -> None:
     # missing data) + values that genuinely differ. We do NOT count dcm-only
     # fields as parity failures (per Q4, our wider sidecar is by design).
     n_parity_diff = len(ref_only) + len(differing)
-    sidecar_tag = "JSON✓" if n_parity_diff == 0 else f"JSON Δ{n_parity_diff}"
+    # Distinguish "no sidecar produced" (converter ERR) from "produced and
+    # parity-clean" (audit 2026-06-07 round-3 M5): the former previously
+    # rendered as JSON✓ even though the converter never emitted a sidecar.
+    if res.json_state == "not-produced":
+        sidecar_tag = "JSON—"
+    elif n_parity_diff == 0:
+        sidecar_tag = "JSON✓"
+    else:
+        sidecar_tag = f"JSON Δ{n_parity_diff}"
     parity_ok = (res.fid_match and res.sform_match and res.dim_match
-                 and res.pixdim_match and res.suffix_match and n_parity_diff == 0)
+                 and res.pixdim_match and res.suffix_match
+                 and res.json_state == "compared" and n_parity_diff == 0)
     status = "PASS" if parity_ok else "FAIL"
     print(f"[{status}] {ds.id:55s} {fid_tag:11s} {sform_tag:8s} {dim_tag:6s} {pix_tag:6s} {suf_tag:6s} {sidecar_tag:11s}  ({ds.notes})")
     if not (verbose or status == "FAIL"):
@@ -558,11 +654,13 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="Print the dataset inventory")
     ap.add_argument("--vendor", help="Restrict --all to one vendor (siemens|philips|uih)")
     ap.add_argument("--verbose", "-v", action="store_true", help="Detail every diff (default: only FAILs)")
+    ap.add_argument("--run-skipped", action="store_true",
+                    help="Override skip_reason markers and run those datasets too")
     ap.epilog = (
         "Path overrides (audit 2026-06-07 L2): set env SPEC2NII_DATA to point "
         "at a different spec2nii test data root, and env DCM2NIIX_BIN to use "
         "a non-default dcm2niix binary. CLI flags aren't offered because the "
-        "31-dataset inventory is materialised at module load and would need a "
+        "inventory is materialised at module load and would need a "
         "rebuild to honour late-bound overrides."
     )
     args = ap.parse_args()
@@ -570,7 +668,8 @@ def main() -> int:
     if args.list:
         for ds in DATASETS:
             present = "✓" if ds.source.exists() else "MISSING"
-            print(f"{present:8} {ds.id:60s} {ds.bids_suffix:10s} {ds.notes}")
+            mark = "SKIP" if ds.skip_reason else ""
+            print(f"{present:8} {mark:6} {ds.id:60s} {ds.bids_suffix:10s} {ds.notes}")
         return 0
 
     targets = list(DATASETS)
@@ -593,6 +692,10 @@ def main() -> int:
 
     n_pass = n_fail = n_skip = 0
     for ds in targets:
+        if ds.skip_reason and not args.run_skipped:
+            print(f"[SKIP] {ds.id:60s} {ds.skip_reason}")
+            n_skip += 1
+            continue
         if not ds.source.exists():
             print(f"[SKIP] {ds.id:60s} source missing: {ds.source}")
             n_skip += 1

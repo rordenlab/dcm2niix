@@ -852,6 +852,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.mrsAcqType = kMRSAcqNone;
 	d.numberOfKSpaceTrajectories = 0;
 	d.isMRS = false;
+	d.isMrsRef = false;
 	d.dataPointColumns = 0;
 	d.spectralWidth = 0.0;
 	strcpy(d.resonantNucleus, "");
@@ -1369,8 +1370,12 @@ float csaMultiFloat(unsigned char buff[], int nItems, float Floats[], int *Items
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &itemCSA.xx2_Len);
 		if (itemCSA.xx2_Len > 0) {
-			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len));
+			// Allocate +1 byte for an explicit NUL — atof needs a terminator,
+			// and CSA item payloads are not guaranteed to carry one inside
+			// xx2_Len (audit 2026-06-07 round-3 M2).
+			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
 			memcpy(cString, &buff[lPos], itemCSA.xx2_Len); // TPX memcpy(&cString, &buff[lPos], sizeof(cString));
+			cString[itemCSA.xx2_Len] = '\0';
 			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
 			// printMessage(" %d item length %d = %s\n",lI, itemCSA.xx2_Len, cString);
 			Floats[lI] = (float)atof(cString);
@@ -1667,6 +1672,29 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 		if ((tagCSA.nitems < 0) || (tagCSA.nitems > 128))
 			return;
 		if (tagCSA.nitems > 0) {
+			// Pre-walk: confirm every item header + payload of this tag fits
+			// inside lLength BEFORE any handler reads `&buff[lPos]`. csaMultiFloat
+			// and the string handlers below do not bounds-check internally
+			// (audit 2026-06-07 H2 follow-up). The post-handler item walk further
+			// down still advances lPos; this pre-walk only validates.
+			int validatePos = lPos;
+			bool itemsValid = true;
+			for (int lI = 0; lI < tagCSA.nitems; lI++) {
+				if (validatePos + (int)sizeof(itemCSA) > lLength) { itemsValid = false; break; }
+				TCSAitem peek;
+				memcpy(&peek, &buff[validatePos], sizeof(peek));
+				if (!littleEndianPlatform())
+					nifti_swap_4bytes(1, &peek.xx2_Len);
+				validatePos += sizeof(peek);
+				int peekStep = peek.xx2_Len;
+				if ((peekStep < 0) || (peekStep > lLength)) { itemsValid = false; break; }
+				if ((peekStep % 4) != 0)
+					peekStep += 4 - (peekStep % 4);
+				if (validatePos + peekStep > lLength) { itemsValid = false; break; }
+				validatePos += peekStep;
+			}
+			if (!itemsValid)
+				return;
 			if (strcmp(tagCSA.name, "ImageOrientationPatient") == 0) {
 				// CSA "ImageOrientationPatient" is six float32s in two rows
 				// matching the public (0020,0037) IOP. Write into d->orient
@@ -1684,11 +1712,16 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				}
 			} else if (strcmp(tagCSA.name, "VoiPosition") == 0) {
 				// VoiPosition: voxel center in patient coordinates (3 float).
-				if (isnan(d->patientPosition[1])) {
+				// Require itemsOK >= 3 — a malformed CSA with nitems=1/2 would
+				// otherwise leak stale lFloats[2..3] into d->patientPosition
+				// (audit 2026-06-07 round-3 M1).
+				if ((tagCSA.nitems >= 3) && isnan(d->patientPosition[1])) {
 					csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-					d->patientPosition[1] = lFloats[1];
-					d->patientPosition[2] = lFloats[2];
-					d->patientPosition[3] = lFloats[3];
+					if (itemsOK >= 3) {
+						d->patientPosition[1] = lFloats[1];
+						d->patientPosition[2] = lFloats[2];
+						d->patientPosition[3] = lFloats[3];
+					}
 				}
 			} else if (strcmp(tagCSA.name, "VoiPhaseFoV") == 0) {
 				// In-plane phase FoV (single voxel = in-plane width).
@@ -8044,12 +8077,26 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				// fail, the value length is at least 16 bytes AND is a multiple
 				// of 8 (complex64 = 2 floats per point), and the SOP class
 				// matched the Siemens CSA Non-Image route (isRawDataStorage
-				// already true). Anything still indistinguishable from MRS at
-				// this point we admit as the FID — the dispatch downstream
-				// (saveDcm2NiiMRS) re-validates the stack invariants and
-				// rejects any false positive.
+				// already true).
+				//
+				// Audit 2026-06-07 H4: also require corroborating MRS evidence
+				// from the CSA Image Header (which is parsed earlier — group
+				// 0029 < group 7FE1) before admitting the payload as an FID.
+				// Legitimate VB/VE MRS files populate at least one of
+				// SpectroscopyAcquisitionDataColumns (-> dataPointColumns),
+				// ResonantNucleus, RealDwellTime (-> spectralWidth), or the
+				// VOI geometry tags via readCSAforMRS. A Siemens CSA Non-Image
+				// payload with NONE of those signals is almost certainly a
+				// proprietary calibration / non-image blob — refuse rather than
+				// emit a meaningless _svs.
+				bool mrsCorroborated = (d.dataPointColumns > 0) ||
+									   (d.resonantNucleus[0] != '\0') ||
+									   (d.spectralWidth > 0.0) ||
+									   (d.dwellTime > 0) ||
+									   (d.zThick > 0.0f) ||
+									   (d.xyzMM[1] > 1.0f);
 				if ((!d.isValid) && d.isRawDataStorage && (lLength >= 16) &&
-					((lLength % 8) == 0)) {
+					((lLength % 8) == 0) && mrsCorroborated) {
 					d.isMRS = true;
 					d.isRawDataStorage = false; // route to saveDcm2NiiMRS, not physio
 					d.imageStart = (int)lPos + (int)lFileOffset;

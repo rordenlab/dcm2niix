@@ -1266,6 +1266,18 @@ void json_Float(FILE *fp, const char *sLabel, double sVal) {
 	fprintf(fp, sLabel, sVal);
 } // json_Float
 
+// MRS spectral width source-of-truth shared by the sidecar (json_Float
+// SpectralWidth / DwellTime emission ~line 3180) and the NIfTI writer
+// (hdr.pixdim[4] in saveDcm2NiiMRS ~line 11618). Prefers the integer-ns
+// Siemens private (0021,1142) RealDwellTime when available — float32 CSA
+// d.spectralWidth loses ~6 sig figs at typical SVS widths (audit 2026-06-07
+// H2). Returns 0.0 when neither source is populated; callers must gate.
+static double mrsSpectralWidthHz(const struct TDICOMdata *d) {
+	if (d->dwellTime > 0)
+		return 1.0e9 / (double)d->dwellTime;
+	return d->spectralWidth;
+}
+
 void json_Bool(FILE *fp, const char *sLabel, int sVal) {
 	// json_Str(fp, "\t\"MTState\"", d.mtState);
 	// n.b. in JSON, true and false are lower case, whereas in Python they are capitalized
@@ -3172,15 +3184,14 @@ tse3d: T2*/
 		// required value is missing so the user knows the sidecar will
 		// fail bids-validator.
 		bool requiredMissing = false;
-		if (d.spectralWidth > 0.0) {
-			// Prefer the public-tag d.dwellTime (Siemens private 0021,1142,
-			// integer nanoseconds) over the CSA-float-derived d.spectralWidth
-			// when both are available — float32 CSA loses ~6 sig figs at
-			// ~1200 Hz spectral widths, breaking parity with spec2nii's
-			// double-precision arithmetic at the JSON sidecar.
-			double spectralWidth = d.spectralWidth;
-			if (d.dwellTime > 0)
-				spectralWidth = 1.0e9 / (double)d.dwellTime;
+		// Both d.spectralWidth (CSA float) and d.dwellTime (Siemens private
+		// 0021,1142 integer ns) can populate the spectral width; mrsSpectralWidthHz
+		// picks the higher-precision source and is shared with the NIfTI writer
+		// (saveDcm2NiiMRS at ~line 11618). Audit 2026-06-07 fix: previously
+		// gated on spectralWidth > 0 only, so a file with dwellTime set but
+		// spectralWidth still at sentinel would skip BIDS-MRS-required emission.
+		double spectralWidth = mrsSpectralWidthHz(&d);
+		if (spectralWidth > 0.0) {
 			json_Float(fp, "\t\"SpectralWidth\": %.17g,\n", spectralWidth);
 			json_Float(fp, "\t\"DwellTime\": %.17g,\n", 1.0 / spectralWidth);
 		} else {
@@ -3231,8 +3242,12 @@ tse3d: T2*/
 		if (d.dataPointColumns > 0)
 			fprintf(fp, "\t\"NumberOfSpectralPoints\": %d,\n", d.dataPointColumns);
 		if ((d.xyzMM[1] > 0.0f) && (d.xyzMM[2] > 0.0f) && (d.zThick > 0.0f))
+			// AcquisitionVoxelSize follows NIfTI pixdim ordering — saveDcm2NiiMRS
+			// swaps xyzMM[1]/[2] into pixdim[1]/[2] (F1; spec2nii row1/row2 swap),
+			// so x = xyzMM[2] (VoiReadoutFoV / PixelSpacing[1]) and
+			// y = xyzMM[1] (VoiPhaseFoV / PixelSpacing[0]).
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [%g, %g, %g],\n",
-					d.xyzMM[1], d.xyzMM[2], d.zThick);
+					d.xyzMM[2], d.xyzMM[1], d.zThick);
 		int avg = (d.numberOfAverages > 0.0f) ? (int)d.numberOfAverages : 1;
 		int dyn = (h != NULL && h->dim[0] >= 5 && h->dim[5] > 0) ? h->dim[5] : 1;
 		int transients = avg * dyn;
@@ -3271,6 +3286,13 @@ tse3d: T2*/
 		// applied"). The general-path emission at ~line 2569 only fires when
 		// d.TI > 0 — bypass via fprintf so the 0.0 case still emits.
 		fprintf(fp, "\t\"InversionTime\": %g,\n", (d.TI > 0.0f) ? (d.TI / 1000.0) : 0.0);
+		// BIDS-MRS WaterSuppressed: required for _svs / _mrsi (true), required
+		// for _mrsref companion (false). The flag is set by saveDcm2NiiMRS:
+		// the main _svs/mrsi path leaves it false, and the companion writer
+		// flips it to true (after which we negate at emission). Note the
+		// inverted polarity: d.isMrsRef means "this DICOM/series is the
+		// water-reference companion".
+		fprintf(fp, "\t\"WaterSuppressed\": %s,\n", d.isMrsRef ? "false" : "true");
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.
@@ -8393,10 +8415,11 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		// if seriesDesc trace", "fa", "adc"  isDerived = true;
 		isDirLabel = true;
 	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { // prog_asl: audit 2026-06-07 — AC=PERFUSION standalone term dropped; the fallback at setBidsFromAcquisitionContrast routes bare AC=PERFUSION to Unknown so DSC/DCE doesn't get misclassified as ASL (the vendor-positive Siemens ASL signals are the asl/pasl/pcasl sequence-name tokens above)
-		// AC=Perfusion is the DICOM-standard (0008,9209) marker, populated on
-		// Enhanced MR / Philips Classic ASL. Vendor-agnostic, so reusing the
-		// same gate here, in setBidsPhilips, and in setBidsGE keeps ASL
-		// detection consistent regardless of the sequence-name heuristics.
+		// AC=PERFUSION standalone term used to also gate this branch; dropped
+		// 2026-06-07 because PERFUSION also covers DSC/DCE and was misrouting
+		// non-ASL contrast series to perf/asl. Bare AC=PERFUSION now falls
+		// through to setBidsFromAcquisitionContrast, which returns early on
+		// PERFUSION and lands the file in Unknown/.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 		if (strstr(d->seriesDescription, "_m0") != NULL)
@@ -11360,9 +11383,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 // Affine, dwell time, spectral metadata, and the XA-vs-VX phase convention
 // are ported from spec2nii (BSD-3-Clause, William Clarke, U. Oxford 2020).
 // Reference: spec2nii/Siemens/dicomfunctions.py and
-// spec2nii/dcm2niiOrientation/orientationFuncs.py. Only the XA SVS path is
-// covered here; MRSI / Unloc / mrsref will be added when sample data is
-// available.
+// spec2nii/dcm2niiOrientation/orientationFuncs.py. Covers Siemens VB/VE/XA
+// SVS, Philips classic SVS, and UIH SVS; emits `_svs` and `_mrsref` (Philips
+// 2× companion via the parallel fidRef buffer + standalone water-reference
+// relabel via `wrsoff` / `no_Water_Suppression` series-name tokens). MRSI
+// (`_mrsi`) and `_unloc` are deferred to Phase 4 — see `spec_plan.md`.
 static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 						  struct TDICOMdata dcmList[],
 						  struct TSearchList *nameList,
@@ -11426,14 +11451,18 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		}
 		// Tolerance: parse noise across per-file FD reads, or the float→
 		// double promotion noise on CSA-derived widths, can drift the last
-		// digit of d->spectralWidth between files of the same series. 1e-6
-		// relative tolerance still rejects genuine acquisition-parameter
-		// mismatches (audit 2026-06-07 M8).
-		double swEps = fabs(d0->spectralWidth) * 1e-6;
+		// digit between files of the same series. 1e-6 relative tolerance
+		// still rejects genuine acquisition-parameter mismatches (audit
+		// 2026-06-07 M8). Use the canonical mrsSpectralWidthHz source so a
+		// series with matching dwellTime but slightly noisy CSA spectralWidth
+		// is not rejected (audit 2026-06-07 follow-up M3).
+		double swD = mrsSpectralWidthHz(d);
+		double swD0 = mrsSpectralWidthHz(d0);
+		double swEps = fabs(swD0) * 1e-6;
 		if (swEps < 1e-9) swEps = 1e-9;
-		if (fabs(d->spectralWidth - d0->spectralWidth) > swEps) {
+		if (fabs(swD - swD0) > swEps) {
 			printError("MRS: DICOM %d has SpectralWidth %g, expected %g\n",
-					   i, d->spectralWidth, d0->spectralWidth);
+					   i, swD, swD0);
 			return EXIT_FAILURE;
 		}
 		if (d->isLittleEndian != d0->isLittleEndian) {
@@ -11480,23 +11509,28 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	for (int i = 1; i <= 6; i++)
 		if (d0->orient[i] != d0->orient[i] || d0->orient[i] > 1e30 || d0->orient[i] < -1e30)
 			orientFinite = false;
-	// Row 1 and Row 2 must each have non-zero magnitude (close to 1 for a
-	// proper DICOM IOP) and their cross product must be non-degenerate —
-	// parallel vectors give a zero cross product and a singular affine.
-	float r1mag = 0.0f, r2mag = 0.0f, crossmag = 0.0f;
+	// Row 1 and Row 2 must each have non-zero magnitude. A proper DICOM IOP
+	// has unit rows, but UIH MRS encodes IOP as direction*VoxelSize (rows
+	// have magnitude == PixelSpacing); test the normalized cross product so
+	// both layouts pass. Parallel rows give a zero cross product and a
+	// singular affine.
+	float r1mag = 0.0f, r2mag = 0.0f;
+	bool orientShapeOK = false;
 	if (orientFinite) {
 		float r1x = d0->orient[1], r1y = d0->orient[2], r1z = d0->orient[3];
 		float r2x = d0->orient[4], r2y = d0->orient[5], r2z = d0->orient[6];
 		r1mag = sqrtf(r1x * r1x + r1y * r1y + r1z * r1z);
 		r2mag = sqrtf(r2x * r2x + r2y * r2y + r2z * r2z);
-		float cx = r1y * r2z - r1z * r2y;
-		float cy = r1z * r2x - r1x * r2z;
-		float cz = r1x * r2y - r1y * r2x;
-		crossmag = sqrtf(cx * cx + cy * cy + cz * cz);
+		if (r1mag > 0.5f && r2mag > 0.5f) {
+			float u1x = r1x / r1mag, u1y = r1y / r1mag, u1z = r1z / r1mag;
+			float u2x = r2x / r2mag, u2y = r2y / r2mag, u2z = r2z / r2mag;
+			float cx = u1y * u2z - u1z * u2y;
+			float cy = u1z * u2x - u1x * u2z;
+			float cz = u1x * u2y - u1y * u2x;
+			float crossUnit = sqrtf(cx * cx + cy * cy + cz * cz); // 1.0 when orthogonal
+			orientShapeOK = (crossUnit > 0.5f);
+		}
 	}
-	bool orientShapeOK = (r1mag > 0.5f) && (r1mag < 1.5f) &&
-						 (r2mag > 0.5f) && (r2mag < 1.5f) &&
-						 (crossmag > 0.5f); // near-unit + near-orthogonal
 	bool posFinite = true;
 	for (int i = 1; i <= 3; i++)
 		if (d0->patientPosition[i] != d0->patientPosition[i] ||
@@ -11523,6 +11557,46 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// series tripped it; now we only suppress on subsequent DICOMs of the
 	// SAME series.
 	bool warned_trailing_this_series = false;
+	// _mrsref water-reference companion (P2.c / P4.4): Philips classic SVS
+	// packs nframes × spec_points complex points in (5600,0020); a common
+	// variant trails a water-reference FID immediately after the main FID,
+	// so the per-DICOM payload is exactly 2× expected. spec2nii emits the
+	// trailing chunk as <stem>_mrsref.nii.gz. We support that case here:
+	// detect a consistent 2× multiplier across the stack, allocate a parallel
+	// fidRef buffer, read each DICOM's trailing chunk into it, then emit a
+	// companion NIfTI + sidecar after the main _svs files are written.
+	int trailingMultiplier = 0;
+	for (int i = 0; i < N_files; i++) {
+		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
+		if ((size_t)d->imageBytes < bytes_per_dicom ||
+			((size_t)d->imageBytes % bytes_per_dicom) != 0) {
+			// gate is enforced again in the read loop below; here we just
+			// want a defensible multiplier read.
+			trailingMultiplier = 0;
+			break;
+		}
+		int mult = (int)((size_t)d->imageBytes / bytes_per_dicom);
+		int trail = mult - 1;
+		if (i == 0)
+			trailingMultiplier = trail;
+		else if (trail != trailingMultiplier) {
+			trailingMultiplier = 0;
+			break;
+		}
+	}
+	// Only emit a companion for the canonical 2× case (main + 1 water-ref).
+	// 3×+ multipliers are dynamics / edit-on-off / multi-coil — Phase 2.d
+	// work that needs DIM_DYN / DIM_EDIT axis handling and is out of scope
+	// for the _mrsref deliverable.
+	bool emitMrsref = (trailingMultiplier == 1);
+	float *fidRef = NULL;
+	if (emitMrsref) {
+		fidRef = (float *)malloc(total_bytes);
+		if (fidRef == NULL) {
+			printWarning("MRS: malloc failed for _mrsref companion buffer; skipping water-reference output\n");
+			emitMrsref = false;
+		}
+	}
 	// Read each DICOM's FID into the buffer (stacked along dim[5]).
 	for (int i = 0; i < N_files; i++) {
 		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
@@ -11539,24 +11613,31 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			printError("MRS: DICOM %d has FID size %d, expected %zu (or integer multiple)\n",
 					   i, d->imageBytes, (size_t)bytes_per_dicom);
 			free(fid);
+			free(fidRef);
 			return EXIT_FAILURE;
 		}
 		if (((size_t)d->imageBytes > bytes_per_dicom) && !warned_trailing_this_series) {
-			printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
-						 "(Philips water-reference companion not yet emitted as _ref output)\n",
-						 (int)((size_t)d->imageBytes / bytes_per_dicom));
+			if (emitMrsref) {
+				printMessage("MRS: DICOM payload is 2x expected size; emitting _mrsref water-reference companion\n");
+			} else {
+				printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
+							 "(_mrsref companion only supported for exact 2x case)\n",
+							 (int)((size_t)d->imageBytes / bytes_per_dicom));
+			}
 			warned_trailing_this_series = true;
 		}
 		FILE *f = fopen(nameList->str[dcmSort[i].indx], "rb");
 		if (f == NULL) {
 			printError("MRS: cannot open %s\n", nameList->str[dcmSort[i].indx]);
 			free(fid);
+			free(fidRef);
 			return EXIT_FAILURE;
 		}
 		if (fseek(f, d->imageStart, SEEK_SET) != 0) {
 			printError("MRS: fseek failed in %s\n", nameList->str[dcmSort[i].indx]);
 			fclose(f);
 			free(fid);
+			free(fidRef);
 			return EXIT_FAILURE;
 		}
 		float *slot = fid + (size_t)i * N_pts * 2;
@@ -11564,7 +11645,20 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			printError("MRS: short read from %s\n", nameList->str[dcmSort[i].indx]);
 			fclose(f);
 			free(fid);
+			free(fidRef);
 			return EXIT_FAILURE;
+		}
+		// Trailing water-reference FID immediately follows the main FID; read
+		// it into the parallel buffer with the same indexing.
+		if (emitMrsref && fidRef != NULL) {
+			float *refSlot = fidRef + (size_t)i * N_pts * 2;
+			if (fread(refSlot, 1, bytes_per_dicom, f) != bytes_per_dicom) {
+				printWarning("MRS: short read for trailing water-reference FID in %s; dropping _mrsref companion\n",
+							 nameList->str[dcmSort[i].indx]);
+				free(fidRef);
+				fidRef = NULL;
+				emitMrsref = false;
+			}
 		}
 		fclose(f);
 		// Audit H2: the standard image pipeline byte-swaps non-native
@@ -11575,8 +11669,13 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		// corrupt complex data when one shows up. d->isLittleEndian is
 		// populated by the DICOM parser; swap each float32 component
 		// (2*N_pts of them) when the file was big-endian.
-		if (!d->isLittleEndian)
+		if (!d->isLittleEndian) {
 			nifti_swap_4bytes((size_t)N_pts * 2, slot);
+			if (emitMrsref && fidRef != NULL) {
+				float *refSlot = fidRef + (size_t)i * N_pts * 2;
+				nifti_swap_4bytes((size_t)N_pts * 2, refSlot);
+			}
+		}
 		// NumarisX (Siemens XA) phase convention: complex = real - 1j*imag,
 		// i.e. negate the odd-indexed (imag) floats. Older VE/VX systems use
 		// real + 1j*imag — no negation needed. See spec2nii
@@ -11588,6 +11687,12 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			for (int p = 0; p < N_pts; p++)
 				if (slot[2 * p + 1] != 0.0f)
 					slot[2 * p + 1] = -slot[2 * p + 1];
+			if (emitMrsref && fidRef != NULL) {
+				float *refSlot = fidRef + (size_t)i * N_pts * 2;
+				for (int p = 0; p < N_pts; p++)
+					if (refSlot[2 * p + 1] != 0.0f)
+						refSlot[2 * p + 1] = -refSlot[2 * p + 1];
+			}
 		}
 	}
 	// Build NIfTI-1 header.
@@ -11606,17 +11711,21 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	hdr.dim[6] = 1;
 	hdr.dim[7] = 1;
 	hdr.pixdim[0] = 1.0f;
-	hdr.pixdim[1] = (float)d0->xyzMM[1];
-	hdr.pixdim[2] = (float)d0->xyzMM[2];
-	hdr.pixdim[3] = (float)d0->zThick; // see px/py/pz comment above re: zThick vs xyzMM[3]
-	// Spectral width: use the same source-of-truth that the sidecar emits at
-	// nii_dicom_batch.cpp:~3186. The Siemens private (0021,1142) RealDwellTime
-	// is an integer ns count and gives full float64 precision; the CSA-float
-	// d.spectralWidth path loses ~6 sig figs at typical SVS spectral widths
-	// (audit 2026-06-07 H2). Compute once and pass to both writers.
-	double mrsSpectralWidth = d0->spectralWidth;
-	if (d0->dwellTime > 0)
-		mrsSpectralWidth = 1.0e9 / (double)d0->dwellTime;
+	// F1: pixdim[1]/[2] must match the sform column norms below. The sform
+	// build applies spec2nii's row1/row2 pixdim swap (m00 scales the first
+	// column by py = xyzMM[2] = VoiReadoutFoV; m01 scales the second by
+	// px = xyzMM[1] = VoiPhaseFoV), so the NIfTI x-axis carries VoiReadoutFoV
+	// and the y-axis carries VoiPhaseFoV. Mirror that swap in pixdim or the
+	// header reports per-axis voxel sizes that contradict the affine. See
+	// nifti1_io_core.cpp's column-norm computation.
+	hdr.pixdim[1] = (float)d0->xyzMM[2];
+	hdr.pixdim[2] = (float)d0->xyzMM[1];
+	hdr.pixdim[3] = (float)d0->zThick; // see px/py/pz comment below re: zThick vs xyzMM[3]
+	// Spectral width: shared source-of-truth with the sidecar via
+	// mrsSpectralWidthHz (see helper definition near line 1270). Both prefer
+	// the Siemens private (0021,1142) integer-ns dwell over CSA-float
+	// spectralWidth (audit 2026-06-07 H2).
+	double mrsSpectralWidth = mrsSpectralWidthHz(d0);
 	hdr.pixdim[4] = (mrsSpectralWidth > 0.0) ? (float)(1.0 / mrsSpectralWidth) : 1.0f;
 	hdr.pixdim[5] = 1.0f;
 	hdr.pixdim[6] = 1.0f;
@@ -11632,6 +11741,16 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// LPS -> RAS conversion that NIfTI requires.
 	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
 	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	// F2: UIH MRS encodes IOP as direction * VoxelSize (rows have non-unit
+	// magnitude that equals PixelSpacing). The voxel size is already carried
+	// in xyzMM[]/zThick, so normalize the row vectors so the m_ij scalings
+	// below don't double-count it.
+	{
+		double r1n = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
+		double r2n = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
+		if (r1n > 1.001) { rx0 /= r1n; rx1 /= r1n; rx2 /= r1n; }
+		if (r2n > 1.001) { ry0 /= r2n; ry1 /= r2n; ry2 /= r2n; }
+	}
 	double rz0 = rx1 * ry2 - rx2 * ry1;
 	double rz1 = rx2 * ry0 - rx0 * ry2;
 	double rz2 = rx0 * ry1 - rx1 * ry0;
@@ -11645,19 +11764,29 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	double tx = d0->patientPosition[1];
 	double ty = d0->patientPosition[2];
 	double tz = d0->patientPosition[3];
+	// F2: UIH SVS expects a half-voxel shift in the first two axes (matches
+	// spec2nii uih.py with half_shift=True). The shift is [0.5, 0.5, 0] @
+	// M_RAS.T where M_RAS = diag(-1,-1,1) * M built above. Skip for non-UIH
+	// vendors so the existing Siemens/Philips parity is unchanged.
+	double sx = 0.0, sy = 0.0, sz = 0.0;
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		sx = -0.5 * (m00 + m01);
+		sy = -0.5 * (m10 + m11);
+		sz = 0.5 * (m20 + m21);
+	}
 	if (geomValid) {
 		hdr.srow_x[0] = (float)(-m00);
 		hdr.srow_x[1] = (float)(-m01);
 		hdr.srow_x[2] = (float)(-m02);
-		hdr.srow_x[3] = (float)(-tx);
+		hdr.srow_x[3] = (float)(-tx + sx);
 		hdr.srow_y[0] = (float)(-m10);
 		hdr.srow_y[1] = (float)(-m11);
 		hdr.srow_y[2] = (float)(-m12);
-		hdr.srow_y[3] = (float)(-ty);
+		hdr.srow_y[3] = (float)(-ty + sy);
 		hdr.srow_z[0] = (float)m20;
 		hdr.srow_z[1] = (float)m21;
 		hdr.srow_z[2] = (float)m22;
-		hdr.srow_z[3] = (float)tz;
+		hdr.srow_z[3] = (float)(tz + sz);
 		hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT; // 2
 	} else {
 		// Audit M3: zero / NaN / Inf in orient/position would otherwise be
@@ -11674,21 +11803,81 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		printError("MRS: header byte count (%zu) != FID buffer (%zu); aborting\n",
 				   nii_ImgBytes(hdr), total_bytes);
 		free(fid);
+		free(fidRef);
 		return EXIT_FAILURE;
 	}
-	// BidsGuess: emit ["mrs","_svs"] (currently SVS-only; MRSI/Unloc/mrsref
-	// land in future commits when reference data is available).
-	strcpy(d0->CSA.bidsDataType, "mrs");
-	strcpy(d0->CSA.bidsEntitySuffix, "_svs");
+	// Detect a standalone water-reference acquisition (no trailing FID, but
+	// the whole DICOM IS the water reference). spec2nii lands these as
+	// _mrsref. Heuristic: vendor series-naming tokens that explicitly mark
+	// water suppression off / water-reference scan. Siemens dkd_von sLASER
+	// uses "wrsoff" (water-reference scan, suppression off); Philips uses
+	// "no_Water_Suppression" / "no_WS"; generic vendors sometimes use "_ref".
+	// We check seriesDescription + protocolName + sequenceName +
+	// pulseSequenceName. Only fire when the trailing-FID detection above
+	// did NOT already classify the file (emitMrsref==false): if a Philips
+	// classic DICOM is BOTH 2× payload AND named "no_Water_Suppression",
+	// the trailing-FID case wins (main SVS + ref companion).
+	bool isStandaloneMrsRef = false;
+	if (!emitMrsref) {
+		const char *naming[] = {d0->seriesDescription, d0->protocolName,
+								d0->sequenceName, d0->pulseSequenceName};
+		for (unsigned k = 0; k < sizeof(naming) / sizeof(naming[0]); k++) {
+			const char *s = naming[k];
+			if (s == NULL || s[0] == '\0')
+				continue;
+			if (strstr(s, "wrsoff") != NULL ||
+				strstr(s, "wrs_off") != NULL ||
+				strstr(s, "no_Water_Suppression") != NULL ||
+				strstr(s, "no_water_suppression") != NULL ||
+				strstr(s, "noWS") != NULL ||
+				strstr(s, "_mrsref") != NULL) {
+				isStandaloneMrsRef = true;
+				break;
+			}
+		}
+	}
+	// BidsGuess: emit ["mrs","_svs"] only when we have positive SVS evidence.
+	// kMRSAcqSingleVoxel is the explicit (0018,9200) signal. For
+	// kMRSAcqNone (Numaris4 / VB/VE classic — no (0018,9200) at all), require
+	// CSA VOI corroboration (VoiThickness AND VoiPhaseFoV populated above
+	// sentinels) before claiming SVS. Without either, leave bidsDataType
+	// empty so the file lands in Unknown/ rather than getting a misleading
+	// _svs label — guards against classic Siemens CSI/MRSI inputs (which
+	// reach this writer when (0018,9200) is absent) being mislabeled as
+	// singleton SVS (audit 2026-06-07 H3).
+	// MRSI negative evidence: classic Siemens CSI/MRSI files set Rows / Columns
+	// (and optionally NumberOfFrames) > 1 to encode the spatial grid; SVS files
+	// always have all three == 1. When (0018,9200) is absent, reject as not-SVS
+	// when ANY spatial dim is > 1 — guards against classic CSI/MRSI inputs
+	// (sm_classic, VB/VE 3D CSI, voi_in_mrsi) being mislabeled _svs even when
+	// they carry VOI tags (audit 2026-06-07 round-3 H2).
+	bool hasSpatialGrid = (d0->xyzDim[1] > 1) || (d0->xyzDim[2] > 1) || (d0->xyzDim[3] > 1);
+	bool isSVSConfirmed = (d0->mrsAcqType == kMRSAcqSingleVoxel) ||
+						  (d0->mrsAcqType == kMRSAcqNone && !hasSpatialGrid &&
+						   d0->zThick > 0.0f &&
+						   d0->xyzMM[1] > 1.0f && d0->xyzMM[2] > 1.0f);
+	if (isSVSConfirmed) {
+		strcpy(d0->CSA.bidsDataType, "mrs");
+		if (isStandaloneMrsRef) {
+			strcpy(d0->CSA.bidsEntitySuffix, "_mrsref");
+			d0->isMrsRef = true;
+		} else {
+			strcpy(d0->CSA.bidsEntitySuffix, "_svs");
+		}
+	} else {
+		printWarning("MRS: MRSpectroscopyAcquisitionType absent and CSA VOI evidence missing; not emitting BidsGuess _svs (file lands in Unknown/)\n");
+	}
 	// Generate filename + save NIfTI body via the standard writer (handles
 	// .nii vs .nii.gz, output-dir, conflict resolution).
 	char pathoutname[2048] = "";
 	if (nii_createFilename(*d0, pathoutname, opts) == EXIT_FAILURE) {
 		free(fid);
+		free(fidRef);
 		return EXIT_FAILURE;
 	}
 	if (strlen(pathoutname) < 1) {
 		free(fid);
+		free(fidRef);
 		return EXIT_FAILURE;
 	}
 	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0);
@@ -11709,7 +11898,72 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
 					  nameList->str[dcmSort[0].indx], &dti4D_local);
 	}
+	// _mrsref companion writer (P2.c / P4.4): emits the trailing water-
+	// reference FID as <stem>_mrsref.nii(.gz) + <stem>_mrsref.json. Derived
+	// from the main pathoutname by substituting the _svs suffix; falls back
+	// to appending _mrsref if the user template does not embed %s/_svs.
+	// Sidecar is identical to the main except WaterSuppressed flips to
+	// false (d.isMrsRef gates the emission in nii_SaveBIDSX).
+	if (ret == EXIT_SUCCESS && emitMrsref && fidRef != NULL) {
+		char refPath[2048] = "";
+		strncpy(refPath, pathoutname, sizeof(refPath) - 1);
+		refPath[sizeof(refPath) - 1] = '\0';
+		// Replace the last occurrence of "_svs" with "_mrsref" (suffix is the
+		// final BIDS entity, never followed by another "_svs" in a reproin
+		// stem). If not present, append "_mrsref" — the writer handles the
+		// .nii/.nii.gz extension separately.
+		char *svsLoc = strstr(refPath, "_svs");
+		char *lastSvs = NULL;
+		while (svsLoc != NULL) {
+			lastSvs = svsLoc;
+			svsLoc = strstr(svsLoc + 1, "_svs");
+		}
+		if (lastSvs != NULL) {
+			// move tail (after "_svs") into position after "_mrsref"
+			char tail[2048];
+			strncpy(tail, lastSvs + 4, sizeof(tail) - 1);
+			tail[sizeof(tail) - 1] = '\0';
+			size_t prefixLen = (size_t)(lastSvs - refPath);
+			if (prefixLen + 7 + strlen(tail) < sizeof(refPath)) {
+				memcpy(lastSvs, "_mrsref", 7);
+				strcpy(lastSvs + 7, tail);
+			} else {
+				printWarning("MRS: _mrsref path overflows buffer; dropping companion\n");
+				free(fidRef);
+				fidRef = NULL;
+			}
+		} else {
+			if (strlen(refPath) + 7 < sizeof(refPath))
+				strcat(refPath, "_mrsref");
+			else {
+				printWarning("MRS: _mrsref path overflows buffer; dropping companion\n");
+				free(fidRef);
+				fidRef = NULL;
+			}
+		}
+		if (fidRef != NULL) {
+			// Build a companion-flavoured TDICOMdata: same metadata but
+			// flag isMrsRef so the sidecar emits WaterSuppressed=false, and
+			// override the BIDS entity suffix so any downstream consumer
+			// sees the companion's identity.
+			struct TDICOMdata dRef = *d0;
+			dRef.isMrsRef = true;
+			strcpy(dRef.CSA.bidsDataType, "mrs");
+			strcpy(dRef.CSA.bidsEntitySuffix, "_mrsref");
+			int retRef = nii_saveNII(refPath, hdr, (unsigned char *)fidRef, opts, dRef);
+			if (retRef == EXIT_SUCCESS) {
+				struct TDTI4D dti4D_ref;
+				memset(&dti4D_ref, 0, sizeof(dti4D_ref));
+				dti4D_ref.frameDuration[0] = -1.0f;
+				nii_SaveBIDSX(refPath, dRef, opts, &hdr,
+							  nameList->str[dcmSort[0].indx], &dti4D_ref);
+			} else {
+				printWarning("MRS: _mrsref companion NIfTI write failed (path %s)\n", refPath);
+			}
+		}
+	}
 	free(fid);
+	free(fidRef);
 	return ret;
 }
 

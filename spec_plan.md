@@ -2,6 +2,119 @@
 
 **Goal.** For every DICOM-format MRS sample shipped in `/Users/chris/src/spec2nii/tests/spec2nii_test_data/`, produce a `dcm2niix` output that matches spec2nii's NIfTI image data byte-for-byte, with the spec2nii-NIfTI-extension JSON metadata re-expressed as a BIDS-MRS-compliant `.json` sidecar.
 
+---
+
+## Close-out scope (2026-06-07 deadline)
+
+This cycle ships a **scoped MRS converter**, not the full corpus-green plan. The
+original "every vendor family green" target is documented below as the
+long-term vision; the line below is what is in-scope for this release.
+
+### Shipping this cycle (quick finishers)
+
+These items either are landed, or are small enough to close before the
+deadline:
+
+- [x] **Phase 0** — `tools/spec2nii_compare.py` + 31-dataset inventory.
+- [x] **Phase 1 Siemens SVS core** — VB/VE/XA20/XA30/anon SVS parse with FID +
+  sform + dim parity. 2/19 cleanly PASS today (XA20, XA30); 3 more (VB SVS,
+  VE SVS, anon) are blocked only by the M1 pixdim swap below.
+- [x] **Phase 2.a Philips classic parse** — `nframes × spec_points` payloads
+  accepted; integer-multiple gate.
+- [x] **Phase 2.c / 4.4 `_mrsref` support** — Philips classic 2× payload now
+  writes paired `<stem>_svs.nii(.gz)` + `<stem>_mrsref.nii(.gz)`; Siemens /
+  Philips standalone water-reference acquisitions (series-name `wrsoff` /
+  `no_Water_Suppression`) relabeled `_svs → _mrsref` with
+  `WaterSuppressed: false` sidecar.
+- [x] **2026-06-07 round 1 + round 2 external review absorbed** — all 4 HIGH +
+  most MED items resolved or deferred with rationale ([audit_response.md](audit_response.md)).
+- [x] **2026-06-07 round 3 external review absorbed** —
+  H1 comparator spec-side `_ref` pairing (`tools/spec2nii_compare.py:~318`),
+  H2 MRSI negative-evidence gate (CSI `Rows`/`Columns` > 1 now rejects `_svs` labeling at `nii_dicom_batch.cpp:~11815`),
+  H3 `fidRef` leak on FID-size and header-byte-count error paths (`nii_dicom_batch.cpp:~11606, ~11769`),
+  H4 scoreboard arithmetic (refreshed below — 19+9+3 = 31),
+  M1 `VoiPosition` `itemsOK >= 3` gate (`nii_dicom.cpp:~1711`),
+  M2 `csaMultiFloat` NUL terminator (`nii_dicom.cpp:~1373`),
+  M5 explicit `JSON—` sentinel on converter error in comparator (`spec2nii_compare.py:~390`),
+  L3 byte-diff fast-path in comparator (`spec2nii_compare.py:~415`).
+  Kept-with-rationale: M3 group-order CSA gate (conformant DICOM is ascending-tag-order; defensive only),
+  M7 keep `isMrsRef` bool (avoids polarity hazard from BIDS-entity-string surgery — see refactor agent report).
+- [x] **F1 Pixdim convention fix** — swapped `pixdim[1]`↔`pixdim[2]` in
+  `saveDcm2NiiMRS` so per-axis voxel sizes align with the sform column
+  norms (the sform already applied spec2nii's row1/row2 swap, but pixdim
+  reported the unswapped `xyzMM[1..2]` and contradicted the affine). VB
+  SVS / VE SVS / anon SVS now `pix✓`; remaining `JSON Δ1` is the
+  `RxCoil/ReceiveCoilName` CSA-vs-public precedence (M4, Phase 6).
+  `AcquisitionVoxelSize` reordered to match the new pixdim convention.
+- [x] **F2 UIH SVS sform (P3.a)** — UIH MRS encodes IOP as
+  direction × VoxelSize (rows have magnitude == PixelSpacing), so the
+  geometry-validity gate now normalises before testing orthogonality and
+  the writer normalises the row vectors before the m00/m01 multiplication.
+  Added the spec2nii `half_shift=True` half-voxel translation on the UIH
+  manufacturer branch. `uih_svs_press_te144_SVS_801` now PASS (+1 → 3/40
+  PASS).
+- [x] **F3 Comparator hygiene (M7/M8/M9/M10)** — pair-aware suffix glob via
+  BidsGuess lookup landed earlier; explicit `JSON—` sentinel landed in
+  round-3 (M5); added a `skip_reason` field on `Dataset`, ran it on the 9
+  `philips/spar_dcm_orientation_tests/` (`P2.b Philips orientation
+  handedness, deferred to Phase 6`) and Philips HYPER
+  `philips_converted_dcm` (spec2nii reference errors in this environment).
+  `--list` now flags SKIP rows; `--run-skipped` overrides for ad-hoc
+  inspection.
+- [x] **F4 Phase 5 docs polish** — README feature matrix now names
+  "Siemens VB/VE/XA SVS, Philips classic SVS, UIH SVS" plus the
+  `_mrsref` companion / standalone-relabel behaviour (line 35).
+  CLAUDE.md MRS section was already current as of this cycle's
+  audit-response work.
+
+**Target end-of-cycle state:** ~6/31 PASS, `_mrsref` works, Siemens SVS
+fully covered, Philips classic + `_mrsref` covered, UIH SVS covered. The
+remaining 25 datasets are tracked below as deferred — they require
+non-trivial parser additions that are not deadline-scoped.
+
+### Deferred to Phase 6 (post-release backlog)
+
+These are real work but out of scope for this release. Tracked by
+deliverable + why-deferred so the next cycle has a running start.
+
+- **P1.e Siemens sLASER multi-DICOM** (6 datasets blocked) — Phoenix
+  Protocol `alTE` summing (spec2nii `dicomfunctions.py:649`) + multi-DICOM
+  stack ordering. Both require deep DICOM-internals work; the Phoenix
+  protocol parser is a significant addition.
+- **P2.b Philips orientation handedness** (5 classic SVS + 9 orientation_tests
+  = 14 datasets blocked) — every Philips SVS has matching FID magnitudes
+  but inverted signs on every sform column; spec2nii's
+  `_process_philips_svs_new` uses a different DICOM→NIfTI pipeline that
+  needs to be ported.
+- **P2.d Philips Enhanced multi-dynamic** (3 datasets — `svsWSAntCing`,
+  `press_mega`, HYPER `converted_dcm`) — Enhanced DICOM per-frame walking
+  + `DIM_DYN` / `DIM_EDIT` axis encoding; `saveDcm2NiiMRS` currently asserts
+  single-dynamic.
+- **P4.1-P4.3 MRSI generalization** (8 datasets — 5 Siemens MRSI + 2 UIH
+  MRSI + 1 voi_in_mrsi) — full spatial-dim packing rewrite + per-vendor
+  MRSI dispatch. Single biggest cost item in the original plan.
+- **P4.5 `_unloc`** — no corpus sample currently exercises it; defer until a
+  driver appears.
+- **M4 Coil alias precedence (audit follow-up)** — CSA `ReceivingCoil` vs
+  public coil-name precedence on the MRS path. JSON-only diff; doesn't
+  block any PASS count, but parity gap with spec2nii on multiple datasets.
+- **`saveDcm2NiiMRS` extraction refactor (P4.1)** — pre-condition for clean
+  MRSI dispatch; ~250 lines of monolith should be split into
+  `mrsValidateMembers / mrsBuildHeader / mrsWriteFID / mrsWriteSidecar`
+  helpers before MRSI lands.
+
+### What "done" means for this cycle
+
+- All four `F1`-`F4` items landed and committed to `development`.
+- Build clean; `dcm_qa` / `dcm_qa_nih` / `dcm_qa_uih` show only the
+  pre-existing stale Ref diffs.
+- `tools/spec2nii_compare.py --all` reports the documented target (~6/31
+  PASS), with all 25 deferred datasets tagged by reason in this file.
+- Scoreboard table refreshed from a post-fix run.
+- This `## Close-out scope` section unchanged except to flip the F1-F4 boxes.
+
+---
+
 **Boundaries.**
 - spec2nii = reference. dcm2niix is the C/C++ port for the DICOM-MRS subset spec2nii supports.
 - spec2nii emits NIfTI-2 + `dim_info`-style extension header. dcm2niix emits NIfTI-1 + BIDS-MRS sidecar. Image data (FID payload, dim, pixdim, sform) must match within single-precision; sidecar must be lossless re-expression of what spec2nii embeds.
@@ -270,35 +383,69 @@ P3.1 is one CSA-equivalent extractor away from PASS — UIH has its own (0065,xx
 - [ ] P3.a UIH SVS sform via private-tag orientation extractor
 - [ ] P3.b UIH 2D + 3D MRSI parsing (Phase 4 dispatch)
 
-### Current session checkpoint (2026-06-06)
+### Current session checkpoint (2026-06-07 F1-F4 close-out)
 
-Cumulative scoreboard against the 31-dataset corpus:
+Cumulative scoreboard against the 40-dataset corpus
+(`spec2nii_compare.py --all` reports `3 pass, 27 fail, 10 skipped`;
+inventory grew from 31 → 40 with the 9 `spar_dcm_orientation_tests/`
+added per F3):
 
-| Vendor | PASS | FID-parity only | parsed but sform=0 | parsed but sidecar Δ | parser reject |
+| Vendor | Total | PASS | suf✓ with parity Δ | suf✗ (MRSI in Unknown) | SKIP |
 |---|---|---|---|---|---|
-| Siemens (19) | 5 | 0 | 0 | 8 sLASER (TE alTE summing) | 6 MRSI |
-| Philips (9) | 0 | 0 | 9 (orientation handedness) | 0 | 0 |
-| UIH (3) | 0 | 1 (SVS PRESS) | 0 | 0 | 2 MRSI |
-| **TOTAL** | **5** | **1** | **9** | **8** | **8** |
+| Siemens | 19 | 2 (XA20, XA30) | 11 (3 VB/VE/anon SVS JSON Δ1 RxCoil — M4 Phase 6; 6 sLASER FID/dim/TE; 2 wrsoff `_mrsref` JSON Δ2) | 6 (5 MRSI + voi_in_mrsi — Phase 6) | 0 |
+| Philips | 18 | 0 | 8 (5 classic SVS + center no-WS `_mrsref` + svsWSAntCing + press_mega — all orient handedness P2.b) | 0 | 10 (1 HYPER `philips_converted_dcm` spec2nii-ref errors locally + 9 `spar_dcm_orientation_tests/` P2.b) |
+| UIH | 3 | 1 (SVS PRESS — F2) | 0 | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
+| **TOTAL** | **40** | **3** | **19** | **8** | **10** |
+
+Delta vs round-3 scoreboard:
+- PASS 2 → 3 (UIH SVS PRESS landed via F2).
+- VB/VE/anon SVS moved from `pix✗ + JSON Δ1` to `pix✓ + JSON Δ1`; residual
+  Δ is the RxCoil/ReceiveCoilName alias (M4, deferred to Phase 6).
+- Corpus grew 31 → 40 by inventorying the 9 `spar_dcm_orientation_tests/`
+  (all skipped pending P2.b).
+- Philips HYPER `converted_dcm` switched from `FAIL (spec2nii ERR)` to
+  `SKIP (spec2nii ERR documented)` so the noise no longer hides real
+  parity failures.
+
+`JSON—` sentinel still distinguishes "converter did not produce a
+sidecar" from `JSON✓` (parity-clean) and `JSON Δn` (parity diff). The
+4 `JSON—` rows are `sm_enhanced`, `rk_enhanced`,
+`uih_csi_hise_te144_*`, `uih_csi_hise_3d_te144_*` — all MRSI parser
+rejects pending Phase 6.
+
+`_mrsref` deliverable (P2.c + P4.4) — DONE this session:
+- Philips classic 2× payload now emits paired `<stem>_svs.nii(.gz)` + `<stem>_mrsref.nii(.gz)` (`philips_SV_phantom_center` writes both files; verified manually).
+- Siemens / Philips standalone water-reference acquisitions (series-name `wrsoff` / `no_Water_Suppression`) relabeled `_svs → _mrsref` with `WaterSuppressed: false` sidecar (3 datasets newly `suf✓`).
+- New `TDICOMdata.isMrsRef` flag; `WaterSuppressed` BIDS-MRS-required field emitted from the MRS sidecar block as `!isMrsRef`.
+- Comparator now reads `BidsGuess[1]` from the dcm2niix JSON sidecar to validate the suffix (was a fixed `"_svs"` sentinel before).
 
 Commits in this session:
 - `05815ae` Phase 0 — `tools/spec2nii_compare.py` + 31-dataset inventory
 - `5682953` Phase 1 — (7FE1,1010) FID capture + BIDS-MRS sidecar shape
 - `a9d3dd1` Phase 1 cont'd — CSA SeriesHeader parsing + precision (5/19 Siemens PASS)
 - `55884e8` Phase 2.a — relaxed Philips FID size check (9/9 Philips parses)
+- `cb9fc19` Audit follow-ups (2026-06-07 external review)
+- (this) Phase 2.c / 4.4 — `_mrsref` companion + standalone water-ref labeling
 
 ### Phase 4 MRSI / Unloc / mrsref
-- [ ] P4.1 `saveDcm2NiiMRS` refactor
-- [ ] P4.2 `kMRSAcqMRSI` wiring
-- [ ] P4.3 Per-vendor MRSI parity
-- [ ] P4.4 `_mrsref` pairing
-- [ ] P4.5 `_unloc` (if applicable)
+- [ ] P4.1 `saveDcm2NiiMRS` refactor — **DEFERRED to Phase 6** (precondition for MRSI; ~250-line monolith split)
+- [ ] P4.2 `kMRSAcqMRSI` wiring — **DEFERRED to Phase 6**
+- [ ] P4.3 Per-vendor MRSI parity — **DEFERRED to Phase 6** (5 Siemens + 2 UIH + 1 voi_in_mrsi)
+- [x] P4.4 `_mrsref` pairing — done (Philips 2× companion + Siemens / Philips standalone water-ref relabeling)
+- [ ] P4.5 `_unloc` — **DEFERRED to Phase 6** (no corpus driver yet)
 
 ### Phase 5 Hardening
-- [ ] `dcm_qa_mrs` Ref refresh + `/regressiontest` integration
-- [ ] CLAUDE.md rewrite
-- [ ] README feature matrix update
-- [ ] Final diff report archived
+- [ ] `dcm_qa_mrs` Ref refresh + `/regressiontest` integration — **DEFERRED to Phase 6** (depends on stable MRS corpus + MRSI landing first)
+- [x] CLAUDE.md MRS section updated as part of this cycle's audit-response work
+- [x] **F4 (close-out)** README feature matrix updated — line 35 names "Siemens VB/VE/XA SVS, Philips classic SVS, UIH SVS" plus the `_mrsref` companion / standalone-relabel behaviour
+- [ ] Final diff report archived — **DEFERRED to Phase 6**
+
+### Phase 6 follow-up (post-release backlog)
+
+See the "Deferred to Phase 6" list under **Close-out scope** at the top of
+this file for the running backlog. Phase 6 starts with the
+`saveDcm2NiiMRS` extraction refactor (P4.1) as the precondition for MRSI
+dispatch.
 
 ---
 
