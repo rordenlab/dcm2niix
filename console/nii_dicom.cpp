@@ -1904,7 +1904,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 					// a stale crc of the original public-tag value. All
 					// DICOMs in a single MRS series share the same CSA
 					// value, so the crc stays equal across the stack.
-					d->coilCrc = mz_crc32X((unsigned char *)&d->coilName, strlen(d->coilName));
+					d->coilCrc = mz_crc32X((unsigned char *)d->coilName, strlen(d->coilName)); // M6 fix: array decay, drop the unnecessary &
 				}
 			}
 		}

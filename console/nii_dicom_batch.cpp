@@ -789,11 +789,16 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	}
 	fseek(pFile, csaOffset, SEEK_SET);
 	char *buffer = (char *)malloc(csaLength);
-	if (buffer == NULL)
+	if (buffer == NULL) {
+		fclose(pFile); // M2 fix (audit round-5): leaked pFile on OOM
 		return;
+	}
 	size_t result = fread(buffer, 1, csaLength, pFile);
-	if ((int)result != csaLength)
+	if ((int)result != csaLength) {
+		free(buffer); // M2 fix (audit round-5): leaked buffer + pFile on short read
+		fclose(pFile);
 		return;
+	}
 	fclose(pFile);
 	// next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
 	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
@@ -3532,6 +3537,8 @@ static void initTDTI4D(struct TDTI4D *dti4D) {
 
 void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename) {
 	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+	if (dti4D == NULL)
+		return; // M1 fix (audit round-5): skip sidecar on OOM rather than NULL-deref in initTDTI4D
 	initTDTI4D(dti4D);
 	nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
 	free(dti4D);
@@ -11483,7 +11490,15 @@ static double siemensMrsTotalEchoTimeUs(const char *filename, struct TDICOMdata 
 		coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge],
 		coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge],
 		wipMemBlock[kDICOMStrExtraLarge];
-	TCsaAscii csaAscii;
+	// H1 fix (audit 2026-06-07 round-5): zero-init so the helper's early
+	// returns (fopen / size / malloc / fread / no-ASCCONV-marker paths)
+	// don't leave alTE[] as stack garbage. Without this, the sum below can
+	// see positive float bit-patterns and corrupt d0->TE downstream. Zero
+	// is not NaN so it survives the `!=` sentinel; siemensMrsTotalEchoTimeUs
+	// then returns 0.0 → no `> 0.0` gate trip → no TE overwrite. The other
+	// five siemensCsaAscii callers don't read alTE[]; fixing them too would
+	// expand scope without a corpus driver, so they're left.
+	TCsaAscii csaAscii = {};
 	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset,
 					d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo,
 					coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName,
@@ -11556,13 +11571,15 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// with the classic 2-frame Philips SVS where NumberOfFrames=2 carries
 	// [main_FID, water_ref_FID] not 2 dynamics — that case has multiplier=2
 	// and stays on the existing _mrsref companion path below. Multipliers
-	// >= 3 are treated as dynamics (svsWSAntCing 32, press_mega 288, etc.).
+	// >= 3 are treated as dynamics (svsWSAntCing 32, press_mega 297, etc.).
 	// Multiplier must agree across N_files; otherwise we drop to nDynPerFile=1
 	// and the per-file mismatch is caught by the FID-size check in the read
-	// loop. MEGA-PRESS edit-on/off (`DIM_EDIT` on dim[6]) needs per-frame
-	// classification from private (2005,140f)/(2005,1598) — Phase 6 follow-
-	// on; press_mega will land with dim[5]=288 (single DIM_DYN axis)
-	// instead of dim[5]=144,dim[6]=2 until that lands.
+	// loop. MEGA-PRESS edit-on/off + reference-frame interpretation moves to
+	// tools/mrs_post.py per the MRS split policy (CLAUDE.md "MRS split
+	// policy" / spec_plan.md "Next-cycle goal"); press_mega lands here as
+	// raw dim[5]=297 (288 main + 9 ref frames, no reorder, no drop), and
+	// the Python tool reshapes to (1024, 144, 2) with edit ON/OFF + paired
+	// _mrsref in post.
 	size_t single_frame_bytes = (size_t)N_pts * 2 * sizeof(float);
 	int nDynPerFile = 1;
 	if (d0->manufacturer == kMANUFACTURER_PHILIPS && N_files == 1 &&
@@ -11572,7 +11589,11 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		if (mult >= 3)
 			nDynPerFile = mult;
 	}
-	int N_dyn = nDynPerFile * N_files;
+	// M4 fix (audit round-5): widen the multiplication so the dim[5] range
+	// check is correct even at pathological inputs. Signed int overflow on
+	// `nDynPerFile * N_files` is UB and would silently bypass the > 32767
+	// guard below.
+	int64_t N_dyn64 = (int64_t)nDynPerFile * (int64_t)N_files;
 	// NIfTI-1 stores `dim[k]` as int16. Anything above 32767 wraps to a
 	// negative number after the (short) cast at header construction. Refuse
 	// rather than silently produce a corrupt header.
@@ -11580,10 +11601,11 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		printError("MRS: DataPointColumns %d exceeds NIfTI-1 dim[4] limit (32767)\n", N_pts);
 		return EXIT_FAILURE;
 	}
-	if (N_dyn > 32767) {
-		printError("MRS: %d effective dynamics exceeds NIfTI-1 dim[5] limit (32767)\n", N_dyn);
+	if (N_dyn64 > 32767) {
+		printError("MRS: %lld effective dynamics exceeds NIfTI-1 dim[5] limit (32767)\n", (long long)N_dyn64);
 		return EXIT_FAILURE;
 	}
+	int N_dyn = (int)N_dyn64;
 	// Stack invariants. Every member of the series must agree on the values
 	// the writer assumes from d0. Mixed series silently stack under d0's
 	// metadata and the first DICOM's affine, so fail loud before reading
