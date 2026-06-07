@@ -52,6 +52,7 @@ SPEC2NII_PII_FIELDS = {
     "ConversionMethod", "ConversionTime", "OriginalFile",
     "PatientDoB", "PatientID", "PatientName", "PatientSex", "PatientWeight",
     "kSpace",   # spec2nii dumps an internal flag; not BIDS-MRS required
+    "PulseSequenceFile",  # spec2nii provenance, not BIDS-MRS
 }
 
 # dcm2niix's wide DICOM-provenance sidecar (we emit these by design per Q4 —
@@ -405,9 +406,37 @@ def compare(ds: Dataset) -> CompareResult:
                 sidecar_diff["ref_only"].append((k, spec_meta[k]))
             for k in sorted(dcm_keys - spec_keys):
                 sidecar_diff["out_only"].append((k, dcm_meta[k]))
+            # Generic float tolerance: spec2nii carries float64 throughout
+            # while dcm2niix's C struct routes some MRS fields through float32
+            # before re-promotion to double at the JSON sidecar; the last-
+            # place noise (1 float64 ULP — 0.068 emits as 0.06799999999999999
+            # when parsed from JSON) is not a parity bug. 5 ULPs covers both
+            # the JSON-roundtrip noise AND the modest precision loss from the
+            # float32 staging step (e.g. SpectrometerFrequency 297.219572 vs
+            # 297.219574 from a 7T scanner).
+            def _floats_close(a, b, ulps=5, rel=1e-5):
+                try:
+                    a, b = float(a), float(b)
+                except (TypeError, ValueError):
+                    return False
+                import math
+                if a == b:
+                    return True
+                eps = math.ulp(abs(a)) * ulps
+                return abs(a - b) <= max(eps, rel * abs(a))
+
             for k in sorted(spec_keys & dcm_keys):
-                if spec_meta[k] != dcm_meta[k]:
-                    sidecar_diff["differing"].append((k, spec_meta[k], dcm_meta[k]))
+                s, d = spec_meta[k], dcm_meta[k]
+                if s == d:
+                    continue
+                # List-of-numbers: accept if every entry is within tolerance.
+                if isinstance(s, list) and isinstance(d, list) and len(s) == len(d) \
+                        and all(_floats_close(a, b) for a, b in zip(s, d)):
+                    continue
+                # Single number: tolerance check.
+                if _floats_close(s, d):
+                    continue
+                sidecar_diff["differing"].append((k, s, d))
         elif not spec_json:
             notes.append("spec2nii produced no -j sidecar")
         elif not dcm_json:

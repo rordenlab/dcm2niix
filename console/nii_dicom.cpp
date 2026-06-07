@@ -1608,6 +1608,216 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 	return EXIT_SUCCESS;
 } // readCSAImageHeader()
 
+// Numaris4 / VB/VE-line Siemens MR Spectroscopy DICOMs (SOP class
+// 1.3.12.2.1107.5.9.1 "CSA Non-Image Storage") put the spatial and
+// spectral metadata that NumarisX exposes via public DICOM tags into
+// the Siemens CSA Image Header (0029,1010) and CSA Series Header
+// (0029,1020). spec2nii's process_siemens_svs_vx reads these directly
+// out of nibabel's csa_header dict; this is the equivalent C extractor.
+//
+// Why a separate function rather than extending readCSAImageHeader:
+// readCSAImageHeader writes to TCSAdata (image-pipeline metadata), and
+// the MRS fields we want live on TDICOMdata (orient, patientPosition,
+// xyzMM, zThick, spectralWidth, resonantNucleus, imagingFrequency,
+// dataPointColumns). Sharing the parse loop with readCSAImageHeader
+// would have meant either threading a TDICOMdata pointer through or
+// duplicating the dispatch into TCSAdata; a small dedicated pass is
+// cleaner and we only run it when the SOP class flagged the file as
+// possibly-MRS, so the cost is zero on every other parse.
+//
+// All fields are only written when the source tag is present and the
+// destination is still at its sentinel (0 / "" / zero affine) so the
+// public-tag path keeps precedence on the rare XA-line file that has
+// both filled out.
+static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d) {
+	// Gate: only fire when the SOP class declared the file may be MRS
+	// (Siemens "CSA Non-Image Storage" 1.3.12.2.1107.5.9.1 -> isRawDataStorage
+	// at line ~5585) or the public-tag MRS path already classified it
+	// (kSpectroscopyData -> isMRS). Both gates leave the standard image
+	// pipeline alone — the public-tag PixelSpacing / IOP / IPP path is
+	// the source of truth for everything else.
+	if (!d->isRawDataStorage && !d->isMRS && d->mrsAcqType == kMRSAcqNone)
+		return;
+	if (lLength < 36)
+		return;
+	if ((buff[0] != 'S') || (buff[1] != 'V') || (buff[2] != '1') || (buff[3] != '0'))
+		return;
+	int lPos = 8;
+	int lnTag = buff[lPos] + (buff[lPos + 1] << 8) + (buff[lPos + 2] << 16) + (buff[lPos + 3] << 24);
+	if ((lnTag > 128) || (lnTag < 1))
+		return;
+	if (buff[lPos + 4] != 77)
+		return;
+	lPos += 8;
+	TCSAtag tagCSA;
+	TCSAitem itemCSA;
+	int itemsOK;
+	float lFloats[7];
+	for (int lT = 1; lT <= lnTag; lT++) {
+		memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA));
+		lPos += sizeof(tagCSA);
+		if (!littleEndianPlatform())
+			nifti_swap_4bytes(1, &tagCSA.nitems);
+		if (tagCSA.nitems > 0) {
+			if (strcmp(tagCSA.name, "ImageOrientationPatient") == 0) {
+				// CSA "ImageOrientationPatient" is six float32s in two rows
+				// matching the public (0020,0037) IOP. Write into d->orient
+				// using the 1-indexed convention dcm2niix uses elsewhere.
+				if (d->orient[1] == 0.0f && d->orient[2] == 0.0f && d->orient[3] == 0.0f) {
+					float six[6];
+					int n = (tagCSA.nitems < 6) ? tagCSA.nitems : 6;
+					csaMultiFloat(&buff[lPos], n, lFloats, &itemsOK);
+					six[0] = lFloats[1];
+					for (int k = 1; k < n; k++)
+						six[k] = lFloats[k + 1];
+					for (int k = 0; k < 6; k++)
+						d->orient[k + 1] = six[k];
+				}
+			} else if (strcmp(tagCSA.name, "VoiPosition") == 0) {
+				// VoiPosition: voxel center in patient coordinates (3 float).
+				if (isnan(d->patientPosition[1])) {
+					csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
+					d->patientPosition[1] = lFloats[1];
+					d->patientPosition[2] = lFloats[2];
+					d->patientPosition[3] = lFloats[3];
+				}
+			} else if (strcmp(tagCSA.name, "VoiPhaseFoV") == 0) {
+				// In-plane phase FoV (single voxel = in-plane width).
+				// xyzMM[k] defaults to 1.0f at struct init (see line ~764)
+				// rather than 0.0f, so the sentinel is "<= 1.0f" not "== 0".
+				if (d->xyzMM[1] <= 1.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->xyzMM[1] = v;
+				}
+			} else if (strcmp(tagCSA.name, "VoiReadoutFoV") == 0) {
+				if (d->xyzMM[2] <= 1.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->xyzMM[2] = v;
+				}
+			} else if (strcmp(tagCSA.name, "VoiThickness") == 0) {
+				// SVS voxel slab thickness — write to both zThick (the BIDS
+				// AcquisitionVoxelSize z component) and xyzMM[3].
+				if (d->zThick == 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f) {
+						d->zThick = v;
+						if (d->xyzMM[3] <= 1.0f)
+							d->xyzMM[3] = v;
+					}
+				}
+			} else if (strcmp(tagCSA.name, "RealDwellTime") == 0) {
+				// Nanoseconds. SpectralWidth = 1 / dwell_time_seconds.
+				if (d->spectralWidth <= 0.0) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->spectralWidth = 1.0e9 / (double)v;
+				}
+			} else if (strcmp(tagCSA.name, "ImagingFrequency") == 0) {
+				if (d->imagingFrequency <= 0.0) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->imagingFrequency = (double)v;
+				}
+			} else if (strcmp(tagCSA.name, "ImagedNucleus") == 0 ||
+					   strcmp(tagCSA.name, "ResonantNucleus") == 0) {
+				// CSA strings live inside the item layout (12-byte item header
+				// per element). We only need the first item — copy as null-
+				// terminated text up to kDICOMStr.
+				if (d->resonantNucleus[0] == '\0') {
+					memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+					if (!littleEndianPlatform())
+						nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+					int n = itemCSA.xx2_Len;
+					if (n > 0 && n < kDICOMStr) {
+						memcpy(d->resonantNucleus, &buff[lPos + sizeof(itemCSA)], n);
+						d->resonantNucleus[n] = '\0';
+						// CSA pads trailing nulls; trim
+						while (n > 0 && (d->resonantNucleus[n - 1] == '\0' || d->resonantNucleus[n - 1] == ' '))
+							d->resonantNucleus[--n] = '\0';
+					}
+				}
+			} else if (strcmp(tagCSA.name, "TransmitterReferenceAmplitude") == 0) {
+				// Skip; just here to silence the verbose dump.
+			} else if (strcmp(tagCSA.name, "SpectroscopyAcquisitionDataColumns") == 0) {
+				// Equivalent of public (0028,9002) DataPointColumns for VB/VE.
+				if (d->dataPointColumns <= 0) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->dataPointColumns = (int)v;
+				}
+			} else if (strcmp(tagCSA.name, "RepetitionTime") == 0) {
+				// VB/VE CSA reports TR in ms — same scale as DICOM (0018,0080).
+				// We're already inside the MRS-gated entry check; overwrite
+				// any public-tag value because for some Siemens spectroscopy
+				// sequences (sLASER multi-DICOM stacks, where (0018,0081)
+				// reports per-shot TE while CSA carries the acquisition-level
+				// echo time) CSA is the source of truth that matches spec2nii.
+				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (v > 0.0f)
+					d->TR = v;
+			} else if (strcmp(tagCSA.name, "EchoTime") == 0) {
+				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (v > 0.0f)
+					d->TE = v;
+			} else if (strcmp(tagCSA.name, "InversionTime") == 0) {
+				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (v >= 0.0f)
+					d->TI = v;
+			} else if (strcmp(tagCSA.name, "FlipAngle") == 0) {
+				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (v > 0.0f)
+					d->flipAngle = v;
+			} else if (strcmp(tagCSA.name, "NumberOfAverages") == 0) {
+				float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (v > 0.0f)
+					d->numberOfAverages = v;
+			} else if (strcmp(tagCSA.name, "TransmittingCoil") == 0) {
+				// VB/VE CSA string. Layout same as ImagedNucleus above.
+				if (d->transmitCoilName[0] == '\0') {
+					memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+					if (!littleEndianPlatform())
+						nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+					int n = itemCSA.xx2_Len;
+					if (n > 0 && n < kDICOMStr) {
+						memcpy(d->transmitCoilName, &buff[lPos + sizeof(itemCSA)], n);
+						d->transmitCoilName[n] = '\0';
+						while (n > 0 && (d->transmitCoilName[n - 1] == '\0' || d->transmitCoilName[n - 1] == ' '))
+							d->transmitCoilName[--n] = '\0';
+					}
+				}
+			} else if (strcmp(tagCSA.name, "ReceivingCoil") == 0) {
+				if (d->coilName[0] == '\0') {
+					memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+					if (!littleEndianPlatform())
+						nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+					int n = itemCSA.xx2_Len;
+					if (n > 0 && n < kDICOMStr) {
+						memcpy(d->coilName, &buff[lPos + sizeof(itemCSA)], n);
+						d->coilName[n] = '\0';
+						while (n > 0 && (d->coilName[n - 1] == '\0' || d->coilName[n - 1] == ' '))
+							d->coilName[--n] = '\0';
+					}
+				}
+			}
+		}
+		// Advance past every item in this tag (mirror readCSAImageHeader's
+		// item-stride logic). Each item is itemCSA.xx2_Len bytes preceded
+		// by sizeof(itemCSA), 4-byte aligned.
+		for (int lI = 1; lI <= tagCSA.nitems; lI++) {
+			memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+			lPos += sizeof(itemCSA);
+			if (!littleEndianPlatform())
+				nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+			int step = itemCSA.xx2_Len;
+			if ((step % 4) != 0)
+				step += 4 - (step % 4);
+			lPos += step;
+		}
+	}
+} // readCSAforMRS()
+
 void dcmMultiShorts(int lByteLength, unsigned char lBuffer[], int lnShorts, uint16_t *lShorts, bool littleEndian) {
 	// read array of unsigned shorts US http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
 	if ((lnShorts < 1) || (lByteLength != (lnShorts * 2)))
@@ -7821,6 +8031,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if ((lPos + lLength) > fileLen)
 				break;
 			readCSAImageHeader(&buffer[lPos], lLength, &d.CSA, isVerbose, d.is3DAcq);
+			// VB/VE classic Siemens MRS metadata lives in this header
+			// (and the Series Header below). NumarisX (XA-line) populates
+			// the public tags so this is a no-op for it (the readCSAforMRS
+			// gates all writes on the destination still being at sentinel).
+			readCSAforMRS(&buffer[lPos], lLength, &d);
 			if (!d.isHasPhase)
 				d.isHasPhase = d.CSA.isPhaseMap;
 			if ((d.CSA.coilNumber > 0) && (strlen(d.coilName) < 1)) {
@@ -7834,6 +8049,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				break;
 			d.CSA.SeriesHeader_offset = (int)lPos;
 			d.CSA.SeriesHeader_length = lLength;
+			// Parse the spectroscopy-relevant tags out of the Series Header
+			// blob. The general-purpose Phoenix protocol scan still happens
+			// later via SeriesHeader_offset; this is a cheap pre-pass that
+			// hits the few tags spec2nii's process_siemens_svs_vx reads.
+			readCSAforMRS(&buffer[lPos], lLength, &d);
 			break;
 		case kRealWorldIntercept:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)

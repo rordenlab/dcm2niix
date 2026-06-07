@@ -3173,8 +3173,16 @@ tse3d: T2*/
 		// fail bids-validator.
 		bool requiredMissing = false;
 		if (d.spectralWidth > 0.0) {
-			json_Float(fp, "\t\"SpectralWidth\": %g,\n", d.spectralWidth);
-			json_Float(fp, "\t\"DwellTime\": %g,\n", 1.0 / d.spectralWidth);
+			// Prefer the public-tag d.dwellTime (Siemens private 0021,1142,
+			// integer nanoseconds) over the CSA-float-derived d.spectralWidth
+			// when both are available — float32 CSA loses ~6 sig figs at
+			// ~1200 Hz spectral widths, breaking parity with spec2nii's
+			// double-precision arithmetic at the JSON sidecar.
+			double spectralWidth = d.spectralWidth;
+			if (d.dwellTime > 0)
+				spectralWidth = 1.0e9 / (double)d.dwellTime;
+			json_Float(fp, "\t\"SpectralWidth\": %.17g,\n", spectralWidth);
+			json_Float(fp, "\t\"DwellTime\": %.17g,\n", 1.0 / spectralWidth);
 		} else {
 			requiredMissing = true;
 		}
@@ -3258,6 +3266,11 @@ tse3d: T2*/
 		// so this is the sole writer.
 		if (d.transmitCoilName[0] != '\0')
 			json_Str(fp, "\t\"TransmitCoilName\": \"%s\",\n", d.transmitCoilName);
+		// InversionTime is BIDS-MRS strongly-recommended; spec2nii emits 0
+		// even for non-IR sequences (the field signals "considered, none
+		// applied"). The general-path emission at ~line 2569 only fires when
+		// d.TI > 0 — bypass via fprintf so the 0.0 case still emits.
+		fprintf(fp, "\t\"InversionTime\": %g,\n", (d.TI > 0.0f) ? (d.TI / 1000.0) : 0.0);
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.

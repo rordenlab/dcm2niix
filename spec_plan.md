@@ -229,8 +229,20 @@ If I get blocked:
   - VB-line SVS, VE-line SVS, anon, sLASER single-DICOM (wrsoff_13, wrsoff_19) — FID ✓, dim ✓, JSON Δ8-9, **sform ✗ all-zero** (Phase 1.d work)
   - sLASER multi-DICOM (wrs1, wrs2, w1pw3_1/2, w4_1/2) — FID size mismatch (currently captures whole payload per file; needs per-DICOM stack ordering matching spec2nii)
   - voi_in_mrsi, VB/VE 3D CSI, sm_classic, sm_enhanced, rk_enhanced — Phase 4 MRSI work
-- [ ] **P1.d CSA SeriesHeader parsing**: extract VoiPosition, VoiPhaseFoV, VoiReadoutFoV, VoiThickness, ImageOrientationPatient, SpectralWidth, RealDwellTime, ImagingFrequency, ResonantNucleus, TE, TR from the (0029,1020) blob currently captured offset-only at `nii_dicom.cpp:7825`. spec2nii's `process_siemens_svs_vx` is the reference. Unblocks orientation for VB/VE single-DICOM SVS + anon. Multi-DICOM sLASER FID stacking is a separate per-DICOM ordering concern, addressed alongside.
-- [ ] **P1.e Siemens commit + push**
+- [x] **P1.d CSA SeriesHeader parsing**: extract ImageOrientationPatient, VoiPosition, VoiPhaseFoV, VoiReadoutFoV, VoiThickness, RealDwellTime, ImagingFrequency, ImagedNucleus, SpectroscopyAcquisitionDataColumns, RepetitionTime, EchoTime, InversionTime, FlipAngle, NumberOfAverages, TransmittingCoil, ReceivingCoil from (0029,1010)/(0029,1020). New `readCSAforMRS()` at `nii_dicom.cpp:~1610`, gated on `isRawDataStorage || isMRS || mrsAcqType` so non-MRS files are untouched. Called from both `case kCSAImageHeaderInfo` and `case kCSASeriesHeaderInfo`.
+- [x] **Final precision pass:** SpectralWidth/DwellTime now derive from `d.dwellTime` (int nanoseconds, Siemens private 0021,1142) when available — preserves full float64 precision vs the float32 CSA RealDwellTime. Sidecar uses `%.17g` for spectral fields and `%.9g` for SpectrometerFrequency to round-trip spec2nii's emission. Comparator gains 5-ULP / 1e-5-relative float tolerance so float32-stage noise no longer flags parity bugs.
+
+Phase 1 final corpus state (5/19 PASS, 14 future-phase):
+
+| Status | Datasets | Notes |
+|---|---|---|
+| ✓ **PASS** | VB-line SVS, VE-line SVS, XA20 SVS, XA30 SVS, anon SVS | full FID + sform + dim + JSON parity |
+| FID/sform ✓, Δ1 JSON | sLASER WRSoff_13, WRSoff_19 (single-DICOM) | EchoTime — Phase 1.e needs alTE summing |
+| FID size ✗ | sLASER WRS1, WRS2, w1pw3_1/2, w4_1/2 (multi-DICOM) | multi-DICOM stack ordering — Phase 1.e |
+| Parser reject | voi_in_mrsi, VB/VE 3D CSI, sm_classic, sm_enhanced, rk_enhanced | MRSI — Phase 4 |
+
+- [ ] **P1.e sLASER (multi-echo + multi-DICOM) — DEFERRED to Phase 4 cycle.** Requires Phoenix Protocol `alTE` summing (cf. spec2nii `dicomfunctions.py:649` `parse_buffer(fullcsa['tags']['MrPhoenixProtocol']['items'][0])`) and multi-DICOM stack ordering. Both are non-trivial parsing additions adjacent to the MRSI refactor.
+- [x] **P1.f Siemens checkpoint commit + push** (commit `5682953` + this one)
 
 ### Phase 2 Philips
 - [ ] P2.1 Classic SVS (5 orientation + 1 no-WS)
