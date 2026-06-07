@@ -108,11 +108,11 @@ Bundled libraries (no external install needed): miniz (zlib), cJSON, NanoJPEG, C
 4. `nii_dicom_batch.cpp` groups files by series, assembles volumes
 5. `nifti1_io_core.cpp` writes NIfTI files and JSON sidecars
 
-### macOS console makefile uses 16 MB stack (issue #867)
+### macOS builds use 16 MB stack (issue #867)
 
-The macOS `console/makefile` build uses `-O3 -flto`; the cmake build uses `-O3` only. LTO inlines aggressively and inflates per-function stack frames (`readDICOMx` already ~1.5 MB even without LTO). On multi-study Siemens XA datasets — multiple Enhanced-DICOM series, deident sequences, dense diffusion stacks — the conversion chain on the makefile build exceeded the 8 MB default macOS main-thread stack and tripped `___chkstk_darwin` at `0x16f603ff8`. Repro: a real-world XA80 dataset surfaced by an external user (multiple study dates under one input root, ~100 series). The cmake build does NOT crash on the same data.
+The macOS `console/makefile` build uses `-O3 -flto`; the cmake build uses `-O3` only. LTO inlines aggressively and inflates per-function stack frames (`readDICOMx` already ~1.5 MB even without LTO). On multi-study Siemens XA datasets — multiple Enhanced-DICOM series, deident sequences, dense diffusion stacks — the conversion chain on the makefile build exceeded the 8 MB default macOS main-thread stack and tripped `___chkstk_darwin` at `0x16f603ff8`. Repro: a real-world XA80 dataset surfaced by an external user (multiple study dates under one input root, ~100 series). The cmake build does NOT crash on the same data today, but as the corpus widens further (deident, dense DTI, MRS — the recent additions that already chew through the budget) it could; matching the flag closes the gap pre-emptively.
 
-Mitigation: `LFLAGS=-Wl,-stack_size -Wl,0x1000000` in [console/makefile](console/makefile) doubles the stack to 16 MB. The workaround was originally added for issue #867, commented out at some point during cleanup, and surfaced again when the corpus widened. Both builds otherwise produce byte-identical NIfTI / JSON output.
+Mitigation: `LFLAGS=-Wl,-stack_size -Wl,0x1000000` in [console/makefile](console/makefile) (restored for issue #867) AND a matching `target_link_options(... "-Wl,-stack_size" "-Wl,0x1000000")` in [console/CMakeLists.txt](console/CMakeLists.txt) (commit 68f6181) double the stack to 16 MB. The cmake gate is `if (APPLE AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"))` — without the `AppleClang` clause the block silently skipped on stock macOS Xcode (Apple's clang reports `AppleClang`, not `Clang`). Both builds otherwise produce byte-identical NIfTI / JSON output.
 
 Per-frame stack-pressure reductions in the C source (heap-allocated `deID_CS`, etc.) remain in place — the 16 MB stack is headroom for LTO inlining specifically. If a future audit finds further frame growth, prefer source-side reduction over raising the stack again.
 
@@ -209,6 +209,31 @@ Subtle naming-vs-format quirk discovered while implementing this: the SeriesDesc
 
 So the discard gate must be on `SeriesDescription`, NOT on the `isXAPhysio` / `isCMRRPhysio` format flags. Likewise, any future per-format disambiguation work must not assume the description suffix predicts the format.
 
+### SBRef BOLD detection regardless of protocol prefix
+
+The Siemens BOLD branch in `setBidsSiemens` ([nii_dicom_batch.cpp:~8430](console/nii_dicom_batch.cpp#L8430)) detects Single-Band Reference (SBRef) volumes via `strstr(d->seriesDescription, "_SBRef")`. The previous gate also required `d->protocolName` to start with `"func_"` (old Siemens convention) which silently skipped ReproIn-style names like `"func-bold_task-rest_acq-dualecho_run-1_dicom"` — the SBRef of a typical SBRef+multiband BOLD pair was mislabelled as `bold` instead of `sbref`. Match the unconditional DWI-branch pattern: SeriesDescription contains `_SBRef` → `sbref`, regardless of protocol prefix. dcm2niix is single-pass; cross-series context is unavailable, and `_SBRef` is the strongest single-series clue (Siemens VE-line + XA-line both emit it for `ep2d_bold_SBRef`-class series). The TODO at issue753 about inferring task from `protocolName` is preserved as a standalone comment so the inference work stays tracked (commit 6ee8e94).
+
+### Single-volume slice-timing escape in `checkSliceTiming`
+
+`checkSliceTiming` validates per-slice timing falls within TR, but for single-volume anatomical scans (TSE/SPACE/MPRAGE/3D) TR is per-slice and slice times legitimately span many TRs; the previous "slice timing appears corrupted" warning was a false alarm. Early-clear the slice-timing array (silent — same treatment as the localizer/derived branch above) when `hdr->dim[4] < 2`. Issue870 multiband EPI detection is unaffected because EPI keeps within TR even at one volume (commit 210a4b0).
+
+### PhaseEncodingDirection 3D multi-echo gate (issue 371 vs issue 849)
+
+The outer gate at `nii_dicom_batch.cpp:~3283` used to be `if (!d.is3DAcq)` (issue849), which made the inner `echoTrainLength > 1` escape (issue371: ignore PE for 3D MP-RAGE/SPACE but report for 3D EPI) dead code. Replaced with `if (!isSkipPhaseEncodingAxis)` (commit fe90be1).
+
+The escape gate itself was tightened in the 2026-06-06 external audit (H2). The naïve `(d.echoTrainLength > 1)` clause re-broke issue849 because Siemens 3D SPACE / 3D TSE / FLAIR-SPACE report `ScanningSequence = "SE\IR"` with ETL≈200+ — exactly the structural 3D class issue849 wanted to suppress, but with high ETL. Hardened to:
+
+```c
+if ((d.echoTrainLength > 1) && (strstr(d.scanningSequence, "SE") == NULL))
+    isSkipPhaseEncodingAxis = false;
+```
+
+The `!SE` check is load-bearing — without it, 3D SPACE FLAIR (`dcm_qa_xb10/flair/`, ETL=214, `ScanningSequence "SE\IR"`) emits PhaseEncodingDirection and the issue849 regression returns. The check correctly admits 3D EPI BOLD (`EP`, no `SE`), Philips/GE multi-echo GRE QSM (`GR`, ETL>1; Philips reports number of echoes, e.g. ETL=5 on a Bipolar 7-echo QSM), and Siemens 3D multi-echo GRE QSM (`GR`-family). 3D MP-RAGE stays suppressed via the underlying ETL=1. The QSM consensus reference sidecars from 2022 (Siemens, Philips, GE) all carry `PhaseEncodingDirection` for their multi-echo GRE QSM — this gate matches that baseline.
+
+### Issue870 multiband false-alarm suppression
+
+When `checkSliceTiming` estimates a higher multiband factor than the DICOM CSA reports, the override IS correct (Siemens XA + CMRR multiband sequences leave the CSA tag stale at 1), so the CSA-write keeps happening — but the `printWarning` is a false alarm on those Siemens datasets. Suppress the warning when EITHER `d1->imageTypeText` contains `_MB_` (Siemens private per-frame ImageType marker, e.g. `ORIGINAL_PRIMARY_M_MB_DIS2D`) OR `d1->imageComments` contains `Unaliased MB` (CMRR text marker, e.g. `Not for diagnostic use, Unaliased MB4/PE4/LB`). Either marker alone is a deliberate vendor declaration that the acquisition is multiband; absent both, the warning still fires so true anomalies (e.g. corrupted slice timing on a non-MB scan) still surface (commit e9ff4c1).
+
 Multi-session subjects are deferred in the Python rescue: it prints a warning and skips them because the source filename doesn't encode `_ses-` and disambiguating across sessions needs acquisition-time matching that the provenance TSV doesn't surface for raw-data series.
 
 The reproinx post-pass reads `<studyRoot>/.reproin_provenance.tsv`, written by `reproinAppendProvenance` in `nii_dicom_batch.cpp` once per converted series. **Schema is gated on `-ba` mode**: default `-ba o`/`-ba n` writes 11 columns (`StudyInstanceUID, SeriesNumber, ProtocolName, SeriesDescription, StudyDescription, OutputStem, PatientAge, PatientSex, StudyDate, StudyTime, PatientID`); `-ba y` (full anon, via `reproinx.py --anonymize`) writes 6 columns and drops the five demographic/date/id fields so the hidden TSV cannot leak what the per-series JSON sidecar just stripped. The Python loader keys on header names so the mode change is transparent. The writer also detects a stale header on existing files (tab-count mismatch) and rotates to `.bak` before starting fresh — never silently mixes 6-col rows under an 11-col header, and the same peek catches pre-PatientID 10-col TSVs and rotates them too. Anything more identifying (PatientName, BirthDate, OperatorsName, AccessionNumber, ReferringPhysicianName) is deliberately withheld in every mode — the file is the privacy boundary between the C and Python sides. Only written when the filename format contains literal `%H`. PatientID lives at column 11 so the Unknown/-rescue post-pass can derive a heudiconv-style `sub-<id>` for series whose protocol did not parse as ReproIn; it is intentionally absent in `-ba y` so anonymised conversions cannot recover the subject identifier.
@@ -247,6 +272,31 @@ Deferred audit suggestions:
 - **Lazy `calloc` OOM in deident parser** (`nii_dicom.cpp:~5965`): on calloc failure, the first DeidentificationMethodCodeSequence entry's `CodeValue` is silently lost. OOM in practice is unrecoverable; deferred. A `printWarning` would be polite.
 
 Pre-existing items still open from earlier audits:
+
+### Audit findings (2026-06-06 round 3 external review)
+
+External `audit_temp.md` reviewed `audit_response.md` and the dirty worktree through `fe90be1`. Two HIGH, seven MEDIUM, three LOW. Verified each claim by direct code/empirical inspection (3D SPACE Ref in `dcm_qa_xb10/flair`, Philips QSM Ref in `gump/`, all vendor branches). Outcomes:
+
+- **H2 — 3D PhaseEncodingDirection restoration too broad. FIXED.** Empirically validated: SPACE FLAIR has `ScanningSequence "SE\IR"`, ETL=214. The fe90be1 gate (`ETL > 1` only) would emit PE for it. Tightened to `(ETL > 1) && !strstr(scanningSequence, "SE")`. Documented above under "PhaseEncodingDirection 3D multi-echo gate".
+- **M4 — Siemens SBRef physio discard was silent. FIXED.** Now prints `Skipping SBRef physio series ...` at `opts.isVerbose > 0` before the EXIT_SUCCESS so users see the discard.
+- **M5 — `MRIFSSTRUCT.dicomfile` leaked. FIXED.** Heap-allocated at `nii_dicom_batch.cpp:~11631` via `malloc()` but not freed by `nii_clrMrifsStruct()` or `nii_clrMrifsStructVector()`. Added `free(item.dicomfile); item.dicomfile = NULL;` to both, plus `mrifsStruct.dicomfile = NULL;` (and the `dicomlst`/`nDcm` siblings) immediately after the two `mrifsStruct_vector.push_back(mrifsStruct)` sites — ownership transfers cleanly to the vector entry without double-free risk. Same shallow-copy pattern as `deID_CS`.
+- **M7 — HHMMSS slice-timing `maxT` was being compared with `<` instead of `>`. FIXED.** `maxT` was initialized to `minT` and only updated when `< maxT`, so it stayed pinned at the minimum. Broke midnight-crossing detection at `nii_dicom_batch.cpp:~7857` for UIH scans (and any forced-HHMMSS path) — `(maxT - minT) > kNoonSec` became `0 > kNoonSec` = false. One-character fix.
+- **L1 — AcquisitionContrast docs stale. PARTIAL.** This session previously updated the fallback policy section but left the per-vendor description language ambiguous. The reality: per-vendor `AC=PERFUSION` is OR-with-vendor-evidence (Siemens: 6-term OR chain on sequence-name heuristics; Philips: OR with `ImageType=PERFUSION`/`aslFlags`; GE: OR with `seqName="asl"`); the fallback `setBidsFromAcquisitionContrast` returns early on AC=PERFUSION so DSC/DCE lands in `Unknown/` (commit 5ff6508 + the AC=PERFUSION-removal-from-fallback in the same review window).
+- **L2 — Stale `xaPhysioConvert` contract comment. FIXED.** Comment said "EXIT_FAILURE if nothing was emitted"; rewritten to match commit 87c93f2's empty-payload → EXIT_SUCCESS+warning behaviour.
+- **L3 — Diffusion-fallback comment overstated. FIXED.** Comment claimed two evidence sources (`numDti` OR `dim[4]>1`) but the code only checks `numDti`. Rewritten so the comment matches the gate: `numDti` is the proxy for "we actually parsed b-values" across every vendor path.
+
+Refuted / debate / defer:
+
+- **H1 — AC=PERFUSION vendor branches "standalone". REFUTED.** Direct read of all three sites confirms OR-with-vendor-evidence:
+  - `nii_dicom_batch.cpp:~8353` (Siemens): part of a 6-term OR with sequence-name heuristics (`_asl`, `fairest`, etc.).
+  - `nii_dicom_batch.cpp:~8633` (Philips): OR with `ImageType=PERFUSION` and `aslFlags != NONE`.
+  - `nii_dicom_batch.cpp:~8861` (GE): OR with `seqName="asl"`.
+  No DSC/DCE misclassification surface. CLAUDE.md's "alongside vendor-specific ASL evidence" wording is accurate.
+- **M1 — Physio rescue collision deletes source. DEBATED.** The framing is wrong. When the destination already contains a curated/manual physio file, rescue skips the move and the source stays in `derivatives/scanner/`. If `--keep-derivatives` is false the source is dropped — but the destination IS the kept curated copy. No data loss in the user's intent: the curated file wins, the auto-rescued duplicate is discarded. Documented intent; no fix.
+- **M2 — Rescue moves `.tsv.gz` and `.json` independently. DEFERRED.** Orphan-pair on partial collision IS a real edge case (move one half of a pair, skip the other) but requires pair-grouping logic in the rescue loop. Low impact in practice — collisions are user-curated overrides and orphans get caught by `_bidsguess_cleanup`'s residual sweep. Track for next reproinx-focused pass.
+- **M3 — `--keep-derivatives` not honoured for rescued physio. DEFERRED — semantic question.** The current behaviour treats `--keep-derivatives` as "retain the scanner derivatives tree that's left AFTER promotion". Honouring the flag strictly would require copy-not-move during rescue, which has its own footguns (which is the canonical copy if both exist after later edits). Will revisit when a user reports the actual confusion.
+- **M6 — Direct `readDICOM()` early-return leaks. DEFERRED.** Reaffirmed pre-existing; same accept-with-rationale as previous audits. Unified-cleanup refactor is a focused project.
+- **Carried-forward items** (MRS `kMRSAcqNone`, DeID `CodeSequenceMacro` tag-order dependency, `copyFile()`/`readDICOMx()` early-failure cleanup, hot-path `TDICOMdata` value copies). All previously accepted as deferred; no new evidence that any has crossed the threshold.
 
 ### Audit findings (2026-06-06 round 2 external review)
 

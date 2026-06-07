@@ -141,6 +141,8 @@ void nii_clrMrifsStruct() {
 	mrifsStruct.imgM = NULL;
 	free(mrifsStruct.tdti);
 	mrifsStruct.tdti = NULL;
+	free(mrifsStruct.dicomfile); // audit 2026-06-06 M5: dicomfile leaked here previously
+	mrifsStruct.dicomfile = NULL;
 	if (mrifsStruct.dicomlst != NULL) {
 		for (int n = 0; n < mrifsStruct.nDcm; n++) {
 			delete[] mrifsStruct.dicomlst[n];
@@ -171,6 +173,8 @@ void nii_clrMrifsStructVector() {
 		item.imgM = NULL;
 		free(item.tdti);
 		item.tdti = NULL;
+		free(item.dicomfile); // audit 2026-06-06 M5: dicomfile leaked here previously
+		item.dicomfile = NULL;
 		if (item.dicomlst != NULL) {
 			for (int n = 0; n < item.nDcm; n++) {
 				delete[] item.dicomlst[n];
@@ -1504,10 +1508,11 @@ static void setBidsFromAcquisitionContrast(struct TDICOMdata *d) {
 		modality = "T2w";
 		break;
 	case kMRWeightingDiffusion:
-		// Require corroborating diffusion evidence: parsed gradient count
-		// (Siemens CSA, Canon enhanced, Philips PAR/REC) OR a populated
-		// dti4D structure exposed via dim[4]>1. Otherwise a bare DIFFUSION
-		// tag produces a _dwi file with no .bval/.bvec.
+		// Require corroborating diffusion evidence: CSA.numDti gets populated
+		// from every vendor path that produces real gradients (Siemens CSA,
+		// Canon enhanced multi-frame, Philips PAR/REC, etc.) so it stands in
+		// for "we actually parsed b-values". Otherwise a bare DIFFUSION tag
+		// would produce a _dwi file with empty .bval/.bvec.
 		if (d->CSA.numDti < 1)
 			return;
 		dataType = "dwi";
@@ -3271,18 +3276,22 @@ tse3d: T2*/
 	*/
 	// if ((phPos >= 0) && (d.phaseEncodingRC == 'R') && (d.manufacturer == kMANUFACTURER_UIH)) phPos = 1 - phPos; //issue410
 	bool isSkipPhaseEncodingAxis = d.is3DAcq;
-	if (d.echoTrainLength > 1)
-		isSkipPhaseEncodingAxis = false; // issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
-	// Gate on isSkipPhaseEncodingAxis directly. Previously the outer guard
-	// was `if (!d.is3DAcq)` (issue849), which made the inner
-	// echoTrainLength>1 escape dead code: 3D MP-RAGE/SPACE were correctly
-	// skipped but 3D EPI and 3D multi-echo GRE QSM (sequences with ETL>1
-	// where in-plane PE direction IS well-defined and downstream-useful)
-	// were also dropped. The QSM consensus reference sidecars from 2022
-	// included PhaseEncodingDirection — restore that.
+	// Issue 371 + issue 849 + audit 2026-06-06 H2:
+	// 3D acquisitions normally skip PhaseEncodingDirection because the
+	// in-plane PE direction is not meaningful for volumetric MP-RAGE/SPACE.
+	// EXCEPTION: 3D sequences where ETL>1 AND the scanning sequence is NOT
+	// spin-echo. The !SE clause is load-bearing — Siemens SPACE / 3D TSE /
+	// FLAIR-SPACE report ScanningSequence "SE\IR" with ETL~200+, and we
+	// MUST keep suppressing PE for those (issue849). Restore emission for:
+	//   - 3D EPI BOLD: ScanningSequence "EP", ETL>1
+	//   - 3D multi-echo GRE QSM (Philips/GE): ScanningSequence "GR", ETL>1
+	// All three QSM consensus reference vendors (2022) emit PE direction
+	// for their multi-echo GRE QSM scans; this matches that.
+	if ((d.echoTrainLength > 1) && (strstr(d.scanningSequence, "SE") == NULL))
+		isSkipPhaseEncodingAxis = false;
 	if (!isSkipPhaseEncodingAxis) {
 		int phPos = d.CSA.phaseEncodingDirectionPositive;
-		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
+		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (phPos < 0)) {
 			// when phase encoding axis is known but we do not know phase encoding polarity
 			//  https://github.com/rordenlab/dcm2niix/issues/163
 			//  This will typically correspond with InPlanePhaseEncodingDirectionDICOM
@@ -3291,7 +3300,7 @@ tse3d: T2*/
 			else if (d.phaseEncodingRC == 'R')
 				fprintf(fp, "\t\"PhaseEncodingAxis\": \"i\",\n");
 		}
-		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos >= 0)) {
+		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (phPos >= 0)) {
 			// printf("%ld %d %d %c %d\n", d.seriesNum, d.echoTrainLength, isSkipPhaseEncodingAxis, d.phaseEncodingRC, phPos); //test issue 371
 			if (d.phaseEncodingRC == 'C') // Values should be "R"ow, "C"olumn or "?"Unknown
 				fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
@@ -3313,7 +3322,7 @@ tse3d: T2*/
 				fprintf(fp, "-");
 			fprintf(fp, "\",\n");
 		} // only save PhaseEncodingDirection if BOTH direction and POLARITY are known
-	} // if (!d.is3DAcq), e.g. only for 2D issue849
+	} // if (!isSkipPhaseEncodingAxis); skips 3D MP-RAGE/SPACE (issue849), emits for 2D + 3D ETL>1 (issue371)
 	// Slice Timing UIH or GE >>>>
 	// in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
 	if ((d.modality != kMODALITY_SEG) && (d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (h->dim[3] <= kMaxEPI3D) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
@@ -7846,7 +7855,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		for (int i = 0; i < nSlices; i++) {
 			if (d->CSA.sliceTiming[i] < minT)
 				minT = d->CSA.sliceTiming[i];
-			if (d->CSA.sliceTiming[i] < maxT)
+			if (d->CSA.sliceTiming[i] > maxT) // audit 2026-06-06 M7: was < which kept maxT stuck at minT
 				maxT = d->CSA.sliceTiming[i];
 		}
 		// printf("%d %g ---> %g..%g\n", nSlices, d->TR, minT, maxT);
@@ -7992,10 +8001,10 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		// stale (reports 1 even when the sequence is MB4), so the estimate
 		// is the truth. Override CSA but suppress the warning when we have
 		// independent positive evidence the data IS multiband:
-		//   1. d->imageTypeText contains "_MB_" — the Siemens private
+		//   1. d1->imageTypeText contains "_MB_" — the Siemens private
 		//      per-frame ImageType marker (0021,1175 / 0021,1075 after
 		//      private-creator remap; e.g. "ORIGINAL_PRIMARY_M_MB_DIS2D").
-		//   2. d->imageComments contains "Unaliased MB" — the CMRR text
+		//   2. d1->imageComments contains "Unaliased MB" — the CMRR text
 		//      marker the sequence writes into (0020,4000) ImageComments
 		//      (e.g. "Not for diagnostic use, Unaliased MB4/PE4/LB").
 		// Either signal alone is a deliberate vendor declaration that the
@@ -9878,7 +9887,10 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 
 // Top-level: read the gzip-XML payload from infname, parse out streams and
 // volume tics, and write a BIDS sidecar pair per stream. Returns
-// EXIT_SUCCESS on any successful write, EXIT_FAILURE if nothing was emitted.
+// EXIT_FAILURE only on read/parse errors that block the run; an empty
+// payload (no streams matched, or all rejected by physioBidsEmitStream)
+// returns EXIT_SUCCESS with a printWarning so a missing-sensors series
+// does not flip the outer "all done" report to kEXIT_SOME_OK_SOME_BAD.
 static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 						   const char *baseName, struct TDCMopts opts) {
 	if ((d.xaPhysioOffset <= 0) || (d.xaPhysioBytes < 20))
@@ -10040,7 +10052,7 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		// cardiac/respiratory streams (sensors not connected) is not a
 		// conversion failure for the user — return success so $? stays 0
 		// and the "Converted X of Y" partial-failure message doesn't fire.
-		printWarning("XA PhysioLogging payload empty — were physio sensors connected? (no cardiac/respiratory streams found)\n");
+		printWarning("XA PhysioLogging: no physio streams written — were sensors connected, or see any per-stream warnings above\n");
 		return EXIT_SUCCESS;
 	}
 	return EXIT_SUCCESS;
@@ -10340,7 +10352,7 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 		// with no PULS / RESP / ECG / EXT streams. Reporting it as a
 		// conversion failure (kEXIT_SOME_OK_SOME_BAD) misleads downstream
 		// scripts checking $?; return success and let the user decide.
-		printWarning("CMRR PMU payload empty — were physio sensors connected? (no PULS/RESP/ECG streams found)\n");
+		printWarning("CMRR PMU: no physio streams written — were sensors connected, or see any per-stream warnings above\n");
 		return EXIT_SUCCESS;
 	}
 	return EXIT_SUCCESS;
@@ -10394,8 +10406,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			// gzip-XML PhysioLog (parser sets isXAPhysio=true via the gzip
 			// magic). The discard gate is therefore on SeriesDescription,
 			// not on the isXAPhysio/isCMRRPhysio format flags.
-			if (strstr(dcmList[pIdx].seriesDescription, "_SBRef") != NULL)
+			if (strstr(dcmList[pIdx].seriesDescription, "_SBRef") != NULL) {
+				if (opts.isVerbose > 0)
+					printMessage("Skipping SBRef physio series %ld (%s); the paired BOLD physio is the time-series source\n", dcmList[pIdx].seriesNum, dcmList[pIdx].seriesDescription);
 				return EXIT_SUCCESS;
+			}
 			struct TDICOMdata dPhysio = dcmList[pIdx];
 			dPhysio.isRawDataStorage = false;
 			char baseName[PATH_MAX] = {""};
@@ -11279,6 +11294,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	mrifsStruct.imgM = imgM;
 
 	mrifsStruct_vector.push_back(mrifsStruct);
+	// audit 2026-06-06 M5: transfer dicomfile/dicomlst ownership to the
+	// vector entry; null the globals so nii_clrMrifsStruct() can't double-free.
+	mrifsStruct.dicomfile = NULL;
+	mrifsStruct.dicomlst = NULL;
+	mrifsStruct.nDcm = 0;
 	autoscalefactor_vector.push_back(ascalefactors);
 #else
 	free(imgM);
@@ -11649,6 +11669,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		dcmListDump(nConvert, dcmSort, dcmList, nameList, opts);
 
 		mrifsStruct_vector.push_back(mrifsStruct);
+		// audit 2026-06-06 M5: transfer dicomfile/dicomlst ownership to the
+		// vector entry; null the globals so nii_clrMrifsStruct() cannot
+		// double-free.
+		mrifsStruct.dicomfile = NULL;
+		mrifsStruct.dicomlst = NULL;
+		mrifsStruct.nDcm = 0;
 
 		return 0;
 	}
