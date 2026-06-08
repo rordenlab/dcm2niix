@@ -286,6 +286,16 @@ struct TDICOMdata {
 	// cross product downstream) without losing it to a partial overwrite.
 	float slabOrient[7];
 	int slabOrientCount;
+	// Phase 6 MRSI VOI emission: CSA VoiPhaseFoV / VoiReadoutFoV /
+	// VoiThickness give the VOI box dimensions; VoiPosition gives its
+	// center (patient LPS coords). Preserved independently of xyzMM /
+	// patientPosition so the MRSI writer (which redirects those to grid
+	// metadata) can still emit BIDS-MRS `VOI` sidecar matrix. All values
+	// default to 0; nonzero voiThickness signals "VOI is populated".
+	// +24 B addition; audited against the #877 TDICOMdata stack budget
+	// (well under the 4 KB margin).
+	float voiPhaseFoV, voiReadoutFoV, voiThickness;
+	double voiCenterLPS[3]; // double to preserve full DS-text or FD precision
 	float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor, injectedVolume, reconFilterSize; // PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 	float frameReferenceTime, frameDuration, ecat_isotope_halflife, ecat_dosage;
 	float pixelPaddingValue; // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.

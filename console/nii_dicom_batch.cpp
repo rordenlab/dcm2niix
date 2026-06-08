@@ -3331,6 +3331,46 @@ tse3d: T2*/
 		// every other MRS write leaves isMrsRef = false. So the emission is
 		// the negation of isMrsRef — water-ref ⇒ NOT water-suppressed.
 		fprintf(fp, "\t\"WaterSuppressed\": %s,\n", d.isMrsRef ? "false" : "true");
+		// BIDS-MRS VOI matrix (spec2nii standard def 'VOI') — 4x4 in patient
+		// RAS coords describing the VOI box. spec2nii builds it via
+		// dcm_to_nifti_orientation(IOP, VoiCenter, [VoiPhaseFoV, VoiReadoutFoV,
+		// VoiThickness], (1,1,1)), which after the xyzMM[0]<->[1] swap on
+		// line 90 amounts to: row1 = -IOP_row1*VoiReadoutFoV, row2 = -IOP_row2
+		// *VoiPhaseFoV, row3 = +slice_normal*VoiThickness, with LPS->RAS sign
+		// flip on the first two columns of the translation. Emit only when
+		// voiThickness is populated (both CSA VoiThickness and Enhanced DICOM
+		// SlabThickness paths fill it).
+		if (d.voiThickness > 0.0f) {
+			double r1x = d.orient[1], r1y = d.orient[2], r1z = d.orient[3];
+			double r2x = d.orient[4], r2y = d.orient[5], r2z = d.orient[6];
+			double n1 = sqrt(r1x * r1x + r1y * r1y + r1z * r1z);
+			double n2 = sqrt(r2x * r2x + r2y * r2y + r2z * r2z);
+			if (n1 > 0.001) { r1x /= n1; r1y /= n1; r1z /= n1; }
+			if (n2 > 0.001) { r2x /= n2; r2y /= n2; r2z /= n2; }
+			double sn_x = r1y * r2z - r1z * r2y;
+			double sn_y = r1z * r2x - r1x * r2z;
+			double sn_z = r1x * r2y - r1y * r2x;
+			double phaseFov = d.voiPhaseFoV > 0.0f ? d.voiPhaseFoV : d.voiThickness;
+			double readFov = d.voiReadoutFoV > 0.0f ? d.voiReadoutFoV : d.voiThickness;
+			double m00 = -r1x * readFov, m01 = -r2x * phaseFov, m02 = sn_x * d.voiThickness;
+			double m10 = -r1y * readFov, m11 = -r2y * phaseFov, m12 = sn_y * d.voiThickness;
+			double m20 = r1z * readFov, m21 = r2z * phaseFov, m22 = sn_z * d.voiThickness;
+			double t0 = -(double)d.voiCenterLPS[0];
+			double t1 = -(double)d.voiCenterLPS[1];
+			double t2 = (double)d.voiCenterLPS[2];
+			// Use %.17g for full double round-trip precision — spec2nii emits
+			// at numpy's default repr which preserves all double digits, and
+			// the comparator's nested-list parity is bytewise-strict on
+			// numbers.
+			fprintf(fp,
+					"\t\"VOI\": [[%.17g, %.17g, %.17g, %.17g], "
+					"[%.17g, %.17g, %.17g, %.17g], "
+					"[%.17g, %.17g, %.17g, %.17g], "
+					"[0.0, 0.0, 0.0, 1.0]],\n",
+					m00, m01, m02, t0,
+					m10, m11, m12, t1,
+					m20, m21, m22, t2);
+		}
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
 	// so non-MRS sidecars are unchanged.

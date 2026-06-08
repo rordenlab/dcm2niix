@@ -779,6 +779,16 @@ struct TDICOMdata clear_dicom_data() {
 	for (int i = 0; i < 7; i++)
 		d.slabOrient[i] = 0.0f;
 	d.slabOrientCount = 0;
+	// Phase 6 MRSI VOI metadata — initialized to 0 sentinel; populated by
+	// CSA VoiPhaseFoV/VoiReadoutFoV/VoiThickness/VoiPosition (classic
+	// Siemens) or VolumeLocalizationSequence SlabThickness/MidSlabPosition
+	// (Enhanced). voiThickness > 0 signals VOI is populated.
+	d.voiPhaseFoV = 0.0f;
+	d.voiReadoutFoV = 0.0f;
+	d.voiThickness = 0.0f;
+	d.voiCenterLPS[0] = 0.0;
+	d.voiCenterLPS[1] = 0.0;
+	d.voiCenterLPS[2] = 0.0;
 	strcpy(d.patientName, "");
 	strcpy(d.deidentificationMethod, "");
 	strcpy(d.patientID, "");
@@ -1392,6 +1402,36 @@ float csaMultiFloat(unsigned char buff[], int nItems, float Floats[], int *Items
 	return Floats[1];
 } // csaMultiFloat()
 
+// Phase 6 MRSI VOI emission needs full DS-text precision (float32 round of
+// the "9.43373076"-style CSA string is "9.43373108", which spec2nii parses
+// as float64 and emits losslessly). Sibling that parses CSA DS items as
+// double; mirror of csaMultiFloat layout with identical NUL-terminator
+// safety (audit round-3 M2).
+double csaMultiDouble(unsigned char buff[], int nItems, double Doubles[], int *ItemsOK) {
+	TCSAitem itemCSA;
+	*ItemsOK = 0;
+	if (nItems < 1)
+		return 0.0;
+	Doubles[1] = 0.0;
+	int lPos = 0;
+	for (int lI = 1; lI <= nItems; lI++) {
+		memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+		lPos += sizeof(itemCSA);
+		if (!littleEndianPlatform())
+			nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+		if (itemCSA.xx2_Len > 0) {
+			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
+			memcpy(cString, &buff[lPos], itemCSA.xx2_Len);
+			cString[itemCSA.xx2_Len] = '\0';
+			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
+			Doubles[lI] = atof(cString);
+			*ItemsOK = lI;
+			free(cString);
+		}
+	}
+	return Doubles[1];
+} // csaMultiDouble()
+
 int csaICEdims(unsigned char buff[]) {
 	// determine coil number from CSA header
 	// Combined images start with a letter: X_1_1_1_1_1_1_1_1_1_1_1_106
@@ -1727,16 +1767,25 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 					}
 				}
 			} else if (strcmp(tagCSA.name, "VoiPosition") == 0) {
-				// VoiPosition: voxel center in patient coordinates (3 float).
-				// Source-of-truth for the SVS path; also a fallback for any
-				// MRSI file that doesn't have CSA ImagePositionPatient
-				// (handler above wins when both are present + MRSI mode).
-				if ((tagCSA.nitems >= 3) && isnan(d->patientPosition[1])) {
-					csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-					if (itemsOK >= 3) {
-						d->patientPosition[1] = lFloats[1];
-						d->patientPosition[2] = lFloats[2];
-						d->patientPosition[3] = lFloats[3];
+				// VoiPosition: VOI center in patient coordinates (3 floats).
+				// Source-of-truth for SVS patientPosition (= voxel center).
+				// Also written to voiCenterLPS at full double precision for
+				// the MRSI VOI sidecar emission — spec2nii reads CSA DS as
+				// float64 and our float32-stored copy diverges in the 8th
+				// significant digit (audit cycle Phase 6 finding).
+				if (tagCSA.nitems >= 3) {
+					double dItems[4];
+					int dOk = 0;
+					csaMultiDouble(&buff[lPos], 3, dItems, &dOk);
+					if (dOk >= 3) {
+						d->voiCenterLPS[0] = dItems[1];
+						d->voiCenterLPS[1] = dItems[2];
+						d->voiCenterLPS[2] = dItems[3];
+						if (isnan(d->patientPosition[1])) {
+							d->patientPosition[1] = (float)dItems[1];
+							d->patientPosition[2] = (float)dItems[2];
+							d->patientPosition[3] = (float)dItems[3];
+						}
 					}
 				}
 			} else if (strcmp(tagCSA.name, "PixelSpacing") == 0) {
@@ -1771,23 +1820,33 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 					}
 				}
 			} else if (strcmp(tagCSA.name, "VoiPhaseFoV") == 0) {
-				// In-plane phase FoV (single voxel = in-plane width).
-				// xyzMM[k] defaults to 1.0f at struct init (see line ~764)
-				// rather than 0.0f, so the sentinel is "<= 1.0f" not "== 0".
-				if (d->xyzMM[1] <= 1.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-					if (v > 0.0f)
-						d->xyzMM[1] = v;
+				// In-plane phase FoV: VOI box width for both SVS and MRSI.
+				// For SVS this also becomes the voxel size (xyzMM[1]). For
+				// MRSI the voxel size came from PixelSpacing earlier, so
+				// xyzMM[1] is already set; VoiPhaseFoV here only feeds the
+				// VOI sidecar emission. Sentinel-guard the xyzMM write.
+				float vv = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (vv > 0.0f) {
+					if (d->xyzMM[1] <= 1.0f)
+						d->xyzMM[1] = vv;
+					d->voiPhaseFoV = vv;
 				}
 			} else if (strcmp(tagCSA.name, "VoiReadoutFoV") == 0) {
-				if (d->xyzMM[2] <= 1.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
-					if (v > 0.0f)
-						d->xyzMM[2] = v;
+				float vv = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (vv > 0.0f) {
+					if (d->xyzMM[2] <= 1.0f)
+						d->xyzMM[2] = vv;
+					d->voiReadoutFoV = vv;
 				}
 			} else if (strcmp(tagCSA.name, "VoiThickness") == 0) {
-				// SVS voxel slab thickness — write to both zThick (the BIDS
-				// AcquisitionVoxelSize z component) and xyzMM[3].
+				// SVS voxel slab thickness AND MRSI VOI box thickness.
+				// Always preserve in voiThickness for BIDS-MRS sidecar
+				// emission; sentinel-guard the xyzMM/zThick writes so the
+				// SliceThickness handler's (MRSI per-voxel) value isn't
+				// overwritten.
+				float vt = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				if (vt > 0.0f)
+					d->voiThickness = vt;
 				if (d->zThick == 0.0f) {
 					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
 					if (v > 0.0f) {
@@ -5081,10 +5140,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kImagePositionPatient 0x0020 + (0x0032 << 16) // Actually !
 #define kOrientationACR 0x0020 + (0x0035 << 16)
 #define kOrientation 0x0020 + (0x0037 << 16)
-// Volume Localization Sequence item: SlabOrientation FD vec3 — Philips
-// Enhanced MRS canonical orientation, used by saveDcm2NiiMRS instead of
-// per-frame (0020,0037) when populated (P2.b: 45deg_AP fix).
+// Volume Localization Sequence items (0018,9126): SlabOrientation FD vec3 —
+// Philips Enhanced MRS canonical orientation, used by saveDcm2NiiMRS instead
+// of per-frame (0020,0037) when populated (P2.b: 45deg_AP fix). SlabThickness
+// and MidSlabPosition for the Phase 6 MRSI VOI sidecar emission.
+#define kSlabThickness (uint32_t)0x0018 + (0x9104 << 16) // FD scalar
 #define kSlabOrientation (uint32_t)0x0018 + (0x9105 << 16)
+#define kMidSlabPosition (uint32_t)0x0018 + (0x9106 << 16) // FD vec3
 #define kTemporalPosition 0x0020 + (0x0100 << 16) // IS
 // #define kNumberOfTemporalPositions 0x0020+(0x0105 << 16 ) //IS public tag for NumberOfDynamicScans
 #define kTemporalResolution 0x0020 + (0x0110 << 16)	 // DS
@@ -8520,6 +8582,40 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (!isOrient)
 				dcmMultiFloat(lLength, (char *)&buffer[lPos], 6, d.orient);
 			break;
+		case kSlabThickness: {
+			// (0018,9104) FD scalar inside (0018,9126) VolumeLocalizationSequence.
+			// Three slabs per MRS file: slabs[0]=slice thickness, slabs[1]=phase
+			// FoV, slabs[2]=readout FoV (spec2nii Siemens/dicomfunctions.py:505).
+			// Counter aligned with slabOrientCount so we know which slab we're on.
+			if (lLength >= 8) {
+				float v[1] = {0.0f};
+				dcmMultiFloatDouble((size_t)lLength, &buffer[lPos], 1, v, d.isLittleEndian);
+				if (v[0] > 0.0f) {
+					if (d.voiThickness == 0.0f && d.slabOrientCount == 0)
+						d.voiThickness = v[0]; // slab[0] = thickness
+					else if (d.voiPhaseFoV == 0.0f && d.slabOrientCount == 1)
+						d.voiPhaseFoV = v[0]; // slab[1] = phase FoV
+					else if (d.voiReadoutFoV == 0.0f && d.slabOrientCount == 2)
+						d.voiReadoutFoV = v[0]; // slab[2] = readout FoV
+				}
+			}
+			break;
+		}
+		case kMidSlabPosition: {
+			// (0018,9106) FD vec3 — VOI center in patient LPS coords. Only
+			// the FIRST slab carries the position (spec2nii uses slabs[0].
+			// MidSlabPosition). Read each FD directly as double to preserve
+			// full precision (dcmMultiFloatDouble downcasts to float32).
+			if (lLength >= 24 && d.voiCenterLPS[0] == 0.0 && d.voiCenterLPS[1] == 0.0 && d.voiCenterLPS[2] == 0.0) {
+				size_t floatlen = (size_t)lLength / 3;
+				if (floatlen >= 8) {
+					d.voiCenterLPS[0] = dcmFloatDouble(8, &buffer[lPos], d.isLittleEndian);
+					d.voiCenterLPS[1] = dcmFloatDouble(8, &buffer[lPos + floatlen], d.isLittleEndian);
+					d.voiCenterLPS[2] = dcmFloatDouble(8, &buffer[lPos + 2 * floatlen], d.isLittleEndian);
+				}
+			}
+			break;
+		}
 		case kSlabOrientation: {
 			// (0018,9105) FD vec3 inside (0018,9126) VolumeLocalizationSequence.
 			// Items 0 + 1 = canonical SVS box orientation rows; item 2 is the
