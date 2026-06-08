@@ -1728,15 +1728,46 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				}
 			} else if (strcmp(tagCSA.name, "VoiPosition") == 0) {
 				// VoiPosition: voxel center in patient coordinates (3 float).
-				// Require itemsOK >= 3 — a malformed CSA with nitems=1/2 would
-				// otherwise leak stale lFloats[2..3] into d->patientPosition
-				// (audit 2026-06-07 round-3 M1).
+				// Source-of-truth for the SVS path; also a fallback for any
+				// MRSI file that doesn't have CSA ImagePositionPatient
+				// (handler above wins when both are present + MRSI mode).
 				if ((tagCSA.nitems >= 3) && isnan(d->patientPosition[1])) {
 					csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
 					if (itemsOK >= 3) {
 						d->patientPosition[1] = lFloats[1];
 						d->patientPosition[2] = lFloats[2];
 						d->patientPosition[3] = lFloats[3];
+					}
+				}
+			} else if (strcmp(tagCSA.name, "PixelSpacing") == 0) {
+				// CSA Image Header PixelSpacing -> xyzMM[1] = PxlSp[0],
+				// xyzMM[2] = PxlSp[1]. The MRSI writer applies the
+				// spec2nii-style xyzMM[0]<->[1] swap internally (line 90
+				// orientationFuncs.py); SVS path keeps the raw VoiPhase/
+				// VoiReadout convention via the F1 m_ij row-swap in
+				// saveDcm2NiiMRS. For square pixels (typical SVS) both
+				// conventions agree.
+				if (d->xyzMM[1] <= 1.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->xyzMM[1] = v;
+				}
+				if (d->xyzMM[2] <= 1.0f && tagCSA.nitems >= 2) {
+					csaMultiFloat(&buff[lPos], 2, lFloats, &itemsOK);
+					if (itemsOK >= 2 && lFloats[2] > 0.0f)
+						d->xyzMM[2] = lFloats[2];
+				}
+			} else if (strcmp(tagCSA.name, "SliceThickness") == 0) {
+				// Per-voxel slice thickness. For classic SVS this equals
+				// VoiThickness; for classic MRSI it's the per-frame slice
+				// thickness within a larger VOI slab. Always read; the
+				// VoiThickness branch below uses the same `zThick == 0` gate.
+				if (d->zThick == 0.0f) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f) {
+						d->zThick = v;
+						if (d->xyzMM[3] <= 1.0f)
+							d->xyzMM[3] = v;
 					}
 				}
 			} else if (strcmp(tagCSA.name, "VoiPhaseFoV") == 0) {
@@ -1804,6 +1835,32 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->dataPointColumns = (int)v;
+				}
+			} else if (strcmp(tagCSA.name, "Rows") == 0) {
+				// Phase 6 classic Siemens MRSI: Rows / Columns / NumberOfFrames
+				// don't appear as public tags on the CSA Non-Image Storage SOP
+				// (1.3.12.2.1107.5.9.1) used for VB/VE MRSI; spec2nii's
+				// process_siemens_csi_vx reads them from the CSA image header
+				// (dicomfunctions.py:408-410). Mirror that here so xyzDim is
+				// populated for the MRSI writer. Sentinel gate: only fill when
+				// the public-tag path left xyzDim at its <=1 default — the
+				// xyzDim defaults to 1 not 0 (see TDICOMdata init).
+				if (d->xyzDim[2] <= 1) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->xyzDim[2] = (int)v;
+				}
+			} else if (strcmp(tagCSA.name, "Columns") == 0) {
+				if (d->xyzDim[1] <= 1) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->xyzDim[1] = (int)v;
+				}
+			} else if (strcmp(tagCSA.name, "NumberOfFrames") == 0) {
+				if (d->xyzDim[3] <= 1) {
+					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					if (v > 0.0f)
+						d->xyzDim[3] = (int)v;
 				}
 			} else if (strcmp(tagCSA.name, "RepetitionTime") == 0) {
 				// VB/VE CSA reports TR in ms — same scale as DICOM (0018,0080).

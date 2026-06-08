@@ -11547,8 +11547,16 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// Phase 6: MRSI dispatch. MRSpectroscopyAcquisitionType ROW / PLANE /
 	// VOLUME carry spatial CSI data; route to saveDcm2NiiMRSI for the
 	// spatially-packed writer. Forward declared below saveDcm2NiiMRS.
+	// Classic VB/VE Siemens MRSI uses the CSA Non-Image SOP and has no
+	// public (0018,9200) tag; the CSA reader populates xyzDim from CSA
+	// `Rows` / `Columns` / `NumberOfFrames` (nii_dicom.cpp Phase 6 block).
+	// Any spatial grid > 1 voxel on either in-plane axis or > 1 frame
+	// signals MRSI in that case.
+	bool hasSpatialGridForMrsi = (d0->xyzDim[1] > 1) || (d0->xyzDim[2] > 1) ||
+								 (d0->xyzDim[3] > 1);
 	if (d0->mrsAcqType == kMRSAcqRow || d0->mrsAcqType == kMRSAcqPlane ||
-		d0->mrsAcqType == kMRSAcqVolume) {
+		d0->mrsAcqType == kMRSAcqVolume ||
+		(d0->mrsAcqType == kMRSAcqNone && hasSpatialGridForMrsi)) {
 		extern int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 								   struct TDICOMdata dcmList[],
 								   struct TSearchList *nameList,
@@ -12264,13 +12272,14 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 		return EXIT_FAILURE;
 	}
 	fclose(fp);
-	// Phase convention: spec2nii dispatches by SOPClassUID — Enhanced MR
-	// Spectroscopy Storage (1.2.840.10008.5.1.4.1.1.4.2) always goes through
-	// process_siemens_csi_xa which negates imag, regardless of software
-	// baseline (sm_enhanced is E11 but uses the Enhanced SOP and spec2nii
-	// negates anyway). The mrsAcqType gate above already restricted us to
-	// PLANE/VOLUME/ROW, which only fires for the Enhanced SOP. Negate for
-	// Siemens; leave alone for other vendors (UIH MRSI handled separately).
+	// Phase convention: spec2nii dispatches by SOPClassUID. Enhanced MR
+	// Spectroscopy Storage (1.2.840.10008.5.1.4.1.1.4.2) -> process_siemens_csi_xa
+	// negates imag. Classic CSA Non-Image (1.3.12.2.1107.5.9.1) ->
+	// process_siemens_csi_vx does NOT negate (dicomfunctions.py:406). dcm2niix's
+	// proxy: Enhanced SOP sets mrsAcqType (PLANE/VOLUME/ROW from public (0018,
+	// 9200)); classic SOP has no such public tag so mrsAcqType remains
+	// kMRSAcqNone, and the dispatch above admitted the file via the
+	// hasSpatialGridForMrsi branch. Only negate on the Enhanced/XA arm.
 	//
 	// Zero canonicalization: trailing zero-padded spectral samples in the
 	// DICOM source can have imag=-0.0 (0x80000000); spec2nii's
@@ -12279,13 +12288,20 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	// The SVS-path guard `if (imag != 0.0f) imag = -imag;` accidentally
 	// preserves -0.0 because both ±0.0 compare equal to 0.0f. For MRSI's
 	// frequent zero-padded tails that diverges by ~5% of total bytes vs
-	// spec2nii. `-x + 0.0f` canonicalises -0.0 to +0.0 per IEEE 754 (the
-	// `+0.0` add is the cheap idiom) without otherwise perturbing nonzero
-	// values; this is the right fix on the MRSI path. See sm_enhanced FID
-	// trace 2026-06-07 for the original diagnosis.
+	// spec2nii. `-x + 0.0f` canonicalises -0.0 to +0.0 per IEEE 754. The
+	// classic (no-negate) arm also needs zero canonicalization for
+	// consistency, applied below as `0.0f + raw[2*i+1]` (no negation).
 	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
-		for (size_t i = 0; i < total_samples; i++) {
-			raw[2 * i + 1] = -raw[2 * i + 1] + 0.0f;
+		if (d0->mrsAcqType != kMRSAcqNone) {
+			// Enhanced XA path: negate + canonicalize.
+			for (size_t i = 0; i < total_samples; i++) {
+				raw[2 * i + 1] = -raw[2 * i + 1] + 0.0f;
+			}
+		} else {
+			// Classic VB/VE path: no negation but still canonicalize -0.0 -> +0.0.
+			for (size_t i = 0; i < total_samples; i++) {
+				raw[2 * i + 1] = raw[2 * i + 1] + 0.0f;
+			}
 		}
 	}
 	// Transpose: byte layout in (5600,0020) differs by vendor.
@@ -12352,11 +12368,15 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	// IOP rows, -1 if it's reversed. UIH MRSI reverses (see negation in the
 	// affine build below); Siemens MRSI follows the cross.
 	hdr.pixdim[0] = (d0->manufacturer == kMANUFACTURER_UIH) ? -1.0f : 1.0f;
-	// MRSI pixdim uses spec2nii's straight (PixelSpacing[0], PixelSpacing[1],
-	// SliceThickness) ordering — NO F1-style row swap (that's an SVS-only
-	// quirk needed to match spec2nii's per-VOI axis convention).
-	hdr.pixdim[1] = (float)d0->xyzMM[1];
-	hdr.pixdim[2] = (float)d0->xyzMM[2];
+	// MRSI pixdim: Siemens swaps PixelSpacing[0]<->[1] per spec2nii line 90
+	// (matches the m_ij swap below). UIH uses raw `voxel_sizes` order.
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
+		hdr.pixdim[1] = (float)d0->xyzMM[2];
+		hdr.pixdim[2] = (float)d0->xyzMM[1];
+	} else {
+		hdr.pixdim[1] = (float)d0->xyzMM[1];
+		hdr.pixdim[2] = (float)d0->xyzMM[2];
+	}
 	hdr.pixdim[3] = (float)d0->zThick;
 	double mrsSpectralWidth = mrsSpectralWidthHz(d0);
 	hdr.pixdim[4] = (mrsSpectralWidth > 0.0) ? (float)(1.0 / mrsSpectralWidth) : 1.0f;
@@ -12392,25 +12412,79 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	if (d0->manufacturer == kMANUFACTURER_UIH) {
 		rz0 = -rz0; rz1 = -rz1; rz2 = -rz2;
 	}
-	double px = d0->xyzMM[1], py = d0->xyzMM[2], pz = d0->zThick;
+	// Siemens MRSI: apply spec2nii's PixelSpacing[0]<->[1] swap (line 90
+	// orientationFuncs.py — `xyzMM[1], xyzMM[0] = xyzMM[0], xyzMM[1]`). For
+	// non-square pixels (e.g. VB 3D CSI 11.25x9.375) this is required for
+	// sform parity; for square pixels it's a no-op. UIH's own MRSI path in
+	// spec2nii (uih.py:231) reads `voxel_sizes` directly without this swap,
+	// so we only swap for Siemens here.
+	double px, py;
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
+		px = d0->xyzMM[2];
+		py = d0->xyzMM[1];
+	} else {
+		px = d0->xyzMM[1];
+		py = d0->xyzMM[2];
+	}
+	double pz = d0->zThick;
 	double m00 = rx0 * px, m01 = ry0 * py, m02 = rz0 * pz;
 	double m10 = rx1 * px, m11 = ry1 * py, m12 = rz1 * pz;
 	double m20 = rx2 * px, m21 = ry2 * py, m22 = rz2 * pz;
 	double tx = d0->patientPosition[1];
 	double ty = d0->patientPosition[2];
 	double tz = d0->patientPosition[3];
-	// UIH MRSI total shift: spec2nii applies BOTH the standard `[0.5, 0.5, 0]
-	// @ Q44.T` half-shift (uih.py via dcm_to_nifti_orientation half_shift=True)
-	// AND an extra `[0, 0, 0.5] @ Q44.T` on the third dimension (uih.py:247).
-	// Combined: `[0.5, 0.5, 0.5] @ Q44.T` where Q44 has the LPS->RAS sign flip
-	// on rows 0,1 (so contribution to sx is -0.5*(m00+m01+m02), to sy is
-	// -0.5*(m10+m11+m12), to sz is +0.5*(m20+m21+m22) — m_{2,j} stays
-	// positive-signed).
+	// Classic Siemens MRSI: dcm2niix's CSA reader populates patientPosition
+	// from CSA VoiPosition (the SVS-path source-of-truth = grid center for
+	// MRSI). spec2nii reads CSA ImagePositionPatient instead (the first-
+	// voxel corner). The two are related by an axis-aligned shift along
+	// the row/col/slice directions, computed here in patient LPS coords:
+	//   IPP = VoiCenter
+	//          - (cols/2)*PxlSp[0]*row1_dir
+	//          - (rows/2)*PxlSp[1]*row2_dir
+	//          - ((slices-1)/2)*SliceThickness*slice_normal
+	// Empirical for the sm_classic / csi_se_3D / F3T_voi_in_mrsi corpus.
+	// Note x/y use cols/2 (whole half-grid) while z uses (slices-1)/2 —
+	// the DICOM IPP convention is first-voxel-center, so the grid corner
+	// is `cols/2 - 0.5` half-pixels from grid center; for the slice axis,
+	// VoiPosition is at the middle slice's center, not the geometric
+	// center of the whole slab.
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS &&
+		d0->mrsAcqType == kMRSAcqNone) {
+		double rxn = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
+		double ryn = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
+		double r1x = (rxn > 0.0) ? rx0 / rxn : 0.0;
+		double r1y = (rxn > 0.0) ? rx1 / rxn : 0.0;
+		double r1z = (rxn > 0.0) ? rx2 / rxn : 0.0;
+		double r2x = (ryn > 0.0) ? ry0 / ryn : 0.0;
+		double r2y = (ryn > 0.0) ? ry1 / ryn : 0.0;
+		double r2z = (ryn > 0.0) ? ry2 / ryn : 0.0;
+		double snx = r1y * r2z - r1z * r2y;
+		double sny = r1z * r2x - r1x * r2z;
+		double snz = r1x * r2y - r1y * r2x;
+		double dx = -(double)(cols / 2) * px;
+		double dy = -(double)(rows / 2) * py;
+		double dz = -(double)((slices - 1)) * 0.5 * pz;
+		tx += dx * r1x + dy * r2x + dz * snx;
+		ty += dx * r1y + dy * r2y + dz * sny;
+		tz += dx * r1z + dy * r2z + dz * snz;
+	}
+	// MRSI half-voxel shift per spec2nii:
+	//  - Classic Siemens VB/VE (process_siemens_csi_vx): half_shift=True →
+	//    `[0.5, 0.5, 0] @ Q44.T` on positions.
+	//  - Siemens Enhanced XA (process_siemens_csi_xa): half_shift=False (no
+	//    shift) — already covered by sx=sy=sz=0 default.
+	//  - UIH: half_shift=True PLUS extra `[0, 0, 0.5] @ Q44.T` on z
+	//    (uih.py:247), combined `[0.5, 0.5, 0.5] @ Q44.T`.
 	double sx = 0.0, sy = 0.0, sz = 0.0;
 	if (d0->manufacturer == kMANUFACTURER_UIH) {
 		sx = -0.5 * (m00 + m01 + m02);
 		sy = -0.5 * (m10 + m11 + m12);
 		sz = 0.5 * (m20 + m21 + m22);
+	} else if (d0->manufacturer == kMANUFACTURER_SIEMENS &&
+			   d0->mrsAcqType == kMRSAcqNone) {
+		// Classic Siemens VB/VE MRSI: half_shift=True on x and y only.
+		sx = -0.5 * (m00 + m01);
+		sy = -0.5 * (m10 + m11);
 	}
 	bool geomValid = !isnan(rx0) && !isnan(ry0) && !isinf(rx0) && !isinf(ry0) &&
 					 (px > 0.0) && (py > 0.0) && (pz > 0.0) &&
