@@ -9975,18 +9975,22 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		int n;
 		// NaN values come from physioBidsFillUniform when a uniform-rate
 		// timeline is reconstructed from sparsely-sampled input (e.g. EXT
-		// trigger pulses). Emit the literal string "nan" — matching
-		// bidsphysio / pandas — rather than the ISO "n/a" so output files
-		// are byte-identical to the reference Python implementation.
+		// trigger pulses) or when the source PMU stream had sample dropouts.
+		// Emit BIDS-canonical "n/a" — the bids-validator rejects "nan"/"NaN"/
+		// "NA"/"na" with TSV_VALUE_INCORRECT_TYPE and an explicit "did you
+		// mean 'n/a'?" hint (bids-core/src/tables.rs nan_hint_regex). Earlier
+		// versions emitted the literal "nan" to byte-match bidsphysio /
+		// pandas; that compatibility goal is retired in favour of validator
+		// compliance.
 		bool isNan = isnan(signal[i]);
 		if (trigger != NULL) {
 			if (isNan)
-				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "nan\t%d\n", (int)trigger[i]);
+				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\t%d\n", (int)trigger[i]);
 			else
 				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n", signal[i], (int)trigger[i]);
 		} else {
 			if (isNan)
-				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "nan\n");
+				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\n");
 			else
 				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\n", signal[i]);
 		}
