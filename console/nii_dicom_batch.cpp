@@ -11544,17 +11544,16 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		printError("MRS: only NIfTI output (-e n) is supported; rerun without alternate save format\n");
 		return EXIT_FAILURE;
 	}
-	// Only SVS is implemented. MRSpectroscopyAcquisitionType ROW / PLANE /
-	// VOLUME carry spatial CSI data that needs a different writer (spatial
-	// dims on NIfTI dim[1..3] instead of singleton); refuse rather than
-	// silently mislabel the output as _svs.
-	if (d0->mrsAcqType != kMRSAcqNone && d0->mrsAcqType != kMRSAcqSingleVoxel) {
-		const char *name = (d0->mrsAcqType == kMRSAcqRow)	   ? "ROW"
-						   : (d0->mrsAcqType == kMRSAcqPlane)  ? "PLANE"
-						   : (d0->mrsAcqType == kMRSAcqVolume) ? "VOLUME"
-															   : "non-SVS";
-		printError("MRS: MRSpectroscopyAcquisitionType %s (CSI/MRSI) is not yet implemented; only SINGLE_VOXEL is supported\n", name);
-		return EXIT_FAILURE;
+	// Phase 6: MRSI dispatch. MRSpectroscopyAcquisitionType ROW / PLANE /
+	// VOLUME carry spatial CSI data; route to saveDcm2NiiMRSI for the
+	// spatially-packed writer. Forward declared below saveDcm2NiiMRS.
+	if (d0->mrsAcqType == kMRSAcqRow || d0->mrsAcqType == kMRSAcqPlane ||
+		d0->mrsAcqType == kMRSAcqVolume) {
+		extern int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
+								   struct TDICOMdata dcmList[],
+								   struct TSearchList *nameList,
+								   struct TDCMopts opts);
+		return saveDcm2NiiMRSI(nConvert, dcmSort, dcmList, nameList, opts);
 	}
 	int N_pts = d0->dataPointColumns;
 	if (N_pts <= 0) {
@@ -12198,6 +12197,270 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	}
 	free(fid);
 	free(fidRef);
+	return ret;
+}
+
+// Phase 6 MRSI writer. Handles MRSpectroscopyAcquisitionType ROW / PLANE /
+// VOLUME — single-file Enhanced DICOM only for this first landing. spec2nii
+// path: dicomfunctions.py:process_siemens_csi_xa (XA Enhanced CSI). Spatial
+// dims (Rows, Columns, NumberOfFrames) packed on NIfTI dim[1..3]; spectral
+// on dim[4]. Phase convention: NumarisX (XA) negates imag, Numaris4 (VB/VE)
+// does not — mirrors the SVS path's existing `d->isXA` branch.
+//
+// DICOM byte order in (5600,0020) for Enhanced CSI: spectral varies fastest,
+// then column, then row, then slice. Numpy reshape((slices,rows,cols,spec))
+// + moveaxis((0,1,2),(2,1,0)) gives (cols,rows,slices,spec) with new[c][r][s][p]
+// = old[s][r][c][p]. NIfTI Fortran-order layout has dim[1]=cols varying
+// fastest, so we transpose with an explicit nested loop below.
+int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
+					struct TDICOMdata dcmList[],
+					struct TSearchList *nameList,
+					struct TDCMopts opts) {
+	if (nConvert < 1)
+		return EXIT_FAILURE;
+	struct TDICOMdata *d0 = &dcmList[dcmSort[0].indx];
+	if (opts.saveFormat != kSaveFormatNIfTI) {
+		printError("MRSI: only NIfTI output (-e n) is supported\n");
+		return EXIT_FAILURE;
+	}
+	if (nConvert != 1) {
+		printError("MRSI: multi-DICOM CSI stacking not yet implemented (got %d files)\n", nConvert);
+		return EXIT_FAILURE;
+	}
+	int N_pts = d0->dataPointColumns;
+	int cols = d0->xyzDim[1];
+	int rows = d0->xyzDim[2];
+	int slices = d0->xyzDim[3];
+	if (N_pts <= 0 || cols < 1 || rows < 1 || slices < 1) {
+		printError("MRSI: unexpected dims (cols=%d rows=%d slices=%d N_pts=%d)\n",
+				   cols, rows, slices, N_pts);
+		return EXIT_FAILURE;
+	}
+	size_t total_samples = (size_t)cols * (size_t)rows * (size_t)slices * (size_t)N_pts;
+	size_t total_bytes = total_samples * 2 * sizeof(float);
+	if ((size_t)d0->imageBytes != total_bytes) {
+		printError("MRSI: FID payload %zu B != expected %zu B (%dx%dx%dx%d complex64)\n",
+				   (size_t)d0->imageBytes, total_bytes, cols, rows, slices, N_pts);
+		return EXIT_FAILURE;
+	}
+	// Read the raw FID block (DICOM byte order).
+	float *raw = (float *)malloc(total_bytes);
+	if (raw == NULL)
+		return EXIT_FAILURE;
+	FILE *fp = fopen(nameList->str[dcmSort[0].indx], "rb");
+	if (fp == NULL) {
+		free(raw);
+		return EXIT_FAILURE;
+	}
+	if (fseek(fp, d0->imageStart, SEEK_SET) != 0) {
+		fclose(fp);
+		free(raw);
+		return EXIT_FAILURE;
+	}
+	if (fread(raw, 1, total_bytes, fp) != total_bytes) {
+		fclose(fp);
+		free(raw);
+		printError("MRSI: FID short read\n");
+		return EXIT_FAILURE;
+	}
+	fclose(fp);
+	// Phase convention: spec2nii dispatches by SOPClassUID — Enhanced MR
+	// Spectroscopy Storage (1.2.840.10008.5.1.4.1.1.4.2) always goes through
+	// process_siemens_csi_xa which negates imag, regardless of software
+	// baseline (sm_enhanced is E11 but uses the Enhanced SOP and spec2nii
+	// negates anyway). The mrsAcqType gate above already restricted us to
+	// PLANE/VOLUME/ROW, which only fires for the Enhanced SOP. Negate for
+	// Siemens; leave alone for other vendors (UIH MRSI handled separately).
+	//
+	// Zero canonicalization: trailing zero-padded spectral samples in the
+	// DICOM source can have imag=-0.0 (0x80000000); spec2nii's
+	// `specData[0::2] - 1j * specData[1::2]` expression returns +0.0 for both
+	// +0.0 and -0.0 raw bytes (numpy collapses the sign on complex64 store).
+	// The SVS-path guard `if (imag != 0.0f) imag = -imag;` accidentally
+	// preserves -0.0 because both ±0.0 compare equal to 0.0f. For MRSI's
+	// frequent zero-padded tails that diverges by ~5% of total bytes vs
+	// spec2nii. `-x + 0.0f` canonicalises -0.0 to +0.0 per IEEE 754 (the
+	// `+0.0` add is the cheap idiom) without otherwise perturbing nonzero
+	// values; this is the right fix on the MRSI path. See sm_enhanced FID
+	// trace 2026-06-07 for the original diagnosis.
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
+		for (size_t i = 0; i < total_samples; i++) {
+			raw[2 * i + 1] = -raw[2 * i + 1] + 0.0f;
+		}
+	}
+	// Transpose: byte layout in (5600,0020) differs by vendor.
+	//   Siemens: (slices, rows, cols, spec) C-order — spec varies fastest,
+	//     then col, then row, then slice. Permute to NIfTI Fortran-order
+	//     (cols, rows, slices, spec): new[c,r,s,p] = raw[s,r,c,p].
+	//   UIH: (cols, rows, frames, spec) C-order, then spec2nii applies
+	//     swapaxes(0,1) yielding NIfTI shape (rows, cols, frames, spec).
+	//     We write the same shape to match FID byte parity.
+	// Each element is complex64 = 8 bytes.
+	float *fid = (float *)malloc(total_bytes);
+	if (fid == NULL) {
+		free(raw);
+		return EXIT_FAILURE;
+	}
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		// UIH: DICOM (cols, rows, frames, spec) -> NIfTI Fortran (rows, cols,
+		// frames, spec). new[r,c,f,p] = raw[c,r,f,p].
+		for (int c = 0; c < cols; c++) {
+			for (int r = 0; r < rows; r++) {
+				for (int f = 0; f < slices; f++) {
+					for (int p = 0; p < N_pts; p++) {
+						size_t src = (((size_t)c * rows + r) * slices + f) * N_pts + p;
+						size_t dst = (((size_t)p * slices + f) * cols + c) * rows + r;
+						fid[2 * dst] = raw[2 * src];
+						fid[2 * dst + 1] = raw[2 * src + 1];
+					}
+				}
+			}
+		}
+	} else {
+		// Siemens / generic Enhanced MRSI.
+		for (int s = 0; s < slices; s++) {
+			for (int r = 0; r < rows; r++) {
+				for (int c = 0; c < cols; c++) {
+					for (int p = 0; p < N_pts; p++) {
+						size_t src = (((size_t)s * rows + r) * cols + c) * N_pts + p;
+						size_t dst = (((size_t)p * slices + s) * rows + r) * cols + c;
+						fid[2 * dst] = raw[2 * src];
+						fid[2 * dst + 1] = raw[2 * src + 1];
+					}
+				}
+			}
+		}
+	}
+	free(raw);
+	// Build NIfTI-1 header. MRSI: 4D base (cols, rows, slices, spec). No
+	// dynamic axis on this first landing.
+	struct nifti_1_header hdr;
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.sizeof_hdr = 348;
+	memcpy(hdr.magic, "n+1\0", 4);
+	hdr.datatype = DT_COMPLEX64;
+	hdr.bitpix = 64;
+	hdr.dim[0] = 4;
+	hdr.dim[1] = (short)cols;
+	hdr.dim[2] = (short)rows;
+	hdr.dim[3] = (short)slices;
+	hdr.dim[4] = (short)N_pts;
+	hdr.dim[5] = 1;
+	hdr.dim[6] = 1;
+	hdr.dim[7] = 1;
+	// pixdim[0] = qfac: +1 if the slice axis follows the right-hand cross of
+	// IOP rows, -1 if it's reversed. UIH MRSI reverses (see negation in the
+	// affine build below); Siemens MRSI follows the cross.
+	hdr.pixdim[0] = (d0->manufacturer == kMANUFACTURER_UIH) ? -1.0f : 1.0f;
+	// MRSI pixdim uses spec2nii's straight (PixelSpacing[0], PixelSpacing[1],
+	// SliceThickness) ordering — NO F1-style row swap (that's an SVS-only
+	// quirk needed to match spec2nii's per-VOI axis convention).
+	hdr.pixdim[1] = (float)d0->xyzMM[1];
+	hdr.pixdim[2] = (float)d0->xyzMM[2];
+	hdr.pixdim[3] = (float)d0->zThick;
+	double mrsSpectralWidth = mrsSpectralWidthHz(d0);
+	hdr.pixdim[4] = (mrsSpectralWidth > 0.0) ? (float)(1.0 / mrsSpectralWidth) : 1.0f;
+	hdr.pixdim[5] = 1.0f;
+	hdr.pixdim[6] = 1.0f;
+	hdr.pixdim[7] = 1.0f;
+	hdr.xyzt_units = NIFTI_UNITS_MM | NIFTI_UNITS_SEC;
+	hdr.vox_offset = 352.0f;
+	hdr.scl_slope = 1.0f;
+	// Affine: spec2nii uses dcm_to_nifti_orientation with half_shift=False for
+	// XA Enhanced CSI (Siemens) and half_shift=True for UIH MRSI. IOP rows in
+	// d0->orient[1..6]; third axis = cross product. Scale each axis by its
+	// corresponding xyzMM; LPS -> RAS sign flip on the first two rows.
+	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
+	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	// UIH MRSI: same direction-×-VoxelSize IOP encoding as UIH SVS — the IOP
+	// rows have non-unit magnitude (== PixelSpacing). Normalize before the
+	// m_ij scaling so xyzMM isn't double-counted. F2 follow-up for the
+	// MRSI path.
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		double r1n = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
+		double r2n = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
+		if (r1n > 1.001) { rx0 /= r1n; rx1 /= r1n; rx2 /= r1n; }
+		if (r2n > 1.001) { ry0 /= r2n; ry1 /= r2n; ry2 /= r2n; }
+	}
+	double rz0 = rx1 * ry2 - rx2 * ry1;
+	double rz1 = rx2 * ry0 - rx0 * ry2;
+	double rz2 = rx0 * ry1 - rx1 * ry0;
+	// UIH MRSI uses qfac=-1 (slice axis points OPPOSITE to the IOP cross
+	// product), encoded in spec2nii via dcm_to_nifti_orientation's pixdim[0]
+	// = -1 output. Mirror by negating the cross-product result on the UIH
+	// MRSI branch; we also set pixdim[0]=-1 below for parity.
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		rz0 = -rz0; rz1 = -rz1; rz2 = -rz2;
+	}
+	double px = d0->xyzMM[1], py = d0->xyzMM[2], pz = d0->zThick;
+	double m00 = rx0 * px, m01 = ry0 * py, m02 = rz0 * pz;
+	double m10 = rx1 * px, m11 = ry1 * py, m12 = rz1 * pz;
+	double m20 = rx2 * px, m21 = ry2 * py, m22 = rz2 * pz;
+	double tx = d0->patientPosition[1];
+	double ty = d0->patientPosition[2];
+	double tz = d0->patientPosition[3];
+	// UIH MRSI total shift: spec2nii applies BOTH the standard `[0.5, 0.5, 0]
+	// @ Q44.T` half-shift (uih.py via dcm_to_nifti_orientation half_shift=True)
+	// AND an extra `[0, 0, 0.5] @ Q44.T` on the third dimension (uih.py:247).
+	// Combined: `[0.5, 0.5, 0.5] @ Q44.T` where Q44 has the LPS->RAS sign flip
+	// on rows 0,1 (so contribution to sx is -0.5*(m00+m01+m02), to sy is
+	// -0.5*(m10+m11+m12), to sz is +0.5*(m20+m21+m22) — m_{2,j} stays
+	// positive-signed).
+	double sx = 0.0, sy = 0.0, sz = 0.0;
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		sx = -0.5 * (m00 + m01 + m02);
+		sy = -0.5 * (m10 + m11 + m12);
+		sz = 0.5 * (m20 + m21 + m22);
+	}
+	bool geomValid = !isnan(rx0) && !isnan(ry0) && !isinf(rx0) && !isinf(ry0) &&
+					 (px > 0.0) && (py > 0.0) && (pz > 0.0) &&
+					 (fabs(rx0) + fabs(rx1) + fabs(rx2) > 0.001) &&
+					 (fabs(ry0) + fabs(ry1) + fabs(ry2) > 0.001);
+	if (geomValid) {
+		hdr.srow_x[0] = (float)(-m00);
+		hdr.srow_x[1] = (float)(-m01);
+		hdr.srow_x[2] = (float)(-m02);
+		hdr.srow_x[3] = (float)(-tx + sx);
+		hdr.srow_y[0] = (float)(-m10);
+		hdr.srow_y[1] = (float)(-m11);
+		hdr.srow_y[2] = (float)(-m12);
+		hdr.srow_y[3] = (float)(-ty + sy);
+		hdr.srow_z[0] = (float)m20;
+		hdr.srow_z[1] = (float)m21;
+		hdr.srow_z[2] = (float)m22;
+		hdr.srow_z[3] = (float)(tz + sz);
+		hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT;
+	} else {
+		printWarning("MRSI: spatial tags missing or invalid; emitting sform_code=0\n");
+		hdr.sform_code = NIFTI_XFORM_UNKNOWN;
+	}
+	hdr.qform_code = NIFTI_XFORM_UNKNOWN;
+	if (nii_ImgBytes(hdr) != total_bytes) {
+		printError("MRSI: header byte count (%zu) != FID buffer (%zu); aborting\n",
+				   nii_ImgBytes(hdr), total_bytes);
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	// BIDS suffix _mrsi (BEP-MRS).
+	strcpy(d0->CSA.bidsDataType, "mrs");
+	strcpy(d0->CSA.bidsEntitySuffix, "_mrsi");
+	char pathoutname[2048] = "";
+	if (nii_createFilename(*d0, pathoutname, opts) == EXIT_FAILURE) {
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	if (strlen(pathoutname) < 1) {
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0);
+	if (ret == EXIT_SUCCESS) {
+		struct TDTI4D dti4D_local;
+		initTDTI4D(&dti4D_local);
+		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
+					  nameList->str[dcmSort[0].indx], &dti4D_local);
+	}
+	free(fid);
 	return ret;
 }
 
