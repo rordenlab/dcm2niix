@@ -3352,8 +3352,10 @@ tse3d: T2*/
 			double sn_z = r1x * r2y - r1y * r2x;
 			double phaseFov = d.voiPhaseFoV > 0.0f ? d.voiPhaseFoV : d.voiThickness;
 			double readFov = d.voiReadoutFoV > 0.0f ? d.voiReadoutFoV : d.voiThickness;
-			double m00 = -r1x * readFov, m01 = -r2x * phaseFov, m02 = sn_x * d.voiThickness;
-			double m10 = -r1y * readFov, m11 = -r2y * phaseFov, m12 = sn_y * d.voiThickness;
+			// LPS->RAS sign flip applies to ALL of rows 0 and 1 (including the
+			// slice-normal column). Row 2 stays positive.
+			double m00 = -r1x * readFov, m01 = -r2x * phaseFov, m02 = -sn_x * d.voiThickness;
+			double m10 = -r1y * readFov, m11 = -r2y * phaseFov, m12 = -sn_y * d.voiThickness;
 			double m20 = r1z * readFov, m21 = r2z * phaseFov, m22 = sn_z * d.voiThickness;
 			double t0 = -(double)d.voiCenterLPS[0];
 			double t1 = -(double)d.voiCenterLPS[1];
@@ -12522,9 +12524,16 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 		sz = 0.5 * (m20 + m21 + m22);
 	} else if (d0->manufacturer == kMANUFACTURER_SIEMENS &&
 			   d0->mrsAcqType == kMRSAcqNone) {
-		// Classic Siemens VB/VE MRSI: half_shift=True on x and y only.
+		// Classic Siemens VB/VE MRSI: spec2nii applies `[0.5, 0.5, 0] @ Q44.T`
+		// across ALL three position components. For axis-aligned scans
+		// (sm_classic identity IOP) the z component falls out because
+		// Q44[2,0]=Q44[2,1]=0; but for rotated VB/VE 3D CSI (e.g.
+		// csi_se_3D_C>S23.5>T20.3) the rotated IOP makes Q44[2,0] and
+		// Q44[2,1] nonzero, so the slice-axis translation picks up a
+		// real -0.5*(m20+m21) contribution. Mirror that here.
 		sx = -0.5 * (m00 + m01);
 		sy = -0.5 * (m10 + m11);
+		sz = 0.5 * (m20 + m21);
 	}
 	bool geomValid = !isnan(rx0) && !isnan(ry0) && !isinf(rx0) && !isinf(ry0) &&
 					 (px > 0.0) && (py > 0.0) && (pz > 0.0) &&
