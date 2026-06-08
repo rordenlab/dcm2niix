@@ -4,11 +4,19 @@
 
 ---
 
-## Close-out scope (2026-06-07 deadline)
+## Close-out scope (CLOSED 2026-06-08)
 
-This cycle ships a **scoped MRS converter**, not the full corpus-green plan. The
-original "every vendor family green" target is documented below as the
-long-term vision; the line below is what is in-scope for this release.
+**Status: Phase 6 closed.** Full corpus is **30/40 PASS, 0 FAIL, 10 SKIP**
+through `--with-mrs-post`; **23/40 PASS bare**. Every non-SKIP dataset
+passes byte-parity vs spec2nii on FID + sform + dim + pixdim + suffix
++ JSON sidecar. The 10 SKIPs are bounded by spec2nii reference
+availability locally (9 orientation_tests where dcm2niix actually
+handles the input fine + 1 HYPER converted_dcm that routes through
+SPAR/SDAT canonically); see the SKIP-state overview block below for
+the full breakdown.
+
+The original close-out scope below (round-2 / round-3 deadlines and
+beyond) is preserved as a journal of how the cycle arc unfolded.
 
 ### Shipping this cycle (quick finishers)
 
@@ -569,20 +577,62 @@ P3.1 is one CSA-equivalent extractor away from PASS — UIH has its own (0065,xx
 - [ ] P3.a UIH SVS sform via private-tag orientation extractor
 - [ ] P3.b UIH 2D + 3D MRSI parsing (Phase 4 dispatch)
 
-### Current session checkpoint (2026-06-07 round-5 close-out)
+### Current session checkpoint (2026-06-08 Phase 6 close-out)
 
 Cumulative scoreboard against the 40-dataset corpus, re-measured live
-after the round-5 audit fixes + `tools/mrs_post.py` landed:
+after Phase 6 (MRSI writer + classic Siemens CSI + VOI sidecar + VB/VE
+3D CSI sz half-shift) landed:
 
-**Bare** `spec2nii_compare.py --all`: **15 pass, 15 fail, 10 skipped**.
-**With `--with-mrs-post`**: **22 pass, 8 fail, 10 skipped**.
+**Bare** `spec2nii_compare.py --all`: **23 pass, 7 fail, 10 skipped**.
+**With `--with-mrs-post`**: **30 pass, 0 fail, 10 skipped** — every
+non-SKIP dataset PASSes.
 
 | Vendor | Total | Bare PASS | mrs-post PASS | FAIL | SKIP |
 |---|---|---|---|---|---|
-| Siemens | 19 | 7 | 13 (+6 sLASER multi-DICOM: dkd mode=8 wrs1/wrs2 + dkd2 mode=8 wrsw1pw3 (x2) + dkd2 mode=2 wrsw4 (x2)) | 6 (all MRSI / CSI — Phase 6) | 0 |
-| Philips | 18 | 7 | 8 (+press_mega MEGA-PRESS reshape (1024,144,2) + 9-frame `_mrsref` companion) | 0 | 10 (1 HYPER spec2nii ref errors + 9 `spar_dcm_orientation_tests/` Raw Data Storage non-MRS) |
-| UIH | 3 | 1 | 1 | 2 (CSI 2D + 3D — MRSI Phase 6) | 0 |
-| **TOTAL** | **40** | **15** | **22** | **8** | **10** |
+| Siemens | 19 | 13 (+VB/VE 3D CSI + sm_classic + sm_enhanced + rk_enhanced + F3T_voi_in_mrsi vs round-5) | 19 (+6 sLASER multi-DICOM via mrs-post) | 0 | 0 |
+| Philips | 18 | 7 | 8 (+press_mega via mrs-post) | 0 | 10 (1 HYPER + 9 spar_dcm_orientation_tests) |
+| UIH | 3 | 3 | 3 | 0 | 0 |
+| **TOTAL** | **40** | **23** | **30** | **0** | **10** |
+
+### SKIP-state overview (revised 2026-06-08)
+
+The 10 SKIPs split into two truly different categories — the prior
+"Raw Data Storage non-MRS" claim on the orientation_tests was wrong:
+
+- **9 `philips/spar_dcm_orientation_tests/4002..4802`** — Each directory
+  carries both `MRs.*.dcm` (SOP `1.2.840.10008.5.1.4.1.1.4.2` Enhanced
+  MR Spectroscopy Storage, the actual MRS data) AND `RAW.*.dcm` (SOP
+  `1.2.840.10008.5.1.4.1.1.66` Raw Data Storage, proprietary
+  supplementary data). The MRs files ARE valid Enhanced MRS DICOMs.
+  - **dcm2niix handles them**: pointed at one of the `MRs.*.dcm` files
+    it emits a clean `_svs` NIfTI + BIDS-MRS sidecar with
+    `MRSpectroscopyAcquisitionType: SINGLE_VOXEL` and well-populated
+    metadata (verified on 4002, 4302; the rotation isolations are
+    structurally identical).
+  - **spec2nii fails locally** with
+    `AttributeError: 'Dataset' object has no attribute 'PixelMeasuresSequence'`
+    on these files in this environment. The SKIPs reflect a
+    spec2nii-side limitation, NOT a dcm2niix gap. Comparator can't run
+    a reference parity check without spec2nii output.
+  - **Recommendation**: out of scope for parity validation; track as
+    "dcm2niix-handles, no live reference". A separate validation pass
+    (e.g. compare to SPAR/SDAT-derived NIfTI, or smoke-test that
+    dcm2niix output is well-formed BIDS-MRS) would close them.
+- **1 `philips/hyper/converted_dcm.dcm`** — HBCD HYPER edit sequence.
+  Currently neither converter handles it locally: spec2nii errors on
+  the reference path; dcm2niix's parser rejects the DICOM with
+  "No valid DICOM images were found" (the file format isn't recognized
+  as an MR Spectroscopy SOP). The companion `.SDAT`/`.SPAR` carry the
+  real spectroscopy data; the `.dcm` is the partial "classic DICOM
+  export". **Recommendation**: out of scope for parity validation;
+  investigate parser gate if user demand surfaces. spec2nii has a
+  dedicated SDAT/SPAR path that handles HYPER directly — that's the
+  canonical conversion route for this data anyway.
+
+In short: no SKIPped dataset is a dcm2niix capability gap that can be
+closed in C. The 9 orientation_tests are dcm2niix-passable but
+comparator-bound by spec2nii. The 1 HYPER is genuinely out-of-scope
+DICOM and routes through SPAR/SDAT in the canonical workflow.
 
 Delta vs prior published 3/40 scoreboard (which was a snapshot before
 M4 RxCoil + P2.b SlabOrientation + P2.b IOP-negation + the round-4
@@ -639,11 +689,11 @@ Commits in this session:
 - (this) Round-4 follow-on — K1 RxCoil comment-vs-code mismatch fixed: comment now accurately states "later nonempty wins; corpus has no divergent case" instead of the misleading "first nonempty wins" (audit-only docs fix, no behaviour change). spec_plan scoreboard refreshed against live `spec2nii_compare.py --all`: actual count is **15/40 PASS** (not the 3/40 the prior scoreboard claimed — 12 datasets had silently transitioned PASS via M4 RxCoil + P2.b IOP-negation + SlabOrientation without anyone re-running the comparator). press_mega lost as expected post-revert; one net +12 PASS for the cycle.
 
 ### Phase 4 MRSI / Unloc / mrsref
-- [ ] P4.1 `saveDcm2NiiMRS` refactor — **DEFERRED to Phase 6** (precondition for MRSI; ~250-line monolith split)
-- [ ] P4.2 `kMRSAcqMRSI` wiring — **DEFERRED to Phase 6**
-- [ ] P4.3 Per-vendor MRSI parity — **DEFERRED to Phase 6** (5 Siemens + 2 UIH + 1 voi_in_mrsi)
+- [ ] P4.1 `saveDcm2NiiMRS` refactor — still open. MRSI shipped as a sibling `saveDcm2NiiMRSI` rather than via P4.1's extracted helpers; the refactor would still be useful for code-health but is no longer a precondition for anything. **NICE TO HAVE**.
+- [x] P4.2 `kMRSAcqMRSI` wiring — done in Phase 6 (dispatch on `mrsAcqType == ROW/PLANE/VOLUME` plus the `mrsAcqType==None && hasSpatialGrid` classic-Siemens path).
+- [x] P4.3 Per-vendor MRSI parity — done. Siemens VB/VE classic CSI, Siemens Enhanced CSI, UIH 2D + 3D MRSI, and `voi_in_mrsi` all PASS. The two VB/VE 3D CSI rotated phantoms (`csi_se_3D_C>S23.5>T20.3`, `csi_se_3D_c>s23.5>t20.3`) PASS via the slice-axis half-shift `sz = 0.5*(m20+m21)`.
 - [x] P4.4 `_mrsref` pairing — done (Philips 2× companion + Siemens / Philips standalone water-ref relabeling)
-- [ ] P4.5 `_unloc` — **DEFERRED to Phase 6** (no corpus driver yet)
+- [ ] P4.5 `_unloc` — still **DEFERRED** (no corpus driver yet).
 
 ### Phase 5 Hardening
 - [ ] `dcm_qa_mrs` Ref refresh + `/regressiontest` integration — **DEFERRED to Phase 6** (depends on stable MRS corpus + MRSI landing first)
@@ -651,12 +701,44 @@ Commits in this session:
 - [x] **F4 (close-out)** README feature matrix updated — line 35 names "Siemens VB/VE/XA SVS, Philips classic SVS, UIH SVS" plus the `_mrsref` companion / standalone-relabel behaviour
 - [ ] Final diff report archived — **DEFERRED to Phase 6**
 
-### Phase 6 follow-up (post-release backlog)
+### Phase 6 — CLOSED 2026-06-08
 
-See the "Deferred to Phase 6" list under **Close-out scope** at the top of
-this file for the running backlog. Phase 6 starts with the
-`saveDcm2NiiMRS` extraction refactor (P4.1) as the precondition for MRSI
-dispatch.
+**Bare scoreboard moved from 15/40 → 23/40 PASS in one cycle; with
+mrs-post 22/40 → 30/40 PASS with zero FAILs.** All vendor families
+that have parsable corpus data now have at least one PASS, and
+every Siemens/Philips/UIH SVS or MRSI variant in the comparator's
+40-dataset inventory is either PASS (via bare or `--with-mrs-post`)
+or SKIP-by-reference.
+
+Phase 6 commits on `dcm2niix@development`:
+- `c952caf` — MRSI writer foundation (Enhanced CSI + UIH MRSI)
+- `e7ad849` — Classic Siemens MRSI (CSA Rows/Cols/NFrames extraction +
+  IPP shift from VoiPosition + Siemens PixelSpacing[0]<->[1] swap)
+- `fda7369` — VOI sidecar emission (CSA + Enhanced VolumeLocalization
+  Sequence paths) + double-precision VOI metadata (csaMultiDouble
+  helper + voiCenterLPS as double + %.17g emission for round-trip)
+- `00b28b4` — VB/VE 3D CSI sz half-shift + VOI slice-normal sign flip
+
+Companion `dcm_qa_mrs@main` commit:
+- `72ca1c2` — nested-list `_floats_close` (extends scalar / flat-array
+  tolerance to NxM matrices like VOI's 4x4)
+
+Phase 6 follow-up backlog (post-close-out, optional):
+- **P4.1 `saveDcm2NiiMRS` refactor**: now optional, not a blocker. The
+  MRSI writer landed as a sibling function (`saveDcm2NiiMRSI`) which
+  duplicates ~30% of the SVS writer's affine/header logic. Extracting
+  shared helpers (`mrsValidateMembers`, `mrsBuildHeader`,
+  `mrsWriteFID`, `mrsWriteSidecar`) would reduce duplication but
+  doesn't change observable behaviour.
+- **HYPER / orientation_tests parity validation**: see SKIP-state
+  overview above. dcm2niix handles the 9 orientation_tests; spec2nii
+  errors locally. A non-spec2nii validation path (SPAR/SDAT-derived
+  reference, or BIDS-MRS well-formedness check) could close those.
+- **`csi_se` non-3D VB/VE CSI variants** outside the comparator
+  inventory (e.g. 2D `csi_se_C>S23.5>T20.3` rather than 3D): same
+  pipeline should handle them by inspection but not validated in
+  the corpus.
+- **P4.5 `_unloc`** suffix: no corpus driver. Defer until one appears.
 
 ---
 
