@@ -198,7 +198,7 @@ Siemens pixdim/m_ij swap `xyzMM[0]<->[1]` mirrors spec2nii orientationFuncs.py:9
 
 **`tools/mrs_post.py` interface** (round-5 cycle 2026-06-07): `python3 tools/mrs_post.py <bundled.nii> --dicoms <dicom-dir-or-file>`. Three cases auto-detected from sidecar Manufacturer + source DICOM private tags: (a) Siemens sLASER DKD multi-DICOM ref split (mode=8 and mode=2 layouts; mirrors spec2nii `identify_integrated_references`), (b) Philips MEGA-PRESS reshape ON/OFF + ref crop (mirrors spec2nii `_process_philips_svs_new` MEGA branch), (c) `_mrsref` companion sanity check (pass-through validation for the Philips classic 2× case dcm2niix's C side already emits paired). Outputs are written next to the input NIfTI with spec2nii-style filename suffixes (`_svs`, `_svs_rf_off`, `_svs_rf_grads_ovs_off`, `_mrsref`). Sidecar `BidsGuess` stays canonical (`_svs` / `_mrsref`) so downstream BIDS tooling routes correctly. Tested via `dcm_qa_mrs/spec2nii_compare.py --with-mrs-post`: 22/40 PASS (vs 15/40 bare).
 
-Validated against spec2nii XA60 SVS series (`/Users/chris/src/spec2nii/...`): byte-identical FID + sform float32-precise. Per-vendor parity matrix tracked in `spec_plan.md`.
+Validated against spec2nii XA60 SVS series (`/Users/chris/src/spec2nii/...`): byte-identical FID + sform float32-precise. Per-vendor parity matrix and the full institutional memory live in [`dcm_qa_mrs/caveats.md`](https://github.com/neurolabusc/dcm_qa_mrs).
 
 Attribution: ported from spec2nii (BSD-3-Clause, William Clarke, U. Oxford 2020).
 

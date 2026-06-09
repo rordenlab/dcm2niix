@@ -3490,7 +3490,10 @@ tse3d: T2*/
 		fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"COL\",\n");
 	if (d.phaseEncodingRC == 'R')
 		fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n");
-	if ((opts.isGuessBidsFilename) && (strlen(d.CSA.bidsDataType)) && (strlen(d.CSA.bidsDataType)))
+	// Audit round-6 LOW 1: second guard was a copy of the first (both
+	// checked bidsDataType), so a path that set datatype but left
+	// bidsEntitySuffix empty would emit `["mrs",""]`. Check both fields.
+	if ((opts.isGuessBidsFilename) && (strlen(d.CSA.bidsDataType)) && (strlen(d.CSA.bidsEntitySuffix)))
 		fprintf(fp, "\t\"BidsGuess\": [\"%s\",\"%s\"],\n", d.CSA.bidsDataType, d.CSA.bidsEntitySuffix);
 	// json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);
 
@@ -11575,7 +11578,8 @@ static double siemensMrsTotalEchoTimeUs(const char *filename, struct TDICOMdata 
 // SVS, Philips classic SVS, and UIH SVS; emits `_svs` and `_mrsref` (Philips
 // 2× companion via the parallel fidRef buffer + standalone water-reference
 // relabel via `wrsoff` / `no_Water_Suppression` series-name tokens). MRSI
-// (`_mrsi`) and `_unloc` are deferred to Phase 4 — see `spec_plan.md`.
+// `_unloc` is deferred — no corpus driver. `_mrsi` is now handled by the
+// sibling `saveDcm2NiiMRSI()` below; this function only writes SVS.
 static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 						  struct TDICOMdata dcmList[],
 						  struct TSearchList *nameList,
@@ -11628,8 +11632,8 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// Multiplier must agree across N_files; otherwise we drop to nDynPerFile=1
 	// and the per-file mismatch is caught by the FID-size check in the read
 	// loop. MEGA-PRESS edit-on/off + reference-frame interpretation moves to
-	// tools/mrs_post.py per the MRS split policy (CLAUDE.md "MRS split
-	// policy" / spec_plan.md "Next-cycle goal"); press_mega lands here as
+	// tools/mrs_post.py per the MRS split policy (see CLAUDE.md "MRS split
+	// policy" and dcm_qa_mrs/caveats.md); press_mega lands here as
 	// raw dim[5]=297 (288 main + 9 ref frames, no reorder, no drop), and
 	// the Python tool reshapes to (1024, 144, 2) with edit ON/OFF + paired
 	// _mrsref in post.
@@ -11855,7 +11859,7 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		// We accept any integer multiple — read only the first
 		// `bytes_per_dicom` (the main FID) and ignore the rest. spec2nii
 		// splits the trailing chunk into a separate _ref output; doing the
-		// same is Phase 2.b work tracked in spec_plan.md.
+		// same is Philips multi-coil follow-on; see dcm_qa_mrs/caveats.md.
 		if ((size_t)d->imageBytes < bytes_per_dicom_total ||
 			((size_t)d->imageBytes % bytes_per_dicom_total) != 0) {
 			printError("MRS: DICOM %d has FID size %d, expected %zu (or integer multiple)\n",
@@ -12290,6 +12294,15 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 				   cols, rows, slices, N_pts);
 		return EXIT_FAILURE;
 	}
+	// Audit round-6 HIGH 3: refuse any per-axis dim above the NIfTI-1 int16
+	// limit BEFORE the (size_t)cols*rows*slices*N_pts multiplication, so a
+	// pathological input can't wrap the allocation size and silently pass
+	// the post-malloc byte-count check.
+	if (cols > 32767 || rows > 32767 || slices > 32767 || N_pts > 32767) {
+		printError("MRSI: per-axis dim exceeds NIfTI-1 limit (cols=%d rows=%d slices=%d N_pts=%d)\n",
+				   cols, rows, slices, N_pts);
+		return EXIT_FAILURE;
+	}
 	size_t total_samples = (size_t)cols * (size_t)rows * (size_t)slices * (size_t)N_pts;
 	size_t total_bytes = total_samples * 2 * sizeof(float);
 	if ((size_t)d0->imageBytes != total_bytes) {
@@ -12318,6 +12331,13 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 		return EXIT_FAILURE;
 	}
 	fclose(fp);
+	// Audit round-6 HIGH 4: byte-swap explicit-VR big-endian payloads to
+	// host order before phase conversion / transpose. SVS writer does the
+	// same just above its phase block (~11922). Rare in practice but BIDS
+	// validity requires it when the source is.
+	if (!d0->isLittleEndian) {
+		nifti_swap_4bytes(total_samples * 2, raw);
+	}
 	// Phase convention: spec2nii dispatches by SOPClassUID. Enhanced MR
 	// Spectroscopy Storage (1.2.840.10008.5.1.4.1.1.4.2) -> process_siemens_csi_xa
 	// negates imag. Classic CSA Non-Image (1.3.12.2.1107.5.9.1) ->
@@ -12571,6 +12591,21 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	// BIDS suffix _mrsi (BEP-MRS).
 	strcpy(d0->CSA.bidsDataType, "mrs");
 	strcpy(d0->CSA.bidsEntitySuffix, "_mrsi");
+	// Audit round-6 HIGH 1: classic Siemens VB/VE MRSI arrives here with
+	// mrsAcqType==kMRSAcqNone (no public (0018,9200) on the CSA Non-Image
+	// SOP). Without correction, the sidecar block at nii_SaveBIDSX would
+	// fall through to ScanningSequence: "Unlocalized MRS" and omit
+	// MRSpectroscopyAcquisitionType — yielding `_mrsi` filename with
+	// SVS/Unlocalized sidecar semantics. Derive from xyzDim instead so
+	// the sidecar emission picks the right MRSI branch.
+	if (d0->mrsAcqType == kMRSAcqNone) {
+		if (d0->xyzDim[3] > 1)
+			d0->mrsAcqType = kMRSAcqVolume;
+		else if (d0->xyzDim[2] > 1)
+			d0->mrsAcqType = kMRSAcqPlane;
+		else if (d0->xyzDim[1] > 1)
+			d0->mrsAcqType = kMRSAcqRow;
+	}
 	char pathoutname[2048] = "";
 	if (nii_createFilename(*d0, pathoutname, opts) == EXIT_FAILURE) {
 		free(fid);

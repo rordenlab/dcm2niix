@@ -1388,8 +1388,14 @@ float csaMultiFloat(unsigned char buff[], int nItems, float Floats[], int *Items
 		if (itemCSA.xx2_Len > 0) {
 			// Allocate +1 byte for an explicit NUL — atof needs a terminator,
 			// and CSA item payloads are not guaranteed to carry one inside
-			// xx2_Len (audit 2026-06-07 round-3 M2).
+			// xx2_Len (audit 2026-06-07 round-3 M2). On malloc failure skip
+			// this item without touching Floats[lI] or advancing ItemsOK
+			// (audit 2026-06-08 round-6 M3).
 			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
+			if (cString == NULL) {
+				lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
+				continue;
+			}
 			memcpy(cString, &buff[lPos], itemCSA.xx2_Len); // TPX memcpy(&cString, &buff[lPos], sizeof(cString));
 			cString[itemCSA.xx2_Len] = '\0';
 			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
@@ -1421,6 +1427,10 @@ double csaMultiDouble(unsigned char buff[], int nItems, double Doubles[], int *I
 			nifti_swap_4bytes(1, &itemCSA.xx2_Len);
 		if (itemCSA.xx2_Len > 0) {
 			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
+			if (cString == NULL) {
+				lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
+				continue; // audit round-6 M3: skip-on-OOM (siblings csaMultiFloat / csaICEdims)
+			}
 			memcpy(cString, &buff[lPos], itemCSA.xx2_Len);
 			cString[itemCSA.xx2_Len] = '\0';
 			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
@@ -1447,6 +1457,8 @@ int csaICEdims(unsigned char buff[]) {
 		// guaranteed to carry one inside xx2_Len. Mirrors the csaMultiFloat
 		// fix at line ~1373 (audit 2026-06-07 round-3 M2 sibling).
 		char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
+		if (cString == NULL)
+			return -1; // audit round-6 M3: skip-on-OOM (sibling csaMultiFloat / csaMultiDouble)
 		memcpy(cString, &buff[lPos], itemCSA.xx2_Len);
 		cString[itemCSA.xx2_Len] = '\0';
 		lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
