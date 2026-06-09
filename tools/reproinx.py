@@ -992,8 +992,37 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
             sn = 0
         prov_idx[(suid, sn)] = r
 
+    # Two-pass design (revised 2026-06-08). The previous one-pass scheme
+    # iterated `sorted(unknown.glob("*.json"))` (alphabetical by filename)
+    # and gave the first file at a stem the un-numbered name, with later
+    # collisions getting `_run-01`, `_run-02`, ... The result was order-
+    # dependent on string-sort of the dcm2niix series-prefixed filenames:
+    # works for series 30 vs 31 ("30..." < "31..."), breaks for any
+    # cross-decade pair (e.g. series 2 vs 10 → "10..." < "2..."). It also
+    # produced asymmetric output (one file `_svs`, sibling `_run-01_svs`)
+    # which downstream tooling has to special-case.
+    #
+    # New scheme:
+    #   Pass 1 — for every json in Unknown/, compute (target_dir,
+    #            base_stem, run_template, src_stem_name, SeriesNumber).
+    #            Skip-on-validation-error stays as before.
+    #   Pass 2 — group by (target_dir, base_stem). Single-member groups
+    #            land at base_stem (un-numbered, identical to before).
+    #            Multi-member groups land at `_run-NN` for every member,
+    #            with NN assigned by ascending SeriesNumber (scanner
+    #            acquisition order, deterministic and reproducible). The
+    #            "implicit run-zero" sibling at base_stem is no longer
+    #            emitted — heudiconv-compatible.
+    #
+    # An existing on-disk family at base_stem (from a prior run, or from a
+    # C-side direct write) is treated as another member of the group
+    # WITHOUT renaming it, so re-runs don't shuffle previously-numbered
+    # output. The new rescues then get `_run-NN` starting at the lowest
+    # free index. This is the safe choice; perfect re-numbering would
+    # require touching pre-existing files which has its own surprises.
     rescued = 0
     task_re = re.compile(r"task-([A-Za-z0-9]+)")
+    candidates: list[dict] = []  # one entry per rescuable json
     for jp in sorted(unknown.glob("*.json")):
         try:
             data = _load_json(jp)
@@ -1058,29 +1087,69 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
             run_template = f"{sub_token}_{ses_token}{entity_head}_run-{{idx:02d}}_{entity_tail}"
         else:
             run_template = f"{sub_token}_{ses_token}{entity_suffix}_run-{{idx:02d}}"
-
-        def _has_family(stem: str) -> bool:
-            return any((target_dir / f"{stem}{ext}").exists()
-                       for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"))
-
-        # Choose run-NN suffix collectively across the file family so all
-        # siblings (.nii/.nii.gz/.json/.bvec/.bval) land at the same stem.
-        # First-collision case is _run-01 (not _run-02); the un-numbered
-        # file already on disk is the implicit run-zero / canonical copy.
-        chosen = f"{sub_token}_{ses_token}{entity_suffix}"
-        if _has_family(chosen):
-            chosen = ""
-            for idx in range(1, 100):
-                candidate = run_template.format(idx=idx)
-                if not _has_family(candidate):
-                    chosen = candidate
-                    break
-            if not chosen:
-                # Pathological (>99 collisions). Leave the file in
-                # Unknown/ where the .bidsignore sweep will catch it.
-                continue
-        # Identify the source stem (strip the .json extension).
+        base_stem = f"{sub_token}_{ses_token}{entity_suffix}"
         src_stem_name = jp.name[:-len(".json")]
+        candidates.append({
+            "target_dir": target_dir,
+            "base_stem": base_stem,
+            "run_template": run_template,
+            "src_stem_name": src_stem_name,
+            "series_number": sn,
+            "json_name": jp.name,
+        })
+
+    # Pass 2: group by (target_dir, base_stem), assign final names, move.
+    def _family_exists(target_dir: Path, stem: str) -> bool:
+        return any((target_dir / f"{stem}{ext}").exists()
+                   for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"))
+
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for c in candidates:
+        key = (str(c["target_dir"]), c["base_stem"])
+        groups.setdefault(key, []).append(c)
+
+    for (target_dir_str, base_stem), members in groups.items():
+        target_dir = Path(target_dir_str)
+        existing_at_base = _family_exists(target_dir, base_stem)
+        if len(members) == 1 and not existing_at_base:
+            # Single source for this stem AND no on-disk collision —
+            # un-numbered name, exactly as before.
+            members[0]["chosen"] = base_stem
+        else:
+            # Multi-member group, OR single-member colliding with an
+            # existing on-disk family. Sort members by SeriesNumber
+            # ascending (scanner acquisition order) and assign run-NN
+            # starting at the lowest free index. The pre-existing file
+            # at base_stem (if any) is left untouched — see policy note
+            # above.
+            members.sort(key=lambda c: c["series_number"])
+            # Find run indices not already occupied on disk.
+            taken = set()
+            for idx in range(1, 100):
+                candidate = members[0]["run_template"].format(idx=idx)
+                if _family_exists(target_dir, candidate):
+                    taken.add(idx)
+            free_iter = (i for i in range(1, 100) if i not in taken)
+            ok = True
+            for m in members:
+                try:
+                    nxt = next(free_iter)
+                except StopIteration:
+                    ok = False
+                    break
+                m["chosen"] = m["run_template"].format(idx=nxt)
+            if not ok:
+                # >99 collisions — pathological. Leave members in
+                # Unknown/ and let the .bidsignore sweep route them.
+                for m in members:
+                    m["chosen"] = None
+
+    for c in candidates:
+        chosen = c.get("chosen")
+        if not chosen:
+            continue
+        target_dir = c["target_dir"]
+        src_stem_name = c["src_stem_name"]
         moves: list[tuple[Path, Path]] = []
         for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"):
             src = unknown / f"{src_stem_name}{ext}"
@@ -1094,7 +1163,7 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
                 src.rename(dst)
             rescued += 1
         except OSError as e:
-            print(f"reproinx: Unknown/-rescue failed for {jp.name}: {e}",
+            print(f"reproinx: Unknown/-rescue failed for {c['json_name']}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
