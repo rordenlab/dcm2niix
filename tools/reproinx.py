@@ -1339,7 +1339,6 @@ _CHANGES_TEMPLATE = (
 _README_TEMPLATE = (
     "TODO: Provide description for the dataset -- basic details about the study, possibly pointing to pre-registration (if public or embargoed)"
 )
-_BIDSIGNORE_TEMPLATE = ".duecredit.p"
 _DATASET_DESCRIPTION = {
     "Acknowledgements": "We thank Terry Sacket and the rest of the DBIC (Dartmouth Brain Imaging Center) personnel for assistance in data collection, and Yaroslav O. Halchenko for preparing BIDS dataset. TODO: adjust to your case.",
     "Authors": ["TODO:", "First1 Last1", "First2 Last2", "..."],
@@ -1494,10 +1493,17 @@ def _upgrade_dataset_description(bids_root: Path) -> None:
 
 
 def _write_root_scaffolding(out_root: Path) -> None:
-    """Write CHANGES, README (no .md), .bidsignore, scans.json at the root."""
+    """Write CHANGES, README (no .md), scans.json at the root.
+
+    `.bidsignore` is intentionally NOT created here. heudiconv writes a
+    literal `.duecredit.p` line so the BIDS validator ignores duecredit's
+    citation pickle, but neither dcm2niix (C++) nor reproinx (stdlib
+    Python) imports duecredit, so the file would never exist on this
+    code path. The post-process passes (collision-suffix, single-vol DWI,
+    bidsguess residuals) create `.bidsignore` on demand when there is
+    something real to ignore."""
     _write_text_if_absent(out_root / "CHANGES", _CHANGES_TEMPLATE)
     _write_text_if_absent(out_root / "README", _README_TEMPLATE)
-    _write_text_if_absent(out_root / ".bidsignore", _BIDSIGNORE_TEMPLATE)
     _upgrade_dataset_description(out_root)
     scans_json = out_root / "scans.json"
     if not scans_json.exists():
