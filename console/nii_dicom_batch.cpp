@@ -10267,6 +10267,14 @@ typedef struct {
 	int n;			   // sample count
 	int cap;		   // backing array capacity
 	double dtMs;	   // sample interval, populated from "SampleTime" header (in ms)
+	// Physio-event triggers (PULS_TRIGGER / RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER)
+	// captured from the per-row SIGNAL annotation. Tics are in the same MDH
+	// 2.5-ms units as ticArr. Merged with the global ACQUISITION_INFO volTics
+	// at emit time and rasterised onto the trigger column via the same
+	// nearest-sample snap. See cmrrPhysioParseLine for the parse policy.
+	long *triggerTics;
+	int triggerN;
+	int triggerCap;
 } TCmrrStream;
 
 // Append one (tic, value) pair to a stream, growing the backing arrays as
@@ -10292,6 +10300,25 @@ static bool cmrrPhysioAppend(TCmrrStream *st, long tic, double v) {
 	st->ticArr[st->n] = tic;
 	st->signal[st->n] = v;
 	st->n++;
+	return true;
+}
+
+// Append one physio-event trigger tic to a stream, growing the backing
+// array as needed. Returns true on success, false on allocation failure.
+// Used for PULS_TRIGGER / RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER rows
+// whose sentinel VALUE=2048 must NOT enter the sample stream. The trigger
+// tics are merged with the global ACQUISITION_INFO volTics at emit time
+// (cmrrPhysioConvert) and rasterised by physioBidsFillUniform.
+static bool cmrrTriggerAppend(TCmrrStream *st, long tic) {
+	if (st->triggerN >= st->triggerCap) {
+		int newCap = (st->triggerCap == 0) ? 64 : st->triggerCap * 2;
+		long *t2 = (long *)realloc(st->triggerTics, sizeof(long) * newCap);
+		if (t2 == NULL)
+			return false;
+		st->triggerTics = t2;
+		st->triggerCap = newCap;
+	}
+	st->triggerTics[st->triggerN++] = tic;
 	return true;
 }
 
@@ -10381,14 +10408,33 @@ static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 		(*volTicsP)[(*volNP)++] = tic;
 		return;
 	}
-	// PMU sample line: "<tics> <CHAN> <value>". Channel must match the
-	// LogDataType header parsed earlier — guards against malformed rows
+	// PMU sample line: "<tics> <CHAN> <value> [SIGNAL]". Channel must match
+	// the LogDataType header parsed earlier — guards against malformed rows
 	// inside an ACQUISITION_INFO body or an unknown stream.
+	//
+	// Trigger-sentinel rows carry a 4th SIGNAL token (PULS_TRIGGER /
+	// RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER) and use VALUE=2048 as a
+	// reserved marker injected at off-grid odd ticks. They must NOT be
+	// pushed into the sample stream — otherwise 2048 leaks into the cardiac
+	// / respiratory waveform and distorts HR estimation or spectral
+	// analysis. Upstream bidsphysio currently *does* push them through
+	// (commented "we can ignore" in dcm2bidsphysio.py:213 of
+	// https://github.com/cbinyu/bidsphysio @ 96433fec); the Siemens
+	// reference physiodcm2tsv.py separates them by row-width
+	// (`if len(parts) > 3: trigger_events.append(...) else: values[...]`).
+	// We follow the Siemens-reference policy: drop the sample, but keep the
+	// trigger tic in st->triggerTics so it can be merged with the global
+	// ACQUISITION_INFO volTics at emit time and surfaced in the trigger
+	// column at the nearest BIDS sample.
 	if ((nToks >= 3) && (st->label != NULL) && (strcmp(toks[1], st->chan) == 0)) {
 		char *endp;
 		long tic = strtol(toks[0], &endp, 10);
 		if ((endp == toks[0]) || (tic < 0))
 			return;
+		if ((nToks >= 4) && (toks[3] != NULL) && (strstr(toks[3], "_TRIGGER") != NULL)) {
+			cmrrTriggerAppend(st, tic);
+			return;
+		}
 		double v = strtod(toks[2], &endp);
 		if (endp == toks[2])
 			return;
@@ -10480,9 +10526,13 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 		if (strcmp(st->chan, "ACQUISITION_INFO") == 0) {
 			// Volume tics already collected via the line parser; nothing
 			// further to do for this slot. The stream object itself is
-			// recycled.
+			// recycled. (triggerTics is always NULL on ACQUISITION_INFO —
+			// the parser's *_TRIGGER branch keys on st->chan matching a
+			// PULS/RESP/EXT/ECG label and is unreachable for the
+			// ACQUISITION_INFO waveform.)
 			free(st->ticArr);
 			free(st->signal);
+			free(st->triggerTics);
 			memset(st, 0, sizeof(*st));
 			continue;
 		}
@@ -10492,6 +10542,7 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 							 w, st->chan, st->n);
 			free(st->ticArr);
 			free(st->signal);
+			free(st->triggerTics);
 			memset(st, 0, sizeof(*st));
 			continue;
 		}
@@ -10512,13 +10563,35 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 			continue;
 		}
 		double sampFreq = 1000.0 / dtMs;
+		// Merge global ACQUISITION_INFO volume triggers with this stream's
+		// PULS/RESP/EXT/ECG physio-event triggers into one tic list passed
+		// to the rasteriser. physioBidsFillUniform writes 1 in the trigger
+		// column at the nearest BIDS sample for each tic; same code value
+		// for both kinds is intentional — cardiac and respiratory live in
+		// separate TSVs so a cardiac peak in cardiac.tsv vs a respiratory
+		// peak in respiratory.tsv is already unambiguous.
+		long *allTics = volTics;
+		int allN = volN;
+		long *merged = NULL;
+		if (st->triggerN > 0) {
+			merged = (long *)malloc(sizeof(long) * ((size_t)volN + (size_t)st->triggerN));
+			if (merged != NULL) {
+				if (volN > 0)
+					memcpy(merged, volTics, sizeof(long) * (size_t)volN);
+				memcpy(merged + volN, st->triggerTics, sizeof(long) * (size_t)st->triggerN);
+				allTics = merged;
+				allN = volN + st->triggerN;
+			}
+		}
 		if (physioBidsEmitStream(baseName, st->label, st->ticArr, st->signal, st->n,
-								 dtMs, sampFreq, volTics, volN, opts.gzLevel))
+								 dtMs, sampFreq, allTics, allN, opts.gzLevel))
 			wrote++;
+		free(merged);
 	}
 	for (int s = 0; s < kCMRRMaxStreams; s++) {
 		free(streams[s].ticArr);
 		free(streams[s].signal);
+		free(streams[s].triggerTics);
 	}
 	free(volTics);
 	free(blob);
