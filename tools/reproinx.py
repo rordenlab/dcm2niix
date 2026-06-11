@@ -1777,7 +1777,7 @@ _PHYSIO_INFIX_RE = re.compile(
 )
 
 
-def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
+def _rescue_physio_recordings(bids_root: Path, strict: bool) -> tuple[int, int]:
     """Move physio recordings out of `derivatives/scanner/<sub>/[<ses>/]func/`
     into the main BIDS tree, normalising the filename to BIDS spec.
 
@@ -1808,11 +1808,19 @@ def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
     Splitting them needs a dcm2niix-side filename disambiguation; tracked
     separately.
 
-    Returns the number of physio files rescued."""
+    Returns (rescued, skipped). `skipped` counts physio files left behind
+    on the source side under `derivatives/scanner/` — multi-session subjects
+    (no acquisition-time matching against the provenance TSV yet), destination
+    collisions (the curated file already exists), or per-file rename errors.
+    Audit 2026-06-11 H1: the post-process pass MUST consult this count and
+    refuse to drop derivatives when any physio was skipped, otherwise the
+    Pass-4 sweep silently deletes recordings the rescue couldn't relocate.
+    """
     deriv_root = bids_root / "derivatives" / "scanner"
     if not deriv_root.is_dir():
-        return 0
+        return (0, 0)
     rescued = 0
+    skipped = 0
     for sub_dir in sorted(deriv_root.iterdir()):
         if not sub_dir.is_dir() or not sub_dir.name.startswith("sub-"):
             continue
@@ -1821,6 +1829,7 @@ def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
         # _propagate_session has moved files into sub-X/ses-Y/).
         main_sub_dir = bids_root / sub_token
         ses_token: Optional[str] = None
+        multi_session = False
         if main_sub_dir.is_dir():
             ses_dirs = sorted(d for d in main_sub_dir.iterdir()
                               if d.is_dir() and d.name.startswith("ses-"))
@@ -1829,10 +1838,7 @@ def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
             elif len(ses_dirs) > 1:
                 # Multi-session subject — defer; the rescue would need
                 # acquisition-time matching against the provenance TSV.
-                print(f"reproinx: physio rescue skipped for {sub_token} "
-                      f"(multi-session subjects not yet supported)",
-                      file=sys.stderr)
-                continue
+                multi_session = True
         # Walk derivatives for physio files. rglob covers both
         # derivatives/scanner/sub-X/func/ and derivatives/scanner/sub-X/ses-Y/func/.
         for func_dir in sub_dir.rglob("func"):
@@ -1841,6 +1847,19 @@ def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
             physios = sorted(
                 list(func_dir.glob("*_recording-*_physio.tsv.gz")) +
                 list(func_dir.glob("*_recording-*_physio.json")))
+            if not physios:
+                continue
+            if multi_session:
+                # Tally every file we leave behind so the caller knows the
+                # `_drop_derivatives` sweep would destroy data.
+                skipped += len(physios)
+                print(f"reproinx: physio rescue skipped for {sub_token} "
+                      f"({len(physios)} file(s); multi-session subjects not yet supported)",
+                      file=sys.stderr)
+                if strict:
+                    raise RuntimeError(
+                        f"strict: physio rescue skipped for multi-session {sub_token}")
+                continue
             for src in physios:
                 try:
                     new_name = _PHYSIO_INFIX_RE.sub("", src.name)
@@ -1854,18 +1873,26 @@ def _rescue_physio_recordings(bids_root: Path, strict: bool) -> int:
                     dest = dest_dir / new_name
                     if dest.exists():
                         # Don't clobber a curated file from a previous run.
+                        skipped += 1
+                        print(f"reproinx: physio rescue collision — kept {src} "
+                              f"(destination {dest} already present)",
+                              file=sys.stderr)
+                        if strict:
+                            raise RuntimeError(
+                                f"strict: physio rescue collision at {dest}")
                         continue
                     src.rename(dest)
                     rescued += 1
                 except OSError as e:
+                    skipped += 1
                     print(f"reproinx: physio rescue failed for {src}: {e}",
                           file=sys.stderr)
                     if strict:
                         raise
-    return rescued
+    return (rescued, skipped)
 
 
-def _drop_derivatives(out_root: Path) -> int:
+def _drop_derivatives(out_root: Path, skip_roots: Optional[set] = None) -> int:
     """Remove `derivatives/scanner/` ONLY — the literal subdir dcm2niix `-f %H`
     routes scouts and DERIVED-flagged images (FA, ColFA, TENSOR_B0, scout
     localizers, physio) into. Curated subtrees like `derivatives/fmriprep/`,
@@ -1873,9 +1900,17 @@ def _drop_derivatives(out_root: Path) -> int:
 
     If `derivatives/` becomes empty after dropping `scanner/`, the parent is
     also removed (cosmetic). Returns the number of `scanner/` subtrees removed.
+
+    `skip_roots` (audit 2026-06-11 H1): set of BIDS roots whose
+    derivatives/scanner/ should be preserved (e.g. because
+    `_rescue_physio_recordings` left un-rescued physio behind that would
+    otherwise be deleted). Caller already warned the user; this just honors it.
     """
+    skip = skip_roots or set()
     removed = 0
     for root in _bids_roots(_walk_subjects(out_root)):
+        if root in skip:
+            continue
         scanner = root / "derivatives" / "scanner"
         if scanner.is_dir():
             shutil.rmtree(scanner)
@@ -2234,12 +2269,17 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) 
     # dcm2niix-emitted filename. Must run after Pass 1 (session backfill)
     # so the destination ses-Y dir exists, and BEFORE Pass 4
     # (_drop_derivatives) which would otherwise discard the source files.
+    # Audit 2026-06-11 H1: track skipped physio per root so Pass 4 can
+    # refuse to wipe derivatives that still contain un-rescued recordings.
+    physio_skipped_per_root: dict[Path, int] = {}
     for root in _bids_roots(_walk_subjects(out_root)):
         try:
-            n = _rescue_physio_recordings(root, strict)
-            if n > 0:
-                print(f"  {root}: rescued {n} physio file(s) from derivatives/scanner/",
+            rescued, skipped = _rescue_physio_recordings(root, strict)
+            if rescued > 0:
+                print(f"  {root}: rescued {rescued} physio file(s) from derivatives/scanner/",
                       file=sys.stderr)
+            if skipped > 0:
+                physio_skipped_per_root[root] = skipped
         except Exception as e:
             print(f"reproinx: physio rescue failed for {root}: {e}",
                   file=sys.stderr)
@@ -2277,9 +2317,21 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) 
     # Pass 4: drop derivatives/ subtree (default; suppressed by --keep-derivatives).
     # Must run last so earlier passes (session backfill, fmap pairing) can still
     # consult the scout localizer that lives under derivatives/scanner/.
+    # Audit 2026-06-11 H1: refuse to drop any root that still has un-rescued
+    # physio under derivatives/scanner/ (multi-session subject, destination
+    # collision, or rename error). Loud warning + preserved tree on those
+    # roots; the rest are cleaned as before. In strict mode the rescue
+    # function would have already raised, so the dict is empty.
     if not keep_derivatives:
+        if physio_skipped_per_root:
+            for root, n in physio_skipped_per_root.items():
+                print(f"reproinx: kept derivatives/scanner/ under {root} — "
+                      f"{n} un-rescued physio file(s) would be lost. "
+                      f"Re-run with --keep-derivatives to acknowledge, or "
+                      f"resolve the collision/multi-session blocker.",
+                      file=sys.stderr)
         try:
-            n = _drop_derivatives(out_root)
+            n = _drop_derivatives(out_root, skip_roots=set(physio_skipped_per_root.keys()))
             if n > 0:
                 print(f"  removed derivatives/scanner/ from {n} BIDS root(s)",
                       file=sys.stderr)

@@ -3308,10 +3308,21 @@ tse3d: T2*/
 		// data the 5th dimension is the dynamic / averaging axis by default
 		// (DIM_DYN). dim_6 / dim_7 stay implicit unless we extend the
 		// writer to encode edit-on/off (DIM_EDIT) or coil (DIM_COIL) axes.
-		// Emit DIM_DYN unconditionally for SVS — spec2nii does the same
-		// even for single-dynamic series so downstream tools can rely on
-		// the tag's presence.
-		fprintf(fp, "\t\"dim_5\": \"DIM_DYN\",\n");
+		// SVS: emit DIM_DYN even for single-dynamic series — spec2nii does
+		// the same on Siemens SVS so downstream tools can rely on the tag's
+		// presence (UIH SVS spec2nii omits it; we keep emitting since the
+		// comparator treats `out_only` keys as informational, not parity
+		// failures).
+		// MRSI: do NOT emit — saveDcm2NiiMRSI writes hdr.dim[0]=4 with no
+		// dynamic axis, so a `dim_5: DIM_DYN` claim contradicts the header.
+		// Audit 2026-06-11 M9 (was: emitted unconditionally). spec2nii
+		// omits dim_5 for all MRSI variants (UIH csi_hise, Siemens VB/VE
+		// CSI, Enhanced XA CSI — verified 2026-06-11).
+		const bool isMRSIDimGate = (d.mrsAcqType == kMRSAcqRow ||
+									d.mrsAcqType == kMRSAcqPlane ||
+									d.mrsAcqType == kMRSAcqVolume);
+		if (!isMRSIDimGate)
+			fprintf(fp, "\t\"dim_5\": \"DIM_DYN\",\n");
 		// TransmitCoilName: BIDS-MRS recommended. spec2nii reads from the
 		// CSA header; we parse (0018,1251) inside (0018,9049) MRTransmit-
 		// CoilSequence directly. The general-path emission is gated on
@@ -3337,10 +3348,16 @@ tse3d: T2*/
 		// VoiThickness], (1,1,1)), which after the xyzMM[0]<->[1] swap on
 		// line 90 amounts to: row1 = -IOP_row1*VoiReadoutFoV, row2 = -IOP_row2
 		// *VoiPhaseFoV, row3 = +slice_normal*VoiThickness, with LPS->RAS sign
-		// flip on the first two columns of the translation. Emit only when
-		// voiThickness is populated (both CSA VoiThickness and Enhanced DICOM
-		// SlabThickness paths fill it).
-		if (d.voiThickness > 0.0f) {
+		// flip on the first two columns of the translation.
+		// Emit only when both the box size (voiThickness > 0; phase/readout
+		// fall back to voiThickness when partial) AND the center (hasVoiCenter
+		// — explicit presence sentinel) are populated. Audit 2026-06-11 M8:
+		// the prior gate `voiThickness > 0.0f` alone let a partial-CSA file
+		// emit a fabricated VOI with translation `[0, 0, 0]` whenever the
+		// CSA payload had VoiThickness but not VoiPosition (e.g. Enhanced
+		// DICOM SlabThickness without MidSlabPosition). VoiCenterLPS was
+		// zero-init by initTDICOMdata and got serialized verbatim.
+		if (d.voiThickness > 0.0f && d.hasVoiCenter) {
 			double r1x = d.orient[1], r1y = d.orient[2], r1z = d.orient[3];
 			double r2x = d.orient[4], r2y = d.orient[5], r2z = d.orient[6];
 			double n1 = sqrt(r1x * r1x + r1y * r1y + r1z * r1z);
@@ -9931,8 +9948,13 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 }
 
 // Forward declaration so physioBidsEmitStream below can call it; the
-// definition follows immediately after.
-static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
+// definition follows immediately after. Returns true when both the JSON
+// sidecar and the gzipped TSV were written successfully; false on any
+// allocation, fopen, fwrite-short, or deflate failure (audit 2026-06-11
+// M1). On false return, the caller MUST treat the stream as failed
+// rather than partially-written; the writer best-effort unlinks any
+// partial files before returning.
+static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
 									 const char *peakLabel, const uint8_t *peakTrigger,
 									 int nSamples, double sampFreq,
@@ -9958,13 +9980,29 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 // Caller retains ownership of ticArr/signal/volTics/peakTics; this
 // function only allocates and frees the uniform-grid working buffers
 // internally.
-static bool physioBidsEmitStream(const char *baseName, const char *label,
-								 const long *ticArr, const double *signal, int n,
-								 double dtMs, double sampFreq,
-								 const long *volTics, int volN,
-								 const long *peakTics, int peakN,
-								 const char *peakLabel,
-								 int gzLevel) {
+//
+// Return semantics (audit 2026-06-11 M1+M2): three-state, distinguishing
+//   kPhysioEmitOk      — file pair written to disk.
+//   kPhysioEmitSkipped — nothing emit-able from the input (degenerate
+//                        timeline / empty grid); not an error.
+//   kPhysioEmitFailed  — tried but hit an allocation / write failure
+//                        (raster OOM, JSON alloc, fopen, fwrite-short,
+//                        deflate, etc.). Caller MUST treat this as a
+//                        conversion failure rather than rolling it into
+//                        "no sensors connected".
+typedef enum {
+	kPhysioEmitOk = 0,
+	kPhysioEmitSkipped,
+	kPhysioEmitFailed,
+} PhysioEmitStatus;
+
+static PhysioEmitStatus physioBidsEmitStream(const char *baseName, const char *label,
+											 const long *ticArr, const double *signal, int n,
+											 double dtMs, double sampFreq,
+											 const long *volTics, int volN,
+											 const long *peakTics, int peakN,
+											 const char *peakLabel,
+											 int gzLevel) {
 	double *uSignal = NULL;
 	uint8_t *uTrig = NULL;
 	uint8_t *uPeak = NULL;
@@ -9977,7 +10015,18 @@ static bool physioBidsEmitStream(const char *baseName, const char *label,
 		free(uSignal);
 		free(uTrig);
 		free(uPeak);
-		return false;
+		return kPhysioEmitSkipped;
+	}
+	// M2: a requested peak column that came back NULL means the raster
+	// allocator failed. The writer would silently emit a 2-column TSV when
+	// the JSON Columns list (built from `peakLabel` separately downstream)
+	// still claimed 3 — schema drift under memory pressure. Treat as
+	// stream failure so the caller can report it instead of pretending
+	// success. (physioBidsFillUniform already warned about the OOM.)
+	if ((peakN > 0) && (uPeak == NULL)) {
+		free(uSignal);
+		free(uTrig);
+		return kPhysioEmitFailed;
 	}
 	// StartTime per BIDS: physio-timeline t=0 expressed relative to the
 	// first scan trigger. Negative means PMU recording started before
@@ -9991,14 +10040,14 @@ static bool physioBidsEmitStream(const char *baseName, const char *label,
 		startTimeSec = (double)((long)startTimeMs) / 1000.0;
 	} else
 		startTimeSec = 0.0;
-	xaPhysioWriteStreamFiles(baseName, label, uSignal,
-							 (volN > 0) ? uTrig : NULL,
-							 (uPeak != NULL) ? peakLabel : NULL, uPeak,
-							 uN, sampFreq, startTimeSec, gzLevel);
+	bool wroteOk = xaPhysioWriteStreamFiles(baseName, label, uSignal,
+											(volN > 0) ? uTrig : NULL,
+											(uPeak != NULL) ? peakLabel : NULL, uPeak,
+											uN, sampFreq, startTimeSec, gzLevel);
 	free(uSignal);
 	free(uTrig);
 	free(uPeak);
-	return true;
+	return wroteOk ? kPhysioEmitOk : kPhysioEmitFailed;
 }
 
 // Write `<base>_recording-<label>_physio.tsv.gz` (gzipped, no header row,
@@ -10014,41 +10063,83 @@ static bool physioBidsEmitStream(const char *baseName, const char *label,
 //     from `RESP_TRIGGER`). Out-of-band marker that the firmware
 //     detected a heartbeat / breath at this sample. Independent of
 //     the scanner column so consumers can pick what they need.
-static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
+static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
 									 const char *peakLabel, const uint8_t *peakTrigger,
 									 int nSamples, double sampFreq,
 									 double startTimeSec, int gzLevel) {
 	char outBase[PATH_MAX];
 	snprintf(outBase, sizeof(outBase), "%s_recording-%s_physio", baseName, label);
-	// JSON sidecar via cJSON.
-	cJSON *root = cJSON_CreateObject();
-	cJSON *cols = cJSON_CreateArray();
-	cJSON_AddItemToArray(cols, cJSON_CreateString(label));
-	if (trigger != NULL)
-		cJSON_AddItemToArray(cols, cJSON_CreateString("trigger"));
-	if ((peakTrigger != NULL) && (peakLabel != NULL) && (peakLabel[0] != '\0'))
-		cJSON_AddItemToArray(cols, cJSON_CreateString(peakLabel));
-	cJSON_AddItemToObject(root, "Columns", cols);
-	cJSON_AddItemToObject(root, "SamplingFrequency", cJSON_CreateNumber(sampFreq));
-	cJSON_AddItemToObject(root, "StartTime", cJSON_CreateNumber(startTimeSec));
-	char *jsonStr = cJSON_Print(root);
-	cJSON_Delete(root);
 	char jsonPath[PATH_MAX];
 	snprintf(jsonPath, sizeof(jsonPath), "%s.json", outBase);
-	FILE *fJson = fopen(jsonPath, "wb");
-	if (fJson != NULL) {
-		fwrite(jsonStr, 1, strlen(jsonStr), fJson);
-		fputc('\n', fJson);
-		fclose(fJson);
+	char tsvPath[PATH_MAX];
+	snprintf(tsvPath, sizeof(tsvPath), "%s.tsv.gz", outBase);
+	// JSON sidecar via cJSON. Audit 2026-06-11 M1: every allocator can return
+	// NULL under memory pressure; previously these were unchecked and the
+	// writer happily passed NULLs into cJSON_AddItemToObject (UB) or fwrote
+	// a NULL jsonStr. On any failure we now bail with the partial outputs
+	// unlinked so a follow-up retry doesn't see a half-written file.
+	cJSON *root = cJSON_CreateObject();
+	cJSON *cols = cJSON_CreateArray();
+	cJSON *sigName = cJSON_CreateString(label);
+	cJSON *trigName = (trigger != NULL) ? cJSON_CreateString("trigger") : NULL;
+	cJSON *peakName = ((peakTrigger != NULL) && (peakLabel != NULL) && (peakLabel[0] != '\0'))
+						  ? cJSON_CreateString(peakLabel)
+						  : NULL;
+	cJSON *sampHz = cJSON_CreateNumber(sampFreq);
+	cJSON *startT = cJSON_CreateNumber(startTimeSec);
+	if (root == NULL || cols == NULL || sigName == NULL || sampHz == NULL || startT == NULL ||
+		(trigger != NULL && trigName == NULL) || (peakName == NULL && peakTrigger != NULL &&
+												  peakLabel != NULL && peakLabel[0] != '\0')) {
+		cJSON_Delete(root);
+		cJSON_Delete(cols);
+		cJSON_Delete(sigName);
+		cJSON_Delete(trigName);
+		cJSON_Delete(peakName);
+		cJSON_Delete(sampHz);
+		cJSON_Delete(startT);
+		printWarning("Physio: JSON allocation failed for %s — skipping stream\n", label);
+		return false;
 	}
+	cJSON_AddItemToArray(cols, sigName);
+	if (trigName != NULL)
+		cJSON_AddItemToArray(cols, trigName);
+	if (peakName != NULL)
+		cJSON_AddItemToArray(cols, peakName);
+	cJSON_AddItemToObject(root, "Columns", cols);
+	cJSON_AddItemToObject(root, "SamplingFrequency", sampHz);
+	cJSON_AddItemToObject(root, "StartTime", startT);
+	char *jsonStr = cJSON_Print(root);
+	cJSON_Delete(root);
+	if (jsonStr == NULL) {
+		printWarning("Physio: JSON serialization failed for %s — skipping stream\n", label);
+		return false;
+	}
+	FILE *fJson = fopen(jsonPath, "wb");
+	if (fJson == NULL) {
+		printWarning("Physio: could not open %s for writing — skipping stream\n", jsonPath);
+		free(jsonStr);
+		return false;
+	}
+	size_t jsonLen = strlen(jsonStr);
+	bool jsonOk = (fwrite(jsonStr, 1, jsonLen, fJson) == jsonLen) && (fputc('\n', fJson) != EOF);
+	if (fclose(fJson) != 0)
+		jsonOk = false;
 	free(jsonStr);
+	if (!jsonOk) {
+		printWarning("Physio: short write on %s — discarding partial output\n", jsonPath);
+		unlink(jsonPath);
+		return false;
+	}
 	// TSV: build the uncompressed body, then gzip it (mirrors writeNiiGz).
 	// Worst case per sample: signal up to ~24 chars + tab + "1" + newline.
 	size_t bufCap = (size_t)nSamples * 32 + 16;
 	char *tsv = (char *)malloc(bufCap);
-	if (tsv == NULL)
-		return;
+	if (tsv == NULL) {
+		printWarning("Physio: TSV buffer alloc failed for %s — discarding partial output\n", label);
+		unlink(jsonPath);
+		return false;
+	}
 	size_t tsvLen = 0;
 	for (int i = 0; i < nSamples; i++) {
 		int n;
@@ -10098,8 +10189,10 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	unsigned long cmpCap = mz_compressBound((unsigned long)tsvLen);
 	unsigned char *pCmp = (unsigned char *)malloc(cmpCap);
 	if (pCmp == NULL) {
+		printWarning("Physio: gzip buffer alloc failed for %s — discarding partial output\n", label);
 		free(tsv);
-		return;
+		unlink(jsonPath);
+		return false;
 	}
 	z_stream strm;
 	memset(&strm, 0, sizeof(z_stream));
@@ -10111,47 +10204,70 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	if (zLevel > MZ_UBER_COMPRESSION)
 		zLevel = MZ_UBER_COMPRESSION;
 	if (deflateInit(&strm, zLevel) != Z_OK) {
+		printWarning("Physio: deflateInit failed for %s — discarding partial output\n", label);
 		free(pCmp);
 		free(tsv);
-		return;
+		unlink(jsonPath);
+		return false;
 	}
 	strm.next_in = (uint8_t *)tsv;
 	strm.avail_in = (unsigned int)tsvLen;
-	deflate(&strm, Z_FINISH);
+	int defStatus = deflate(&strm, Z_FINISH);
 	deflateEnd(&strm);
+	if (defStatus != Z_STREAM_END) {
+		printWarning("Physio: deflate did not finish stream for %s — discarding partial output\n", label);
+		free(pCmp);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
+	}
 	unsigned long crc = mz_crc32(0L, Z_NULL, 0);
 	crc = mz_crc32(crc, (unsigned char *)tsv, (unsigned int)tsvLen);
 	unsigned long cmpLen = strm.total_out;
-	char tsvPath[PATH_MAX];
-	snprintf(tsvPath, sizeof(tsvPath), "%s.tsv.gz", outBase);
 	FILE *fGz = fopen(tsvPath, "wb");
-	if (fGz != NULL) {
-		fputc((char)0x1F, fGz);
-		fputc((char)0x8B, fGz);
-		fputc((char)0x08, fGz);
-		fputc((char)0x00, fGz);
-		fputc((char)0x00, fGz); // mtime
-		fputc((char)0x00, fGz);
-		fputc((char)0x00, fGz);
-		fputc((char)0x00, fGz);
-		fputc((char)0x00, fGz); // xfl
-		fputc((char)0xFF, fGz); // os = unknown
-		// Skip 2-byte zlib header at pCmp[0..1] and 4-byte adler at the tail.
-		if (cmpLen >= 6)
-			fwrite(&pCmp[2], 1, cmpLen - 6, fGz);
-		fputc((unsigned char)(crc), fGz);
-		fputc((unsigned char)(crc >> 8), fGz);
-		fputc((unsigned char)(crc >> 16), fGz);
-		fputc((unsigned char)(crc >> 24), fGz);
-		fputc((unsigned char)(strm.total_in), fGz);
-		fputc((unsigned char)(strm.total_in >> 8), fGz);
-		fputc((unsigned char)(strm.total_in >> 16), fGz);
-		fputc((unsigned char)(strm.total_in >> 24), fGz);
-		fclose(fGz);
-		printMessage("Wrote %s and %s\n", tsvPath, jsonPath);
+	if (fGz == NULL) {
+		printWarning("Physio: could not open %s for writing — discarding partial output\n", tsvPath);
+		free(pCmp);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
 	}
+	bool tsvOk = true;
+	tsvOk = tsvOk && (fputc(0x1F, fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)0x8B, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x08, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF); // mtime
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF); // xfl
+	tsvOk = tsvOk && (fputc((unsigned char)0xFF, fGz) != EOF); // os = unknown
+	// Skip 2-byte zlib header at pCmp[0..1] and 4-byte adler at the tail.
+	if (cmpLen >= 6) {
+		size_t deflBytes = (size_t)cmpLen - 6;
+		tsvOk = tsvOk && (fwrite(&pCmp[2], 1, deflBytes, fGz) == deflBytes);
+	}
+	tsvOk = tsvOk && (fputc((unsigned char)(crc), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(crc >> 8), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(crc >> 16), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(crc >> 24), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in >> 8), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in >> 16), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in >> 24), fGz) != EOF);
+	if (fclose(fGz) != 0)
+		tsvOk = false;
 	free(pCmp);
 	free(tsv);
+	if (!tsvOk) {
+		printWarning("Physio: short write on %s — discarding partial output\n", tsvPath);
+		unlink(jsonPath);
+		unlink(tsvPath);
+		return false;
+	}
+	printMessage("Wrote %s and %s\n", tsvPath, jsonPath);
+	return true;
 }
 
 // Top-level: read the gzip-XML payload from infname, parse out streams and
@@ -10220,6 +10336,7 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		vp = vEnd + 1;
 	}
 	int wrote = 0;
+	int writeFails = 0; // M1: tally attempts that hit a write/alloc failure
 	// Iterate <PhysioStream TYPE="X">...</PhysioStream> blocks.
 	const char *sp = xml;
 	while ((sp = strstr(sp, "<PhysioStream ")) != NULL) {
@@ -10311,16 +10428,27 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		// RESP_TRIGGER markers (the <PhysioTriggers> XML element carries
 		// those, in a separate parser path that isn't wired in here yet).
 		// Pass NULL for the peak channel so we emit a 2-column TSV.
-		if (physioBidsEmitStream(baseName, label, ticArr, signal, n, dtMs,
-								 sampFreq, volTics, volN,
-								 NULL, 0, NULL, opts.gzLevel))
+		PhysioEmitStatus st = physioBidsEmitStream(baseName, label, ticArr, signal, n, dtMs,
+												   sampFreq, volTics, volN,
+												   NULL, 0, NULL, opts.gzLevel);
+		if (st == kPhysioEmitOk)
 			wrote++;
+		else if (st == kPhysioEmitFailed)
+			writeFails++;
 		free(signal);
 		free(ticArr);
 		sp = sClose + 1;
 	}
 	free(volTics);
 	free(xmlBytes);
+	if (writeFails > 0) {
+		// Audit 2026-06-11 M1: any stream attempted but failed to write
+		// (raster OOM, JSON alloc, fopen, short fwrite, deflate) propagates
+		// as a hard failure. Previously these were silently rolled into the
+		// "wrote == 0 → no sensors connected" branch and reported success.
+		printError("XA PhysioLogging: %d stream(s) failed to write — see warnings above\n", writeFails);
+		return EXIT_FAILURE;
+	}
 	if (wrote == 0) {
 		// Mirror the CMRR case: an XA PhysioLogging payload with no
 		// cardiac/respiratory streams (sensors not connected) is not a
@@ -10648,6 +10776,7 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 		nStreams++;
 	}
 	int wrote = 0;
+	int writeFails = 0; // M1: tally attempts that hit a write/alloc failure
 	for (int s = 0; s < nStreams; s++) {
 		TCmrrStream *st = &streams[s];
 		physioBidsSortByTic(st->ticArr, st->signal, st->n);
@@ -10684,12 +10813,16 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 			snprintf(peakLabel, sizeof(peakLabel), "%s%s", st->label, suffix);
 			peakLabelPtr = peakLabel;
 		}
-		if (physioBidsEmitStream(baseName, st->label, st->ticArr, st->signal, st->n,
-								 dtMs, sampFreq,
-								 volTics, volN,
-								 st->triggerTics, st->triggerN, peakLabelPtr,
-								 opts.gzLevel))
+		PhysioEmitStatus stStat = physioBidsEmitStream(baseName, st->label, st->ticArr,
+													   st->signal, st->n,
+													   dtMs, sampFreq,
+													   volTics, volN,
+													   st->triggerTics, st->triggerN, peakLabelPtr,
+													   opts.gzLevel);
+		if (stStat == kPhysioEmitOk)
 			wrote++;
+		else if (stStat == kPhysioEmitFailed)
+			writeFails++;
 	}
 	for (int s = 0; s < kCMRRMaxStreams; s++) {
 		free(streams[s].ticArr);
@@ -10698,6 +10831,14 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	}
 	free(volTics);
 	free(blob);
+	if (writeFails > 0) {
+		// Audit 2026-06-11 M1: any stream attempted but failed to write
+		// (raster OOM, JSON alloc, fopen, short fwrite, deflate) propagates
+		// as a hard failure. Previously these were silently rolled into the
+		// "wrote == 0 → no sensors connected" branch and reported success.
+		printError("CMRR PMU: %d stream(s) failed to write — see warnings above\n", writeFails);
+		return EXIT_FAILURE;
+	}
 	if (wrote == 0) {
 		// CMRR records the slice-timing companion (ACQUISITION_INFO) for
 		// every physio-capable acquisition even when the patient is not
@@ -12590,8 +12731,17 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 		}
 	}
 	free(raw);
-	// Build NIfTI-1 header. MRSI: 4D base (cols, rows, slices, spec). No
-	// dynamic axis on this first landing.
+	// Build NIfTI-1 header. MRSI 4D base. dim[1..3] axis convention is per-
+	// vendor and MUST match the payload byte order written above:
+	//   Siemens transpose writes dst with `c` innermost  → dim[1]=cols, dim[2]=rows.
+	//   UIH transpose writes dst with `r` innermost      → dim[1]=rows, dim[2]=cols.
+	// The UIH layout matches spec2nii's `swapaxes(0,1)` on the (Cols,Rows,Frames,Spec)
+	// reshape (uih.py:223+226), giving NIfTI shape (Rows,Cols,Frames,Spec). Audit
+	// 2026-06-11 H2: pre-fix the UIH branch wrote dim[1]=cols/dim[2]=rows here,
+	// which silently agreed with the rows-fastest payload only for square grids
+	// (the 16×16 / 8×8×8 spec2nii_test_data corpus). Non-square synthetics
+	// (e.g. Rows=8, Cols=16) showed dcm2niix shape (16,8,...) vs spec2nii (8,16,
+	// ...); voxel lookups wrapped across the wrong axis.
 	struct nifti_1_header hdr;
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.sizeof_hdr = 348;
@@ -12599,8 +12749,13 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	hdr.datatype = DT_COMPLEX64;
 	hdr.bitpix = 64;
 	hdr.dim[0] = 4;
-	hdr.dim[1] = (short)cols;
-	hdr.dim[2] = (short)rows;
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		hdr.dim[1] = (short)rows;
+		hdr.dim[2] = (short)cols;
+	} else {
+		hdr.dim[1] = (short)cols;
+		hdr.dim[2] = (short)rows;
+	}
 	hdr.dim[3] = (short)slices;
 	hdr.dim[4] = (short)N_pts;
 	hdr.dim[5] = 1;

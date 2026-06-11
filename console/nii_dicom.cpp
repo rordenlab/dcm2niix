@@ -789,6 +789,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.voiCenterLPS[0] = 0.0;
 	d.voiCenterLPS[1] = 0.0;
 	d.voiCenterLPS[2] = 0.0;
+	d.hasVoiCenter = false;
 	strcpy(d.patientName, "");
 	strcpy(d.deidentificationMethod, "");
 	strcpy(d.patientID, "");
@@ -1793,6 +1794,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 						d->voiCenterLPS[0] = dItems[1];
 						d->voiCenterLPS[1] = dItems[2];
 						d->voiCenterLPS[2] = dItems[3];
+						d->hasVoiCenter = true;
 						if (isnan(d->patientPosition[1])) {
 							d->patientPosition[1] = (float)dItems[1];
 							d->patientPosition[2] = (float)dItems[2];
@@ -8618,12 +8620,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// the FIRST slab carries the position (spec2nii uses slabs[0].
 			// MidSlabPosition). Read each FD directly as double to preserve
 			// full precision (dcmMultiFloatDouble downcasts to float32).
-			if (lLength >= 24 && d.voiCenterLPS[0] == 0.0 && d.voiCenterLPS[1] == 0.0 && d.voiCenterLPS[2] == 0.0) {
+			if (lLength >= 24 && !d.hasVoiCenter) {
 				size_t floatlen = (size_t)lLength / 3;
 				if (floatlen >= 8) {
 					d.voiCenterLPS[0] = dcmFloatDouble(8, &buffer[lPos], d.isLittleEndian);
 					d.voiCenterLPS[1] = dcmFloatDouble(8, &buffer[lPos + floatlen], d.isLittleEndian);
 					d.voiCenterLPS[2] = dcmFloatDouble(8, &buffer[lPos + 2 * floatlen], d.isLittleEndian);
+					d.hasVoiCenter = true;
 				}
 			}
 			break;

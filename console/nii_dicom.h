@@ -294,8 +294,15 @@ struct TDICOMdata {
 	// default to 0; nonzero voiThickness signals "VOI is populated".
 	// +24 B addition; audited against the #877 TDICOMdata stack budget
 	// (well under the 4 KB margin).
+	// hasVoiCenter (+1 B, audit 2026-06-11 M8): explicit presence
+	// sentinel for voiCenterLPS[]. Without it, a partial-CSA path that
+	// populates voiThickness but leaves voiCenterLPS=(0,0,0) silently
+	// emits a fabricated center-at-origin in the VOI sidecar matrix.
+	// All CSA / Enhanced DICOM populate sites must set hasVoiCenter=true
+	// when they write voiCenterLPS; the emitter then gates on it.
 	float voiPhaseFoV, voiReadoutFoV, voiThickness;
 	double voiCenterLPS[3]; // double to preserve full DS-text or FD precision
+	bool hasVoiCenter;
 	float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor, injectedVolume, reconFilterSize; // PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
 	float frameReferenceTime, frameDuration, ecat_isotope_halflife, ecat_dosage;
 	float pixelPaddingValue; // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
