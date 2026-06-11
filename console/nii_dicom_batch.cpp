@@ -9906,8 +9906,15 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 		}
 	}
 	uint8_t *uP = NULL;
-	if ((outPeakTrigger != NULL) && (peakN > 0))
+	if ((outPeakTrigger != NULL) && (peakN > 0)) {
 		uP = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, peakTics, peakN);
+		// Warn-once if the peak column was promised (peakN>0) but the
+		// rasteriser returned NULL (calloc OOM). Caller will see uP=NULL
+		// and quietly drop the column from JSON + TSV — silent degrade to
+		// 2 columns. Rare in practice but worth surfacing.
+		if (uP == NULL)
+			printWarning("CMRR PMU: physio-event trigger column dropped (allocation failure for %d-sample raster)\n", expN);
+	}
 	*outSignal = uS;
 	*outTrigger = uT;
 	if (outPeakTrigger != NULL)
@@ -10046,29 +10053,36 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		// versions emitted the literal "nan" to byte-match bidsphysio /
 		// pandas; that compatibility goal is retired in favour of validator
 		// compliance.
+		// Build the row column-by-column: each optional column emits only
+		// when its source pointer is non-NULL. This makes the four schemas
+		// (signal / signal+trigger / signal+peak / signal+trigger+peak)
+		// fall out of the same code path. A previous version gated the peak
+		// emission inside the `trigger != NULL` branch — emitting the JSON
+		// peak column but no TSV value when ACQUISITION_INFO was absent
+		// (silent data loss).
 		bool isNan = isnan(signal[i]);
-		bool hasPeak = (peakTrigger != NULL);
-		if (trigger != NULL) {
-			if (hasPeak) {
-				if (isNan)
-					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\t%d\t%d\n", (int)trigger[i], (int)peakTrigger[i]);
-				else
-					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\t%d\n", signal[i], (int)trigger[i], (int)peakTrigger[i]);
-			} else {
-				if (isNan)
-					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\t%d\n", (int)trigger[i]);
-				else
-					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n", signal[i], (int)trigger[i]);
-			}
-		} else {
-			if (isNan)
-				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\n");
-			else
-				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\n", signal[i]);
-		}
-		if (n < 0 || (size_t)n >= bufCap - tsvLen)
+		char *q = tsv + tsvLen;
+		size_t rem = bufCap - tsvLen;
+		n = isNan ? snprintf(q, rem, "n/a") : snprintf(q, rem, "%.4f", signal[i]);
+		if (n < 0 || (size_t)n >= rem)
 			break;
-		tsvLen += (size_t)n;
+		size_t used = (size_t)n;
+		if (trigger != NULL) {
+			n = snprintf(q + used, rem - used, "\t%d", (int)trigger[i]);
+			if (n < 0 || (size_t)n >= rem - used)
+				break;
+			used += (size_t)n;
+		}
+		if (peakTrigger != NULL) {
+			n = snprintf(q + used, rem - used, "\t%d", (int)peakTrigger[i]);
+			if (n < 0 || (size_t)n >= rem - used)
+				break;
+			used += (size_t)n;
+		}
+		n = snprintf(q + used, rem - used, "\n");
+		if (n < 0 || (size_t)n >= rem - used)
+			break;
+		tsvLen += used + (size_t)n;
 	}
 	// Gzip-compress tsv body. Same single-shot deflate-then-write pattern as
 	// writeNiiGz: raw deflate output, then prepend a 10-byte gzip header and
@@ -10343,9 +10357,10 @@ typedef struct {
 	double dtMs;	   // sample interval, populated from "SampleTime" header (in ms)
 	// Physio-event triggers (PULS_TRIGGER / RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER)
 	// captured from the per-row SIGNAL annotation. Tics are in the same MDH
-	// 2.5-ms units as ticArr. Merged with the global ACQUISITION_INFO volTics
-	// at emit time and rasterised onto the trigger column via the same
-	// nearest-sample snap. See cmrrPhysioParseLine for the parse policy.
+	// 2.5-ms units as ticArr. Emitted as a DEDICATED `<label>_trigger`
+	// column (separate from the scanner-only `trigger` column populated
+	// from ACQUISITION_INFO volTics) via the same nearest-sample snap.
+	// See cmrrPhysioParseLine for the parse policy.
 	long *triggerTics;
 	int triggerN;
 	int triggerCap;
@@ -10380,9 +10395,10 @@ static bool cmrrPhysioAppend(TCmrrStream *st, long tic, double v) {
 // Append one physio-event trigger tic to a stream, growing the backing
 // array as needed. Returns true on success, false on allocation failure.
 // Used for PULS_TRIGGER / RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER rows
-// whose sentinel VALUE=2048 must NOT enter the sample stream. The trigger
-// tics are merged with the global ACQUISITION_INFO volTics at emit time
-// (cmrrPhysioConvert) and rasterised by physioBidsFillUniform.
+// whose sentinel VALUE=2048 must NOT enter the sample stream. At emit time
+// (cmrrPhysioConvert) these tics are passed to physioBidsEmitStream as a
+// SEPARATE channel from the global ACQUISITION_INFO volTics and rasterised
+// onto a dedicated `<label>_trigger` TSV column.
 static bool cmrrTriggerAppend(TCmrrStream *st, long tic) {
 	if (st->triggerN >= st->triggerCap) {
 		int newCap = (st->triggerCap == 0) ? 64 : st->triggerCap * 2;
@@ -10497,9 +10513,10 @@ static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 	// reference physiodcm2tsv.py separates them by row-width
 	// (`if len(parts) > 3: trigger_events.append(...) else: values[...]`).
 	// We follow the Siemens-reference policy: drop the sample, but keep the
-	// trigger tic in st->triggerTics so it can be merged with the global
-	// ACQUISITION_INFO volTics at emit time and surfaced in the trigger
-	// column at the nearest BIDS sample.
+	// trigger tic in st->triggerTics so it can be surfaced at the nearest
+	// BIDS sample in a DEDICATED `<label>_trigger` column (separate from
+	// the scanner-only `trigger` column populated from ACQUISITION_INFO
+	// volTics).
 	if ((nToks >= 3) && (st->label != NULL) && (strcmp(toks[1], st->chan) == 0)) {
 		char *endp;
 		long tic = strtol(toks[0], &endp, 10);
@@ -10648,14 +10665,15 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 		//
 		// peakLabel is built per stream from the BIDS label + "_trigger" —
 		// "cardiac_trigger" for PULS, "respiratory_trigger" for RESP,
-		// "ecg_trigger" for ECG, "external_trigger_trigger" for EXT (a
-		// minor wart for EXT, but EXT's own BIDS label IS "external_trigger"
-		// because the entire channel is a TTL pulse train; the per-row
-		// firmware-detected events still get their own column).
+		// "ecg_trigger" for ECG. EXT is a special case: its BIDS label is
+		// already "external_trigger" (the entire channel is a TTL pulse
+		// train), so we use "_peak" as the suffix to avoid the awkward
+		// "external_trigger_trigger".
 		char peakLabel[64];
 		const char *peakLabelPtr = NULL;
 		if ((st->label != NULL) && (st->triggerN > 0)) {
-			snprintf(peakLabel, sizeof(peakLabel), "%s_trigger", st->label);
+			const char *suffix = (strcmp(st->chan, "EXT") == 0) ? "_peak" : "_trigger";
+			snprintf(peakLabel, sizeof(peakLabel), "%s%s", st->label, suffix);
 			peakLabelPtr = peakLabel;
 		}
 		if (physioBidsEmitStream(baseName, st->label, st->ticArr, st->signal, st->n,
