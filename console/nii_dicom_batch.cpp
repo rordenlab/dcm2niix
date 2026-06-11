@@ -9879,12 +9879,20 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 								  double **outSignal,
 								  uint8_t **outTrigger,
 								  uint8_t **outPeakTrigger,
-								  int *outN) {
+								  int *outN,
+								  bool *outOom) {
 	*outSignal = NULL;
 	*outTrigger = NULL;
 	if (outPeakTrigger != NULL)
 		*outPeakTrigger = NULL;
 	*outN = 0;
+	// outOom distinguishes an allocation failure (caller must fail the
+	// stream, not roll it into "no sensors connected") from degenerate
+	// input (n<2 / non-positive dt — legitimately skippable). M1/M2 fixed
+	// the writer + peak-raster OOM paths; this closes the signal-buffer and
+	// scanner-trigger-raster OOM paths the same way.
+	if (outOom != NULL)
+		*outOom = false;
 	if ((n < 2) || (dtMs <= 0.0))
 		return;
 	// Sample period expressed in tics so we can index without losing
@@ -9897,8 +9905,11 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 	if (expN < n)
 		expN = n; // never lose a real sample to rounding
 	double *uS = (double *)malloc(sizeof(double) * (size_t)expN);
-	if (uS == NULL)
+	if (uS == NULL) {
+		if (outOom != NULL)
+			*outOom = true;
 		return;
+	}
 	for (int i = 0; i < expN; i++)
 		uS[i] = NAN;
 	long firstTic = ticArr[0];
@@ -9926,6 +9937,8 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 			// failed. The writer hard-requires a non-NULL pointer for column 2
 			// when scanner triggers were requested, so the entire stream
 			// cannot be emitted. Bail with the signal buffer cleaned up.
+			if (outOom != NULL)
+				*outOom = true;
 			free(uS);
 			return;
 		}
@@ -9935,8 +9948,8 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 		uP = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, peakTics, peakN);
 		// Warn-once if the peak column was promised (peakN>0) but the
 		// rasteriser returned NULL (calloc OOM). Caller will see uP=NULL
-		// and quietly drop the column from JSON + TSV — silent degrade to
-		// 2 columns. Rare in practice but worth surfacing.
+		// and return kPhysioEmitFailed (M2) — the stream is failed rather
+		// than silently degraded to 2 columns. Rare, but worth surfacing.
 		if (uP == NULL)
 			printWarning("CMRR PMU: physio-event trigger column dropped (allocation failure for %d-sample raster)\n", expN);
 	}
@@ -9965,8 +9978,11 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 // shared by both the XA and CMRR converters: rebuild on a uniform timeline
 // (with NaN-fill for sparse streams), compute the BIDS StartTime by
 // truncating to integer milliseconds (matching bidsphysio's `int(t_start_ms)
-// / 1000`), and call xaPhysioWriteStreamFiles. Returns true if a stream
-// was emitted, false if it was skipped (allocation failure or empty grid).
+// / 1000`), and call xaPhysioWriteStreamFiles. Returns a tri-state
+// PhysioEmitStatus: kPhysioEmitOk when a stream was emitted, kPhysioEmitSkipped
+// for a degenerate/empty input (not an error), and kPhysioEmitFailed on an
+// allocation or write failure (caller must treat as a conversion failure).
+// See the Return semantics note on the enum below for the canonical detail.
 //
 // `peakTics`/`peakN` + `peakLabel` are optional: when non-NULL/positive
 // they emit a 3rd column carrying the physiological-event triggers
@@ -10007,15 +10023,20 @@ static PhysioEmitStatus physioBidsEmitStream(const char *baseName, const char *l
 	uint8_t *uTrig = NULL;
 	uint8_t *uPeak = NULL;
 	int uN = 0;
+	bool fillOom = false;
 	physioBidsFillUniform(ticArr, signal, n, dtMs,
 						  volTics, volN,
 						  peakTics, peakN,
-						  &uSignal, &uTrig, &uPeak, &uN);
+						  &uSignal, &uTrig, &uPeak, &uN, &fillOom);
 	if ((uSignal == NULL) || (uN < 1)) {
 		free(uSignal);
 		free(uTrig);
 		free(uPeak);
-		return kPhysioEmitSkipped;
+		// An allocation failure (signal buffer or scanner-trigger raster) must
+		// surface as a conversion failure; only genuinely degenerate input
+		// (n<2 / non-positive dt) is a benign skip. Pre-M2 both collapsed to
+		// Skipped → "no sensors connected" → EXIT_SUCCESS under memory pressure.
+		return fillOom ? kPhysioEmitFailed : kPhysioEmitSkipped;
 	}
 	// M2: a requested peak column that came back NULL means the raster
 	// allocator failed. The writer would silently emit a 2-column TSV when
@@ -10109,6 +10130,24 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON_AddItemToObject(root, "Columns", cols);
 	cJSON_AddItemToObject(root, "SamplingFrequency", sampHz);
 	cJSON_AddItemToObject(root, "StartTime", startT);
+	// The bundled cJSON's public cJSON_AddItemTo{Array,Object} return void, but
+	// the private add_item_to_object can still fail (key strdup OOM) — silently
+	// dropping a BIDS-required key while cJSON_Print happily serializes the
+	// short object as "success". Verify every attach landed (expected column
+	// count + all three object keys present) before trusting the sidecar; fail
+	// closed otherwise, matching the cycle-3 physio fail-closed contract. (A
+	// sub-strdup OOM here also orphans the dropped item; on this already-doomed
+	// allocator-failure path the one-shot leak is acceptable versus the bug
+	// risk of manual orphan tracking against a void-returning vendored API.)
+	int expectCols = 1 + ((trigName != NULL) ? 1 : 0) + ((peakName != NULL) ? 1 : 0);
+	if ((cJSON_GetArraySize(cols) != expectCols) ||
+		(cJSON_GetObjectItem(root, "Columns") == NULL) ||
+		(cJSON_GetObjectItem(root, "SamplingFrequency") == NULL) ||
+		(cJSON_GetObjectItem(root, "StartTime") == NULL)) {
+		cJSON_Delete(root);
+		printWarning("Physio: JSON key attachment failed for %s — discarding stream\n", label);
+		return false;
+	}
 	char *jsonStr = cJSON_Print(root);
 	cJSON_Delete(root);
 	if (jsonStr == NULL) {
@@ -10141,7 +10180,8 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		return false;
 	}
 	size_t tsvLen = 0;
-	for (int i = 0; i < nSamples; i++) {
+	int i;
+	for (i = 0; i < nSamples; i++) {
 		int n;
 		// NaN values come from physioBidsFillUniform when a uniform-rate
 		// timeline is reconstructed from sparsely-sampled input (e.g. EXT
@@ -10182,6 +10222,18 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		if (n < 0 || (size_t)n >= rem - used)
 			break;
 		tsvLen += used + (size_t)n;
+	}
+	// Fail closed if any row could not be serialized (snprintf overflow on a
+	// hostile/oversized value broke the loop early). The bufCap budget of 32
+	// bytes/sample is the in-range worst case; an out-of-range double printed
+	// with %.4f can exceed it. Emitting a silently-truncated TSV with success
+	// status would lose physio samples without surfacing the failure — same
+	// fail-closed contract as the JSON/deflate paths above (M1/M2 cycle).
+	if (i != nSamples) {
+		printWarning("Physio: TSV row %d of %d overflowed buffer for %s — discarding partial output\n", i, nSamples, label);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
 	}
 	// Gzip-compress tsv body. Same single-shot deflate-then-write pattern as
 	// writeNiiGz: raw deflate output, then prepend a 10-byte gzip header and
@@ -10321,17 +10373,27 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 			break;
 		char buf[64];
 		if (xaPhysioReadAttr(vp, vEnd, "ACQUISITION_TIME_TICS", buf, sizeof(buf))) {
-			if (volN >= volCap) {
-				volCap *= 2;
-				long *tmp = (long *)realloc(volTics, sizeof(long) * volCap);
-				if (tmp == NULL) {
-					free(volTics);
-					free(xmlBytes);
-					return EXIT_FAILURE;
+			// strtol+endp (not atol): a malformed XA volume tic would collapse
+			// to 0, fabricating a scanner trigger at tic 0 AND poisoning
+			// volTics[0] — the StartTime anchor (ticArr[0] - volTics[0]).
+			// Mirrors the CMRR ACQ_START parse; consumed-the-start check only
+			// (not full-token) so a trailing-space XML attr value is tolerated.
+			// Malformed → skip the volume, do not grow or store.
+			char *endpV;
+			long vt = strtol(buf, &endpV, 10);
+			if ((endpV != buf) && (vt >= 0)) {
+				if (volN >= volCap) {
+					volCap *= 2;
+					long *tmp = (long *)realloc(volTics, sizeof(long) * volCap);
+					if (tmp == NULL) {
+						free(volTics);
+						free(xmlBytes);
+						return EXIT_FAILURE;
+					}
+					volTics = tmp;
 				}
-				volTics = tmp;
+				volTics[volN++] = vt;
 			}
-			volTics[volN++] = atol(buf);
 		}
 		vp = vEnd + 1;
 	}
@@ -10620,8 +10682,13 @@ static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 			return;
 		strncpy(prevVol, toks[0], 31);
 		prevVol[31] = '\0';
-		long tic = atol(toks[2]);
-		if (tic < 0)
+		// strtol+endp (not atol): a non-numeric ACQ_START token would otherwise
+		// collapse to tic=0 and be pushed onto the scanner-trigger timeline,
+		// silently corrupting volume timing. Matches the PMU sample-line tic
+		// parse below. Malformed row → drop (return), same as a negative tic.
+		char *endpTic;
+		long tic = strtol(toks[2], &endpTic, 10);
+		if ((endpTic == toks[2]) || (tic < 0))
 			return;
 		if (*volNP >= *volCapP) {
 			int newCap = (*volCapP == 0) ? 64 : (*volCapP * 2);
