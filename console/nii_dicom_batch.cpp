@@ -9825,11 +9825,48 @@ static void physioBidsSortByTic(long *ticArr, double *signal, int n) {
 // Inputs: ticArr / signal of length n in MDH tics, dtMs sample period in
 // ms, volTics / volN volume timeline. Output expected sample count is
 // round(duration_ms / dtMs) + 1 (fencepost), matching bidsphysio.
+// Rasterise a sparse trigger-tic array onto an existing uniform grid.
+// firstTic = origin (ticArr[0] of the carrying stream), lastTic = end
+// (ticArr[n-1]), dtTics = sample period in tics, expN = grid length.
+// Returns a calloc'd uint8_t array of length expN with 1 at each matching
+// sample (ceil-snap, "first sample whose time is >= trigger") or NULL on
+// allocation failure / empty input. Triggers outside [firstTic, lastTic]
+// are dropped to match bidsphysio's behaviour. Shared by the scanner
+// volume trigger pass and any per-stream physio-event trigger pass.
+static uint8_t *physioBidsRasterTrigger(long firstTic, long lastTic, double dtTics,
+										int expN, const long *tics, int n) {
+	if ((tics == NULL) || (n <= 0) || (expN <= 0) || (dtTics <= 0.0))
+		return NULL;
+	uint8_t *u = (uint8_t *)calloc((size_t)expN, sizeof(uint8_t));
+	if (u == NULL)
+		return NULL;
+	for (int i = 0; i < n; i++) {
+		long t = tics[i];
+		if ((t < firstTic) || (t > lastTic))
+			continue;
+		double off = (double)(t - firstTic) / dtTics;
+		int idx = (int)ceil(off);
+		if (idx < 0)
+			idx = 0;
+		if (idx >= expN)
+			idx = expN - 1;
+		u[idx] = 1;
+	}
+	return u;
+}
+
 static void physioBidsFillUniform(const long *ticArr, const double *signal, int n,
-								  double dtMs, const long *volTics, int volN,
-								  double **outSignal, uint8_t **outTrigger, int *outN) {
+								  double dtMs,
+								  const long *volTics, int volN,
+								  const long *peakTics, int peakN,
+								  double **outSignal,
+								  uint8_t **outTrigger,
+								  uint8_t **outPeakTrigger,
+								  int *outN) {
 	*outSignal = NULL;
 	*outTrigger = NULL;
+	if (outPeakTrigger != NULL)
+		*outPeakTrigger = NULL;
 	*outN = 0;
 	if ((n < 2) || (dtMs <= 0.0))
 		return;
@@ -9843,12 +9880,8 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 	if (expN < n)
 		expN = n; // never lose a real sample to rounding
 	double *uS = (double *)malloc(sizeof(double) * (size_t)expN);
-	uint8_t *uT = (uint8_t *)calloc((size_t)expN, sizeof(uint8_t));
-	if ((uS == NULL) || (uT == NULL)) {
-		free(uS);
-		free(uT);
+	if (uS == NULL)
 		return;
-	}
 	for (int i = 0; i < expN; i++)
 		uS[i] = NAN;
 	long firstTic = ticArr[0];
@@ -9862,27 +9895,23 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 		uS[idx] = signal[i];
 	}
 	long lastTic = ticArr[n - 1];
-	for (int i = 0; i < volN; i++) {
-		long vt = volTics[i];
-		// Drop triggers outside the actual recording window — bidsphysio
-		// also discards them rather than clamping to the endpoints.
-		if ((vt < firstTic) || (vt > lastTic))
-			continue;
-		// Place at the first sample whose time is >= the trigger time
-		// (ceiling semantics). This matches bidsphysio's
-		// `argmax(sampling_times >= t)` placement; using nearest-neighbour
-		// rounding instead would shift triggers by one sample on
-		// half-integer offsets.
-		double off = (double)(vt - firstTic) / dtTics;
-		int idx = (int)ceil(off);
-		if (idx < 0)
-			idx = 0;
-		if (idx >= expN)
-			idx = expN - 1;
-		uT[idx] = 1;
+	uint8_t *uT = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, volTics, volN);
+	if (uT == NULL) {
+		// Scanner-trigger array is always written (even if empty) so the
+		// writer always has a non-NULL pointer for the 2nd column.
+		uT = (uint8_t *)calloc((size_t)expN, sizeof(uint8_t));
+		if (uT == NULL) {
+			free(uS);
+			return;
+		}
 	}
+	uint8_t *uP = NULL;
+	if ((outPeakTrigger != NULL) && (peakN > 0))
+		uP = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, peakTics, peakN);
 	*outSignal = uS;
 	*outTrigger = uT;
+	if (outPeakTrigger != NULL)
+		*outPeakTrigger = uP;
 	*outN = expN;
 }
 
@@ -9890,6 +9919,7 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 // definition follows immediately after.
 static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
+									 const char *peakLabel, const uint8_t *peakTrigger,
 									 int nSamples, double sampFreq,
 									 double startTimeSec, int gzLevel);
 
@@ -9901,20 +9931,37 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 // / 1000`), and call xaPhysioWriteStreamFiles. Returns true if a stream
 // was emitted, false if it was skipped (allocation failure or empty grid).
 //
-// Caller retains ownership of ticArr/signal/volTics; this function only
-// allocates and frees the uniform-grid working buffers internally.
+// `peakTics`/`peakN` + `peakLabel` are optional: when non-NULL/positive
+// they emit a 3rd column carrying the physiological-event triggers
+// (`PULS_TRIGGER` / `RESP_TRIGGER` from the CMRR PMU log) at the nearest
+// BIDS sample, with `peakLabel` as the JSON `Columns` entry (e.g.
+// `cardiac_trigger`, `respiratory_trigger`). The standalone BIDS-canonical
+// `trigger` column keeps its scanner-volume-only semantics — this matches
+// the BIDS spec's "continuous measurement of the scanner trigger signal"
+// description and stays byte-compatible with bidsphysio for that column.
+//
+// Caller retains ownership of ticArr/signal/volTics/peakTics; this
+// function only allocates and frees the uniform-grid working buffers
+// internally.
 static bool physioBidsEmitStream(const char *baseName, const char *label,
 								 const long *ticArr, const double *signal, int n,
 								 double dtMs, double sampFreq,
-								 const long *volTics, int volN, int gzLevel) {
+								 const long *volTics, int volN,
+								 const long *peakTics, int peakN,
+								 const char *peakLabel,
+								 int gzLevel) {
 	double *uSignal = NULL;
 	uint8_t *uTrig = NULL;
+	uint8_t *uPeak = NULL;
 	int uN = 0;
-	physioBidsFillUniform(ticArr, signal, n, dtMs, volTics, volN,
-						  &uSignal, &uTrig, &uN);
+	physioBidsFillUniform(ticArr, signal, n, dtMs,
+						  volTics, volN,
+						  peakTics, peakN,
+						  &uSignal, &uTrig, &uPeak, &uN);
 	if ((uSignal == NULL) || (uN < 1)) {
 		free(uSignal);
 		free(uTrig);
+		free(uPeak);
 		return false;
 	}
 	// StartTime per BIDS: physio-timeline t=0 expressed relative to the
@@ -9930,19 +9977,31 @@ static bool physioBidsEmitStream(const char *baseName, const char *label,
 	} else
 		startTimeSec = 0.0;
 	xaPhysioWriteStreamFiles(baseName, label, uSignal,
-							 (volN > 0) ? uTrig : NULL, uN,
-							 sampFreq, startTimeSec, gzLevel);
+							 (volN > 0) ? uTrig : NULL,
+							 (uPeak != NULL) ? peakLabel : NULL, uPeak,
+							 uN, sampFreq, startTimeSec, gzLevel);
 	free(uSignal);
 	free(uTrig);
+	free(uPeak);
 	return true;
 }
 
 // Write `<base>_recording-<label>_physio.tsv.gz` (gzipped, no header row,
 // per BIDS convention) plus the matching JSON sidecar with Columns,
-// SamplingFrequency, and StartTime. NaN signal values are emitted as the
-// literal string `nan` to match the bidsphysio Python parser.
+// SamplingFrequency, and StartTime. NaN signal values are emitted as
+// the literal string `n/a` per the bids-validator's TSV missing-value
+// convention.
+//
+// Two optional columns:
+//   * `trigger`  — scanner volume triggers (BIDS-canonical column).
+//   * `<peakLabel>` — per-stream physiological-event triggers (e.g.
+//     `cardiac_trigger` from `PULS_TRIGGER`, `respiratory_trigger`
+//     from `RESP_TRIGGER`). Out-of-band marker that the firmware
+//     detected a heartbeat / breath at this sample. Independent of
+//     the scanner column so consumers can pick what they need.
 static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
+									 const char *peakLabel, const uint8_t *peakTrigger,
 									 int nSamples, double sampFreq,
 									 double startTimeSec, int gzLevel) {
 	char outBase[PATH_MAX];
@@ -9953,6 +10012,8 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON_AddItemToArray(cols, cJSON_CreateString(label));
 	if (trigger != NULL)
 		cJSON_AddItemToArray(cols, cJSON_CreateString("trigger"));
+	if ((peakTrigger != NULL) && (peakLabel != NULL) && (peakLabel[0] != '\0'))
+		cJSON_AddItemToArray(cols, cJSON_CreateString(peakLabel));
 	cJSON_AddItemToObject(root, "Columns", cols);
 	cJSON_AddItemToObject(root, "SamplingFrequency", cJSON_CreateNumber(sampFreq));
 	cJSON_AddItemToObject(root, "StartTime", cJSON_CreateNumber(startTimeSec));
@@ -9986,11 +10047,19 @@ static void xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		// pandas; that compatibility goal is retired in favour of validator
 		// compliance.
 		bool isNan = isnan(signal[i]);
+		bool hasPeak = (peakTrigger != NULL);
 		if (trigger != NULL) {
-			if (isNan)
-				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\t%d\n", (int)trigger[i]);
-			else
-				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n", signal[i], (int)trigger[i]);
+			if (hasPeak) {
+				if (isNan)
+					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\t%d\t%d\n", (int)trigger[i], (int)peakTrigger[i]);
+				else
+					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\t%d\n", signal[i], (int)trigger[i], (int)peakTrigger[i]);
+			} else {
+				if (isNan)
+					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\t%d\n", (int)trigger[i]);
+				else
+					n = snprintf(tsv + tsvLen, bufCap - tsvLen, "%.4f\t%d\n", signal[i], (int)trigger[i]);
+			}
 		} else {
 			if (isNan)
 				n = snprintf(tsv + tsvLen, bufCap - tsvLen, "n/a\n");
@@ -10216,8 +10285,13 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 			continue;
 		}
 		double sampFreq = 1000.0 / dtMs;
+		// XA-line PhysioLogging gzip-XML has no per-row PULS_TRIGGER /
+		// RESP_TRIGGER markers (the <PhysioTriggers> XML element carries
+		// those, in a separate parser path that isn't wired in here yet).
+		// Pass NULL for the peak channel so we emit a 2-column TSV.
 		if (physioBidsEmitStream(baseName, label, ticArr, signal, n, dtMs,
-								 sampFreq, volTics, volN, opts.gzLevel))
+								 sampFreq, volTics, volN,
+								 NULL, 0, NULL, opts.gzLevel))
 			wrote++;
 		free(signal);
 		free(ticArr);
@@ -10563,30 +10637,33 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 			continue;
 		}
 		double sampFreq = 1000.0 / dtMs;
-		// Merge global ACQUISITION_INFO volume triggers with this stream's
-		// PULS/RESP/EXT/ECG physio-event triggers into one tic list passed
-		// to the rasteriser. physioBidsFillUniform writes 1 in the trigger
-		// column at the nearest BIDS sample for each tic; same code value
-		// for both kinds is intentional — cardiac and respiratory live in
-		// separate TSVs so a cardiac peak in cardiac.tsv vs a respiratory
-		// peak in respiratory.tsv is already unambiguous.
-		long *allTics = volTics;
-		int allN = volN;
-		long *merged = NULL;
-		if (st->triggerN > 0) {
-			merged = (long *)malloc(sizeof(long) * ((size_t)volN + (size_t)st->triggerN));
-			if (merged != NULL) {
-				if (volN > 0)
-					memcpy(merged, volTics, sizeof(long) * (size_t)volN);
-				memcpy(merged + volN, st->triggerTics, sizeof(long) * (size_t)st->triggerN);
-				allTics = merged;
-				allN = volN + st->triggerN;
-			}
+		// Pass scanner volume triggers (volTics) and per-stream physio-event
+		// triggers (st->triggerTics) to the emitter as TWO separate channels.
+		// The BIDS-canonical `trigger` column keeps scanner-only semantics
+		// (matching bidsphysio and the spec's "scanner trigger signal"
+		// description); the physio peaks land in a parallel `<label>_trigger`
+		// column (e.g. `cardiac_trigger`, `respiratory_trigger`) so HRV /
+		// RETROICOR consumers can pick them up while volume-trigger consumers
+		// keep reading column 2 unchanged.
+		//
+		// peakLabel is built per stream from the BIDS label + "_trigger" —
+		// "cardiac_trigger" for PULS, "respiratory_trigger" for RESP,
+		// "ecg_trigger" for ECG, "external_trigger_trigger" for EXT (a
+		// minor wart for EXT, but EXT's own BIDS label IS "external_trigger"
+		// because the entire channel is a TTL pulse train; the per-row
+		// firmware-detected events still get their own column).
+		char peakLabel[64];
+		const char *peakLabelPtr = NULL;
+		if ((st->label != NULL) && (st->triggerN > 0)) {
+			snprintf(peakLabel, sizeof(peakLabel), "%s_trigger", st->label);
+			peakLabelPtr = peakLabel;
 		}
 		if (physioBidsEmitStream(baseName, st->label, st->ticArr, st->signal, st->n,
-								 dtMs, sampFreq, allTics, allN, opts.gzLevel))
+								 dtMs, sampFreq,
+								 volTics, volN,
+								 st->triggerTics, st->triggerN, peakLabelPtr,
+								 opts.gzLevel))
 			wrote++;
-		free(merged);
 	}
 	for (int s = 0; s < kCMRRMaxStreams; s++) {
 		free(streams[s].ticArr);
