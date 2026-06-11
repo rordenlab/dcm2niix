@@ -9895,12 +9895,20 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 		uS[idx] = signal[i];
 	}
 	long lastTic = ticArr[n - 1];
-	uint8_t *uT = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, volTics, volN);
-	if (uT == NULL) {
-		// Scanner-trigger array is always written (even if empty) so the
-		// writer always has a non-NULL pointer for the 2nd column.
-		uT = (uint8_t *)calloc((size_t)expN, sizeof(uint8_t));
+	// Allocate the scanner-trigger raster only when there are scanner tics
+	// to write. The caller (physioBidsEmitStream) already gates the writer's
+	// column 2 on `volN > 0`, so an empty raster is never emitted. Skipping
+	// the alloc when volN == 0 keeps the signal+peak schema (no scanner
+	// triggers but firmware peaks present) from being silently dropped on
+	// an unused calloc OOM.
+	uint8_t *uT = NULL;
+	if (volN > 0) {
+		uT = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, volTics, volN);
 		if (uT == NULL) {
+			// physioBidsRasterTrigger returned NULL despite volN > 0 — calloc
+			// failed. The writer hard-requires a non-NULL pointer for column 2
+			// when scanner triggers were requested, so the entire stream
+			// cannot be emitted. Bail with the signal buffer cleaned up.
 			free(uS);
 			return;
 		}

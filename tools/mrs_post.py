@@ -28,8 +28,9 @@ Three cases handled:
    classic 2× cases where dcm2niix's C-side companion writer already
    emitted both _svs and _mrsref.
 
-Dependencies: pydicom (already a reproinx.py dep) + numpy. Pure-stdlib
-otherwise.
+Dependencies: pydicom + numpy. Pure-stdlib otherwise. (Note: unlike
+reproinx.py, which is stdlib-only, this tool requires the two third-party
+packages above.)
 
 Attribution: split logic ported from spec2nii (BSD-3-Clause, William
 Clarke, U. Oxford 2020). See spec2nii/Siemens/dicomfunctions.py:737-849

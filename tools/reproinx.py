@@ -15,9 +15,11 @@ Currently implemented:
     heudiconv's `POPULATE_INTENDED_FOR_OPTS = {"matching_parameters":
     ["ImagingVolume", "Shims"], "criterion": "Closest"}`. We emit modern
     BIDS B0Field* fields rather than the legacy `IntendedFor` list.
-  - BIDS scaffolding: `CHANGES`, `README`, `.bidsignore`, `participants.tsv`
+  - BIDS scaffolding: `CHANGES`, `README`, `participants.tsv`
     and `.json`, `scans.json`, per-task `task-X[_acq-Y]_bold.json`, empty
-    per-task `_events.tsv` placeholders.
+    per-task `_events.tsv` placeholders. (`.bidsignore` is created on
+    demand by the collision-suffix / single-volume-DWI / bidsguess-residual
+    sweeps when there is something real to ignore.)
 
 Usage:
     reproinx.py <indir> [outdir] [subject] [session]

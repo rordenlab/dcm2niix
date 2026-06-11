@@ -188,7 +188,7 @@ in the JSON sidecar), then per-subject and per-session:
   extra metadata.
 - **Per-task empty `_events.tsv`** placeholders next to each `_bold.nii*`.
 - **BIDS root scaffolding**: `CHANGES`, `README` (no `.md`),
-  `.bidsignore`, `participants.tsv` (one row per `sub-*`, columns
+  `participants.tsv` (one row per `sub-*`, columns
   `participant_id, age, sex, group` with `age`/`sex` pulled from the
   provenance TSV and `group` defaulting to `control`; rows ordered
   chronologically by StudyDate then alphabetical),
@@ -296,14 +296,14 @@ ReproIn allows `_dir-AP/PA/LR/...` directly in ProtocolName. dcm2niix does not
 currently cross-check against `(0018,9089) PhaseEncodingDirection`. Mismatch
 silently flows through. Post-pass could verify and warn.
 
-### 9. Physio recordings routed under `derivatives/scanner/`
+### 9. Physio recordings routed under `derivatives/scanner/` (handled by reproinx.py)
 Siemens XA PhysioLogging and CMRR PMU files arrive as DICOM Raw Data Storage,
-and `dcm.isDerived` is true for them. Under `-f H` they consequently land in
+and `dcm.isDerived` is true for them, so under `-f H` they initially land in
 `derivatives/scanner/sub-XX/ses-YY/func/<bold-stem>_recording-*_physio.tsv.gz`.
 BIDS canonically places `_physio` recordings alongside the corresponding `_bold`
-file under `sub-XX/ses-YY/func/`. Post-pass should move physio sidecars next to
-their target BOLD or fix the routing here by gating physio-specific writers on
-`dcm.isXAPhysio`/`dcm.isCMRRPhysio` rather than `isDerived`.
+file under `sub-XX/ses-YY/func/`, and `reproinx.py:_rescue_physio_recordings`
+(run in `_post_process`) moves them there. Direct `dcm2niix -f %H` users without
+the post-pass still see physio under `derivatives/scanner/`.
 
 ### 10. Multi-echo phasediff vs phase1/phase2
 ReproIn currently emits `phasediff` for any `P` image in a fmap. The BIDS
