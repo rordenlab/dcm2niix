@@ -800,7 +800,14 @@ def _session_token_from_studydatetime(study_date: str, study_time: str) -> str:
 # Audit M1: "mrs" must be present so MR Spectroscopy files that somehow fall
 # into Unknown/ (rather than going through saveDcm2NiiMRS) can be rescued.
 # The C side emits BidsGuess ["mrs","_svs"]; the rescue allowlist has to
-# match. Keep this set aligned with the C-side bidsDataType emissions.
+# match. Keep this set aligned with the C-side bidsDataType emissions —
+# WITH ONE DELIBERATE EXCEPTION: "ct" is intentionally OMITTED here even
+# though the C side now emits BidsGuess ["ct","_ct"]. BEP-024 is unratified
+# (the BIDS validator has no "ct" datatype yet), so under -f %H we want CT
+# to stay parked in Unknown/ and be routed by the .bidsignore sweep rather
+# than promoted into a ct/ directory. Do NOT add "ct" in a future
+# "alignment" cleanup — that would change -f %H behavior. Revisit only when
+# BEP-024 is stable in the validator.
 _BIDS_DATATYPES = frozenset({
     "anat", "func", "dwi", "fmap", "perf", "pet", "mrs", "meg", "eeg",
     "ieeg", "beh", "micr", "nirs", "motion",

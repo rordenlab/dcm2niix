@@ -7422,7 +7422,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kRadiopharmaceuticalStartTime: {
-			// issue 983: HHMMSS.FFFFFF, inside (0054,0016); used to compute BIDS InjectionStart
+			// issue 983: HHMMSS.FFFFFF, inside (0054,0016). Siemens dose-MEASUREMENT
+			// time (NOT injection time) — deliberately NOT used for BIDS InjectionStart
+			// (see nii_dicom_batch.cpp PET block). Still used for ADMIN ImageDecayCorrectionTime.
 			char buf[kDICOMStr] = "";
 			dcmStr(lLength, &buffer[lPos], buf);
 			d.radiopharmaceuticalStartTime = atof(buf);

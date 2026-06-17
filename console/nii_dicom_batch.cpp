@@ -2408,7 +2408,11 @@ tse3d: T2*/
 	}
 	// printf("::::%s ->'%s' : s%d i%d\n", d.reconstructionMethod, reconMethodName, subsets, iterations);
 	// END issue 802
-	json_Float(fp, "\t\"ScatterFraction\": %g,\n", d.scatterFraction);
+	// BIDS-PET schema types ScatterFraction strictly as `array` (unlike
+	// ReconFilterSize which is number-or-array), so a scalar is a validator
+	// type error — emit a single-element array. Sibling DecayCorrectionFactor /
+	// FrameDuration are likewise arrays.
+	json_Float(fp, "\t\"ScatterFraction\": [%g],\n", d.scatterFraction);
 	if (dti4D->decayFactor[0] >= 0.0) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"DecayCorrectionFactor\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
@@ -2514,25 +2518,23 @@ tse3d: T2*/
 			fprintf(fp, "\t\"SeriesTime\": \"%02d:%02d:%02d\",\n", hours, minutes, seconds);
 		}
 		double t = (d.seriesTime > 0.0) ? d.seriesTime : d.acquisitionTime;
-		/* issue 983: leave out TimeZero
-		// issue 983: PET TimeZero should be SeriesTime (scan start), not AcquisitionTime
-		// (per-frame or delayed-reconstruction time). Decay correction is relative to SeriesTime.
-		// Fall back to AcquisitionTime if SeriesTime missing.
-		int time = (int)t;
-		int hours = time / 10000;
-		int minutes = (time / 100) % 100;
-		int seconds = time % 100;
-		fprintf(fp, "\t\"TimeZero\": \"%02d:%02d:%02d\",\n", hours, minutes, seconds);
-		*/
+		// DELIBERATELY do NOT emit TimeZero or InjectionStart (issue #983 / PR
+		// #1014). dcm2niix emits the raw SeriesTime (above) and lets a PET-BIDS
+		// finalizer (e.g. PET2BIDS) choose the time-zero convention:
+		//  - the old TimeZero used AcquisitionTime, which is wrong for dynamic /
+		//    multi-bed / time-subset reconstructions (AcquisitionTime != scan
+		//    start; decay correction + FrameTimesStart are relative to SeriesTime).
+		//  - InjectionStart can't be derived: Siemens RadiopharmaceuticalStartTime
+		//    is the dose-MEASUREMENT time, not the injection time, so any emitted
+		//    value (including 0) would be a fabrication. (The ADMIN branch below
+		//    still uses that field for ImageDecayCorrectionTime — a different,
+		//    DICOM-defined semantic: the decay-correction REFERENCE time, not an
+		//    injection assertion — so that use is defensible, not contradictory.)
+		// These fields ARE BIDS-PET required, so raw dcm2niix output is
+		// intentionally not validator-complete for PET — that is by design;
+		// PET2BIDS adds TimeZero/InjectionStart downstream. DO NOT re-enable.
+		// (`t` remains used by the ADMIN decay-correction branch below.)
 		fprintf(fp, "\t\"ScanStart\": 0,\n");
-		/* issue983: InjectionStart not be defined due to risk of ambiguity
-		if (d.radiopharmaceuticalStartTime > 0.0) {
-			double injSec = dicomTimeToSec(d.radiopharmaceuticalStartTime);
-			double t0Sec = dicomTimeToSec(t);
-			if ((injSec >= 0) && (t0Sec >= 0))
-				fprintf(fp, "\t\"InjectionStart\": %g,\n", injSec - t0Sec);
-		}
-		*/
 		if (strlen(d.decayCorrection) > 0) {
 			bool corrected = (strcmp(d.decayCorrection, "NONE") != 0);
 			fprintf(fp, "\t\"ImageDecayCorrected\": %s,\n", corrected ? "true" : "false");
@@ -9166,13 +9168,23 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 
 bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVerbose) {
 	if (d->modality == kMODALITY_PT) {
-		strcpy(d->CSA.bidsDataType, "PET");
-		strcpy(d->CSA.bidsEntitySuffix, "PET");
+		// BIDS-PET (BEP009, stable since BIDS 1.5): datatype dir is lowercase
+		// "pet" and the suffix is "_pet" (lowercase, leading underscore — the
+		// convention both the BidsGuess consumer in reproinx and the -f %h
+		// filename builder at ~L5054 expect). The prior "PET"/"PET" produced an
+		// uppercase "PET/" dir and a separator-less "<sub>_<ses>PET" filename,
+		// which the BIDS validator rejects (NOT_INCLUDED). CT below uses the
+		// same lowercase `ct`/`_ct` forms — the BEP-024 datatype/suffix naming
+		// is stable even though the full BEP isn't ratified. (reproinx's
+		// _BIDS_DATATYPES allowlist still omits "ct", so under -f %H CT stays in
+		// Unknown/ — that's a separate reproinx-side decision, unchanged here.)
+		strcpy(d->CSA.bidsDataType, "pet");
+		strcpy(d->CSA.bidsEntitySuffix, "_pet");
 		return true;
 	}
 	if (d->modality == kMODALITY_CT) {
-		strcpy(d->CSA.bidsDataType, "CT");
-		strcpy(d->CSA.bidsEntitySuffix, "CT");
+		strcpy(d->CSA.bidsDataType, "ct");
+		strcpy(d->CSA.bidsEntitySuffix, "_ct");
 		return true;
 	}
 	if (d->manufacturer == kMANUFACTURER_SIEMENS)
