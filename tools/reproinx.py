@@ -1669,6 +1669,34 @@ def _ensure_taskname(json_path: Path, task_name: str) -> None:
     _save_json(json_path, data)
 
 
+def _ensure_physio_tasknames(out_root: Path) -> int:
+    """Backfill `TaskName` into `*_physio.json` sidecars that carry a `task-`
+    entity. The dataset-level `task-X_bold.json` TaskName is NOT inherited by
+    `_physio` files (different suffix), so the BIDS validator warns
+    SIDECAR_KEY_RECOMMENDED(TaskName) on every physio sidecar. TaskName is the
+    task label itself — runs/acqs of one task legitimately SHARE a TaskName
+    (the `run-`/`acq-` entities distinguish acquisitions, not the task name).
+    Skips sidecars that already define TaskName and physio left under
+    derivatives/. Returns the count updated."""
+    n = 0
+    for jp in out_root.rglob("*_physio.json"):
+        if any(part == "derivatives" for part in jp.parts):
+            continue
+        m = re.search(r"task-([A-Za-z0-9]+)", jp.name)
+        if not m:
+            continue
+        try:
+            data = _load_json(jp)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or data.get("TaskName"):
+            continue
+        data["TaskName"] = m.group(1)
+        _save_json(jp, data)
+        n += 1
+    return n
+
+
 def _emit_task_bold_jsons(out_root: Path) -> None:
     """For every distinct `task-X[_acq-Y]_*_bold.nii.gz`, ensure a top-level
     `task-X[_acq-Y]_bold.json` exists. dcm2niix's default boilerplate emits
@@ -2310,6 +2338,10 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) 
             _write_root_scaffolding(root)
             _write_participants(root)
             _emit_task_bold_jsons(root)
+            np = _ensure_physio_tasknames(root)
+            if np > 0:
+                print(f"  {root}: backfilled TaskName into {np} physio sidecar(s)",
+                      file=sys.stderr)
     except Exception as e:
         print(f"reproinx: scaffolding failed: {e}", file=sys.stderr)
         if strict:

@@ -2703,7 +2703,11 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); // usec -> sec
 			float num_RF_Block = csaAscii.adFree[3];
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
-			// Sep 5, 2023, at 7:56 PM, Danny JJ Wang the labeling duration is (0.92*20*Num_RF_Block) ms
+			// LabelingDuration = NumRFBlocks * 18.4 ms, where 18.4 ms = 0.92 (RF duty
+			// cycle) * 20 ms (nominal RF block). Per Danny JJ Wang (email 2023-09-05);
+			// the per-block timing is also documented in Korean J Radiol 2018;19(4)
+			// (doi:10.3348/kjr.2018.0651). The constant is empirical/sequence-specific
+			// — validate before reusing for non-LOFT pCASL implementations.
 			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", (0.92 * 20.0 * num_RF_Block) / 1000.0); // in seconds
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0));			  // usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);
@@ -2719,8 +2723,12 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"T1\": %g,\n", csaAscii.adFree[12] * (1.0 / 1000000.0));			   // usec -> sec
 			float num_RF_Block = csaAscii.adFree[3];
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
-			// Sep 5, 2023, at 7:56 PM, Danny JJ Wang the labeling duration is (0.92*20*Num_RF_Block) ms
-			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", (0.92 * 20.0 * num_RF_Block) / 1000.0); // in seconds
+			// Unlike 2D ep2d_pcasl (which derives LabelingDuration from
+			// NumRFBlocks * 18.4 ms), this 3D tgse_pcasl reports an explicit labeling
+			// duration in adFree[2] (emitted above). Do NOT also emit the
+			// NumRFBlocks-derived value: the two disagree (e.g. 1.2 s vs 1.5088 s) and
+			// emitting both produced a duplicate "LabelingDuration" key. adFree[2] is
+			// authoritative for this sequence.
 		}
 		// ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails, "ep2d_pasl")) {
@@ -9893,7 +9901,13 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 	// scanner-trigger-raster OOM paths the same way.
 	if (outOom != NULL)
 		*outOom = false;
-	if ((n < 2) || (dtMs <= 0.0))
+	// Reject non-finite dt as well as non-positive: CMRR SampleTime is parsed
+	// with atof (~:10711), so a malformed "inf"/"nan" token yields dtMs = inf/nan.
+	// inf passes a bare `> 0` test and nan passes a bare `<= 0` test, so without
+	// the isfinite() gate dtTics would be inf/nan, expD would collapse to 1.0
+	// (passing the span guard below), and every sample would map to index ~0 —
+	// a corrupt-but-"successful" TSV. Fail closed instead (degenerate skip).
+	if ((n < 2) || (dtMs <= 0.0) || (!isfinite(dtMs)))
 		return;
 	// Sample period expressed in tics so we can index without losing
 	// precision on the 2.5 ms tic boundaries.
@@ -9901,7 +9915,21 @@ static void physioBidsFillUniform(const long *ticArr, const double *signal, int 
 	if (dtTics <= 0.0)
 		return;
 	double spanTics = (double)(ticArr[n - 1] - ticArr[0]);
-	int expN = (int)floor(spanTics / dtTics + 0.5) + 1;
+	// Bound the raster length in the double domain BEFORE the int cast. ticArr
+	// tics are strtol-parsed with only a >=0 floor (XA/CMRR), so a corrupt or
+	// hostile timestamp can make spanTics/dtTics exceed INT_MAX — the (int) cast
+	// would then be undefined behaviour, and a wrap to a small positive value
+	// would under-allocate uS and silently funnel many samples into the last
+	// bucket (idx clamps below). Reject the implausible span fail-closed (same
+	// contract as the alloc-OOM path) rather than rasterising corrupt data.
+	double expD = floor(spanTics / dtTics + 0.5) + 1.0;
+	if ((!isfinite(expD)) || (expD < 1.0) || (expD > (double)(INT_MAX - 2))) {
+		printWarning("Physio: implausible time span (%g tics / %g) — discarding stream\n", spanTics, dtTics);
+		if (outOom != NULL)
+			*outOom = true;
+		return;
+	}
+	int expN = (int)expD;
 	if (expN < n)
 		expN = n; // never lose a real sample to rounding
 	double *uS = (double *)malloc(sizeof(double) * (size_t)expN);
@@ -10107,9 +10135,15 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON *peakName = ((peakTrigger != NULL) && (peakLabel != NULL) && (peakLabel[0] != '\0'))
 						  ? cJSON_CreateString(peakLabel)
 						  : NULL;
+	// PhysioType is RECOMMENDED by BIDS (default "generic", which MUST be
+	// assumed when absent). The scanner cardiac/respiratory/trigger streams we
+	// emit follow the column-naming recommendations for "generic" recordings
+	// (the only other allowed keyword is "eyetrack"), so "generic" is correct
+	// and silences the validator's SIDECAR_KEY_RECOMMENDED(PhysioType) warning.
+	cJSON *physioType = cJSON_CreateString("generic");
 	cJSON *sampHz = cJSON_CreateNumber(sampFreq);
 	cJSON *startT = cJSON_CreateNumber(startTimeSec);
-	if (root == NULL || cols == NULL || sigName == NULL || sampHz == NULL || startT == NULL ||
+	if (root == NULL || cols == NULL || sigName == NULL || physioType == NULL || sampHz == NULL || startT == NULL ||
 		(trigger != NULL && trigName == NULL) || (peakName == NULL && peakTrigger != NULL &&
 												  peakLabel != NULL && peakLabel[0] != '\0')) {
 		cJSON_Delete(root);
@@ -10117,6 +10151,7 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		cJSON_Delete(sigName);
 		cJSON_Delete(trigName);
 		cJSON_Delete(peakName);
+		cJSON_Delete(physioType);
 		cJSON_Delete(sampHz);
 		cJSON_Delete(startT);
 		printWarning("Physio: JSON allocation failed for %s — skipping stream\n", label);
@@ -10127,6 +10162,7 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		cJSON_AddItemToArray(cols, trigName);
 	if (peakName != NULL)
 		cJSON_AddItemToArray(cols, peakName);
+	cJSON_AddItemToObject(root, "PhysioType", physioType);
 	cJSON_AddItemToObject(root, "Columns", cols);
 	cJSON_AddItemToObject(root, "SamplingFrequency", sampHz);
 	cJSON_AddItemToObject(root, "StartTime", startT);
@@ -10141,12 +10177,29 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	// risk of manual orphan tracking against a void-returning vendored API.)
 	int expectCols = 1 + ((trigName != NULL) ? 1 : 0) + ((peakName != NULL) ? 1 : 0);
 	if ((cJSON_GetArraySize(cols) != expectCols) ||
+		(cJSON_GetObjectItem(root, "PhysioType") == NULL) ||
 		(cJSON_GetObjectItem(root, "Columns") == NULL) ||
 		(cJSON_GetObjectItem(root, "SamplingFrequency") == NULL) ||
 		(cJSON_GetObjectItem(root, "StartTime") == NULL)) {
 		cJSON_Delete(root);
 		printWarning("Physio: JSON key attachment failed for %s — discarding stream\n", label);
 		return false;
+	}
+	// Document the non-standard firmware-peak column so the validator does not
+	// warn TSV_ADDITIONAL_COLUMNS_UNDEFINED. `cardiac`/`respiratory`/`trigger`
+	// are BIDS-recognized generic-physio column names (no description needed);
+	// the per-stream peak column (peakLabel, e.g. `cardiac_trigger`) is a
+	// dcm2niix-specific deviation and MUST carry a column-description object.
+	// Best-effort RECOMMENDED metadata: a strdup OOM here degrades to the prior
+	// validator warning rather than a corrupt sidecar, so it stays outside the
+	// fail-closed required-key check above.
+	if (peakName != NULL) {
+		cJSON *peakDesc = cJSON_CreateObject();
+		if (peakDesc != NULL) {
+			cJSON_AddStringToObject(peakDesc, "Description",
+									"Firmware-detected physiological event peak (e.g. cardiac R-wave or respiratory peak): 1 at a sample the scanner flagged as a detected peak, 0 otherwise. Independent of the scanner-volume `trigger` column.");
+			cJSON_AddItemToObject(root, peakLabel, peakDesc);
+		}
 	}
 	char *jsonStr = cJSON_Print(root);
 	cJSON_Delete(root);
@@ -10199,7 +10252,11 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		// emission inside the `trigger != NULL` branch — emitting the JSON
 		// peak column but no TSV value when ACQUISITION_INFO was absent
 		// (silent data loss).
-		bool isNan = isnan(signal[i]);
+		// Emit BIDS "n/a" for any non-finite value, not just NaN: a hostile/
+		// malformed CMRR sample token ("inf") parsed by strtod (~:10785) would
+		// otherwise print the literal "inf" — invalid TSV. isfinite() folds
+		// inf/-inf into the same n/a path as NaN (valid data is always finite).
+		bool isNan = !isfinite(signal[i]);
 		char *q = tsv + tsvLen;
 		size_t rem = bufCap - tsvLen;
 		n = isNan ? snprintf(q, rem, "n/a") : snprintf(q, rem, "%.4f", signal[i]);

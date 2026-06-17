@@ -225,4 +225,5 @@ The following tools exploit dcm2niix
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).
   - [twice_exceptionality_repository](https://github.com/avery-water/twice_exceptionality_repository) converts DICOM to BIDS format, creates masks, and runs VBM.
+  - [XA30_workaround](https://github.com/vanandrew/XA30_workaround) uses dcm2niix.
   - [XNAT2BIDS](https://github.com/kamillipi/2bids) is a simple xnat pipeline to convert DICOM scans to BIDS-compatible output.
