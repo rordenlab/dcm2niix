@@ -11068,12 +11068,27 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	// if (nConvert > 1)
 	//	indx1 = dcmSort[1].indx;
 	uint64_t indxEnd = dcmSort[nConvert - 1].indx;
-	// Reset every `nii_SaveBIDSX`-read sentinel before we start filling in
-	// values from this stack of DICOMs (issue 616: not enhanced DICOMs;
-	// downstream emission gates on `[0] >= 0.0` so leftover values would
-	// emit garbage arrays). Helper canonicalised after the audit follow-up
-	// to 33da307.
-	initTDTI4D(dti4D);
+	// issue 616: not enhanced DICOMs: infer these arrays from multiple volumes.
+	// Reset ONLY the BEP009/PET sentinel arrays + the two repetition-time
+	// scalars here. Do NOT call initTDTI4D() at this site: by this point the
+	// enhanced/multiframe parser (and PAR/REC) has ALREADY populated dti4D, and
+	// dti4D->sliceOrder[0], dti4D->intenScale[0] and dti4D->triggerDelayTime[0]
+	// are LIVE per-frame data consumed downstream — they gate enhanced
+	// per-slice reordering (nii_loadImgXLCore, nii_dicom.cpp ~4430), per-slice
+	// intensity rescale (nii_dicom.cpp ~3663) and ASL post-label delays.
+	// Clobbering them scrambles Philips/Canon enhanced 4D output (the
+	// regression introduced by commit 54fe303, which over-broadened this reset
+	// via the initTDTI4D helper). The high-slice-count CT path (issue #1015) is
+	// unaffected: those sentinels are reset by the parser per file, and only
+	// the 4 PET arrays need clearing here.
+	dti4D->repetitionTimeInversion = 0.0;  // only set for Siemens and GE 3D T1 "TR"
+	dti4D->repetitionTimeExcitation = 0.0; // only set for Philips 3D T1 "TR"
+	if (nConvert > 0) {
+		dti4D->volumeOnsetTime[0] = -1;
+		dti4D->decayFactor[0] = -1;
+		dti4D->frameDuration[0] = -1;
+		dti4D->frameReferenceTime[0] = -1;
+	}
 	if ((strlen(dcmList[indx0].patientOrient) < 3) && (!dcmList[indx0].isMicroscopy))
 		printWarning("Patient Position (0018,5100) not specified (issue 642).\n");
 	if (dcmList[indx0].isQuadruped)
