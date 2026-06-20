@@ -204,6 +204,34 @@ in the JSON sidecar), then per-subject and per-session:
   written: `B0FieldIdentifier` on every fmap JSON in the group, and
   `B0FieldSource` on each compatible target. (Heudiconv emits the legacy
   `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.)
+- **Unknown-rescue of non-leading-datatype protocols.** Protocols that put
+  entities first and the suffix last with no leading `<datatype>` token
+  (e.g. `ses-pre_task-bernd_bold`, `acq-space_T2w`) are not canonical
+  reproin — heudiconv's `parse_series_spec` returns `{}` when `token[0]`
+  isn't a known datatype, so the one-pass parser drops them to `Unknown/`.
+  `_rescue_unknown_dir` recovers the reproin entities second-hand from the
+  `ProtocolName`: a study-scoped `ses-<X>` (one label per
+  `StudyInstanceUID`, conflicts fall back to the `StudyDate`/`StudyTime`
+  timestamp session), and a numeric `run-<N>` placed in canonical BIDS
+  order. The BidsGuess `_run-<SeriesNumber>` (a raw acquisition counter,
+  not a BIDS run index) is stripped; a non-disambiguating collision run
+  left after reclassification is dropped unless the protocol states it.
+- **Stranded physio rescue.** When a BOLD's ProtocolName fails to parse it
+  lands in `Unknown/` and dcm2niix writes its `_recording-*_physio` files
+  there too (not under `derivatives/scanner/`), so the normal physio pass
+  never sees them. `_rescue_unknown_physio` pairs each by
+  `(session, task, run)` to its rescued BOLD (unique match required),
+  adopting the bold's full stem with `_echo-N` dropped.
+- **Cross-series reclassification** (`_reclassify_session`, mirrors
+  reproin-namer; gated by `--min-volumes`/`-N`, default 5). dcm2niix
+  classifies each series in isolation; the post-pass uses the whole
+  session to resolve intent: a short reverse-PE EPI (`< N` volumes) beside
+  a long-EPI sibling becomes a PEPOLAR distortion map `fmap/…_dir-<L>_epi`
+  (existing anatomical `dir-AP`/`dir-PA` preserved, else the voxel-axis
+  label), and an `anat/…_T2w` co-planar with a session `_bold` becomes
+  `_inplaneT2`. A half-sessioned subject (a sessionless ReproIn-parsed
+  series beside a single existing `ses-*/`) is consolidated into that
+  session.
 
 Usage:
 
@@ -213,6 +241,7 @@ python3 tools/reproinx.py --no-convert <indir> <outdir>     # skip dcm2niix; re-
 python3 tools/reproinx.py --anonymize <indir> <outdir>      # upgrade inner -ba o to -ba y
 python3 tools/reproinx.py --strict <indir> <outdir>         # fail-fast on per-session errors
 python3 tools/reproinx.py --keep-derivatives <indir> <out>  # retain derivatives/scanner/
+python3 tools/reproinx.py -N 5 <indir> <outdir>             # min-volumes threshold for short-EPI->fmap/_epi reclassification
 ```
 
 `derivatives/scanner/` is the scratch tree dcm2niix `-f %H` writes scouts and
@@ -294,7 +323,11 @@ load a YAML/JSON of substitutions and rename files on disk.
 ### 8. Phase encoding direction codes
 ReproIn allows `_dir-AP/PA/LR/...` directly in ProtocolName. dcm2niix does not
 currently cross-check against `(0018,9089) PhaseEncodingDirection`. Mismatch
-silently flows through. Post-pass could verify and warn.
+silently flows through. Post-pass could verify and warn. (When `reproinx.py`
+promotes a short reverse-PE EPI to `fmap/_epi` it does preserve an existing
+anatomical `dir-AP`/`dir-PA` and only synthesises an orientation-agnostic
+voxel-axis label when the source carries none — see the reclassification bullet
+above — but it still does not validate a stated `dir-` against the sidecar.)
 
 ### 9. Physio recordings routed under `derivatives/scanner/` (handled by reproinx.py)
 Siemens XA PhysioLogging and CMRR PMU files arrive as DICOM Raw Data Storage,
@@ -302,8 +335,11 @@ and `dcm.isDerived` is true for them, so under `-f H` they initially land in
 `derivatives/scanner/sub-XX/ses-YY/func/<bold-stem>_recording-*_physio.tsv.gz`.
 BIDS canonically places `_physio` recordings alongside the corresponding `_bold`
 file under `sub-XX/ses-YY/func/`, and `reproinx.py:_rescue_physio_recordings`
-(run in `_post_process`) moves them there. Direct `dcm2niix -f %H` users without
-the post-pass still see physio under `derivatives/scanner/`.
+(run in `_post_process`) moves them there. (Physio whose parent BOLD itself
+failed to parse lands in `Unknown/` next to that BOLD instead, and is recovered
+separately by `_rescue_unknown_physio` — see the Unknown-rescue bullets above.)
+Direct `dcm2niix -f %H` users without the post-pass still see physio under
+`derivatives/scanner/`.
 
 ### 10. Multi-echo phasediff vs phase1/phase2
 ReproIn currently emits `phasediff` for any `P` image in a fmap. The BIDS

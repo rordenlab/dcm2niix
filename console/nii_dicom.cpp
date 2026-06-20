@@ -9718,6 +9718,6 @@ void remove_specialchars(char *buf) {
 	}
 
 	memcpy(buf, newbuf, ptr_newbuf - newbuf);
-	free(newbuf);
+	delete[] newbuf; // must pair with new[]; free() here is an allocator mismatch (UB)
 }
 #endif

@@ -544,6 +544,165 @@ def _write_scans_tsv(session_dir: Path) -> None:
 
 
 _SES_RE = re.compile(r"_ses-([A-Za-z0-9]+)")
+# Reproin `ses-<X>` token as it appears in a *protocol name*: at the start of
+# the string or after an underscore. heudiconv (and therefore the C parser)
+# only honours `ses-` when the protocol leads with a known <datatype> token, so
+# session-first protocols like "ses-pre_task-bernd_bold" fail to parse and the
+# session is not stamped into the on-disk filename. The Unknown-rescue uses
+# this to recover the session for such series.
+_SES_PROTOCOL_RE = re.compile(r"(?:^|_)ses-([A-Za-z0-9]+)")
+# dcm2niix's BidsGuess seeds a `_run-<SeriesNumber>` entity (a raw acquisition
+# counter, NOT a BIDS run index). This matches that token for stripping.
+_RUN_ENTITY_RE = re.compile(r"_run-[0-9]+")
+# A *numeric* reproin `run-<N>` token in a protocol name (leading or mid). Only
+# numeric runs are honoured: a non-numeric `run-<label>` (e.g. `run-sedley`) is
+# a free-form label, not a BIDS run index, so it is left to collision numbering.
+_RUN_PROTOCOL_RE = re.compile(r"(?:^|_)run-([0-9]+)")
+# BIDS entities that follow `run` in the canonical filename order. `run` must be
+# inserted before the first of these (and before the bare suffix word).
+_POST_RUN_ENTITIES = frozenset({
+    "echo", "flip", "inv", "mt", "part", "proc", "mod", "recording", "chunk"})
+
+
+def _insert_run_entity(entity_suffix: str, run_token: str) -> str:
+    """Insert `run_token` (e.g. "run-01") into a leading-underscore entity
+    suffix at its canonical BIDS position: after sub/ses/task/acq/.../dir and
+    before the first post-run entity (part/echo/...) or the trailing suffix
+    word. `entity_suffix` has the shape "[_<entity>-<value>]*_<suffix>".
+
+    Idempotent: ANY existing `run-…` token (numeric or label) is dropped before
+    inserting — the inserted token fully supersedes a prior run, so a caller that
+    builds a collision `run_template` from a suffix that already carries an
+    operator-specified run cannot emit a double `_run-X_run-Y`."""
+    toks = [t for t in entity_suffix.split("_")
+            if t and not t.startswith("run-")]
+    insert_at = len(toks) - 1 if toks else 0  # default: just before the suffix
+    for i, t in enumerate(toks):
+        key = t.split("-", 1)[0] if "-" in t else None
+        if key in _POST_RUN_ENTITIES:
+            insert_at = i
+            break
+    toks.insert(max(insert_at, 0), run_token)
+    return "_" + "_".join(toks)
+
+
+# Tokens used to match an Unknown/ physio recording to its parent BOLD.
+_TASK_TOKEN_RE = re.compile(r"(?:^|_)task-([A-Za-z0-9]+)")
+_ECHO_TOKEN_RE = re.compile(r"_echo-[0-9]+")
+
+
+def _physio_match_key(stem: str) -> tuple:
+    """(task, run) match key for pairing a physio recording with its parent
+    BOLD. Run is zero-padded to mirror the rescue's run normalisation so a
+    physio protocol `run-1` matches a bold named `run-01`.
+
+    Session is deliberately NOT part of the key: a sessionless failed protocol
+    has its BOLD rescued under a fallback timestamp session that the physio
+    filename never carried, so a session-bearing key would never match. The
+    BOLD's actual session is adopted from its on-disk path, and the (subject-
+    scoped) UNIQUE-match requirement plus a same-session subject keeps the
+    pairing correct; a genuine cross-session collision yields >1 match and is
+    skipped (fail safe)."""
+    tm = _TASK_TOKEN_RE.search(stem)
+    rm = _RUN_PROTOCOL_RE.search(stem)
+    return (tm.group(1) if tm else None,
+            f"{int(rm.group(1)):02d}" if rm else None)
+
+
+_PHYSIO_STEM_RE = re.compile(
+    r"^\d+_(?P<proto>.+)_recording-(?P<label>[A-Za-z0-9]+)_physio$")
+
+
+def _rescue_unknown_physio(unknown: Path, bids_root: Path,
+                           prov_rows: list, strict: bool) -> int:
+    """Rescue physio recordings stranded in Unknown/.
+
+    When a BOLD's ProtocolName fails reproin parse it lands in Unknown/, and
+    dcm2niix writes its physio (`_recording-LABEL_physio.{tsv.gz,json}`) right
+    next to it there rather than under derivatives/scanner/ — so the normal
+    `_rescue_physio_recordings` pass never sees it.
+
+    The physio is paired to its BOLD by (task, run) parsed from the filename
+    (session is deliberately excluded — see `_physio_match_key`); it adopts that
+    bold's full stem (sub/ses/task/acq/dir/run) with `_bold` ->
+    `_recording-LABEL_physio` and any `_echo-N` dropped (physio is shared across
+    echoes). The move is fail-closed via `_move_stem_files` (both companions move
+    or neither; honours `strict` on OSError — but a *curated-destination*
+    collision is treated as a benign skip, not a strict failure, since the
+    curated file is left intact).
+
+    Owning-subject resolution: the physio sidecar carries no PatientID and an
+    ambiguous SeriesNumber, so the subject is resolved from provenance and the
+    rescue is FAIL-CLOSED — it pairs only when the physio's protocol maps to
+    exactly ONE subject, then confines the BOLD search to that subject's tree
+    (which also excludes the root-level derivatives/scanner/ scouts). The mapping
+    keys on the sanitized `OutputStem` (the on-disk `Unknown/<SN>_<proto>`
+    spelling), NOT the raw `ProtocolName` column — the two diverge when the
+    protocol has spaces/slashes/colons that the C side rewrites to `_` in the
+    filename but not in the TSV's ProtocolName. An ambiguous (multi-subject
+    same-protocol) or unresolved subject, or a non-unique BOLD match, leaves the
+    physio in Unknown/ for the .bidsignore sweep (fail safe, no mis-pair).
+    Returns the recordings moved."""
+    stems: set[str] = set()
+    for p in unknown.glob("*_recording-*_physio.tsv.gz"):
+        stems.add(p.name[:-len(".tsv.gz")])
+    for p in unknown.glob("*_recording-*_physio.json"):
+        stems.add(p.name[:-len(".json")])
+    if not stems:
+        return 0
+    # sanitized-protocol -> {subject tokens}, from the provenance OutputStem
+    # (`[<dir>/]<SN>_<sanitized-proto>`); see docstring for why not ProtocolName.
+    sani_proto_subjects: dict[str, set] = {}
+    for r in prov_rows or []:
+        base = str(r.get("OutputStem", "")).replace("\\", "/").rsplit("/", 1)[-1]
+        pm = re.match(r"^\d+_(.+)$", base)
+        if not pm:
+            continue
+        subj = _heudiconv_subject_token(str(r.get("PatientID", "")))
+        if subj:
+            sani_proto_subjects.setdefault(pm.group(1), set()).add(subj)
+    moved = 0
+    for stem in sorted(stems):
+        m = _PHYSIO_STEM_RE.match(stem)
+        if not m:
+            continue
+        key = _physio_match_key(stem)
+        # Fail-closed on the owning subject: pair only when the provenance maps
+        # the physio's (sanitized) protocol to exactly ONE subject, then scope
+        # the BOLD search to that subject's tree (which also excludes the
+        # root-level derivatives/scanner/ scouts). An ambiguous (multi-subject
+        # same-protocol) or unresolved subject is left in Unknown/ rather than
+        # risk a cross-subject mis-pair on a rerun or hand-curated root.
+        subj_set = sani_proto_subjects.get(m.group("proto"))
+        if not subj_set or len(subj_set) != 1:
+            continue
+        scope = bids_root / f"sub-{next(iter(subj_set))}"
+        if not scope.is_dir():
+            continue
+        bases: set = set()
+        for nii in (list(scope.rglob("*_bold.nii.gz")) +
+                    list(scope.rglob("*_bold.nii"))):
+            bstem = (nii.name[:-len(".nii.gz")]
+                     if nii.name.endswith(".nii.gz") else nii.stem)
+            if _physio_match_key(bstem) != key:
+                continue
+            base = _ECHO_TOKEN_RE.sub("", bstem)
+            if base.endswith("_bold"):
+                base = base[:-len("_bold")]
+            bases.add((str(nii.parent), base))
+        if len(bases) != 1:
+            continue  # no unique parent BOLD — leave in Unknown/ (fail safe)
+        parent_str, base = next(iter(bases))
+        dst_base = f"{base}_recording-{m.group('label')}_physio"
+        try:
+            if _move_stem_files(unknown / stem, Path(parent_str) / dst_base) > 0:
+                moved += 1
+        except FileExistsError:
+            continue  # curated file already present — non-destructive
+        except OSError:
+            if strict:
+                raise
+    return moved
 
 # Provenance TSV written by dcm2niix's `-f %H` path (nii_dicom_batch.cpp
 # `reproinAppendProvenance`). One row per converted series, columns:
@@ -693,15 +852,33 @@ def _propagate_session(sub_dir: Path) -> Optional[str]:
                     m = _SES_RE.search(part)
                     if m:
                         sessions.add(m.group(1))
+    # Final fallback: the Unknown-rescue may have placed most of a study under
+    # one timestamp `ses-<...>/` subtree while a bare-datatype series that DID
+    # parse as ReproIn (e.g. a protocol of just "fmap") was written sessionless
+    # at the subject root. A BIDS subject must not mix sessioned and sessionless
+    # data, so when exactly one `ses-*/` subtree already exists and sessionless
+    # datatype dirs remain, adopt that session and consolidate the strays into
+    # it. Conservative: only fires for the single-existing-session case.
+    if not sessions:
+        children = [d for d in sub_dir.iterdir() if d.is_dir()]
+        existing_ses = [d for d in children if d.name.startswith("ses-")]
+        # Only a recognised BIDS datatype dir (anat/func/dwi/fmap/…) counts as
+        # sessionless content to consolidate — never a hand-curated folder like
+        # `code/` or `stimuli/` (audit 2026-06-20 cycle-3 F5).
+        has_sessionless = any(d.name in _BIDS_DATATYPES for d in children)
+        if len(existing_ses) == 1 and has_sessionless:
+            sessions.add(existing_ses[0].name[len("ses-"):])
     if len(sessions) != 1:
         return None
     ses = next(iter(sessions))
     target_root = sub_dir / f"ses-{ses}"
     # Per-series atomicity: group files by stem-up-to-extension(s), preflight
     # every target, and skip the whole stem on any collision so a .nii.gz
-    # and its .json never end up in different layouts.
+    # and its .json never end up in different layouts. Only recognised BIDS
+    # datatype dirs are moved — hand-curated subject-level folders are left in
+    # place (audit 2026-06-20 cycle-3 F5).
     for datatype_dir in sorted(p for p in sub_dir.iterdir() if p.is_dir()):
-        if datatype_dir.name.startswith("ses-"):
+        if datatype_dir.name.startswith("ses-") or datatype_dir.name not in _BIDS_DATATYPES:
             continue
         new_datatype = target_root / datatype_dir.name
         groups: dict[str, list[Path]] = {}
@@ -1001,6 +1178,37 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
             sn = 0
         prov_idx[(suid, sn)] = r
 
+    # Study-scoped session recovery. A protocol may carry an explicit reproin
+    # `ses-<X>` token (e.g. "ses-pre_task-bernd_bold"). Because heudiconv (and
+    # the C parser mirroring it) only honour `ses-` after a leading <datatype>
+    # token, these session-first protocols fail to parse and the session would
+    # otherwise be lost to the StudyDate/Time timestamp fallback below. Recover
+    # it here: for each StudyInstanceUID collect the `ses-<X>` token from every
+    # series' ProtocolName/SeriesDescription; when the study agrees on exactly
+    # one label, use it for every rescued series in that study. A study with no
+    # `ses-` token (or conflicting ones) falls back to the timestamp session,
+    # preserving multi-study-per-patient disambiguation.
+    study_session: dict[str, str] = {}
+    study_session_blocked: set[str] = set()
+    for r in rows:
+        suid = str(r.get("StudyInstanceUID", ""))
+        if not suid or suid in study_session_blocked:
+            continue
+        label = ""
+        for fld in ("ProtocolName", "SeriesDescription"):
+            m = _SES_PROTOCOL_RE.search(str(r.get(fld, "")))
+            if m:
+                label = re.sub(r"[^A-Za-z0-9]", "", m.group(1))
+                break
+        if not label:
+            continue
+        prev = study_session.get(suid)
+        if prev is None:
+            study_session[suid] = label
+        elif prev != label:
+            study_session.pop(suid, None)
+            study_session_blocked.add(suid)
+
     # Two-pass design (revised 2026-06-08). The previous one-pass scheme
     # iterated `sorted(unknown.glob("*.json"))` (alphabetical by filename)
     # and gave the first file at a stem the un-numbered name, with later
@@ -1071,6 +1279,22 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
             if not task:
                 task = "rest"
             entity_suffix = f"_task-{task}{entity_suffix}"
+        # Run-entity normalisation. dcm2niix's BidsGuess seeds `_run-<SeriesNumber>`
+        # (a raw acquisition counter, not a BIDS run index). Drop it. When the
+        # reproin protocol explicitly states a numeric run, re-inject it in
+        # canonical BIDS position; otherwise leave the series run-less and let
+        # the Pass-2 collision numbering add a run only for genuine duplicates.
+        entity_suffix = _RUN_ENTITY_RE.sub("", entity_suffix)
+        prot_run = ""
+        for src in (str(data.get("ProtocolName", "")),
+                    str(data.get("SeriesDescription", ""))):
+            m = _RUN_PROTOCOL_RE.search(src)
+            if m:
+                prot_run = m.group(1)
+                break
+        if prot_run:
+            entity_suffix = _insert_run_entity(
+                entity_suffix, f"run-{int(prot_run):02d}")
         suid = str(data.get("StudyInstanceUID", ""))
         try:
             sn = int(data.get("SeriesNumber", 0))
@@ -1080,22 +1304,20 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
         if prov_row is None:
             continue
         subj = _heudiconv_subject_token(str(prov_row.get("PatientID", "")))
-        sess = _session_token_from_studydatetime(
-            str(prov_row.get("StudyDate", "")),
-            str(prov_row.get("StudyTime", "")))
+        sess = study_session.get(suid, "")
+        if not sess:
+            sess = _session_token_from_studydatetime(
+                str(prov_row.get("StudyDate", "")),
+                str(prov_row.get("StudyTime", "")))
         if not subj or not sess:
             continue
         sub_token = f"sub-{subj}"
         ses_token = f"ses-{sess}"
         target_dir = bids_root / sub_token / ses_token / datatype
-        # _run-NN goes BEFORE the BIDS suffix word (e.g. "_T1w", "_bold").
-        # entity_suffix has shape "[_<entity>-<value>]*_<suffix>"; if it
-        # has no underscore we fall back to appending _run-NN at the end.
-        if "_" in entity_suffix:
-            entity_head, _, entity_tail = entity_suffix.rpartition("_")
-            run_template = f"{sub_token}_{ses_token}{entity_head}_run-{{idx:02d}}_{entity_tail}"
-        else:
-            run_template = f"{sub_token}_{ses_token}{entity_suffix}_run-{{idx:02d}}"
+        # _run-NN goes at its canonical BIDS position (before part/echo/... and
+        # the suffix word). Only used by Pass 2 when a stem actually collides.
+        run_body = _insert_run_entity(entity_suffix, "run-{idx:02d}")
+        run_template = f"{sub_token}_{ses_token}{run_body}"
         base_stem = f"{sub_token}_{ses_token}{entity_suffix}"
         src_stem_name = jp.name[:-len(".json")]
         candidates.append({
@@ -1157,25 +1379,28 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
         chosen = c.get("chosen")
         if not chosen:
             continue
-        target_dir = c["target_dir"]
-        src_stem_name = c["src_stem_name"]
-        moves: list[tuple[Path, Path]] = []
-        for ext in (".nii.gz", ".nii", ".json", ".bvec", ".bval"):
-            src = unknown / f"{src_stem_name}{ext}"
-            if src.is_file():
-                moves.append((src, target_dir / f"{chosen}{ext}"))
-        if not moves:
-            continue
+        # Move the whole family through the all-or-nothing primitive: it
+        # preflights every companion (so a target created after planning is
+        # detected, not overwritten) and rolls back on a mid-family failure
+        # (audit 2026-06-20 cycle-3 F4 — was a per-extension rename loop).
         try:
-            target_dir.mkdir(parents=True, exist_ok=True)
-            for src, dst in moves:
-                src.rename(dst)
-            rescued += 1
+            if _move_stem_files(unknown / c["src_stem_name"],
+                                c["target_dir"] / chosen) > 0:
+                rescued += 1
+        except FileExistsError:
+            print(f"reproinx: Unknown/-rescue collision — kept {c['json_name']} "
+                  f"(target {chosen} already present)", file=sys.stderr)
+            if strict:
+                raise
         except OSError as e:
             print(f"reproinx: Unknown/-rescue failed for {c['json_name']}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
+    # Physio recordings stranded in Unknown/ (parent BOLD failed reproin parse):
+    # pair each to its rescued BOLD and move into that bold's func/ dir. Runs
+    # after the BOLD moves above so the parents are already in place.
+    rescued += _rescue_unknown_physio(unknown, bids_root, rows, strict)
     # If Unknown/ is empty after rescue, prune it.
     try:
         if unknown.is_dir() and not any(unknown.iterdir()):
@@ -1285,19 +1510,26 @@ def _apply_dup_naming(bids_root: Path) -> int:
 
 
 def _move_stem_files(src_stem: Path, dst_stem: Path) -> int:
-    """Move all `<src_stem><ext>` files to `<dst_stem><ext>`.
+    """Move all `<src_stem><ext>` files to `<dst_stem><ext>` atomically.
 
     Operates on the recognised BIDS extensions (.nii.gz, .json, .bval, …).
     Returns the number of files moved. Skips when source missing.
-    """
-    moved = 0
+
+    All-or-nothing: every destination in the family is preflighted BEFORE any
+    rename, so a collision on (say) the `.json` cannot leave the `.nii.gz`
+    already moved and the family split. Raises `FileExistsError` if any target
+    exists; nothing is moved in that case. If a later `os.replace` fails mid-
+    family (e.g. ENOSPC/EPERM) the moves already done are rolled back (best
+    effort — a rollback `os.replace` that itself fails is swallowed) before the
+    `OSError` propagates, so the family is normally not left split."""
     src_dir = src_stem.parent
     src_name = src_stem.name
     if not src_dir.is_dir():
         return 0
     dst_dir = dst_stem.parent
     dst_name = dst_stem.name
-    dst_dir.mkdir(parents=True, exist_ok=True)
+    # Preflight: gather the present family and verify every target is free.
+    pairs: list[tuple[Path, Path]] = []
     for ext in _BIDS_EXTS:
         src = src_dir / f"{src_name}{ext}"
         if not src.is_file():
@@ -1305,9 +1537,24 @@ def _move_stem_files(src_stem: Path, dst_stem: Path) -> int:
         dst = dst_dir / f"{dst_name}{ext}"
         if dst.exists():
             raise FileExistsError(f"{dst} already exists")
-        os.replace(str(src), str(dst))
-        moved += 1
-    return moved
+        pairs.append((src, dst))
+    if not pairs:
+        return 0
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    done: list[tuple[Path, Path]] = []
+    for src, dst in pairs:
+        try:
+            os.replace(str(src), str(dst))
+        except OSError:
+            # Roll back the companions already moved so the family stays whole.
+            for s, d in reversed(done):
+                try:
+                    os.replace(str(d), str(s))
+                except OSError:
+                    pass
+            raise
+        done.append((src, dst))
+    return len(pairs)
 
 
 def _walk_sessions(out_root: Path) -> list[Path]:
@@ -1879,48 +2126,51 @@ def _rescue_physio_recordings(bids_root: Path, strict: bool) -> tuple[int, int]:
         for func_dir in sub_dir.rglob("func"):
             if not func_dir.is_dir():
                 continue
-            physios = sorted(
-                list(func_dir.glob("*_recording-*_physio.tsv.gz")) +
-                list(func_dir.glob("*_recording-*_physio.json")))
-            if not physios:
+            # Group companions (.tsv.gz + .json) by recording stem so each
+            # recording moves as one family — a collision on one companion must
+            # not strand the other (audit 2026-06-20 cycle-3 F1).
+            stems: set[str] = set()
+            for p in func_dir.glob("*_recording-*_physio.tsv.gz"):
+                stems.add(p.name[:-len(".tsv.gz")])
+            for p in func_dir.glob("*_recording-*_physio.json"):
+                stems.add(p.name[:-len(".json")])
+            if not stems:
                 continue
             if multi_session:
-                # Tally every file we leave behind so the caller knows the
+                # Tally every recording we leave behind so the caller knows the
                 # `_drop_derivatives` sweep would destroy data.
-                skipped += len(physios)
+                skipped += len(stems)
                 print(f"reproinx: physio rescue skipped for {sub_token} "
-                      f"({len(physios)} file(s); multi-session subjects not yet supported)",
+                      f"({len(stems)} recording(s); multi-session subjects not yet supported)",
                       file=sys.stderr)
                 if strict:
                     raise RuntimeError(
                         f"strict: physio rescue skipped for multi-session {sub_token}")
                 continue
-            for src in physios:
+            for stem in sorted(stems):
+                new_name = _PHYSIO_INFIX_RE.sub("", stem)
+                if ses_token is not None:
+                    new_name = _inject_session_into_name(new_name, sub_token, ses_token)
+                    dest_dir = bids_root / sub_token / f"ses-{ses_token}" / "func"
+                else:
+                    dest_dir = bids_root / sub_token / "func"
                 try:
-                    new_name = _PHYSIO_INFIX_RE.sub("", src.name)
-                    if ses_token is not None:
-                        new_name = _inject_session_into_name(new_name, sub_token, ses_token)
-                    if ses_token is not None:
-                        dest_dir = bids_root / sub_token / f"ses-{ses_token}" / "func"
-                    else:
-                        dest_dir = bids_root / sub_token / "func"
-                    dest_dir.mkdir(parents=True, exist_ok=True)
-                    dest = dest_dir / new_name
-                    if dest.exists():
-                        # Don't clobber a curated file from a previous run.
-                        skipped += 1
-                        print(f"reproinx: physio rescue collision — kept {src} "
-                              f"(destination {dest} already present)",
-                              file=sys.stderr)
-                        if strict:
-                            raise RuntimeError(
-                                f"strict: physio rescue collision at {dest}")
-                        continue
-                    src.rename(dest)
-                    rescued += 1
+                    # _move_stem_files is all-or-nothing: it preflights every
+                    # companion and raises FileExistsError if ANY destination
+                    # exists, so a curated .json can't strand the .tsv.gz.
+                    if _move_stem_files(func_dir / stem, dest_dir / new_name) > 0:
+                        rescued += 1
+                except FileExistsError:
+                    skipped += 1
+                    print(f"reproinx: physio rescue collision — kept {func_dir / stem} "
+                          f"(destination in {dest_dir} already present)",
+                          file=sys.stderr)
+                    if strict:
+                        raise RuntimeError(
+                            f"strict: physio rescue collision for {stem}")
                 except OSError as e:
                     skipped += 1
-                    print(f"reproinx: physio rescue failed for {src}: {e}",
+                    print(f"reproinx: physio rescue failed for {func_dir / stem}: {e}",
                           file=sys.stderr)
                     if strict:
                         raise
@@ -2087,6 +2337,203 @@ _BIDSGUESS_COLLISION_RE = re.compile(
 )
 
 
+DEFAULT_MIN_VOLUMES = 5  # timeseries shorter than this are treated as candidates
+                         # for distortion maps rather than func/dwi data.
+
+
+def _bids_suffix(stem: str) -> str:
+    """BIDS suffix = the final underscore-delimited token of a file stem."""
+    return stem.split("_")[-1]
+
+
+def _pe_dir_label(pe) -> Optional[str]:
+    """Sidecar `PhaseEncodingDirection` (i/j/k with optional +/-) -> an
+    arbitrary-but-distinct BIDS `dir-<label>` value, sanitised of the `-` that
+    BIDS entity labels forbid: `j`/`j+` -> `J`, `j-` -> `Jn`.
+
+    The label only needs to *differ* between the two polarities of a PEPOLAR
+    pair (BIDS "Case 4: Multiple phase-encoded directions (pepolar)"); the
+    axis-letter + `n`-for-negative is a deterministic, slice-orientation-
+    agnostic choice (AP/LR/IS would require knowing axial vs sagittal vs
+    coronal). Returns None when no usable polarity is present."""
+    if not pe:
+        return None
+    s = str(pe).strip()
+    if not s or s[0].lower() not in ("i", "j", "k"):
+        return None
+    return s[0].upper() + ("n" if s.endswith("-") else "")
+
+
+_FMAP_EPI_ENTITY_ORDER = ("sub", "ses", "acq", "ce", "dir", "run")
+
+
+def _to_fmap_epi_stem(src_stem: str, dir_label: str) -> str:
+    """Rebuild a func/dwi stem as an fmap `_epi` stem: drop `task-`, set/replace
+    `dir-<dir_label>`, keep sub/ses/acq/run in canonical BIDS fmap entity order,
+    and swap the suffix for `epi`. Unknown entities (rare) are preserved after
+    the known ones, before the suffix."""
+    ents: dict[str, str] = {}
+    extra: list[str] = []
+    for tok in src_stem.split("_"):
+        if "-" not in tok:
+            continue  # the trailing suffix token (e.g. "bold") has no '-'
+        k, v = tok.split("-", 1)
+        if k == "task":
+            continue
+        if k in _FMAP_EPI_ENTITY_ORDER:
+            ents[k] = v
+        else:
+            extra.append(tok)
+    # Prefer an anatomical `dir-` already present on the source stem (dcm2niix
+    # derives `dir-AP`/`dir-PA` from PhaseEncodingDirection + image orientation,
+    # and a reproin protocol may state `dir-ap`/`dir-pa` explicitly). Only fall
+    # back to the orientation-agnostic PE axis label (`J`/`Jn`) when the stem
+    # carries no usable polarity of its own — the two members of a PEPOLAR pair
+    # then still differ by their opposite PE signs.
+    if "dir" not in ents:
+        ents["dir"] = dir_label
+    parts = [f"{k}-{ents[k]}" for k in _FMAP_EPI_ENTITY_ORDER if k in ents]
+    parts.extend(extra)
+    return "_".join(parts) + "_epi"
+
+
+def _strip_orphan_runs(session_dir: Path) -> int:
+    """Remove a `_run-NN` entity that disambiguates nothing.
+
+    The Unknown-rescue assigns a collision run to two series that share a
+    BidsGuess stem; `_reclassify_session` may then move one of them to another
+    datatype (e.g. a short reverse-PE dwi -> fmap/_epi), leaving the survivor
+    the sole owner of its stem yet still carrying the now-meaningless run.
+    Strip the run when (a) the file is the only member of its run-stripped stem
+    within its datatype dir, AND (b) the series' own ProtocolName carries no
+    explicit numeric run (so operator-specified runs survive even on a lone
+    series). Physio recordings (no `.nii`) are untouched. Returns the number of
+    series renamed."""
+    if not session_dir.is_dir():
+        return 0
+    count = 0
+    for dt_dir in session_dir.iterdir():
+        if not dt_dir.is_dir() or dt_dir.name.startswith("ses-"):
+            continue
+        groups: dict[str, list[str]] = {}
+        for nii in list(dt_dir.glob("*.nii.gz")) + list(dt_dir.glob("*.nii")):
+            stem = (nii.name[:-len(".nii.gz")]
+                    if nii.name.endswith(".nii.gz") else nii.stem)
+            groups.setdefault(_RUN_ENTITY_RE.sub("", stem), []).append(stem)
+        for base, members in groups.items():
+            if len(members) != 1:
+                continue  # run is disambiguating — keep
+            stem = members[0]
+            if not _RUN_ENTITY_RE.search(stem):
+                continue  # nothing to strip
+            jp = dt_dir / f"{stem}.json"
+            prot_run = False
+            try:
+                data = _load_json(jp)
+                for fld in ("ProtocolName", "SeriesDescription"):
+                    if _RUN_PROTOCOL_RE.search(str(data.get(fld, ""))):
+                        prot_run = True
+                        break
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            if prot_run:
+                continue  # operator-specified run — preserve
+            try:
+                _move_stem_files(dt_dir / stem, dt_dir / base)
+                count += 1
+            except FileExistsError:
+                pass
+    return count
+
+
+def _reclassify_session(session_dir: Path, min_volumes: int) -> int:
+    """Cross-series BIDS reclassification within one session.
+
+    dcm2niix classifies each series in isolation; here we use the full set of
+    series in a session to resolve ambiguous intent (mirrors reproin-namer):
+
+      R1  A short EPI (< `min_volumes` volumes) currently in func/ (`_bold`) or
+          dwi/ (`_dwi`), NOT already `_sbref` (CMRR burns SBRef into the series
+          description so dcm2niix already names true single-band references),
+          becomes a PEPOLAR/topup distortion map `fmap/..._dir-<L>_epi` WHEN a
+          long-EPI sibling (>= `min_volumes`-volume `_bold` or `_dwi`) exists in
+          the session to undistort. `<L>` = sanitised PhaseEncodingDirection.
+          (An SE pepolar pair legitimately undistorts a GE fMRI, so we do not
+          gate on sequence type — only volume count + a long EPI sibling.)
+
+      R2  An `anat/..._T2w` whose in-plane (x,y) matrix matches a session func
+          `_bold` is a co-planar reference -> `_inplaneT2`.
+
+    Whole sidecar families (.nii(.gz)/.json/.bval/.bvec) move together; a dwi
+    b0 promoted to `_epi` sheds its `.bval`/`.bvec`, and an orphaned func
+    `_events.tsv` is dropped when a `_bold` becomes `_epi`. Runs BEFORE the
+    `_sbref` demote / single-vol-dwi `.bidsignore` fallbacks so those only see
+    genuine leftovers; the new `_epi` fmaps are picked up by `_populate_b0_fields`.
+    Returns the number of series reclassified."""
+    if not session_dir.is_dir():
+        return 0
+    # Snapshot per-series features BEFORE any move (decisions use the original
+    # layout). Each entry: (nii_path, datatype, stem, suffix, ndim, shape3, pe).
+    series: list[tuple] = []
+    for dt in ("func", "dwi", "anat"):
+        d = session_dir / dt
+        if not d.is_dir():
+            continue
+        for nii in sorted(list(d.glob("*.nii")) + list(d.glob("*.nii.gz"))):
+            stem = nii.name[:-7] if nii.name.endswith(".nii.gz") else nii.stem
+            jp = d / f"{stem}.json"
+            vol = _imaging_volume(jp) if jp.is_file() else None
+            pe = None
+            if jp.is_file():
+                try:
+                    pe = _load_json(jp).get("PhaseEncodingDirection")
+                except (OSError, ValueError, json.JSONDecodeError):
+                    pe = None
+            series.append((nii, dt, stem, _bids_suffix(stem),
+                           _nifti_ndim(nii), vol[1] if vol else None, pe))
+
+    long_epi = any(dt in ("func", "dwi") and suf in ("bold", "dwi")
+                   and (nd or 0) >= min_volumes
+                   for (_n, dt, _s, suf, nd, _sh, _pe) in series)
+    func_xy = {tuple(sh[:2]) for (_n, dt, _s, suf, _nd, sh, _pe) in series
+               if dt == "func" and suf == "bold" and sh}
+
+    count = 0
+    for (nii, dt, stem, suf, ndim, shape3, pe) in series:
+        # R1: short EPI with a long-EPI sibling -> fmap/_dir-<L>_epi
+        if (dt in ("func", "dwi") and suf in ("bold", "dwi") and long_epi
+                and ndim is not None and ndim < min_volumes):
+            label = _pe_dir_label(pe)
+            if label is None:
+                continue  # need a polarity to name the required dir- entity
+            new_stem = _to_fmap_epi_stem(stem, label)
+            dst = session_dir / "fmap" / new_stem
+            try:
+                _move_stem_files(nii.parent / stem, dst)
+            except FileExistsError:
+                continue
+            # An `_epi` fmap carries no diffusion table or events sidecar.
+            for ext in (".bval", ".bvec"):
+                stray = dst.parent / f"{new_stem}{ext}"
+                if stray.is_file():
+                    stray.unlink()
+            ev = nii.parent / f"{stem[:-(len(suf) + 1)]}_events.tsv"
+            if ev.is_file():
+                ev.unlink()
+            count += 1
+            continue
+        # R2: co-planar T2 (matches a func in-plane) -> _inplaneT2
+        if (dt == "anat" and suf == "T2w" and shape3
+                and tuple(shape3[:2]) in func_xy):
+            new_stem = f"{stem[:-len('_T2w')]}_inplaneT2"
+            try:
+                _move_stem_files(nii.parent / stem, nii.parent / new_stem)
+                count += 1
+            except FileExistsError:
+                pass
+    return count
+
+
 def _bidsguess_collision_files(bids_root: Path) -> list[str]:
     """Locate files where dcm2niix appended an `a`/`b`/`c` collision suffix to
     a known BIDS modality token (e.g. `_magnitude1a.json`, `_phasediffb.nii.gz`).
@@ -2156,7 +2603,8 @@ def _bidsguess_write_bidsignore(bids_root: Path, patterns: list[str]) -> int:
     return len(added)
 
 
-def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
+def _bidsguess_cleanup(out_root: Path, strict: bool,
+                       min_volumes: int = DEFAULT_MIN_VOLUMES) -> None:
     """Bidsguess-specific second pass over a %h-converted tree. Runs BEFORE
     the generic reproinx passes so scans.tsv / participants.tsv see the
     cleaned layout."""
@@ -2166,6 +2614,31 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
     by_root: dict[Path, list[str]] = {}
     for ses in _walk_sessions(out_root):
         bids_root = _bids_root_for_session(ses)
+        # Cross-series reclassification FIRST: short EPI -> fmap/_epi, co-planar
+        # T2 -> _inplaneT2. Runs before the demote/single-vol-dwi fallbacks so
+        # those only handle genuine leftovers; new fmaps feed _populate_b0_fields.
+        try:
+            n = _reclassify_session(ses, min_volumes)
+            if n > 0:
+                print(f"  {ses}: reclassified {n} series via session context",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: session reclassification failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+        # Drop collision runs left non-disambiguating by the reclassification
+        # above (e.g. the lone dwi after its reverse-PE sibling became fmap/_epi).
+        try:
+            n = _strip_orphan_runs(ses)
+            if n > 0:
+                print(f"  {ses}: stripped {n} non-disambiguating run(s)",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: orphan-run strip failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
         try:
             n = _bidsguess_remove_discard(ses)
             if n > 0:
@@ -2219,7 +2692,8 @@ def _bidsguess_cleanup(out_root: Path, strict: bool) -> None:
                 raise
 
 
-def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) -> None:
+def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
+                  min_volumes: int = DEFAULT_MIN_VOLUMES) -> None:
     # Pre-pass 0: collapse a redundant <StudyDescription> hierarchy when
     # the provenance shows ZERO ReproIn-parsed series. Must run before
     # any rglob-based discovery so subsequent passes see the final paths.
@@ -2273,7 +2747,7 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False) 
     # single-volume DWI to .bidsignore, a/b/c collision files to
     # .bidsignore, residual Unknown/ files to .bidsignore. Each cleanup is
     # no-op when its target is absent.
-    _bidsguess_cleanup(out_root, strict)
+    _bidsguess_cleanup(out_root, strict, min_volumes)
     # Pass 0: rename dcm2niix's a/b/c collision suffix to heudiconv __dup-NN.
     # Must run before session backfill so the rename happens at the as-written
     # paths recorded in the provenance TSV.
@@ -2401,6 +2875,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--strict", action="store_true",
                    help="Exit non-zero if any session's post-processing fails. "
                         "Default is to log per-session failures and continue.")
+    p.add_argument("--min-volumes", "-N", type=int, default=DEFAULT_MIN_VOLUMES,
+                   metavar="N",
+                   help="Cross-series classification threshold (default "
+                        f"{DEFAULT_MIN_VOLUMES}). A timeseries with fewer than N "
+                        "volumes that sits beside a long (>=N) EPI is treated as "
+                        "a PEPOLAR distortion map (fmap/_dir-<L>_epi) rather than "
+                        "func/dwi data.")
     p.add_argument("--keep-derivatives", action="store_true",
                    help="Keep the `derivatives/scanner/` subtree under each "
                         "study root after post-processing. dcm2niix routes "
@@ -2425,7 +2906,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                                      args.session, anonymize=args.anonymize)
 
     _post_process(outdir, strict=args.strict,
-                  keep_derivatives=args.keep_derivatives)
+                  keep_derivatives=args.keep_derivatives,
+                  min_volumes=args.min_volumes)
     # Propagate dcm2niix's partial-success exit codes (8, 10) so automation
     # can distinguish a clean run from one that lost series mid-batch. The
     # post-pass still runs against whatever landed on disk.

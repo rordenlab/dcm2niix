@@ -36,7 +36,7 @@ DICOM provides many ways to store/compress image data, known as [transfer syntax
 
 ## ReproIn one-pass naming (`-f %H`)
 
-dcm2niix can emit ReproIn/heudiconv-style BIDS filenames in a single pass via the `-f %H` format specifier, with the optional `-bi` (subject), `-bv` (session), and `-br` (project subdirectory) flags. A companion script `tools/reproinx.py` handles cross-series concerns (fmap pairing, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`, session backfill, root scaffolding) and accepts `--anonymize`, `--strict`, `--keep-derivatives`, and `--no-convert` flags. The anonymisation flag `-ba` has three modes: `y` (default; strip dates and patient PII), `n` (keep both), `o` (omit patient PII only — keep acquisition timestamps so reproinx's `_scans.tsv` and fmap closest-time pairing still work). See [REPROIN.md](./REPROIN.md) for the full grammar, defaults, privacy considerations, and known limitations.
+dcm2niix can emit ReproIn/heudiconv-style BIDS filenames in a single pass via the `-f %H` format specifier, with the optional `-bi` (subject), `-bv` (session), and `-br` (project subdirectory) flags. A companion script `tools/reproinx.py` handles cross-series concerns (fmap pairing, `_scans.tsv`, `B0FieldIdentifier`/`B0FieldSource`, session backfill, root scaffolding, plus cross-series reclassification such as short reverse-PE EPIs to `fmap/_epi` and rescue of session-first/suffix-last protocols that the one-pass parser cannot name) and accepts `--anonymize`, `--strict`, `--keep-derivatives`, `--no-convert`, and `--min-volumes`/`-N` flags. The anonymisation flag `-ba` has three modes: `y` (default; strip dates and patient PII), `n` (keep both), `o` (omit patient PII only — keep acquisition timestamps so reproinx's `_scans.tsv` and fmap closest-time pairing still work). See [REPROIN.md](./REPROIN.md) for the full grammar, defaults, privacy considerations, and known limitations.
 
 ## Versions
 
@@ -147,6 +147,8 @@ The following tools exploit dcm2niix
   - [bidsconvertr](https://github.com/wulms/bidsconvertr) uses R to converts DICOM data to NIfTI and finally to BIDS.
   - [bidsify](https://github.com/spinoza-rec/bidsify) is a Python project that uses dcm2niix to convert DICOM and Philips PAR/REC images to the BIDS standard.
   - [bidskit](https://github.com/jmtyszka/bidskit) uses dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets.
+  - [BIDS-Manager](https://github.com/ANCPLabOldenburg/BIDS-Manager) GUI and CLI tool for BIDS conversion, curation, metadata editing.
+  - [bidsme](https://github.com/CyclotronResearchCentre/bidsme) flexible bidsificator for multimodal datasets.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [birc-bids](https://github.com/bircibrain/birc-bids) provides a Docker/Singularity container with various BIDS conversion utilities.
   - [BMAT](https://github.com/ColinVDB/BMAT) translates data from MRI scanners to the BIDS structure.
@@ -187,7 +189,8 @@ The following tools exploit dcm2niix
   - [FreeSurfer](https://github.com/freesurfer/freesurfer) includes dcm2niix for image conversion.
   - [fsleyes](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FSLeyes) is a powerful Python-based image viewer. It uses dcm2niix to handle DICOM files through its fslpy libraries.
   - [Functional Real-Time Interactive Endogenous Neuromodulation and Decoding (FRIEND) Engine](https://github.com/InstitutoDOr/FriendENGINE) uses dcm2niix.
-  - [https://github.com/TamerGezici/HCF-bidser](https://github.com/TamerGezici/HCF-bidser) Jupyter notebook script for DICOM to BIDS format.
+  - [HABIT](https://github.com/lichao312214129/HABIT/tree/main) tumor analysis.
+  - [HCF-bidser](https://github.com/TamerGezici/HCF-bidser) Jupyter notebook script for DICOM to BIDS format.
   - [heudiconv](https://github.com/nipy/heudiconv) can use dcm2niix to create [BIDS](http://bids.neuroimaging.io/) datasets. Data acquired using the [reproin](https://github.com/ReproNim/reproin) convention can be easily converted to BIDS.
   - [Horos (Osirix) Bids Output Extension](https://github.com/mslw/horos-bids-output) is a OsiriX / Horos plugin that uses dcm2niix for creating BIDS output.
   - [kipettools](https://github.com/mathesong/kipettools) uses dcm2niix to load PET data.
@@ -203,6 +206,7 @@ The following tools exploit dcm2niix
   - [neurodocker](https://github.com/kaczmarj/neurodocker) includes dcm2niix as a lean, minimal install Dockerfile.
   - [NeuroElf](http://neuroelf.net) can use dcm2niix to convert DICOM images.
   - [Neuroinformatics Database (NiDB)](https://github.com/gbook/nidb) is designed to store, retrieve, analyze, and share neuroimaging data. It uses dcm2niix for image QA and handling some formats. 
+  - [neurospin_to_bids](https://github.com/neurospin/neurospin_to_bids) for exporting imaging data from the NeuroSpin archive in BIDS format.
   - [NiftyPET](https://niftypet.readthedocs.io/en/latest/install.html) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [niix2bids](https://github.com/benoitberanger/niix2bids ) attempts to automatically convert Siemens MRI images converted by dcm2niix to BIDS.
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
@@ -219,6 +223,7 @@ The following tools exploit dcm2niix
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [Retina_OCT_dcm2nii](https://github.com/Choupan/Retina_OCT_dcm2nii) converts optical coherence tomography (OCT) data to NIfTI.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
+  - [SHAring iN vivO Imaging Resources (Shanoir)](https://project.inria.fr/shanoir/) includes dcm2niix.
   - [shimming-toolbox](https://github.com/shimming-toolbox/shimming-toolbox) enabled static and real-time shimming, using dcm2niix to import DICOM data.
   - [SlicerDcm2nii](https://github.com/SlicerDMRI/SlicerDcm2nii) is an extension to import DICOM data into 3D Slicer.
   - [tar2bids](https://github.com/khanlab/tar2bids) converts DICOM tarball(s) to BIDS using heudiconv which invokes dcm2niix.

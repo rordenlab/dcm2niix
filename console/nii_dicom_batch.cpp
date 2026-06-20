@@ -2541,7 +2541,12 @@ tse3d: T2*/
 			if (corrected && (strcmp(d.decayCorrection, "START") == 0))
 				fprintf(fp, "\t\"ImageDecayCorrectionTime\": 0,\n");
 			else if (corrected && (strcmp(d.decayCorrection, "ADMIN") == 0) && (d.radiopharmaceuticalStartTime > 0.0)) {
-				// ADMIN: decay-corrected to injection time; report relative to TimeZero
+				// ADMIN = DICOM (0054,1102) "decay-corrected to the radiopharmaceutical
+				// ADMINistration time": the decay-correction REFERENCE, NOT an injection
+				// assertion (see block comment above). Reported relative to the
+				// raw series-time anchor `t` (SeriesTime, else AcquisitionTime) — NOT
+				// a TimeZero field, which dcm2niix deliberately does not emit (issue
+				// #983 / PR #1014); PET2BIDS picks the time-zero convention downstream.
 				double injSec = dicomTimeToSec(d.radiopharmaceuticalStartTime);
 				double t0Sec = dicomTimeToSec(t);
 				if ((injSec >= 0) && (t0Sec >= 0))
