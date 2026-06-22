@@ -1899,6 +1899,32 @@ static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d
 	fclose(tp);
 }
 
+// MRS VOI (volume-of-interest) 4x4 matrix (LPS->RAS), shared by the BIDS
+// sidecar and the NIfTI-MRS extension. Returns false when no VOI box is present
+// (`voiThickness > 0 && hasVoiCenter` — see audit 2026-06-11 M8). row1 =
+// -IOP_row1*ReadoutFoV, row2 = -IOP_row2*PhaseFoV, row3 = +slice_normal*Thickness;
+// LPS->RAS sign flip on rows 0/1 (incl. the slice-normal column), row 2 positive.
+static bool mrsVoiMatrix(const struct TDICOMdata *d, double m[4][4]) {
+	if (!(d->voiThickness > 0.0f && d->hasVoiCenter))
+		return false;
+	double r1x = d->orient[1], r1y = d->orient[2], r1z = d->orient[3];
+	double r2x = d->orient[4], r2y = d->orient[5], r2z = d->orient[6];
+	double n1 = sqrt(r1x * r1x + r1y * r1y + r1z * r1z);
+	double n2 = sqrt(r2x * r2x + r2y * r2y + r2z * r2z);
+	if (n1 > 0.001) { r1x /= n1; r1y /= n1; r1z /= n1; }
+	if (n2 > 0.001) { r2x /= n2; r2y /= n2; r2z /= n2; }
+	double sn_x = r1y * r2z - r1z * r2y;
+	double sn_y = r1z * r2x - r1x * r2z;
+	double sn_z = r1x * r2y - r1y * r2x;
+	double phaseFov = d->voiPhaseFoV > 0.0f ? d->voiPhaseFoV : d->voiThickness;
+	double readFov = d->voiReadoutFoV > 0.0f ? d->voiReadoutFoV : d->voiThickness;
+	m[0][0] = -r1x * readFov; m[0][1] = -r2x * phaseFov; m[0][2] = -sn_x * d->voiThickness; m[0][3] = -(double)d->voiCenterLPS[0];
+	m[1][0] = -r1y * readFov; m[1][1] = -r2y * phaseFov; m[1][2] = -sn_y * d->voiThickness; m[1][3] = -(double)d->voiCenterLPS[1];
+	m[2][0] = r1z * readFov; m[2][1] = r2z * phaseFov; m[2][2] = sn_z * d->voiThickness; m[2][3] = (double)d->voiCenterLPS[2];
+	m[3][0] = m[3][1] = m[3][2] = 0.0; m[3][3] = 1.0;
+	return true;
+}
+
 void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
@@ -3372,38 +3398,18 @@ tse3d: T2*/
 		// CSA payload had VoiThickness but not VoiPosition (e.g. Enhanced
 		// DICOM SlabThickness without MidSlabPosition). VoiCenterLPS was
 		// zero-init by initTDICOMdata and got serialized verbatim.
-		if (d.voiThickness > 0.0f && d.hasVoiCenter) {
-			double r1x = d.orient[1], r1y = d.orient[2], r1z = d.orient[3];
-			double r2x = d.orient[4], r2y = d.orient[5], r2z = d.orient[6];
-			double n1 = sqrt(r1x * r1x + r1y * r1y + r1z * r1z);
-			double n2 = sqrt(r2x * r2x + r2y * r2y + r2z * r2z);
-			if (n1 > 0.001) { r1x /= n1; r1y /= n1; r1z /= n1; }
-			if (n2 > 0.001) { r2x /= n2; r2y /= n2; r2z /= n2; }
-			double sn_x = r1y * r2z - r1z * r2y;
-			double sn_y = r1z * r2x - r1x * r2z;
-			double sn_z = r1x * r2y - r1y * r2x;
-			double phaseFov = d.voiPhaseFoV > 0.0f ? d.voiPhaseFoV : d.voiThickness;
-			double readFov = d.voiReadoutFoV > 0.0f ? d.voiReadoutFoV : d.voiThickness;
-			// LPS->RAS sign flip applies to ALL of rows 0 and 1 (including the
-			// slice-normal column). Row 2 stays positive.
-			double m00 = -r1x * readFov, m01 = -r2x * phaseFov, m02 = -sn_x * d.voiThickness;
-			double m10 = -r1y * readFov, m11 = -r2y * phaseFov, m12 = -sn_y * d.voiThickness;
-			double m20 = r1z * readFov, m21 = r2z * phaseFov, m22 = sn_z * d.voiThickness;
-			double t0 = -(double)d.voiCenterLPS[0];
-			double t1 = -(double)d.voiCenterLPS[1];
-			double t2 = (double)d.voiCenterLPS[2];
-			// Use %.17g for full double round-trip precision — spec2nii emits
-			// at numpy's default repr which preserves all double digits, and
-			// the comparator's nested-list parity is bytewise-strict on
-			// numbers.
+		double voi[4][4];
+		if (mrsVoiMatrix(&d, voi)) {
+			// %.17g for full double round-trip precision — spec2nii emits at
+			// numpy's default repr; the comparator is bytewise-strict on numbers.
 			fprintf(fp,
 					"\t\"VOI\": [[%.17g, %.17g, %.17g, %.17g], "
 					"[%.17g, %.17g, %.17g, %.17g], "
 					"[%.17g, %.17g, %.17g, %.17g], "
 					"[0.0, 0.0, 0.0, 1.0]],\n",
-					m00, m01, m02, t0,
-					m10, m11, m12, t1,
-					m20, m21, m22, t2);
+					voi[0][0], voi[0][1], voi[0][2], voi[0][3],
+					voi[1][0], voi[1][1], voi[1][2], voi[1][3],
+					voi[2][0], voi[2][1], voi[2][2], voi[2][3]);
 		}
 	}
 	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
@@ -5494,7 +5500,11 @@ unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_l
 #define MZ_DEFAULT_LEVEL 6
 #endif
 
-void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buffer, unsigned long src_len, int gzLevel, bool isSkipHeader) {
+// Returns EXIT_SUCCESS / EXIT_FAILURE. NEVER frees src_buffer — the caller owns
+// it (callers pass either the outer image buffer or a locally-owned buffer they
+// free themselves); freeing here previously leaked on success and risked a
+// double-free of the caller's image on failure.
+int writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buffer, unsigned long src_len, int gzLevel, bool isSkipHeader) {
 	// create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
 	//  in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
 	char fname[2048] = {""};
@@ -5506,6 +5516,8 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 		hdrPadBytes = 0;
 	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
 	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
+	if (pCmp == NULL)
+		return EXIT_FAILURE;
 	z_stream strm;
 	strm.total_in = 0;
 	strm.total_out = 0;
@@ -5521,12 +5533,17 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 		zLevel = MZ_UBER_COMPRESSION;
 	if (deflateInit(&strm, zLevel) != Z_OK) {
 		free(pCmp);
-		return;
+		return EXIT_FAILURE;
 	}
-	unsigned char *pHdr;
+	unsigned char *pHdr = NULL;
 	if (!isSkipHeader) {
 		// add header
 		pHdr = (unsigned char *)malloc(hdrPadBytes);
+		if (pHdr == NULL) {
+			deflateEnd(&strm);
+			free(pCmp);
+			return EXIT_FAILURE;
+		}
 		pHdr[hdrPadBytes - 1] = 0;
 		pHdr[hdrPadBytes - 2] = 0;
 		pHdr[hdrPadBytes - 3] = 0;
@@ -5549,14 +5566,16 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	cmp_len = strm.total_out;
 	if (cmp_len <= 0) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		if (!isSkipHeader)
+			free(pHdr);
+		return EXIT_FAILURE;
 	}
 	FILE *fileGz = fopen(fname, "wb");
 	if (!fileGz) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		if (!isSkipHeader)
+			free(pHdr);
+		return EXIT_FAILURE;
 	}
 	// write header http://www.gzip.org/zlib/rfc-gzip.html
 	fputc((char)0x1f, fileGz); // ID1
@@ -5570,7 +5589,7 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	fputc((char)0x00, fileGz); // XFL
 	fputc((char)0xff, fileGz); // OS
 	// write Z-compressed data
-	fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
+	size_t nWrit = fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
 	// write tail: write redundancy check and uncompressed size as bytes to ensure LITTLE-ENDIAN order
 	fputc((unsigned char)(file_crc32), fileGz);
 	fputc((unsigned char)(file_crc32 >> 8), fileGz);
@@ -5580,10 +5599,17 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	fputc((unsigned char)(strm.total_in >> 8), fileGz);
 	fputc((unsigned char)(strm.total_in >> 16), fileGz);
 	fputc((unsigned char)(strm.total_in >> 24), fileGz);
-	fclose(fileGz);
+	// fail closed on a short write or a flush/close error (e.g. disk full), so a
+	// caller does not emit a sidecar next to a truncated .nii.gz.
+	int closeErr = (fclose(fileGz) != 0);
 	free(pCmp);
 	if (!isSkipHeader)
 		free(pHdr);
+	if ((nWrit != (size_t)(cmp_len - 6)) || closeErr) {
+		remove(fname); // do not leave a truncated .nii.gz that looks valid
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // writeNiiGz()
 #endif
 
@@ -5621,20 +5647,33 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	STARTUPINFO startupInfo = {0};
 	startupInfo.cb = sizeof(startupInfo);
 	// StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
+	bool compressFailed = false;
 	if (CreateProcess(NULL, command, NULL, NULL, FALSE, NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW, NULL, NULL, &startupInfo, &ProcessInfo)) {
 		// printMessage("compression --- %s\n",command);
 		WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+		// fail closed when pigz starts but exits nonzero (e.g. disk full)
+		if (!GetExitCodeProcess(ProcessInfo.hProcess, &exitCode) || (exitCode != 0))
+			compressFailed = true;
 		CloseHandle(ProcessInfo.hThread);
 		CloseHandle(ProcessInfo.hProcess);
-	} else
+	} else {
 		printMessage("Compression failed %s\n", command);
+		compressFailed = true;
+	}
 #else  // if win else linux
 	int ret = system(command);
+	bool compressFailed = (ret != 0); // nonzero shell/pigz status = compression did not succeed
 	if (ret == -1)
 		printWarning("Failed to execute: %s\n", command);
 #endif // else linux
 	if (opts.isVerbose > 1)
 		printMessage("Compress: %s\n", command);
+	if (compressFailed) {
+		// fail closed: the requested .gz is missing/corrupt, so the caller must
+		// not report success (and emit a sidecar) for it.
+		printError("External compression failed: %s\n", command);
+		return EXIT_FAILURE;
+	}
 	return EXIT_SUCCESS;
 } // pigz_File()
 
@@ -6101,8 +6140,7 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	}
 #else
 	if (strlen(opts.pigzname) < 1) { // internal compression
-		writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
-		return EXIT_SUCCESS;
+		return writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
 	}
 #endif
 	// below pigz
@@ -6907,7 +6945,7 @@ void removeSclSlopeInter(struct nifti_1_header *hdr, unsigned char *img) {
 	// printWarning("NRRD unable to record scl_slope/scl_inter %g/%g\n", hdr->scl_slope, hdr->scl_inter);
 }
 
-int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d) {
+int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, const char *hdrExt = NULL) {
 #ifdef USING_R
 	ImageList *images = (ImageList *)opts.imageList;
 	if (opts.isImageInMemory) {
@@ -6945,6 +6983,52 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		printMessage("Error: Image size is zero bytes %s\n", niiFilename);
 		return EXIT_FAILURE;
 	}
+	// Bytes written between the 348-byte header and the image. Normally the
+	// 4-byte "no extension" terminator; when hdrExt is supplied (NIfTI-MRS
+	// ecode 44) it carries the JSON header extension. extBlockLen==4 with all
+	// zeros reproduces the historic output byte-for-byte, so every non-MRS call
+	// (hdrExt==NULL) is unchanged. esize/ecode follow the file byte order so the
+	// extension is valid even with --big-endian output.
+	unsigned char extPad4[4] = {0, 0, 0, 0};
+	unsigned char *extBlock = extPad4;
+	size_t extBlockLen = 4;
+	unsigned char *extAlloc = NULL;
+	if (hdrExt != NULL) {
+		size_t jlen = strlen(hdrExt);
+		// Compute esize in the size_t domain, then guard before the int32 cast:
+		// NIfTI's `esize` is a signed int32, so a pathologically large extension
+		// (e.g. a huge OriginalFile list) must not wrap the cast and under-allocate
+		// the calloc/memcpy below. Normal MRS JSON is a few KB; this only trips on
+		// hostile/degenerate input.
+		size_t esizeSz = (8 + jlen + 15) & ~((size_t)15); // round up to multiple of 16
+		if (esizeSz < 16)
+			esizeSz = 16;
+		if (esizeSz > (size_t)INT_MAX) {
+			// Degrade to a plain NIfTI (the sidecar still carries the metadata)
+			// rather than corrupt memory.
+			printWarning("MRS header extension too large (%zu bytes); writing plain NIfTI\n", esizeSz);
+		} else {
+			int esize = (int)esizeSz;
+			extAlloc = (unsigned char *)calloc(esizeSz + 4, 1);
+			if (extAlloc == NULL)
+				return EXIT_FAILURE;
+			extAlloc[0] = 1; // extender flag: extension present
+			int32_t es = esize, ec = 44;
+			if (!opts.isSaveNativeEndian) {
+				nifti_swap_4bytes(1, &es);
+				nifti_swap_4bytes(1, &ec);
+			}
+			memcpy(extAlloc + 4, &es, 4);
+			memcpy(extAlloc + 8, &ec, 4);
+			memcpy(extAlloc + 12, hdrExt, jlen); // trailing bytes already zero (calloc)
+			extBlock = extAlloc;
+			extBlockLen = esizeSz + 4;
+			hdr.vox_offset = 352 + esize;
+			// NIfTI-MRS magic: intent_name must be "mrs_v<major>_<minor>" or the
+			// validator rejects the file. ponytail: bump if the standard version changes.
+			strcpy(hdr.intent_name, "mrs_v0_11");
+		}
+	}
 #ifndef myDisableGzSizeLimits
 	// see https://github.com/rordenlab/dcm2niix/issues/124
 	uint64_t kMaxPigz = 4294967264;
@@ -6965,20 +7049,28 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		char fname[2048] = {""};
 		strcpy(fname, niiFilename);
 		strcat(fname, ".nii.zst");
-		unsigned long hdrPadBytes = sizeof(hdr) + 4; // 348 byte header + 4 byte pad
+		unsigned long hdrPadBytes = sizeof(hdr) + extBlockLen; // 348 byte header + extension (or 4-byte terminator)
 		size_t srcLen = hdrPadBytes + imgsz;
 		unsigned char *pSrc = (unsigned char *)malloc(srcLen);
-		if (!pSrc)
+		if (!pSrc) {
+			free(extAlloc);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
-		// write header + 4-byte pad
+		}
+		// write header + extension block
 		memcpy(pSrc, &hdr, sizeof(hdr));
-		memset(pSrc + sizeof(hdr), 0, 4);
+		memcpy(pSrc + sizeof(hdr), extBlock, extBlockLen);
+		free(extAlloc); // consumed
+		extAlloc = NULL;
 		// write image data
 		memcpy(pSrc + hdrPadBytes, im, imgsz);
 		size_t cmpBound = ZSTD_compressBound(srcLen);
 		unsigned char *pCmp = (unsigned char *)malloc(cmpBound);
 		if (!pCmp) {
 			free(pSrc);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
 		}
 		int zLevel = 3; // zstd default
@@ -6989,18 +7081,27 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		if (ZSTD_isError(cmpLen)) {
 			printError("Zstd compression failed: %s\n", ZSTD_getErrorName(cmpLen));
 			free(pCmp);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
 		}
 		FILE *fp = fopen(fname, "wb");
 		if (!fp) {
 			free(pCmp);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
 		}
-		fwrite(pCmp, 1, cmpLen, fp);
-		fclose(fp);
+		size_t zWrit = fwrite(pCmp, 1, cmpLen, fp);
+		int zCloseErr = (fclose(fp) != 0);
 		free(pCmp);
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+		if (zWrit != cmpLen || zCloseErr) {
+			printError("Unable to write %s (disk full?)\n", fname);
+			remove(fname); // do not leave a truncated .nii.zst that looks valid
+			return EXIT_FAILURE;
+		}
 		return EXIT_SUCCESS;
 	}
 #endif
@@ -7012,12 +7113,39 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 	} else if ((opts.isGz) && (strlen(opts.pigzname) < 1) && ((imgsz + hdr.vox_offset) < kMaxGz)) { // use internal compressor
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
-		writeNiiGz(niiFilename, hdr, im, imgsz, opts.gzLevel, false);
+		int gzret;
+		if (extAlloc == NULL) {
+			gzret = writeNiiGz(niiFilename, hdr, im, imgsz, opts.gzLevel, false);
+		} else {
+			// writeNiiGz only emits the header itself when !isSkipHeader; with an
+			// extension we assemble header+extension+image and hand it the whole
+			// buffer. writeNiiGz never frees its src_buffer, so we own `full`.
+			size_t total = sizeof(hdr) + extBlockLen + imgsz;
+			unsigned char *full = (unsigned char *)malloc(total);
+			if (full == NULL) {
+				free(extAlloc);
+				if (!opts.isSaveNativeEndian)
+					swapEndian(&hdr, im, false);
+				return EXIT_FAILURE;
+			}
+			memcpy(full, &hdr, sizeof(hdr));
+			memcpy(full + sizeof(hdr), extBlock, extBlockLen);
+			memcpy(full + sizeof(hdr) + extBlockLen, im, imgsz);
+			free(extAlloc); // consumed
+			extAlloc = NULL;
+			char gzname[2048] = "";
+			strcpy(gzname, niiFilename);
+			strcat(gzname, ".nii.gz");
+			gzret = writeNiiGz(gzname, hdr, full, total, opts.gzLevel, true); // isSkipHeader
+			free(full);
+		}
+		if (!opts.isSaveNativeEndian)
+			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+		if (gzret != EXIT_SUCCESS)
+			return EXIT_FAILURE;
 #ifdef USING_R
 		images->appendPath(std::string(niiFilename) + ".nii.gz");
 #endif
-		if (!opts.isSaveNativeEndian)
-			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
 		return EXIT_SUCCESS;
 	}
 #endif
@@ -7053,36 +7181,54 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		FILE *pigzPipe;
 		if ((pigzPipe = popen(command, "w")) == NULL) {
 			printError("Unable to open pigz pipe\n");
+			free(extAlloc);
 			return EXIT_FAILURE;
 		}
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
-		fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
-		uint32_t pad = 0;
-		fwrite(&pad, sizeof(pad), 1, pigzPipe);
-		fwrite(&im[0], imgsz, 1, pigzPipe);
-		pclose(pigzPipe);
+		size_t pHdrW = fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
+		size_t pExt = fwrite(extBlock, extBlockLen, 1, pigzPipe); // 4-byte terminator, or NIfTI-MRS extension
+		size_t pImg = fwrite(&im[0], imgsz, 1, pigzPipe);
+		int pigzStatus = pclose(pigzPipe); // nonzero = pigz failed (e.g. disk full)
+		free(extAlloc); // consumed
+		extAlloc = NULL;
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+		if (pHdrW != 1 || pExt != 1 || pImg != 1 || pigzStatus != 0) {
+			printError("Unable to write %s via pigz pipe\n", fname);
+			return EXIT_FAILURE;
+		}
 		return EXIT_SUCCESS;
 	}
 #endif
 
 #ifndef USING_DCM2NIIXFSWRAPPER
 	FILE *fp = fopen(fname, "wb");
-	if (!fp)
+	if (!fp) {
+		free(extAlloc);
 		return EXIT_FAILURE;
+	}
 	if (!opts.isSaveNativeEndian)
 		swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
-	fwrite(&hdr, sizeof(hdr), 1, fp);
-	uint32_t pad = 0;
-	fwrite(&pad, sizeof(pad), 1, fp);
-	fwrite(&im[0], imgsz, 1, fp);
-	fclose(fp);
+	size_t wHdr = fwrite(&hdr, sizeof(hdr), 1, fp);
+	size_t wExt = fwrite(extBlock, extBlockLen, 1, fp); // 4-byte terminator, or NIfTI-MRS extension
+	size_t wImg = fwrite(&im[0], imgsz, 1, fp);
+	int rawCloseErr = (fclose(fp) != 0);
+	free(extAlloc); // consumed
+	extAlloc = NULL;
 
 	if (!opts.isSaveNativeEndian)
 		swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+	// fail closed on a short write or close error (e.g. disk full) so a caller
+	// does not emit a sidecar next to a truncated .nii.
+	if (wHdr != 1 || wExt != 1 || wImg != 1 || rawCloseErr) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		remove(fname); // do not leave a truncated .nii that looks valid
+		return EXIT_FAILURE;
+	}
 #endif
+	free(extAlloc); // NULL-safe: already freed above unless the raw block was compiled out (FS wrapper)
+	extAlloc = NULL;
 
 #ifdef USING_R
 	images->appendPath(fname);
@@ -12053,6 +12199,149 @@ static double siemensMrsTotalEchoTimeUs(const char *filename, struct TDICOMdata 
 // relabel via `wrsoff` / `no_Water_Suppression` series-name tokens). MRSI
 // `_unloc` is deferred — no corpus driver. `_mrsi` is now handled by the
 // sibling `saveDcm2NiiMRSI()` below; this function only writes SVS.
+
+// --- NIfTI-MRS header extension (ecode 44) ---------------------------------
+// Embeds the spectroscopy metadata as a JSON extension INSIDE the .nii(.gz),
+// in addition to the BIDS sidecar, so a tool can read SVS/MRSI parameters
+// directly from the NIfTI (e.g. sandboxed drag-and-drop where the paired JSON
+// is unreadable). Mirrors spec2nii's hdr_ext. All values come from TDICOMdata
+// fields already parsed for the sidecar. Spec: https://wtclarke.github.io/mrs_nifti_standard/
+static void mrsAddStrIf(cJSON *root, const char *key, const char *val) {
+	if (val && val[0])
+		cJSON_AddStringToObject(root, key, val);
+}
+static const char *mrsManufacturerStr(int m) {
+	switch (m) {
+	case kMANUFACTURER_SIEMENS: return "Siemens";
+	case kMANUFACTURER_GE: return "GE";
+	case kMANUFACTURER_PHILIPS: return "Philips";
+	case kMANUFACTURER_UIH: return "UIH";
+	case kMANUFACTURER_CANON: return "Canon";
+	case kMANUFACTURER_BRUKER: return "Bruker";
+	default: return "";
+	}
+}
+// Returns a malloc'd JSON string (caller frees), or NULL on alloc failure.
+static char *mrsHdrExtJson(struct TDICOMdata d, struct nifti_1_header hdr,
+						   struct TDCMsort dcmSort[], int nConvert, struct TSearchList *nameList,
+						   struct TDCMopts opts) {
+	// NIfTI-MRS requires SpectrometerFrequency + ResonantNucleus. If the parser
+	// lacked them, do NOT fabricate a valid-looking extension (the sidecar
+	// already warns) — return NULL so the writer emits a plain NIfTI.
+	if ((d.imagingFrequency <= 0.0) || (d.resonantNucleus[0] == '\0'))
+		return NULL;
+	cJSON *root = cJSON_CreateObject();
+	if (!root)
+		return NULL;
+	// --- required ---
+	cJSON *sf = cJSON_CreateArray();
+	cJSON_AddItemToArray(sf, cJSON_CreateNumber(d.imagingFrequency));
+	cJSON_AddItemToObject(root, "SpectrometerFrequency", sf);
+	cJSON *rn = cJSON_CreateArray();
+	cJSON_AddItemToArray(rn, cJSON_CreateString(d.resonantNucleus));
+	cJSON_AddItemToObject(root, "ResonantNucleus", rn);
+	// --- dimension tags: the 5th NIfTI axis is the dynamic/averaging axis
+	// (a singleton when there is one transient). spec2nii emits dim_5=DIM_DYN
+	// for both SVS and MRSI regardless of whether dim[0] is 4 or 5, and the
+	// nifti_mrs validator accepts it; mirror that for parity. ---
+	cJSON_AddStringToObject(root, "dim_5", "DIM_DYN");
+	// --- standard-defined (optional; emit when known) ---
+	double sw = mrsSpectralWidthHz(&d);
+	if (sw > 0)
+		cJSON_AddNumberToObject(root, "SpectralWidth", sw);
+	if (d.TE > 0)
+		cJSON_AddNumberToObject(root, "EchoTime", d.TE / 1000.0);
+	if (d.TR > 0)
+		cJSON_AddNumberToObject(root, "RepetitionTime", d.TR / 1000.0);
+	// InversionTime: spec2nii and the dcm2niix sidecar emit 0.0 even for
+	// non-inversion sequences, so emit unconditionally for parity.
+	cJSON_AddNumberToObject(root, "InversionTime", d.TI / 1000.0);
+	if (d.flipAngle > 0)
+		cJSON_AddNumberToObject(root, "ExcitationFlipAngle", d.flipAngle);
+	mrsAddStrIf(root, "Manufacturer", mrsManufacturerStr(d.manufacturer));
+	mrsAddStrIf(root, "ManufacturersModelName", d.manufacturersModelName);
+	mrsAddStrIf(root, "DeviceSerialNumber", d.deviceSerialNumber);
+	mrsAddStrIf(root, "SoftwareVersions", d.softwareVersions);
+	mrsAddStrIf(root, "InstitutionName", d.institutionName);
+	mrsAddStrIf(root, "InstitutionAddress", d.institutionAddress);
+	mrsAddStrIf(root, "TxCoil", d.transmitCoilName);
+	mrsAddStrIf(root, "RxCoil", d.coilName);
+	// d.sequenceName is empty on the XA line (it uses (0018,9005) PulseSequenceName);
+	// promote it like the sidecar does (~L2156) so SequenceName matches spec2nii.
+	mrsAddStrIf(root, "SequenceName", d.sequenceName[0] ? d.sequenceName : d.pulseSequenceName);
+	mrsAddStrIf(root, "ProtocolName", d.protocolName);
+	mrsAddStrIf(root, "PatientPosition", d.patientOrient);
+	// Patient-identifying block: mirror the BIDS sidecar gate (nii_SaveBIDSX
+	// ~L2065) so `-ba y` (full anon) and `-ba o` (omit PII) strip these from the
+	// embedded extension exactly as they do from the .json — no PII may survive
+	// in the NIfTI when it is stripped from the sidecar.
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
+		mrsAddStrIf(root, "PatientName", d.patientName);
+		mrsAddStrIf(root, "PatientID", d.patientID);
+		if (d.patientWeight > 0)
+			cJSON_AddNumberToObject(root, "PatientWeight", d.patientWeight);
+		mrsAddStrIf(root, "PatientDoB", d.patientBirthDate);
+		if (d.patientSex == 'M' || d.patientSex == 'F' || d.patientSex == 'O') {
+			char sex[2] = {d.patientSex, '\0'};
+			cJSON_AddStringToObject(root, "PatientSex", sex);
+		}
+	}
+	cJSON_AddBoolToObject(root, "WaterSuppressed", !d.isMrsRef);
+	// VOI 4x4 (excitation volume), shared computation with the sidecar. spec2nii
+	// emits this for MRSI; for SVS it omits it (the voxel == the image extent),
+	// but the dcm2niix sidecar emits it for both, so we follow the sidecar gate.
+	double voi[4][4];
+	if (mrsVoiMatrix(&d, voi)) {
+		cJSON *vm = cJSON_CreateArray();
+		for (int r = 0; r < 4; r++) {
+			cJSON *row = cJSON_CreateArray();
+			for (int c = 0; c < 4; c++)
+				cJSON_AddItemToArray(row, cJSON_CreateNumber(voi[r][c]));
+			cJSON_AddItemToArray(vm, row);
+		}
+		cJSON_AddItemToObject(root, "VOI", vm);
+	}
+	cJSON_AddStringToObject(root, "ConversionMethod", "dcm2niix " kDCMdate);
+	// kSpace: image-domain data, false on all three spatial axes.
+	cJSON *ks = cJSON_CreateArray();
+	for (int i = 0; i < 3; i++)
+		cJSON_AddItemToArray(ks, cJSON_CreateBool(false));
+	cJSON_AddItemToObject(root, "kSpace", ks);
+	// OriginalFile: source DICOM basenames. Filenames can encode identifiers, so
+	// drop the list under BOTH `-ba y` (full anon) and `-ba o` (omit PII) — same
+	// gate as the patient block. Strip POSIX and Windows separators so no
+	// directory tree leaks into the basename.
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
+		cJSON *of = cJSON_CreateArray();
+		for (int i = 0; i < nConvert; i++) {
+			const char *p = nameList->str[dcmSort[i].indx];
+			const char *b = strrchr(p, '/');
+			const char *bw = strrchr(p, '\\');
+			if (bw > b)
+				b = bw;
+			cJSON_AddItemToArray(of, cJSON_CreateString(b ? b + 1 : p));
+		}
+		cJSON_AddItemToObject(root, "OriginalFile", of);
+	}
+	// ponytail: ConversionTime omitted — optional + volatile, and dropping it
+	// keeps our own regression output deterministic. Add via time()/strftime if
+	// a consumer needs it.
+	// Fail closed: a cJSON alloc failure makes AddItemToObject a silent no-op, so
+	// verify the NIfTI-MRS required arrays (+ the unconditional dim_5) actually
+	// landed. If not, emit no extension — the writer falls back to a plain NIfTI
+	// rather than a half-built header. Mirrors the physio post-attach check.
+	cJSON *sfChk = cJSON_GetObjectItem(root, "SpectrometerFrequency");
+	cJSON *rnChk = cJSON_GetObjectItem(root, "ResonantNucleus");
+	if (!sfChk || !cJSON_IsArray(sfChk) || (cJSON_GetArraySize(sfChk) < 1) ||
+		!rnChk || !cJSON_IsArray(rnChk) || (cJSON_GetArraySize(rnChk) < 1) ||
+		!cJSON_GetObjectItem(root, "dim_5")) {
+		cJSON_Delete(root);
+		return NULL;
+	}
+	char *s = cJSON_PrintUnformatted(root);
+	cJSON_Delete(root);
+	return s;
+}
 static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 						  struct TDICOMdata dcmList[],
 						  struct TSearchList *nameList,
@@ -12646,7 +12935,9 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		free(fidRef);
 		return EXIT_FAILURE;
 	}
-	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0);
+	char *mrsExt = mrsHdrExtJson(*d0, hdr, dcmSort, nConvert, nameList, opts);
+	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0, mrsExt);
+	free(mrsExt);
 	// JSON sidecar via the existing writer — most fields (TR, TE, FlipAngle,
 	// ProtocolName, ...) are still meaningful for MRS, and the MRS-specific
 	// emissions (SpectralWidth, DwellTime, TransmitterFrequency,
@@ -12715,7 +13006,9 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			dRef.isMrsRef = true;
 			strcpy(dRef.CSA.bidsDataType, "mrs");
 			strcpy(dRef.CSA.bidsEntitySuffix, "_mrsref");
-			int retRef = nii_saveNII(refPath, hdr, (unsigned char *)fidRef, opts, dRef);
+			char *mrsExtRef = mrsHdrExtJson(dRef, hdr, dcmSort, nConvert, nameList, opts);
+			int retRef = nii_saveNII(refPath, hdr, (unsigned char *)fidRef, opts, dRef, mrsExtRef);
+			free(mrsExtRef);
 			if (retRef == EXIT_SUCCESS) {
 				struct TDTI4D dti4D_ref;
 				initTDTI4D(&dti4D_ref); // see main-writer comment (audit 33da307)
@@ -13102,7 +13395,9 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 		free(fid);
 		return EXIT_FAILURE;
 	}
-	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0);
+	char *mrsExt = mrsHdrExtJson(*d0, hdr, dcmSort, nConvert, nameList, opts);
+	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0, mrsExt);
+	free(mrsExt);
 	if (ret == EXIT_SUCCESS) {
 		struct TDTI4D dti4D_local;
 		initTDTI4D(&dti4D_local);

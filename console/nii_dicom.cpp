@@ -2036,6 +2036,27 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 					// value, so the crc stays equal across the stack.
 					d->coilCrc = mz_crc32X((unsigned char *)d->coilName, strlen(d->coilName)); // M6 fix: array decay, drop the unnecessary &
 				}
+			} else if (strcmp(tagCSA.name, "SequenceName") == 0) {
+				// VB/VE/Numaris4 classic MRS leave the public (0018,0024)
+				// SequenceName absent and store the sequence binary name only in
+				// the CSA (e.g. "*svs_se", "*csi_se"). spec2nii reads
+				// csa_header['SequenceName'][0] (dicomfunctions.py:700); mirror it
+				// so SequenceName is populated for both the BIDS sidecar and the
+				// NIfTI-MRS extension. Only fill when the public tag left it empty
+				// (the XA-line keeps its own value), matching layout to the coil
+				// string handlers above.
+				if (d->sequenceName[0] == '\0') {
+					memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
+					if (!littleEndianPlatform())
+						nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+					int n = itemCSA.xx2_Len;
+					if (n > 0 && n < kDICOMStr) {
+						memcpy(d->sequenceName, &buff[lPos + sizeof(itemCSA)], n);
+						d->sequenceName[n] = '\0';
+						while (n > 0 && (d->sequenceName[n - 1] == '\0' || d->sequenceName[n - 1] == ' '))
+							d->sequenceName[--n] = '\0';
+					}
+				}
 			}
 		}
 		// Advance past every item in this tag (mirror readCSAImageHeader's
