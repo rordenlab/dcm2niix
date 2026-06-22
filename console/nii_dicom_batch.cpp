@@ -5600,12 +5600,15 @@ int writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buf
 	fputc((unsigned char)(strm.total_in >> 16), fileGz);
 	fputc((unsigned char)(strm.total_in >> 24), fileGz);
 	// fail closed on a short write or a flush/close error (e.g. disk full), so a
-	// caller does not emit a sidecar next to a truncated .nii.gz.
+	// caller does not emit a sidecar next to a truncated .nii.gz. ferror() covers
+	// every fputc/fwrite to the stream (header magic + trailer), mechanically
+	// completing the write contract without checking each fputc individually.
+	int streamErr = ferror(fileGz);
 	int closeErr = (fclose(fileGz) != 0);
 	free(pCmp);
 	if (!isSkipHeader)
 		free(pHdr);
-	if ((nWrit != (size_t)(cmp_len - 6)) || closeErr) {
+	if ((nWrit != (size_t)(cmp_len - 6)) || streamErr || closeErr) {
 		remove(fname); // do not leave a truncated .nii.gz that looks valid
 		return EXIT_FAILURE;
 	}
@@ -7196,6 +7199,9 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
 		if (pHdrW != 1 || pExt != 1 || pImg != 1 || pigzStatus != 0) {
 			printError("Unable to write %s via pigz pipe\n", fname);
+			char gzname[2056] = "";
+			snprintf(gzname, sizeof(gzname), "%s.gz", fname);
+			remove(gzname); // do not leave a truncated .nii.gz that looks valid
 			return EXIT_FAILURE;
 		}
 		return EXIT_SUCCESS;

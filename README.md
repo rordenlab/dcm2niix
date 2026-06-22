@@ -209,6 +209,7 @@ The following tools exploit dcm2niix
   - [neurospin_to_bids](https://github.com/neurospin/neurospin_to_bids) for exporting imaging data from the NeuroSpin archive in BIDS format.
   - [NiftyPET](https://niftypet.readthedocs.io/en/latest/install.html) provides PET image reconstruction and analysis, and uses dcm2niix to handle DICOM images. 
   - [niix2bids](https://github.com/benoitberanger/niix2bids ) attempts to automatically convert Siemens MRI images converted by dcm2niix to BIDS.
+  - [nipoppy](https://github.com/nipoppy/nipoppy) uses dcm2niix (via dcm2bids).
   - [nipype](https://github.com/nipy/nipype) can use dcm2niix to convert images.
   - [PET2BIDS](https://github.com/openneuropet/PET2BIDS) uses dcm2niix for DICOM images.
   - [pl-dcm2niix](https://github.com/FNNDSC/pl-dcm2niix) is a ChRIS wrapper for dcm2niix.
