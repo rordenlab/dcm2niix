@@ -5515,6 +5515,8 @@ int writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buf
 	if (isSkipHeader)
 		hdrPadBytes = 0;
 	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
+	if (cmp_len > (unsigned long)UINT_MAX) // avail_out is a 32-bit uInt; a bound that exceeds it would wrap and corrupt the stream
+		return EXIT_FAILURE;
 	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
 	if (pCmp == NULL)
 		return EXIT_FAILURE;
@@ -5701,14 +5703,20 @@ PACKD(typedef struct {
 })
 TmghFooter;
 
-void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
+// Returns EXIT_SUCCESS / EXIT_FAILURE. NEVER frees src_buffer (caller owns it).
+// Hardened to the same contract as writeNiiGz() (audit: legacy MGZ writer).
+int writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
 	// create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
 	//  in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
 	char fname[2048] = {""};
 	strcpy(fname, baseName);
 	unsigned long hdrPadBytes = sizeof(hdr); // 348 byte header + 4 byte pad
 	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
+	if (cmp_len > (unsigned long)UINT_MAX) // avail_out is a 32-bit uInt; refuse a bound that would wrap
+		return EXIT_FAILURE;
 	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
+	if (pCmp == NULL)
+		return EXIT_FAILURE;
 	z_stream strm;
 	strm.total_in = 0;
 	strm.total_out = 0;
@@ -5724,8 +5732,13 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 		zLevel = MZ_UBER_COMPRESSION;
 	if (deflateInit(&strm, zLevel) != Z_OK) {
 		free(pCmp);
-		return;
+		return EXIT_FAILURE;
 	}
+	// Z_FINISH must be on the LAST chunk (the footer). The previous code finished
+	// the stream on the image and then tried to deflate the footer with
+	// Z_NO_FLUSH (a no-op after Z_FINISH), so the footer was omitted from the
+	// stream while the gzip CRC/ISIZE still counted it -> every .mgz failed the
+	// decompressor's CRC check. (audit: legacy MGZ writer was producing corrupt output.)
 	// add header
 	strm.avail_in = (unsigned int)sizeof(hdr); // size of input
 	strm.next_in = (uint8_t *)&hdr.version;
@@ -5733,11 +5746,11 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	// add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer;  // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_FINISH);
-	// add footer
+	deflate(&strm, Z_NO_FLUSH);
+	// add footer (last chunk -> Z_FINISH finalises the deflate stream)
 	strm.avail_in = (unsigned int)sizeof(footer); // size of input
 	strm.next_in = (uint8_t *)&footer.TR;
-	deflate(&strm, Z_NO_FLUSH);
+	deflate(&strm, Z_FINISH);
 	// finish up
 	deflateEnd(&strm);
 	unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
@@ -5747,14 +5760,12 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	cmp_len = strm.total_out;
 	if (cmp_len <= 0) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		return EXIT_FAILURE;
 	}
 	FILE *fileGz = fopen(fname, "wb");
 	if (!fileGz) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		return EXIT_FAILURE;
 	}
 	// write header http://www.gzip.org/zlib/rfc-gzip.html
 	fputc((char)0x1f, fileGz); // ID1
@@ -5768,7 +5779,7 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	fputc((char)0x00, fileGz); // XFL
 	fputc((char)0xff, fileGz); // OS
 	// write Z-compressed data
-	fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
+	size_t nWrit = fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
 	// write tail: write redundancy check and uncompressed size as bytes to ensure LITTLE-ENDIAN order
 	fputc((unsigned char)(file_crc32), fileGz);
 	fputc((unsigned char)(file_crc32 >> 8), fileGz);
@@ -5778,8 +5789,16 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	fputc((unsigned char)(strm.total_in >> 8), fileGz);
 	fputc((unsigned char)(strm.total_in >> 16), fileGz);
 	fputc((unsigned char)(strm.total_in >> 24), fileGz);
-	fclose(fileGz);
+	// fail closed on a short write / stream / close error (ferror covers the
+	// fputc magic + trailer); remove the truncated .mgz so it can't look valid.
+	int streamErr = ferror(fileGz);
+	int closeErr = (fclose(fileGz) != 0);
 	free(pCmp);
+	if ((nWrit != (size_t)(cmp_len - 6)) || streamErr || closeErr) {
+		remove(fname);
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // writeMghGz()
 
 int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
@@ -5867,22 +5886,33 @@ int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 #ifdef __LITTLE_ENDIAN__		// mgh data ALWAYS big endian!
 	swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
 #endif
+	int mghErr = 0;
 	if (isGz) {
 		strcat(fname, ".mgz");
-		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel);
+		mghErr = (writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel) != EXIT_SUCCESS);
 	} else {
 		strcat(fname, ".mgh");
 		FILE *fp = fopen(fname, "wb");
-		if (!fp)
-			return EXIT_FAILURE;
-		fwrite(&mgh, sizeof(Tmgh), 1, fp);
-		fwrite(&im[0], imgsz, 1, fp);
-		fwrite(&footer, sizeof(TmghFooter), 1, fp);
-		fclose(fp);
+		if (!fp) {
+			mghErr = 1;
+		} else {
+			size_t w1 = fwrite(&mgh, sizeof(Tmgh), 1, fp);
+			size_t w2 = fwrite(&im[0], imgsz, 1, fp);
+			size_t w3 = fwrite(&footer, sizeof(TmghFooter), 1, fp);
+			int closeErr = (fclose(fp) != 0);
+			if (w1 != 1 || w2 != 1 || w3 != 1 || closeErr) {
+				remove(fname); // do not leave a truncated .mgh that looks valid
+				mghErr = 1;
+			}
+		}
 	}
 #ifdef __LITTLE_ENDIAN__		 // mgh data ALWAYS big endian!
-	swapEndian(&hdr, im, false); // byte-swap endian (e.g. little->big)
+	swapEndian(&hdr, im, false); // unswap: restore caller's image (even on error)
 #endif
+	if (mghErr) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		return EXIT_FAILURE;
+	}
 	return EXIT_SUCCESS;
 } // nii_saveMGH()
 
@@ -6130,9 +6160,16 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 		}
 	}
 	fprintf(fp, "\n"); // blank line: end of NRRD header
+	size_t imgW = 1;
 	if (!isGz)
-		fwrite(&im[0], imgsz, 1, fp);
-	fclose(fp);
+		imgW = fwrite(&im[0], imgsz, 1, fp);
+	int streamErr = ferror(fp); // covers the header fprintf + (uncompressed) image fwrite
+	int closeErr = (fclose(fp) != 0);
+	if (streamErr || closeErr || (!isGz && imgW != 1)) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		remove(fname);
+		return EXIT_FAILURE;
+	}
 	if (!isGz)
 		return EXIT_SUCCESS;
 // below: gzip file
@@ -6146,12 +6183,21 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 		return writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
 	}
 #endif
-	// below pigz
+	// below pigz: write a .raw staging file, then compress it externally
 	strcpy(fname, niiFilename); // without gz
 	strcat(fname, ".raw");
 	fp = fopen(fname, "wb");
-	fwrite(&im[0], imgsz, 1, fp);
-	fclose(fp);
+	if (fp == NULL) {
+		printError("Unable to create %s\n", fname);
+		return EXIT_FAILURE;
+	}
+	size_t rawW = fwrite(&im[0], imgsz, 1, fp);
+	int rawCloseErr = (fclose(fp) != 0);
+	if (rawW != 1 || rawCloseErr) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		remove(fname);
+		return EXIT_FAILURE;
+	}
 	return pigz_File(fname, opts, imgsz);
 } // nii_saveNRRD()
 
