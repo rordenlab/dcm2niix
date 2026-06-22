@@ -5558,9 +5558,15 @@ int writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buf
 	// add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer;  // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_FINISH);			   // Z_NO_FLUSH;
+	int zret = deflate(&strm, Z_FINISH);   // Z_NO_FLUSH;
 	// finish up
 	deflateEnd(&strm);
+	if (zret != Z_STREAM_END) { // the compressBound + UINT_MAX guard should prevent Z_BUF_ERROR; fail closed if not
+		free(pCmp);
+		if (!isSkipHeader)
+			free(pHdr);
+		return EXIT_FAILURE;
+	}
 	unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
 	if (!isSkipHeader)
 		file_crc32 = mz_crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
@@ -5710,8 +5716,10 @@ int writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_b
 	//  in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
 	char fname[2048] = {""};
 	strcpy(fname, baseName);
-	unsigned long hdrPadBytes = sizeof(hdr); // 348 byte header + 4 byte pad
-	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
+	unsigned long hdrPadBytes = sizeof(hdr);
+	// Bound over EVERY byte fed to deflate: header + image + footer. (Sizing
+	// without the footer can under-allocate the output for worst-case input.)
+	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes + sizeof(footer));
 	if (cmp_len > (unsigned long)UINT_MAX) // avail_out is a 32-bit uInt; refuse a bound that would wrap
 		return EXIT_FAILURE;
 	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
@@ -5742,17 +5750,23 @@ int writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_b
 	// add header
 	strm.avail_in = (unsigned int)sizeof(hdr); // size of input
 	strm.next_in = (uint8_t *)&hdr.version;
-	deflate(&strm, Z_NO_FLUSH);
+	int zret = deflate(&strm, Z_NO_FLUSH);
 	// add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer;  // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_NO_FLUSH);
+	if (zret == Z_OK)
+		zret = deflate(&strm, Z_NO_FLUSH);
 	// add footer (last chunk -> Z_FINISH finalises the deflate stream)
 	strm.avail_in = (unsigned int)sizeof(footer); // size of input
 	strm.next_in = (uint8_t *)&footer.TR;
-	deflate(&strm, Z_FINISH);
+	if (zret == Z_OK)
+		zret = deflate(&strm, Z_FINISH);
 	// finish up
 	deflateEnd(&strm);
+	if (zret != Z_STREAM_END) { // the bound should prevent Z_BUF_ERROR; fail closed if not
+		free(pCmp);
+		return EXIT_FAILURE;
+	}
 	unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
 	file_crc32 = mz_crc32(file_crc32, (uint8_t *)&hdr.version, (unsigned int)sizeof(hdr));
 	file_crc32 = mz_crc32(file_crc32, src_buffer, (unsigned int)src_len);
@@ -5937,6 +5951,10 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	else
 		strcat(fname, ".nrrd"); // nrrd or nhdr
 	FILE *fp = fopen(fname, "wb");
+	if (fp == NULL) { // permission / bad path / fd exhaustion: fail closed, do not deref
+		printError("Unable to create %s\n", fname);
+		return EXIT_FAILURE;
+	}
 	fprintf(fp, "NRRD0005\n");
 	fprintf(fp, "# Complete NRRD file format specification at:\n");
 	fprintf(fp, "# http://teem.sourceforge.net/nrrd/format.html\n");
@@ -6183,12 +6201,17 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 		return writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
 	}
 #endif
-	// below pigz: write a .raw staging file, then compress it externally
+	// below pigz: write a .raw staging file, then compress it externally. fname is
+	// still the detached .nhdr header just written — remember it so a failed data
+	// step doesn't leave a header pointing at a missing/partial .raw.gz.
+	char hdrName[2048] = "";
+	strcpy(hdrName, fname);
 	strcpy(fname, niiFilename); // without gz
 	strcat(fname, ".raw");
 	fp = fopen(fname, "wb");
 	if (fp == NULL) {
 		printError("Unable to create %s\n", fname);
+		remove(hdrName);
 		return EXIT_FAILURE;
 	}
 	size_t rawW = fwrite(&im[0], imgsz, 1, fp);
@@ -6196,9 +6219,14 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	if (rawW != 1 || rawCloseErr) {
 		printError("Unable to write %s (disk full?)\n", fname);
 		remove(fname);
+		remove(hdrName);
 		return EXIT_FAILURE;
 	}
-	return pigz_File(fname, opts, imgsz);
+	if (pigz_File(fname, opts, imgsz) != EXIT_SUCCESS) {
+		remove(hdrName); // header would otherwise orphan a missing/partial .raw.gz
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // nii_saveNRRD()
 
 enum TZipMethod { zmZlib,
