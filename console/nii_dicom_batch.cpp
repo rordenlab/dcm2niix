@@ -5987,6 +5987,7 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	default:
 		printError("Unknown NRRD datatype %d\n", hdr.datatype);
 		fclose(fp);
+		remove(fname); // do not leave a partial header for an unsupported type
 		return EXIT_FAILURE;
 	}
 	// dimension tag
@@ -6190,28 +6191,35 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	}
 	if (!isGz)
 		return EXIT_SUCCESS;
-// below: gzip file
+	// below: gzip file. The detached .nhdr header was just written and references
+	// <stem>.raw.gz. `fname` was already changed to the .raw.gz target by the
+	// header writer (~L6024), so derive the header name from niiFilename and remove
+	// it on ANY data-step failure (internal-gz, no-zlib, or external pigz) so a
+	// header never points at missing/partial data.
+	char nhdrName[2048] = "";
+	strcpy(nhdrName, niiFilename);
+	strcat(nhdrName, ".nhdr");
 #ifdef myDisableZLib
 	if (strlen(opts.pigzname) < 1) { // internal compression
 		printError("Compiled without gz support, unable to compress %s\n", fname);
+		remove(nhdrName);
 		return EXIT_FAILURE;
 	}
 #else
 	if (strlen(opts.pigzname) < 1) { // internal compression
-		return writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
+		int gzret = writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
+		if (gzret != EXIT_SUCCESS)
+			remove(nhdrName); // writeNiiGz removed its own .raw.gz; drop the orphan header too
+		return gzret;
 	}
 #endif
-	// below pigz: write a .raw staging file, then compress it externally. fname is
-	// still the detached .nhdr header just written — remember it so a failed data
-	// step doesn't leave a header pointing at a missing/partial .raw.gz.
-	char hdrName[2048] = "";
-	strcpy(hdrName, fname);
+	// below pigz: write a .raw staging file, then compress it externally
 	strcpy(fname, niiFilename); // without gz
 	strcat(fname, ".raw");
 	fp = fopen(fname, "wb");
 	if (fp == NULL) {
 		printError("Unable to create %s\n", fname);
-		remove(hdrName);
+		remove(nhdrName);
 		return EXIT_FAILURE;
 	}
 	size_t rawW = fwrite(&im[0], imgsz, 1, fp);
@@ -6219,11 +6227,11 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	if (rawW != 1 || rawCloseErr) {
 		printError("Unable to write %s (disk full?)\n", fname);
 		remove(fname);
-		remove(hdrName);
+		remove(nhdrName);
 		return EXIT_FAILURE;
 	}
 	if (pigz_File(fname, opts, imgsz) != EXIT_SUCCESS) {
-		remove(hdrName); // header would otherwise orphan a missing/partial .raw.gz
+		remove(nhdrName); // header would otherwise orphan a missing/partial .raw.gz
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
