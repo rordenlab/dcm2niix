@@ -4,7 +4,7 @@ environment:
       appveyor_build_worker_image: Visual Studio 2022
 
     - job_name: linux
-      appveyor_build_worker_image: Ubuntu1604
+      appveyor_build_worker_image: Ubuntu2004
 
     - job_name: mac
       appveyor_build_worker_image: macos-catalina
@@ -52,7 +52,6 @@ for:
         - job_name: linux
 
     build_script:
-      - export CC=gcc-8 CXX=g++-8
       - cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B build
       - cmake --build build
 
