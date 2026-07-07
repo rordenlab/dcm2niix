@@ -59,9 +59,18 @@ provenance over anonymisation. Specifically:
   AccessionNumber, ReferringPhysicianName) but keeps `AcquisitionDateTime`
   so real timestamps survive into every JSON sidecar and into
   `_scans.tsv`. The dates are needed for the closest-time fmap-matching
-  tie-breaker. Pass `reproinx.py --anonymize` to upgrade to `-ba y`
-  (also strips dates; fmap matching then falls back to first-compatible),
-  or post-process the sidecars with a date-shifter.
+  tie-breaker. Two privacy options: `reproinx.py --anonymize` upgrades to
+  `-ba y` (strips dates entirely; fmap matching then falls back to
+  first-compatible, and `_scans.tsv` loses timestamps), or — the
+  BIDS-RECOMMENDED middle ground — `reproinx.py --shift-dates` keeps the
+  relative timing but de-identifies the absolute date: per subject it shifts
+  every `acq_time` / `AcquisitionDateTime` by a whole-day offset so the
+  earliest scan lands on 1925-01-01, preserving time-of-day and all
+  intra-subject intervals (sessions, runs). The shift happens after fmap
+  matching, so pairing is unaffected. (It does not rename timestamp-derived
+  `ses-<YYYYMMDDThhmmss>` labels — those still leak the date via the path, so
+  the pass warns loudly when any are present; use named sessions to fully
+  de-identify.)
 - **StudyDescription / PerformedProcedureStepDescription become directory
   names.** They are sanitised against path traversal but otherwise emitted
   verbatim. If a site encodes the PI name or grant number in
@@ -197,13 +206,18 @@ in the JSON sidecar), then per-subject and per-session:
   Written at the BIDS root, which is the common parent of every
   `sub-*` directory — *not* necessarily the user's `-o` directory,
   since dcm2niix may append a `<StudyDescription>` hierarchy below it.
-- **fmap pairing.** Every non-fmap, non-sbref scan is paired with the
-  fmap group whose `ShimSetting` (exact) and NIfTI affine
+- **fmap pairing.** Every non-fmap scan (including `sbref`) is paired with
+  the fmap group whose `ShimSetting` (exact) and NIfTI affine
   (`np.allclose(rtol=0.05)`) match — the same algorithm heudiconv runs
   via `POPULATE_INTENDED_FOR_OPTS`. Modern BIDS B0 mapping fields are
   written: `B0FieldIdentifier` on every fmap JSON in the group, and
   `B0FieldSource` on each compatible target. (Heudiconv emits the legacy
-  `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.)
+  `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.) An `sbref`
+  shares its `bold` sibling's readout, so it is forced to the same
+  `B0FieldSource` as that sibling rather than re-paired independently —
+  a closest-in-time tie between two compatible fmaps can never split the
+  pair (the shared choice is taken from whichever sibling has a usable
+  `AcquisitionTime`).
 - **Unknown-rescue of non-leading-datatype protocols.** Protocols that put
   entities first and the suffix last with no leading `<datatype>` token
   (e.g. `ses-pre_task-bernd_bold`, `acq-space_T2w`) are not canonical
@@ -241,6 +255,7 @@ python3 tools/reproinx.py --no-convert <indir> <outdir>     # skip dcm2niix; re-
 python3 tools/reproinx.py --anonymize <indir> <outdir>      # upgrade inner -ba o to -ba y
 python3 tools/reproinx.py --strict <indir> <outdir>         # fail-fast on per-session errors
 python3 tools/reproinx.py --keep-derivatives <indir> <out>  # retain derivatives/scanner/
+python3 tools/reproinx.py --shift-dates <indir> <outdir>    # de-identify dates: per-subject shift to 1925, intervals preserved
 python3 tools/reproinx.py -N 5 <indir> <outdir>             # min-volumes threshold for short-EPI->fmap/_epi reclassification
 ```
 

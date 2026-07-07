@@ -159,6 +159,12 @@ else()
     endif()
 endif()
 
+# Direct console build: only Miniz (bundled) and System are self-contained here.
+# Cloudflare/zlib-ng are built by the top-level SuperBuild (which clones+builds
+# them and sets ZLIB_ROOT); reaching them from this entry point means supplying
+# a prebuilt tree via -DZLIB_IMPLEMENTATION=Custom -DZLIB_ROOT=... (any non-Miniz,
+# non-System value is treated as Custom below). Released builds use the top-level
+# cmake with -DZLIB_IMPLEMENTATION=zlib-ng (see SuperBuild/External-ZLIBNG.cmake).
 set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
 set_property(CACHE ZLIB_IMPLEMENTATION PROPERTY STRINGS  "Miniz;System;Custom")
 if(NOT ${ZLIB_IMPLEMENTATION} STREQUAL "Miniz")

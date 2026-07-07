@@ -728,7 +728,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 #define freeDiffusionMaxN 512
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
-	int lInvContrasts, lContrasts, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
+	int lInvContrasts, lContrasts, lConc, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
 		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D, freeDiffusionN;
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
@@ -758,6 +758,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->echoSpacing = 0;
 	csaAscii->lInvContrasts = 0;
 	csaAscii->lContrasts = 0;
+	csaAscii->lConc = 0; // sSliceArray.lConc (concatenations); DZNE 3D-EPI encodes "multi-echo shots" here (issue 1024)
 	csaAscii->difBipolar = 0; // 0=not assigned,1=bipolar,2=monopolar
 	csaAscii->parallelReductionFactorInPlane = 0;
 	csaAscii->accelFact3D = 0; // lAccelFact3D
@@ -843,6 +844,11 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
 		char keyStrNumEcho[] = "lContrasts";
 		csaAscii->lContrasts = readKey(keyStrNumEcho, keyPos, csaLengthTrim);
+		// issue 1024: number of concatenations. On the DZNE 3D-EPI (vx_ep3d) this
+		// is the "Multi-echo Shots" factor — each concatenation is a separate pass
+		// through the slab, so the true volume TR is the single-pass VolTR x lConc.
+		char keyStrConc[] = "sSliceArray.lConc";
+		csaAscii->lConc = readKey(keyStrConc, keyPos, csaLengthTrim);
 		// TODO: read sAsl.ulSuppressionMode for required BackgroundSuppression
 		char keyStrDS[] = "sDiffusion.dsScheme";
 		csaAscii->difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
@@ -1595,7 +1601,9 @@ static void setBidsHeuristics(struct TDICOMdata *d) {
 	// the routing regardless of what the vendor heuristic chose. TENSOR
 	// goes to dataTypeBIDS="derived" so the file lands under
 	// derivatives/scanner/ (see setBids return-value gate). Order matters:
-	// "tracew" before "trace" so the longer form wins.
+	// "tracew" before "trace" so the longer form wins. (Siemens derived DWI
+	// maps are already classified discard/derivedDWI in setBidsSiemens via the
+	// DERIVED ImageType; this token table is the vendor-agnostic fallback.)
 	static const struct {
 		const char *token;
 		const char *suffix;
@@ -2690,6 +2698,15 @@ tse3d: T2*/
 		siemensCsaAscii(filename, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		if ((d.phaseEncodingLines < 1) && (csaAscii.phaseEncodingLines > 0))
 			d.phaseEncodingLines = csaAscii.phaseEncodingLines;
+		// issue 1024: Siemens 3D-EPI multi-echo shots = CSA sSliceArray.lConc concatenations.
+		// Each shot is a separate pass through the slab, so RepetitionTime = single-pass VolTR
+		// x MultiEchoShots. Emit from the in-scope csaAscii parsed just above (this is the
+		// series representative that setBidsSiemens also parsed, so it equals
+		// d.numberOfConcatenations; reading the local avoids depending on that transfer having
+		// run). Emitted only for 3D EPI (bandwidthPerPixelPhaseEncode > 0) when > 1, so it is
+		// not confused with generic 2D slice-group concatenations.
+		if ((d.is3DAcq) && (d.bandwidthPerPixelPhaseEncode > 0.0) && (csaAscii.lConc > 1))
+			fprintf(fp, "\t\"MultiEchoShots\": %d,\n", csaAscii.lConc);
 		// if (d.phaseEncodingLines != csaAscii.phaseEncodingLines) //e.g. phaseOversampling
 		//	printWarning("PhaseEncodingLines reported in DICOM (%d) header does not match value CSA-ASCII (%d) %s\n", d.phaseEncodingLines, csaAscii.phaseEncodingLines, pathoutname);
 		delayTimeInTR = csaAscii.delayTimeInTR;
@@ -3461,6 +3478,14 @@ tse3d: T2*/
 	// All three QSM consensus reference vendors (2022) emit PE direction
 	// for their multi-echo GRE QSM scans; this matches that.
 	if ((d.echoTrainLength > 1) && (strstr(d.scanningSequence, "SE") == NULL))
+		isSkipPhaseEncodingAxis = false;
+	// issue 1024: Siemens 3D EPI WIP sequences ("vx_ep3d") report EchoTrainLength=0
+	// and an uninformative ScanningSequence ("RM"), so the ETL test above misses
+	// them. They do carry an EPI phase-encode readout (bandwidthPerPixelPhaseEncode
+	// > 0), which 3D TSE / SPACE / FLAIR-SPACE (issue849) lack — so this stays
+	// disjoint from those. Still gated on !SE. n.b. these files often omit the
+	// polarity tag (0021,111C), so only the unsigned PhaseEncodingAxis is emitted.
+	if ((d.is3DAcq) && (d.bandwidthPerPixelPhaseEncode > 0.0) && (strstr(d.scanningSequence, "SE") == NULL))
 		isSkipPhaseEncodingAxis = false;
 	if (!isSkipPhaseEncodingAxis) {
 		int phPos = d.CSA.phaseEncodingDirectionPositive;
@@ -4373,8 +4398,10 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	} // for each volume
 	if (isSequential)
 		return true;
-	// second pass: fix if required
-	printWarning("Instance Number (0020,0013) order is not spatial.\n");
+	// second pass: fix if required (still re-sort; only the warning is noise for
+	// derived maps, whose instance order is routinely non-spatial)
+	if (!dcmList[dcmSort[0].indx].isDerived)
+		printWarning("Instance Number (0020,0013) order is not spatial.\n");
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
@@ -4894,7 +4921,14 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 			if (f == 'G')
 				strcat(outname, dcm.accessionNumber);
 			if (f == 'H') {
-				printWarning("hazardous (%%h) or reproin (%%H) bids naming experimental\n");
+				// nii_createFilename runs once per series; emit the experimental
+				// warning only once per process so a 1700-file study does not
+				// repeat it for every series.
+				static bool warnedHazardousBids = false;
+				if (!warnedHazardousBids) {
+					printWarning("hazardous (%%h) or reproin (%%H) bids naming experimental\n");
+					warnedHazardousBids = true;
+				}
 				bool isReproin = (inname[pos] == 'H');
 				if (isReproin) {
 					// One-pass ReproIn emulation. See REPROIN.md and console/reproin.cpp
@@ -8329,7 +8363,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 	if ((maxT1 < 0.0) && (minT1 < 0.0)) {
 		// issue 797 e.g. E11 2D slices where acquisition time used
 		// in this case d1->csa is not populated
-		if (((maxT - minT) > d->TR) && (!d->isLocalizer))
+		if (((maxT - minT) > d->TR) && (!d->isLocalizer) && (!d->isDerived))
 			printWarning("Issue797: Check slice timing range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT - minT, d->TR);
 		isIssue870 = 0;
 	}
@@ -8716,6 +8750,10 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		inv1 = csaAscii.alTI[0] / 1000.0;
 		inv2 = csaAscii.alTI[1] / 1000.0;
 		lContrasts = csaAscii.lContrasts;
+		if (csaAscii.lConc > 1) // issue 1024: concatenations = 3D-EPI "multi-echo shots"; used by the volume-TR formula fallback
+			d->numberOfConcatenations = csaAscii.lConc;
+		if ((d->accelFactOOP < 1.0) && (csaAscii.accelFact3D > 0)) // issue 1024: some XA 3D-EPI omit (0018,9155); fill-if-missing (DICOM tag wins) so the volume-TR fallback, which runs before nii_SaveBIDSX, can divide by it. Distinct from nii_SaveBIDSX:3033, which applies unconditional CSA precedence (issue672) to its by-value sidecar copy only — do not "unify" these.
+			d->accelFactOOP = csaAscii.accelFact3D;
 		// If parameter lInvContrasts exists in the protocol, a value of 1 indicates MPRAGE and a value of 2 MP2RAGE. Note that lInvContrasts is different from lContrasts and that only lInvContrasts must be considered.
 		// If parameter lInvContrasts does not exist, then the presence of alTI[1] indicates that this is an MP2RAGE protocol. An MPRAGE protocol will only contain alTI[0].
 		if (csaAscii.lInvContrasts == 1) // explicitly reports one TI
@@ -8751,9 +8789,28 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	}
 	if (d->modality != kMODALITY_MR)
 		return;
+	// Non-spatial: ImageOrientationPatient (0020,0037) absent -> orient[] all
+	// zero (e.g. Siemens derived color-FA, which drops spatial attributes). Such
+	// an image cannot be placed in BIDS space, so discard it as "nonspatial"
+	// (routes to derivatives/scanner) rather than mislabelling it Unknown.
+	bool isNonSpatial = true;
+	for (int i = 1; i <= 6; i++)
+		if (d->orient[i] != 0.0)
+			isNonSpatial = false;
 	if (((d->xyzDim[3] < 2) && (nConvert < 1)) || (d->isLocalizer)) { // need nConvert or nifti header
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
+	} else if (isDerived && (strstr(d->imageType, "DIFFUSION") != NULL)) {
+		// Scanner-derived diffusion maps (FA / colFA / trace / TENSOR / ADC):
+		// computed on the console, not raw acquisitions, and BIDS has no raw
+		// suffix for them. Discard — reproinx routes a "discard" BidsGuess to
+		// derivatives/scanner/ (dropped by default, kept with --keep-derivatives)
+		// rather than the raw tree. Raw DWI is ImageType ORIGINAL (not DERIVED).
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "derivedDWI");
+	} else if (isNonSpatial) {
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "nonspatial");
 	} else if (strstr(seqDetails, "b1map")) {
 		// issue 751 nb both T1 and b1map can use tfl base
 		// https://bids-specification.readthedocs.io/en/stable/appendices/qmri.html#tb1tfl-and-tb1rfm-specific-notes
@@ -9017,8 +9074,9 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
 		printMessage("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n",
 					 seqDetails, d->pulseSequenceName, d->sequenceName);
-	if (isDerived)
-		strcpy(dataTypeBIDS, "derived");
+	if (isDerived && (strstr(dataTypeBIDS, "discard") == NULL))
+		strcpy(dataTypeBIDS, "derived"); // do not clobber an explicit discard
+	// (e.g. nonspatial color-FA, classified discard/nonspatial above)
 	// bork - ARC data follows
 	/*
 	if (strstr(dataTypeBIDS, "dwi")) {
@@ -11883,6 +11941,40 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		return EXIT_SUCCESS;
 #endif
 
+	// issue 1024: Siemens 3D EPI (WIP "vx_ep3d") reports the per-shot TR in
+	// (0018,0080), but BIDS RepetitionTime must be the volume-to-volume time.
+	// These enhanced multiframe series (one 3D volume per file) bypass the
+	// classic issue-560 estimator, which only runs in the dim[3]<2 stacking
+	// path. Prefer the measured inter-volume AcquisitionDateTime spacing
+	// (robust, vendor-neutral, cf. Philips issue369); fall back to the
+	// shot-TR x partitions / 3D-acceleration formula (which assumes a single
+	// multi-echo shot, a factor DICOM does not encode) when timestamps are
+	// unavailable. The per-shot TR is preserved as RepetitionTimeExcitation.
+	{
+		uint64_t tIdx = dcmSort[0].indx;
+		if ((dcmList[tIdx].is3DAcq) && (hdr0.dim[4] > 1) && (dcmList[tIdx].TR > 0.0)) {
+			int nVol = 0;
+			float span = -1.0;
+			for (int i = 0; i < nConvert; i++)
+				if (isSamePosition(dcmList[tIdx], dcmList[dcmSort[i].indx])) {
+					nVol++;
+					span = max(span, (float)acquisitionTimeDifference(&dcmList[tIdx], &dcmList[dcmSort[i].indx]));
+				}
+			float volTRsec = -1.0;
+			if ((nVol > 1) && (span > 0.0)) // primary: measured volume-to-volume spacing
+				volTRsec = span / (nVol - 1.0);
+			else if ((dcmList[tIdx].bandwidthPerPixelPhaseEncode > 0.0) && (dcmList[tIdx].phaseEncodingStepsOutOfPlane > 0) && (dcmList[tIdx].accelFactOOP >= 1.0)) // fallback: parameter formula
+				// per-shot TR x partitions / 3D-accel x concatenations (multi-echo shots, issue 1024)
+				volTRsec = (dcmList[tIdx].TR * dcmList[tIdx].phaseEncodingStepsOutOfPlane / dcmList[tIdx].accelFactOOP * dcmList[tIdx].numberOfConcatenations) / 1000.0;
+			float reportedTRsec = dcmList[tIdx].TR / 1000.0;
+			if ((volTRsec > 0.0) && ((volTRsec - reportedTRsec) > 0.050)) { // only when volume TR exceeds the reported per-shot TR
+				printMessage("3D EPI: RepetitionTime set to volume TR %.4gs (per-shot TR %.4gs, RepetitionTimeExcitation) [issue 1024]\n", volTRsec, reportedTRsec);
+				dti4D->repetitionTimeExcitation = reportedTRsec;
+				dcmList[tIdx].TR = volTRsec * 1000.0;
+				hdr0.pixdim[4] = volTRsec;
+			}
+		}
+	}
 	if (opts.numSeries >= 0) // issue453
 		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
 	if (opts.isOnlyBIDS) {
@@ -12430,6 +12522,29 @@ static char *mrsHdrExtJson(struct TDICOMdata d, struct nifti_1_header hdr,
 	cJSON_Delete(root);
 	return s;
 }
+
+// The MRS/MRSI writers bypass saveDcm2NiiCore, which is where the standard
+// "Convert N DICOM as ..." line is printed; without this a warning emitted by
+// the MRS path cannot be associated with the NIfTI that was written. Mirrors
+// saveDcm2NiiCore: suppresses the output path under the FS wrapper build, and
+// includes the 5th (dynamics) axis for multi-dynamic MRS — dim[4] is spectral
+// points, so a dim[1..4]-only line would make multi-dynamic SVS look single.
+static void mrsReportConvert(int nConvert, const char *pathoutname, struct nifti_1_header hdr) {
+	bool has5 = (hdr.dim[0] >= 5) && (hdr.dim[5] > 1);
+#ifndef USING_DCM2NIIXFSWRAPPER
+	if (has5)
+		printMessage("Convert %d DICOM as %s (%dx%dx%dx%dx%d)\n", nConvert, pathoutname, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4], hdr.dim[5]);
+	else
+		printMessage("Convert %d DICOM as %s (%dx%dx%dx%d)\n", nConvert, pathoutname, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4]);
+#else
+	(void)pathoutname;
+	if (has5)
+		printMessage("Convert %d DICOM (%dx%dx%dx%dx%d)\n", nConvert, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4], hdr.dim[5]);
+	else
+		printMessage("Convert %d DICOM (%dx%dx%dx%d)\n", nConvert, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4]);
+#endif
+}
+
 static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 						  struct TDICOMdata dcmList[],
 						  struct TSearchList *nameList,
@@ -12637,6 +12752,21 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// it can over-state the SVS voxel size. Use the thickness directly.
 	bool spacingOK = (d0->xyzMM[1] > 0.0f) && (d0->xyzMM[2] > 0.0f) && (d0->zThick > 0.0f);
 	bool geomValid = orientFinite && orientShapeOK && posFinite && spacingOK;
+	bool hasSpatialGrid = (d0->xyzDim[1] > 1) || (d0->xyzDim[2] > 1) || (d0->xyzDim[3] > 1);
+	// Genuine non-spatial (unlocalized) FID: no spatial grid, no VOI localization,
+	// and no valid orientation/position/voxel spacing. Distinguishes an acquisition
+	// that is intentionally non-spatial (e.g. IR_fid T1 calibration, whole-coil FID)
+	// from a localized single-voxel SVS or spatial MRSI whose geometry is merely
+	// missing/corrupt — the warnings below then say "unlocalized" instead of the
+	// misleading "missing or invalid". Note: hasVoiCenter is NOT a localization
+	// signal here — the Siemens CSA path records a VoiPosition (often [0,0,0])
+	// even for unlocalized FIDs, so the real discriminator is voxel size
+	// (zThick + in-plane FoV), which is absent for a non-spatial acquisition.
+	// Also require no EXPLICIT localization tag: an XA `(0018,9200)=SINGLE_VOXEL`
+	// series with missing/invalid geometry is still a localized SVS (and below
+	// gets _svs), so reporting it as non-spatial/Unknown would be contradictory.
+	bool isNonSpatialFID = (d0->mrsAcqType == kMRSAcqNone) && !hasSpatialGrid && !geomValid &&
+						   !(d0->zThick > 0.0f && d0->xyzMM[1] > 1.0f && d0->xyzMM[2] > 1.0f);
 
 	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag per single frame
 	// P2.d: when each DICOM packs nDynPerFile frames (Philips Enhanced
@@ -12948,7 +13078,13 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		// Audit M3: zero / NaN / Inf in orient/position would otherwise be
 		// stamped as authoritative geometry. Leave sform_code=0 and warn so
 		// the user knows the spatial transform is not encoded.
-		printWarning("MRS: spatial tags (orient/position/spacing) missing or invalid; emitting sform_code=0\n");
+		// Non-spatial FID gets ONE laconic warning here (covers both the
+		// sform_code=0 and the no-BidsGuess consequence); the second warning at
+		// the BidsGuess site below is suppressed for this case via isNonSpatialFID.
+		if (isNonSpatialFID)
+			printWarning("MRS: non-spatial (unlocalized) FID — no geometry (sform_code=0), no BIDS class (Unknown/)\n");
+		else
+			printWarning("MRS: spatial tags (orient/position/spacing) missing or invalid; emitting sform_code=0\n");
 		hdr.sform_code = NIFTI_XFORM_UNKNOWN;
 	}
 	hdr.qform_code = NIFTI_XFORM_UNKNOWN; // qform left empty (matches spec2nii)
@@ -12985,7 +13121,6 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// when ANY spatial dim is > 1 — guards against classic CSI/MRSI inputs
 	// (sm_classic, VB/VE 3D CSI, voi_in_mrsi) being mislabeled _svs even when
 	// they carry VOI tags (audit 2026-06-07 round-3 H2).
-	bool hasSpatialGrid = (d0->xyzDim[1] > 1) || (d0->xyzDim[2] > 1) || (d0->xyzDim[3] > 1);
 	bool isSVSConfirmed = (d0->mrsAcqType == kMRSAcqSingleVoxel) ||
 						  (d0->mrsAcqType == kMRSAcqNone && !hasSpatialGrid &&
 						   d0->zThick > 0.0f &&
@@ -12998,7 +13133,8 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 		} else {
 			strcpy(d0->CSA.bidsEntitySuffix, "_svs");
 		}
-	} else {
+	} else if (!isNonSpatialFID) {
+		// isNonSpatialFID already warned once at the sform site above.
 		printWarning("MRS: MRSpectroscopyAcquisitionType absent and CSA VOI evidence missing; not emitting BidsGuess _svs (file lands in Unknown/)\n");
 	}
 	// Siemens multi-echo MRS (e.g. sLASER): the DICOM EchoTime tag (0018,0081)
@@ -13026,6 +13162,11 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	char *mrsExt = mrsHdrExtJson(*d0, hdr, dcmSort, nConvert, nameList, opts);
 	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0, mrsExt);
 	free(mrsExt);
+	// Report the saved output (see mrsReportConvert: the MRS path bypasses
+	// saveDcm2NiiCore's standard "Convert ..." line, so a warning above would
+	// otherwise have no associated NIfTI).
+	if (ret == EXIT_SUCCESS)
+		mrsReportConvert(nConvert, pathoutname, hdr);
 	// JSON sidecar via the existing writer — most fields (TR, TE, FlipAngle,
 	// ProtocolName, ...) are still meaningful for MRS, and the MRS-specific
 	// emissions (SpectralWidth, DwellTime, TransmitterFrequency,
@@ -13486,6 +13627,11 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	char *mrsExt = mrsHdrExtJson(*d0, hdr, dcmSort, nConvert, nameList, opts);
 	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0, mrsExt);
 	free(mrsExt);
+	// Report the saved output (see mrsReportConvert: the MRS path bypasses
+	// saveDcm2NiiCore's standard "Convert ..." line, so a warning above would
+	// otherwise have no associated NIfTI).
+	if (ret == EXIT_SUCCESS)
+		mrsReportConvert(nConvert, pathoutname, hdr);
 	if (ret == EXIT_SUCCESS) {
 		struct TDTI4D dti4D_local;
 		initTDTI4D(&dti4D_local);

@@ -364,13 +364,9 @@ int verify_slice_dir(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_h
 		vec3 sliceV = crossProduct(readV, phaseV); // order important: this is our hail mary
 		flip = ((sliceV.v[0] + sliceV.v[1] + sliceV.v[2]) < 0);
 		// printMessage("verify slice dir %g %g %g\n",sliceV.v[0],sliceV.v[1],sliceV.v[2]);
-		if (isVerbose) {		// 1st pass only
-			if (!d.isDerived) { // do not warn user if image is derived
-				printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
-			} else if (!d.isMicroscopy) {
-				printWarning("Unable to determine slice direction: please check whether slices are flipped (derived image)\n");
-			}
-		}
+		if (isVerbose && !d.isDerived) // do not warn for derived images (their
+			// slice order is routinely non-spatial; one diagnostic suffices)
+			printWarning("Unable to determine slice direction: please check whether slices are flipped\n");
 	}
 	if (flip) {
 		for (int i = 0; i < 4; i++)
@@ -694,7 +690,10 @@ int headerDcm2NiiSForm(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1
 		if (d.isMicroscopy) {
 			// WSI
 		} else if ((d.isDerived) || ((d.bitsAllocated == 8) && (d.samplesPerPixel == 3) && (d.manufacturer == kMANUFACTURER_SIEMENS))) {
-			printMessage("Unable to determine spatial orientation: 0020,0037 missing (probably not a problem: derived image)\n");
+			// derived / non-spatial (e.g. Siemens color-FA): stay silent here.
+			// The single "Bogus spatial matrix" warning below and the
+			// discard/nonspatial BIDS classification already flag this known case
+			// — one diagnostic, not a cascade.
 		} else {
 			printMessage("Unable to determine spatial orientation: 0020,0037 missing (Type 1 attribute: not a valid DICOM) Series %ld\n", d.seriesNum);
 		}
@@ -900,6 +899,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.phaseEncodingSteps = 0;
 	d.frequencyEncodingSteps = 0;
 	d.phaseEncodingStepsOutOfPlane = 0;
+	d.numberOfConcatenations = 1; // sSliceArray.lConc; >1 multiplies the 3D-EPI volume TR (issue 1024)
 	d.coilCrc = 0;
 	d.seriesUidCrc = 0;
 	d.instanceUidCrc = 0;
@@ -8305,8 +8305,16 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 									   (d.dwellTime > 0) ||
 									   (d.zThick > 0.0f) ||
 									   (d.xyzMM[1] > 1.0f);
+				// A Siemens derived DIFFUSION blob (e.g. TENSOR / ADC / FA) is
+				// also stored under CSA Non-Image Storage (1.3.12.2.1107.5.9.1),
+				// and its CSA header carries ImagedNucleus="1H" + RealDwellTime
+				// like every proton scan — which falsely trips mrsCorroborated.
+				// isDiffusion (set from ImageType "_DIFFUSION_" at ~6227, before
+				// this tag) is never true for real spectroscopy, so it cleanly
+				// excludes these from the FID route (else they hit the MRS writer
+				// with a payload-derived dataPointColumns far over the dim[4] cap).
 				if ((!d.isValid) && d.isRawDataStorage && (lLength >= 16) &&
-					((lLength % 8) == 0) && mrsCorroborated) {
+					((lLength % 8) == 0) && mrsCorroborated && !d.isDiffusion) {
 					d.isMRS = true;
 					d.isRawDataStorage = false; // route to saveDcm2NiiMRS, not physio
 					d.imageStart = (int)lPos + (int)lFileOffset;

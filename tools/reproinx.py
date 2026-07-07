@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import glob as _globlib  # for glob.escape; we keep Path.glob for matching
 import gzip
 import hashlib
@@ -361,10 +362,15 @@ def _select_closest(json_path: Path,
 # --- per-session passes -----------------------------------------------------
 
 def _is_target_for_fmaps(json_path: Path) -> bool:
-    """A non-fmap, non-sbref json that may be paired with an fmap."""
+    """A non-fmap json that may be paired with an fmap.
+
+    sbref IS a valid target: a single-band reference shares its bold's readout
+    and thus the same B0 distortion, so it must reference the same fieldmap
+    (matches BIDScoin). It pairs via the same shim/PE matching as any target;
+    `_populate_b0_fields` then forces each sbref to share its bold sibling's
+    selection so a two-compatible-fmap closest-in-time tie can never diverge the
+    pair."""
     if json_path.parent.name == "fmap":
-        return False
-    if json_path.stem.endswith("_sbref"):
         return False
     return True
 
@@ -401,6 +407,31 @@ def _populate_b0_fields(session_dir: Path) -> int:
     for jp in target_jsons:
         compat = _find_compatible(jp, fmap_groups, MATCHING_PARAMETERS)
         selected[jp] = _select_closest(jp, compat) if compat else None
+
+    # An sbref shares its bold sibling's readout, hence the same distortion
+    # field — but independent closest-in-time selection could straddle two
+    # shim-compatible fmap groups and pick different ones for the pair (their
+    # AcquisitionTimes differ). Force the pair to ONE shared selection by this
+    # precedence: (1) the bold's choice when the bold is timed (its closest-time
+    # pick is meaningful and bold-wins is stable/back-compatible); (2) else the
+    # sbref's choice when the sbref is timed; (3) else (neither timed, both only
+    # fell back to "first compatible") the non-None one, preferring the bold — so
+    # an incomplete sbref that matched no fmap cannot erase the bold's valid
+    # B0FieldSource.
+    for jp in list(selected):
+        if not jp.name.endswith("_sbref.json"):
+            continue
+        sib = jp.with_name(jp.name[: -len("_sbref.json")] + "_bold.json")
+        if sib not in selected:
+            continue
+        if _hms_seconds(_load_json(sib).get("AcquisitionTime")) is not None:
+            shared = selected[sib]
+        elif _hms_seconds(_load_json(jp).get("AcquisitionTime")) is not None:
+            shared = selected[jp]
+        else:
+            shared = selected[sib] if selected[sib] is not None else selected[jp]
+        selected[jp] = shared
+        selected[sib] = shared
 
     # Stable identifier per fmap group.
     ids = {prefix: _b0_identifier(prefix) for prefix in fmap_groups}
@@ -1238,6 +1269,7 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
     # free index. This is the safe choice; perfect re-numbering would
     # require touching pre-existing files which has its own surprises.
     rescued = 0
+    derived_moved = 0  # derived/discard families relocated to derivatives/scanner/
     task_re = re.compile(r"task-([A-Za-z0-9]+)")
     candidates: list[dict] = []  # one entry per rescuable json
     for jp in sorted(unknown.glob("*.json")):
@@ -1250,7 +1282,27 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
             continue
         datatype = str(guess[0]).strip()
         entity_suffix = str(guess[1])  # leading "_" is included by C side
-        if datatype.lower() in ("", "discard", "derived"):
+        if datatype.lower() in ("discard", "derived"):
+            # Known-but-not-raw data (scanner-derived DWI maps, scouts, ...).
+            # It is NOT raw BIDS, so route it to derivatives/scanner/ — dropped
+            # by default, kept under --keep-derivatives — instead of leaving it
+            # in Unknown/ (where the .bidsignore sweep would keep it in the raw
+            # tree). Mirrors how the C side routes parsed derived/discard series.
+            # https://bids-specification.readthedocs.io/en/stable/derivatives/introduction.html
+            stem = jp.name[:-len(".json")]
+            dest = bids_root / "derivatives" / "scanner" / "Unknown"
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+                _move_stem_files(unknown / stem, dest / stem)
+                derived_moved += 1
+            except FileExistsError:
+                pass  # curated dest already present — leave in Unknown/ (benign)
+            except OSError:
+                if strict:
+                    raise
+                pass  # leave in Unknown/ for the .bidsignore sweep (fail safe)
+            continue
+        if datatype.lower() == "":
             continue
         # Path-safety validation. BidsGuess is written by the C side from
         # parsed DICOM strings; both fields flow into a Path component
@@ -1401,6 +1453,9 @@ def _rescue_unknown_dir(bids_root: Path, strict: bool) -> int:
     # pair each to its rescued BOLD and move into that bold's func/ dir. Runs
     # after the BOLD moves above so the parents are already in place.
     rescued += _rescue_unknown_physio(unknown, bids_root, rows, strict)
+    if derived_moved > 0:
+        print(f"  {bids_root}: moved {derived_moved} derived/discard stem(s) "
+              "from Unknown/ to derivatives/scanner/", file=sys.stderr)
     # If Unknown/ is empty after rescue, prune it.
     try:
         if unknown.is_dir() and not any(unknown.iterdir()):
@@ -1923,17 +1978,16 @@ def _ensure_taskname(json_path: Path, task_name: str) -> None:
     _save_json(json_path, data)
 
 
-def _ensure_physio_tasknames(out_root: Path) -> int:
-    """Backfill `TaskName` into `*_physio.json` sidecars that carry a `task-`
-    entity. The dataset-level `task-X_bold.json` TaskName is NOT inherited by
-    `_physio` files (different suffix), so the BIDS validator warns
-    SIDECAR_KEY_RECOMMENDED(TaskName) on every physio sidecar. TaskName is the
-    task label itself — runs/acqs of one task legitimately SHARE a TaskName
-    (the `run-`/`acq-` entities distinguish acquisitions, not the task name).
-    Skips sidecars that already define TaskName and physio left under
-    derivatives/. Returns the count updated."""
+def _backfill_tasknames(out_root: Path, glob: str) -> int:
+    """Backfill `TaskName` (from the filename `task-` entity) into sidecars
+    matching `glob`. The dataset-level `task-X_bold.json` TaskName is NOT
+    inherited across other suffixes (`_physio`, `_sbref`), so the BIDS validator
+    warns SIDECAR_KEY_RECOMMENDED(TaskName) on each. TaskName is the task label
+    itself — runs/acqs of one task legitimately SHARE it (run-/acq- distinguish
+    acquisitions, not the task). Skips sidecars that already define TaskName and
+    any left under derivatives/. Returns the count updated."""
     n = 0
-    for jp in out_root.rglob("*_physio.json"):
+    for jp in out_root.rglob(glob):
         if any(part == "derivatives" for part in jp.parts):
             continue
         m = re.search(r"task-([A-Za-z0-9]+)", jp.name)
@@ -1949,6 +2003,14 @@ def _ensure_physio_tasknames(out_root: Path) -> int:
         _save_json(jp, data)
         n += 1
     return n
+
+
+def _ensure_physio_tasknames(out_root: Path) -> int:
+    return _backfill_tasknames(out_root, "*_physio.json")
+
+
+def _ensure_sbref_tasknames(out_root: Path) -> int:
+    return _backfill_tasknames(out_root, "*_sbref.json")
 
 
 def _emit_task_bold_jsons(out_root: Path) -> None:
@@ -2501,8 +2563,13 @@ def _reclassify_session(session_dir: Path, min_volumes: int) -> int:
     count = 0
     for (nii, dt, stem, suf, ndim, shape3, pe) in series:
         # R1: short EPI with a long-EPI sibling -> fmap/_dir-<L>_epi
+        # Skip multi-echo series: BIDS pepolar `_epi` does not permit the `echo`
+        # entity (ENTITY_NOT_IN_RULE), stripping it would collide echo-1/echo-2,
+        # and a multi-echo acquisition is structurally a real imaging series, not
+        # a quick single-echo distortion scan. Leave it as `_bold`/`_dwi`.
         if (dt in ("func", "dwi") and suf in ("bold", "dwi") and long_epi
-                and ndim is not None and ndim < min_volumes):
+                and ndim is not None and ndim < min_volumes
+                and not _ECHO_TOKEN_RE.search(stem)):
             label = _pe_dir_label(pe)
             if label is None:
                 continue  # need a polarity to name the required dir- entity
@@ -2692,8 +2759,289 @@ def _bidsguess_cleanup(out_root: Path, strict: bool,
                 raise
 
 
+_DATE_SHIFT_REF = _dt.date(1925, 1, 1)  # BIDS-recommended de-identification anchor
+_TS_SESSION_RE = re.compile(r"ses-\d{8}T\d{6}")  # reproin timestamp-derived session
+
+
+def _parse_acq_dt(s) -> Optional[_dt.datetime]:
+    """Parse an ISO acq datetime ('YYYY-MM-DDThh:mm:ss[.ffffff]'). None on fail."""
+    if not s or str(s) == "n/a":
+        return None
+    try:
+        return _dt.datetime.fromisoformat(str(s))
+    except (ValueError, TypeError):
+        return None
+
+
+def _shift_scans_tsv_dates(scans: Path, offset: _dt.timedelta) -> None:
+    """Subtract `offset` from the `acq_time` column of one `_scans.tsv`,
+    preserving the header, CRLF line endings, and any non-datetime cells.
+    The column is resolved from the header (not assumed to be column 2), so a
+    curated/reordered TSV shifts the right column; a TSV with no `acq_time`
+    column has no dates and is left untouched. Fail-closed: a read OR write
+    error raises (so --shift-dates cannot exit 0 leaving real dates)."""
+    lines = scans.read_text(encoding="utf-8").splitlines()  # OSError -> fatal
+    if len(lines) < 2:
+        return
+    header = lines[0].split("\t")
+    try:
+        acq_col = header.index("acq_time")
+    except ValueError:
+        return  # no acq_time column -> no dates in this TSV, nothing to shift
+    out = [lines[0]]
+    for line in lines[1:]:
+        if not line.strip():
+            out.append(line)
+            continue
+        cols = line.split("\t")
+        if len(cols) > acq_col:
+            dt = _parse_acq_dt(cols[acq_col])
+            if dt is not None:
+                cols[acq_col] = (dt - offset).isoformat()
+        out.append("\t".join(cols))
+    # Atomic write via a UNIQUE sibling temp + os.replace. NamedTemporaryFile
+    # gives a collision-free name and a real file object (closed by `with`, so
+    # no raw fd leaks on any error); newline="" writes the explicit CRLF verbatim.
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", newline="", delete=False,
+                dir=str(scans.parent), prefix=scans.name + ".", suffix=".tmp") as f:
+            tmp = Path(f.name)
+            f.write("\r\n".join(out) + "\r\n")
+        os.replace(str(tmp), str(scans))
+    except Exception:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+        raise
+
+
+def _scans_acq_dates(scans: Path) -> list:
+    """Every parseable `acq_time` datetime in one `_scans.tsv` (header-resolved
+    column). Fail-closed: a read error raises. `[]` when there is no acq_time
+    column. Lets date de-identification discover dates that live ONLY in
+    scans.tsv (a collated tree whose sidecars lack AcquisitionDateTime)."""
+    lines = scans.read_text(encoding="utf-8").splitlines()  # OSError -> fatal
+    if len(lines) < 2:
+        return []
+    header = lines[0].split("\t")
+    try:
+        acq_col = header.index("acq_time")
+    except ValueError:
+        return []
+    out = []
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        cols = line.split("\t")
+        if len(cols) > acq_col:
+            dt = _parse_acq_dt(cols[acq_col])
+            if dt is not None:
+                out.append(dt)
+    return out
+
+
+def _sidecar_date(data: dict) -> Optional[_dt.datetime]:
+    """Earliest-comparable datetime from ANY sidecar date field, for offset
+    discovery: full `AcquisitionDateTime` / `AcquisitionDate`+`AcquisitionTime`
+    (via `_acq_iso`), else a bare date-only `AcquisitionDate` anchored to
+    midnight. Mirrors what `_shift_sidecar_dates` can rewrite, so discovery never
+    misses a field the rewrite would shift. None if the dict carries no date."""
+    dt = _parse_acq_dt(_acq_iso(data))
+    if dt is not None:
+        return dt
+    ad = data.get("AcquisitionDate")
+    if isinstance(ad, str) and len(ad) == 8 and ad.isdigit():
+        try:
+            return _dt.datetime(int(ad[:4]), int(ad[4:6]), int(ad[6:8]))
+        except ValueError:
+            return None
+    return None
+
+
+def _shift_sidecar_dates(data: dict, offset: _dt.timedelta) -> bool:
+    """Shift every date-bearing field of a sidecar dict in place; True if changed.
+    Covers `AcquisitionDateTime` and the date-only `AcquisitionDate` ('YYYYMMDD',
+    the field `_acq_iso`/`_write_scans_tsv` can synthesize acq_time from); the
+    time-only `AcquisitionTime` carries no date and is left untouched."""
+    changed = False
+    dt = _parse_acq_dt(data.get("AcquisitionDateTime"))
+    if dt is not None:
+        data["AcquisitionDateTime"] = (dt - offset).isoformat()
+        changed = True
+    ad = data.get("AcquisitionDate")
+    if isinstance(ad, str) and len(ad) == 8 and ad.isdigit():
+        try:
+            data["AcquisitionDate"] = (
+                _dt.date(int(ad[:4]), int(ad[4:6]), int(ad[6:8])) - offset
+            ).strftime("%Y%m%d")
+            changed = True
+        except ValueError:
+            pass
+    return changed
+
+
+def _shift_dates(out_root: Path) -> int:
+    """De-identify acquisition dates (BIDS RECOMMENDED; opt-in via --shift-dates).
+
+    For each subject, shift every acquisition datetime by a whole-day offset so
+    the subject's EARLIEST scan lands on 1925-01-01, preserving time-of-day and
+    all intra-subject intervals (sessions, runs). The earliest is discovered
+    across ALL date sources — sidecar `AcquisitionDateTime`, sidecar
+    `AcquisitionDate`+`AcquisitionTime`, and the `_scans.tsv` `acq_time` column —
+    and all of them are rewritten (sidecar `AcquisitionDateTime` + `AcquisitionDate`,
+    and scans.tsv `acq_time`); the time-only `AcquisitionTime` carries no date and
+    is left untouched. The offset is per-subject, so cross-subject absolute timing
+    is destroyed (privacy) while within-subject longitudinal structure is
+    preserved. Returns subjects shifted.
+
+    Completeness: also shifts any RETAINED `derivatives/` sidecars (which
+    `_walk_subjects` skips) — present under `--keep-derivatives` or a
+    physio-preserved root — and removes `.reproin_provenance.tsv` (+ `.bak`),
+    which carry raw StudyDate/StudyTime/PatientID. Fail-closed: an unreadable
+    date-bearing JSON/scans.tsv raises rather than being silently skipped.
+
+    Limitation: timestamp-derived session labels (`ses-<YYYYMMDD...>`) are NOT
+    renamed — that would mean moving directories and rewriting scans filenames.
+    Use named sessions (`ses-pre`) to avoid leaking the date via the path."""
+    def _strict_load(jp: Path) -> dict:
+        # Fail-closed: an unreadable/malformed sidecar during de-identification
+        # must abort, not be silently skipped — we cannot otherwise verify it
+        # carries no date. A readable non-object JSON simply has no date field.
+        try:
+            data = _load_json(jp)
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            raise RuntimeError(f"cannot read {jp} for date-shift: {e}") from e
+        return data if isinstance(data, dict) else {}
+
+    shifted = 0
+    offsets: dict[str, _dt.timedelta] = {}  # subject dir name -> whole-day shift
+    subjects = _walk_subjects(out_root)  # non-derivatives top-level sub-* DIRS
+    for sub in subjects:
+        jsons = list(sub.rglob("*.json"))
+        scans_files = list(sub.rglob("*_scans.tsv"))
+        # Earliest acquisition across ALL date sources: sidecar AcquisitionDateTime
+        # OR AcquisitionDate+AcquisitionTime (via _acq_iso), AND scans.tsv acq_time
+        # (which _write_scans_tsv can synthesize from the date fields). Without the
+        # scans.tsv source, a collated tree whose sidecars lack a date but whose
+        # scans.tsv carries one would be skipped, leaving real dates (fail-open).
+        earliest = None
+        for jp in jsons:
+            dt = _sidecar_date(_strict_load(jp))
+            if dt is not None and (earliest is None or dt < earliest):
+                earliest = dt
+        for sc in scans_files:
+            for dt in _scans_acq_dates(sc):
+                if earliest is None or dt < earliest:
+                    earliest = dt
+        if earliest is None:
+            continue
+        offset = _dt.timedelta(days=(earliest.date() - _DATE_SHIFT_REF).days)
+        offsets[sub.name] = offset  # record even if 0 so derivatives reuse it
+        if offset.days == 0:
+            continue
+        for jp in jsons:
+            data = _strict_load(jp)
+            if _shift_sidecar_dates(data, offset):
+                _save_json(jp, data)
+        for scans in scans_files:
+            _shift_scans_tsv_dates(scans, offset)
+        shifted += 1
+    # Timestamp-session leak warning, INDEPENDENT of whether any date was shifted
+    # (a re-run / already-1925 tree has offset 0 but the ses-<YYYYMMDD...> dir
+    # still encodes the real date in its path; renaming the dir is deferred —
+    # moves files + rewrites scans filenames). Surface it so the user isn't
+    # silently misled that --shift-dates fully de-identified the tree.
+    for sub in subjects:
+        leaky = sorted({p.name for p in sub.glob("ses-*")
+                        if _TS_SESSION_RE.fullmatch(p.name)})
+        if leaky:
+            print(f"reproinx: WARNING {sub.name}: --shift-dates anchored "
+                  f"sidecars/scans.tsv to {_DATE_SHIFT_REF.year}, but "
+                  f"timestamp session dir(s) {leaky} still leak the real date "
+                  f"via the path. Use named sessions to fully de-identify.",
+                  file=sys.stderr)
+    # Everything the per-subject pass did NOT already shift but which can still
+    # carry a real date: retained derivatives/ survivors (--keep-derivatives or a
+    # physio-preserved root, skipped by _walk_subjects) AND subjectless root-level
+    # output — chiefly Unknown/*.json (CT intentionally left in Unknown/, or a
+    # wholly-unrescued series) plus any stray *_scans.tsv. The per-subject pass
+    # covered non-derivatives sub-*/** only, so sweep the rest here (both *.json
+    # AND *_scans.tsv): reuse the owning subject's offset when the path has a
+    # sub-X component, else anchor the file's own earliest date to the reference
+    # year (per-file is acceptable — this output is not longitudinally grouped).
+    # Guarantees no real acquisition date survives anywhere in the tree.
+    def _already_shifted(p: Path) -> bool:
+        # True iff the per-subject pass already handled this file: it is strictly
+        # under one of the walked subject DIRS. Must NOT test path *components*
+        # (p.parts) for a "sub-" prefix — the filename is a component, so a
+        # subjectless survivor literally named e.g. Unknown/sub-x_ct.json (subject
+        # known but classification failed → lands in Unknown/) would be wrongly
+        # skipped, leaving a real date. (audit 2026-07-07)
+        return any(s in p.parents for s in subjects)
+
+    def _offset_for(p: Path, own: _dt.datetime) -> _dt.timedelta:
+        # Owning subject = a sub-* DIRECTORY component (derivatives survivors live
+        # under derivatives/.../sub-X/); exclude the filename p.parts[-1], which
+        # can itself start with "sub-". Else anchor the file's own date per-file.
+        sub_name = next((x for x in p.parts[:-1] if x.startswith("sub-")), None)
+        off = offsets.get(sub_name) if sub_name else None
+        if off is None:
+            off = _dt.timedelta(days=(own.date() - _DATE_SHIFT_REF).days)
+        return off
+
+    for jp in out_root.rglob("*.json"):
+        if _already_shifted(jp):
+            continue
+        data = _strict_load(jp)
+        dt = _sidecar_date(data)
+        if dt is None:
+            continue
+        off = _offset_for(jp, dt)
+        if off.days == 0:
+            continue
+        if _shift_sidecar_dates(data, off):
+            _save_json(jp, data)
+    for sc in out_root.rglob("*_scans.tsv"):
+        if _already_shifted(sc):
+            continue
+        dates = _scans_acq_dates(sc)  # fail-closed: read error raises
+        if not dates:
+            continue
+        off = _offset_for(sc, min(dates))
+        if off.days != 0:
+            _shift_scans_tsv_dates(sc, off)
+    # De-identification is incomplete while provenance survives: .reproin_
+    # provenance.tsv AND its rotated .bak carry raw StudyDate/StudyTime (and
+    # PatientID under the default -ba o). Both are internal C<->Python
+    # intermediates, already consumed by the earlier Unknown-rescue, so remove
+    # them (re-runs re-create the .tsv from the DICOMs).
+    for name in (_PROVENANCE_TSV, _PROVENANCE_TSV + ".bak"):
+        for prov in out_root.rglob(name):
+            prov.unlink()
+    return shifted
+
+
+def _run_shift_dates(out_root: Path) -> None:
+    """Fail-closed `--shift-dates` invocation shared by both `_post_process`
+    exits (the no-sub-* early return AND the normal final pass). Any failure is
+    loud and fatal (raises regardless of --strict): an explicit de-identification
+    request must never silently ship a tree with partial/real dates."""
+    try:
+        n = _shift_dates(out_root)
+        if n > 0:
+            print(f"  shifted acquisition dates to {_DATE_SHIFT_REF.year} "
+                  f"for {n} subject(s)", file=sys.stderr)
+    except Exception as e:
+        print(f"reproinx: ERROR --shift-dates FAILED ({e}); the output may "
+              f"contain real acquisition dates — treat it as NOT "
+              f"de-identified.", file=sys.stderr)
+        raise
+
+
 def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
-                  min_volumes: int = DEFAULT_MIN_VOLUMES) -> None:
+                  min_volumes: int = DEFAULT_MIN_VOLUMES,
+                  shift_dates: bool = False) -> None:
     # Pre-pass 0: collapse a redundant <StudyDescription> hierarchy when
     # the provenance shows ZERO ReproIn-parsed series. Must run before
     # any rglob-based discovery so subsequent passes see the final paths.
@@ -2798,6 +3146,14 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
     sessions = _walk_sessions(out_root)
     if not sessions:
         print(f"reproinx: no sub-* folders under {out_root}", file=sys.stderr)
+        # An all-Unknown/ study (CT intentionally left in Unknown/, or a wholly
+        # unrescued study) has no sub-* tree, so the session/scaffolding/derivative
+        # passes below are no-ops — but --shift-dates must STILL de-identify it:
+        # Unknown/*.json carry real AcquisitionDateTime and .reproin_provenance.tsv
+        # carries raw StudyDate/StudyTime/PatientID. Without this the pass was
+        # skipped entirely, shipping real dates + provenance at exit 0.
+        if shift_dates:
+            _run_shift_dates(out_root)
         return
     for ses in sessions:
         try:
@@ -2822,6 +3178,10 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
             np = _ensure_physio_tasknames(root)
             if np > 0:
                 print(f"  {root}: backfilled TaskName into {np} physio sidecar(s)",
+                      file=sys.stderr)
+            ns = _ensure_sbref_tasknames(root)
+            if ns > 0:
+                print(f"  {root}: backfilled TaskName into {ns} sbref sidecar(s)",
                       file=sys.stderr)
     except Exception as e:
         print(f"reproinx: scaffolding failed: {e}", file=sys.stderr)
@@ -2852,6 +3212,10 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
             print(f"reproinx: derivatives removal failed: {e}", file=sys.stderr)
             if strict:
                 raise
+    # Final pass: optional date de-identification (BIDS RECOMMENDED). Runs last
+    # so it shifts the finalized scans.tsv + sidecars in the raw tree.
+    if shift_dates:
+        _run_shift_dates(out_root)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -2890,6 +3254,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "session detection and then removed by default to "
                         "match heudiconv's layout. Pass this flag to retain "
                         "them for inspection.")
+    p.add_argument("--shift-dates", action="store_true",
+                   help="De-identify acquisition dates (BIDS RECOMMENDED). Per "
+                        "subject, shift every acq_time / AcquisitionDateTime by a "
+                        "whole-day offset so the earliest scan lands on "
+                        f"{_DATE_SHIFT_REF.year}-01-01, preserving time-of-day and "
+                        "intra-subject intervals. Off by default (heudiconv "
+                        "parity keeps real dates). Does not rename timestamp-"
+                        "based ses-<YYYYMMDD...> labels (warns loudly when any "
+                        "are present, since the path still leaks the date).")
     args = p.parse_args(argv)
 
     indir = Path(args.indir).resolve()
@@ -2905,9 +3278,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         dcm2niix_rc = _run_dcm2niix(str(indir), str(outdir), args.subject,
                                      args.session, anonymize=args.anonymize)
 
-    _post_process(outdir, strict=args.strict,
-                  keep_derivatives=args.keep_derivatives,
-                  min_volumes=args.min_volumes)
+    try:
+        _post_process(outdir, strict=args.strict,
+                      keep_derivatives=args.keep_derivatives,
+                      min_volumes=args.min_volumes,
+                      shift_dates=args.shift_dates)
+    except Exception as e:
+        # Fail-closed surface for --shift-dates (and --strict): a clean non-zero
+        # exit instead of a raw traceback. The pass already printed specifics.
+        print(f"reproinx: post-processing aborted: {e}", file=sys.stderr)
+        return 1
     # Propagate dcm2niix's partial-success exit codes (8, 10) so automation
     # can distinguish a clean run from one that lost series mid-batch. The
     # post-pass still runs against whatever landed on disk.

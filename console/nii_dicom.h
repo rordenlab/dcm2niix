@@ -56,7 +56,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20260622"
+#define kDCMdate "v1.0.20260627"
 #define kDCMvers kDCMdate " " kJP2suf kTurbosuf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -269,7 +269,7 @@ struct TDICOMdata {
 	int xyzDim[5];
 	uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
 	int overlayStart[kMaxOverlay];
-	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, offsetTableItems, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme,
+	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, numberOfConcatenations, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, offsetTableItems, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme,
 		mrsAcqType, numberOfKSpaceTrajectories; // MRS only: (0018,9200) kMRSAcq* enum + (0018,9093) k-space trajectory count
 	float compressedSensingFactor, xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, scatterFraction, percentSampling, waterFatShift, numberOfAverages, patientSize, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
 	float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];

@@ -1,5 +1,6 @@
-FROM ubuntu:trusty
-MAINTAINER <alexcohen@gmail.com> # feel free to change/adopt
+FROM ubuntu:22.04
+# maintainer: feel free to change/adopt
+LABEL maintainer="alexcohen@gmail.com"
 
 # Install Dependencies
 RUN apt-get update && apt-get upgrade -y && \
@@ -10,7 +11,7 @@ RUN apt-get update && apt-get upgrade -y && \
 RUN cd /tmp && \
 	git clone https://github.com/rordenlab/dcm2niix.git && \
 	cd dcm2niix && mkdir build && cd build && \
-	cmake -DBATCH_VERSION=ON -DUSE_OPENJPEG=ON .. && \
+	cmake -DBATCH_VERSION=ON -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub .. && \
 	make && make install
 
 ENTRYPOINT ["/usr/local/bin/dcm2niix"]

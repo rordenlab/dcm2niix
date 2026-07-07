@@ -38,13 +38,13 @@ You can also append prefix(es) to each of these configurations, for example `JPE
 
 `cmake` can automatically aid complex builds. The [home page](https://github.com/rordenlab/dcm2niix) describes typical cmake options.
 
-To download and compile dcm2niix with cmake you can run these commands from the command line (remove `--branch development` to get the current stable release; remove `-DZLIB_IMPLEMENTATION=Cloudflare` to produce with the miniz compressor, remove `-DUSE_JPEGLS=ON` to build without CharLS and remove `-DUSE_OPENJPEG=ON` to compile without JPEG2000 support):
+To download and compile dcm2niix with cmake you can run these commands from the command line (remove `--branch development` to get the current stable release; remove `-DZLIB_IMPLEMENTATION=zlib-ng` to produce with the miniz compressor, remove `-DUSE_JPEGLS=ON` to build without CharLS and remove `-DUSE_OPENJPEG=GitHub` to compile without JPEG2000 support). This is the same configuration used for all released builds — zlib-ng and OpenJPEG are statically built from pinned source (zlib-ng 2.3.3, OpenJPEG 2.5.3):
 
 ```bash
 git clone --branch development git@github.com:rordenlab/dcm2niix.git
 cd dcm2niix
 mkdir build && cd build
-cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
+cmake -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub ..
 make
 ```
 
