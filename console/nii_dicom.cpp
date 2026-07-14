@@ -927,6 +927,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.frameReferenceTime = -1.0;
 	d.ecat_dosage = 0.0;
 	d.radionuclideTotalDose = 0.0;
+	d.radiopharmaceuticalSpecificActivity = 0.0; // (0018,1077) Bq/umol -> BIDS MolarActivity
 	d.seriesNum = 1;
 	d.acquNum = 0;
 	d.frameNum = 0; // first shall be one
@@ -5083,6 +5084,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kRadionuclideTotalDose 0x0018 + (0x1074 << 16)
 #define kRadionuclideHalfLife 0x0018 + (0x1075 << 16)
 #define kRadionuclidePositronFraction 0x0018 + (0x1076 << 16)
+#define kRadiopharmaceuticalSpecificActivity 0x0018 + (0x1077 << 16) // DS, Bq/umol, within (0054,0016); BIDS MolarActivity
 #define kGantryTilt 0x0018 + (0x1120 << 16)
 #define kXRayTimeMS 0x0018 + (0x1150 << 16)		 // IS
 #define kXRayTubeCurrent 0x0018 + (0x1151 << 16) // IS
@@ -7453,6 +7455,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		}
 		case kRadionuclideTotalDose:
 			d.radionuclideTotalDose = dcmStrFloat(lLength, &buffer[lPos]);
+			break;
+		case kRadiopharmaceuticalSpecificActivity: // (0018,1077) Bq/umol -> BIDS MolarActivity; dcmStrDouble preserves wide-range DS precision
+			d.radiopharmaceuticalSpecificActivity = dcmStrDouble(lLength, &buffer[lPos]);
 			break;
 		case kEffectiveTE: {
 			TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);

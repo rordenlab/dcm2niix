@@ -195,6 +195,8 @@ The term ECAT in the comments suggests that values are defined by the [ECAT7](ht
 | InjectedRadioactivity        | MBq  | DICOM tag 0018,1074              | B          |
 | RadionuclideHalfLife         | s    | DICOM tag 0018,1075              | D          |
 | RadionuclidePositronFraction | f    | DICOM tag 0018,1076              | D          |
+| MolarActivity                | Bq/umol | DICOM tag 0018,1077 (BIDS maps this "Radiopharmaceutical Specific Activity" to MolarActivity, molar; emitted raw with its DICOM unit) | B          |
+| MolarActivityUnits           |      | `Bq/umol` when 0018,1077 present | B          |
 | ConvolutionKernel            |      | DICOM tag 0018,1210              | D          |
 | Units                        |      | DICOM tag 0054,1001              | B          |
 | AttenuationCorrectionMethod  |      | DICOM tag 0054,1101              | B          |

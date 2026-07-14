@@ -1933,7 +1933,7 @@ static bool mrsVoiMatrix(const struct TDICOMdata *d, double m[4][4]) {
 	return true;
 }
 
-void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
+static int nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
 	//  sidecar JSON file (with the same filename as the .nii.gz file, but with .json extension).
@@ -1943,7 +1943,7 @@ void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts
 	if ((!opts.isCreateBIDS) && (opts.isOnlyBIDS))
 		printMessage("Input-only mode: no BIDS/NIfTI output generated for '%s'\n", pathoutname);
 	if (!opts.isCreateBIDS)
-		return;
+		return EXIT_SUCCESS;
 	char txtname[2048] = {""};
 	strcpy(txtname, pathoutname);
 	strcat(txtname, ".json");
@@ -1958,6 +1958,10 @@ void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts
 #else
 	FILE *fp = fopen(txtname, "w");
 #endif
+	if (fp == NULL) {
+		printError("Unable to write BIDS sidecar %s\n", txtname);
+		return EXIT_FAILURE;
+	}
 	fprintf(fp, "{\n");
 	switch (d.modality) {
 	case kMODALITY_CR:
@@ -2282,7 +2286,9 @@ tse3d: T2*/
 		int count = 0;
 		sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%lf%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count); // CR 20170404 %lf not %f for double precision
 		// printf("-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
-		// issue983 : do not include AcquisitionTime for PET
+		// PET AcquisitionTime is emitted in the PET block (with SeriesTime, ~L2547);
+		// skip it here to avoid double emission and to keep PET AcquisitionDateTime
+		// suppressed (issue983).
 		if ((count) && (d.modality != kMODALITY_PT)) { // ISO 8601 specifies a sign must exist for distant years.
 			// report time of the day only format, https://www.cs.tut.fi/~jkorpela/iso8601.html
 			// %09.6f gives zero-padded "06.647500"; %02.6f only sets total
@@ -2329,6 +2335,10 @@ tse3d: T2*/
 	json_Float(fp, "\t\"InjectedRadioactivity\": %.8g,\n", d.radionuclideTotalDose / 1.0e6);
 	if (d.radionuclideTotalDose > 0.0)
 		fprintf(fp, "\t\"InjectedRadioactivityUnits\": \"MBq\",\n");
+	// (0018,1077) -> BIDS MolarActivity (molar Bq/umol, not mass-based SpecificRadioactivity)
+	json_Float(fp, "\t\"MolarActivity\": %.9g,\n", d.radiopharmaceuticalSpecificActivity);
+	if (d.radiopharmaceuticalSpecificActivity > 0.0)
+		fprintf(fp, "\t\"MolarActivityUnits\": \"Bq/umol\",\n");
 	json_Float(fp, "\t\"InjectedVolume\": %g,\n", d.injectedVolume);
 
 	json_Float(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife);
@@ -2550,6 +2560,18 @@ tse3d: T2*/
 			int minutes = (time / 100) % 100;
 			int seconds = time % 100;
 			fprintf(fp, "\t\"SeriesTime\": \"%02d:%02d:%02d\",\n", hours, minutes, seconds);
+		}
+		// PET AcquisitionTime: emit the raw DICOM (0008,0032) alongside SeriesTime.
+		// The two can differ (dynamic / multi-bed / time-subset recons); PET2BIDS
+		// consumes both raw anchors to choose the time-zero convention. This is the
+		// raw tag (seconds %09.6f, ISO/BIDS ACQTIME_FMT), NOT the deprecated
+		// TimeZero=AcquisitionTime derivation the block comment below rejects. The
+		// general emitter (~L2286) skips PET, so this is the sole PET AcquisitionTime.
+		if (d.acquisitionTime > 0.0) {
+			int ahours = (int)(d.acquisitionTime / 10000);
+			int amins = ((int)(d.acquisitionTime / 100)) % 100;
+			double asecs = d.acquisitionTime - (ahours * 10000 + amins * 100);
+			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%09.6f\",\n", ahours, amins, asecs);
 		}
 		double t = (d.seriesTime > 0.0) ? d.seriesTime : d.acquisitionTime;
 		// DELIBERATELY do NOT emit TimeZero or InjectionStart (issue #983 / PR
@@ -3565,10 +3587,22 @@ tse3d: T2*/
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMdate);
 	// fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );kDCMdate
 	fprintf(fp, "}\n");
-	fclose(fp);
-	// Record per-series provenance for tools/reproinx.py (no-op unless %H).
-	reproinAppendProvenance(pathoutname, d, opts);
+	int writeError = ferror(fp);
+	int closeError = fclose(fp);
+	if (writeError || closeError) {
+		printError("Unable to write BIDS sidecar %s (disk full?)\n", txtname);
+		remove(txtname);
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // nii_SaveBIDSX()
+
+static void removeBIDSSidecar(const char *pathoutname) {
+	char txtname[2048] = {""};
+	strcpy(txtname, pathoutname);
+	strcat(txtname, ".json");
+	remove(txtname);
+}
 
 void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	// swap endian from big->little or little->big
@@ -3648,7 +3682,9 @@ void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts,
 	if (dti4D == NULL)
 		return; // M1 fix (audit round-5): skip sidecar on OOM rather than NULL-deref in initTDTI4D
 	initTDTI4D(dti4D);
-	nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
+	int bidsStatus = nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
+	if (opts.isCreateBIDS && (bidsStatus == EXIT_SUCCESS))
+		reproinAppendProvenance(pathoutname, d, opts);
 	free(dti4D);
 } // nii_SaveBIDSX()
 
@@ -8994,7 +9030,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	// any of the fl3d/gre/ep_seg_fid patterns, plus MINIMUM and SWI_Images
 	// derived projections that the user wants surfaced as anat rather than
 	// routed to derivatives/scanner/. ImageType is underscore-joined so
-	// `_SWI` only matches the token (not e.g. "SWIRL").
+	// `_SWI` is a substring match; no `_SWIRL`-type ImageType token occurs in practice.
 	if (strstr(d->imageType, "_SWI") != NULL) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
@@ -11975,14 +12011,26 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			}
 		}
 	}
+	char bidsPathoutname[2048] = {""};
+	strcpy(bidsPathoutname, pathoutname);
+	bool isBIDSSidecar = (opts.numSeries >= 0) && opts.isCreateBIDS;
+	int bidsStatus = EXIT_SUCCESS;
 	if (opts.numSeries >= 0) // issue453
-		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
+		bidsStatus = nii_SaveBIDSX(bidsPathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
 	if (opts.isOnlyBIDS) {
+		if (isBIDSSidecar && (bidsStatus == EXIT_SUCCESS))
+			reproinAppendProvenance(bidsPathoutname, dcmList[dcmSort[0].indx], opts);
 		// note we waste time loading every image, however this ensures hdr0 matches actual output
 #ifndef USING_DCM2NIIXFSWRAPPER
 		free(imgM);
 #endif
-		return EXIT_SUCCESS;
+		return bidsStatus;
+	}
+	if (bidsStatus != EXIT_SUCCESS) {
+#ifndef USING_DCM2NIIXFSWRAPPER
+		free(imgM);
+#endif
+		return EXIT_FAILURE;
 	}
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
 		int inVol = hdr0.dim[4];
@@ -11992,6 +12040,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				nVol++;
 		if (nVol < 1) {
 			printError("Series %d does not exist\n", segVol);
+			removeBIDSSidecar(bidsPathoutname);
 			return EXIT_FAILURE;
 		}
 		size_t imgsz4D = imgsz;
@@ -12284,6 +12333,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #else
 	free(imgM);
 #endif
+	if (isBIDSSidecar) {
+		if (returnCode == EXIT_SUCCESS)
+			reproinAppendProvenance(bidsPathoutname, dcmList[dcmSort[0].indx], opts);
+		else
+			removeBIDSSidecar(bidsPathoutname);
+	}
 	if (dcmList[dcmSort[0].indx].xyzDim[0] > 1)
 		returnCode = kEXIT_INCOMPLETE_VOLUMES_FOUND; // issue515
 	return returnCode;								 // EXIT_SUCCESS;

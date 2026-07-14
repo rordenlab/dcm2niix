@@ -11,6 +11,7 @@ Domain hazards live in on-demand docs — read the relevant one before changing 
 - `docs/PARSER_GOTCHAS.md` — DICOM tag descent, transfer syntax, encapsulation, slice geometry, vendor-private parsing.
 - `docs/BIDS_REPROIN.md` — BIDS sidecars, physio output, classification, `BidsGuess`, `-f %h/%H`, `reproin.cpp`, `tools/reproinx.py`.
 - `docs/MRS.md` — MR Spectroscopy, NIfTI-MRS ecode 44, `tools/mrs_post.py`.
+- `docs/siemens.md` — reference table for `setBidsSiemens()` BIDS-guess cascade + the `MRWeightingGuess()` T1/PD/T2/FLAIR heuristic.
 
 ## Build / Test / Lint
 

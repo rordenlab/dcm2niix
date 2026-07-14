@@ -127,7 +127,14 @@ const handleMessage = async (e) => {
     // then add the input directory at the end of the args array
     args.push(inDir);
     // call the main function of the WASM module with the args
-    const exitCode = mod.callMain(args);
+    // Web Worker: Emscripten exit() throws ExitStatus even on clean exit(0); tolerate it.
+    let exitCode = 0;
+    try {
+      exitCode = mod.callMain(args);
+    } catch (err) {
+      if (err && typeof err === 'object' && 'status' in err) exitCode = err.status;
+      else throw err;
+    }
 
     // read all files from outDir and return them
     const files = mod.FS.readdir(outDir);

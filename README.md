@@ -160,6 +160,7 @@ The following tools exploit dcm2niix
   - [Brain Lesion Suite](https://github.com/BrainLesion) supports dcm2niix for DICOM to NifTI conversion.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
+  - [CALMaR](https://github.com/neurodesk/calmar-webapp) Co-designed Automated Lesion Mapping and Reporting.
   - [CardioNIfTI](https://github.com/UK-Digital-Heart-Project/CardioNIfTI) processes cardiac MR DICOM datasets and converts them to NIfTI.
   - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
   - [clpipe](https://github.com/cohenlabUNC/clpipe) uses dcm2bids for DICOM import.
@@ -175,14 +176,17 @@ The following tools exploit dcm2niix
   - [dcm2niiXL](https://github.com/neurolabusc/dcm2niiXL) is a shell script and tuned compilation of dcm2niix designed for accelerated conversion of extra large datasets.
   - [dcm2niixpy](https://github.com/Svdvoort/dcm2niixpy) Python package of dcm2niix.
   - [dcmwrangle](https://github.com/jbteves/dcmwrangle) a Python interactive and static tool for organizing dicoms.
+  - [deface](https://niivue.github.io/deface/) browser-based anonymization of MR scans.
   - [DeepDicomSort](https://github.com/Svdvoort/DeepDicomSort) can recognize different scan types.
   - [DICOM-to-NIfTI-GUI](https://github.com/Zunairviqar/DICOM-to-NIfTI-GUI) is a Python script that provides a graphical wrapper for dcm2niix.
   - [dicom2bids](https://github.com/Jolinda/lcnimodules) includes python modules for converting dicom files to nifti in a bids-compatible file structure that use dcm2niix.
   - [DICOM2BIDS](https://github.com/klsea/DICOM2BIDS) is a Python 2 script for creating BIDS files.
   - [dicom2nifti_batch](https://github.com/scanUCLA/dicom2nifti_batch) is a Matlab script for automating dcm2niix.
   - [dicomConversionToNifti](https://github.com/bsmarine/dicomConversionToNifti) converts, de-identifies and assigns standardized naming convention to medical imaging.
+  - [dicompare-web](https://github.com/astewartau/dicompare-web) for automated validation and comparison of MRI acquisition protocols using DICOM metadata.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [DPABI](https://github.com/Chaogan-Yan/DPABI) [Data Processing & Analysis for Brain Imaging](https://rfmri.org/DPABI) includes dcm2niix.
+  - [Easy-MP2RAGE-T1-Map](https://github.com/thomshaw92/Easy-MP2RAGE-T1-Map) Quantitative T1 maps from MP2RAGE for desktop or [web](https://thomshaw92.github.io/Easy-MP2RAGE-T1-Map/)
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
   - [ExploreASL-GUI](https://github.com/MauricePasternak/ExploreASL-GUI) uses dcm2niix for image conversion.
   - [ezBIDS](https://github.com/brainlife/ezbids) is a [web service](https://brainlife.io/ezbids/) for converting directory full of DICOM images into BIDS without users having to learn python nor custom configuration file.
@@ -203,6 +207,7 @@ The following tools exploit dcm2niix
   - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package and wraps dcm2niix to improve DICOM support.
   - [MRIcroGL](https://github.com/neurolabusc/MRIcroGL) is available for MacOS, Linux and Windows and provides a graphical interface for dcm2niix. You can get compiled copies from the [MRIcroGL NITRC web site](https://www.nitrc.org/projects/mricrogl/).
   - [MrPyConvert](https://github.com/Jolinda/mrpyconvert) Python library dicom to bids conversion.
+  - [musclemap-webapp](https://github.com/neurodesk/musclemap-webapp) whole-body muscle segmentation using a MONAI 2D UNet model.
   - [Nekton](https://github.com/deepc-health/nekton) is a python package for DICOM to NifTi and NifTi to DICOM-SEG and GSPS conversion.
   - [NeuroClaw](https://github.com/CUHK-AIM-Group/NeuroClaw) AI for reproducible neuroimaging includes dcm2niix skills.
   - [neuro_docker](https://github.com/Neurita/neuro_docker) includes dcm2niix as part of a single, static Dockerfile.
@@ -223,17 +228,21 @@ The following tools exploit dcm2niix
   - [pydra-dcm2bids](https://github.com/aramis-lab/pydra-dcm2bids) supports Pydra tasks for dcm2bids.
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
+  - [qsmbly](https://github.com/astewartau/qsmbly) browser-based quantitative susceptibility mapping.
   - [QSMxT](https://github.com/QSMxT/QSMxT) is an end-to-end software toolbox for Quantitative Susceptibility Mapping.
   - [qunex](https://github.com/ULJ-Yale/qunex) Quantitative Neuroimaging Environment & ToolboX for data organization, preprocessing, and quality assurance neuroimaging modalities.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [Retina_OCT_dcm2nii](https://github.com/Choupan/Retina_OCT_dcm2nii) converts optical coherence tomography (OCT) data to NIfTI.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).
+  - [seedseg](https://github.com/astewartau/seedseg) segmentation of gold fiducial markers in T1-weighted prostate MRI.
   - [SHAring iN vivO Imaging Resources (Shanoir)](https://project.inria.fr/shanoir/) includes dcm2niix.
   - [shimming-toolbox](https://github.com/shimming-toolbox/shimming-toolbox) enabled static and real-time shimming, using dcm2niix to import DICOM data.
   - [SlicerDcm2nii](https://github.com/SlicerDMRI/SlicerDcm2nii) is an extension to import DICOM data into 3D Slicer.
+  - [spinalcordtoolbox-webapp](https://github.com/neurodesk/spinalcordtoolbox-webapp) MRI segmentation interface for Spinal Cord Toolbox.
   - [tar2bids](https://github.com/khanlab/tar2bids) converts DICOM tarball(s) to BIDS using heudiconv which invokes dcm2niix.
   - [TORTOISE](https://tortoise.nibib.nih.gov) is used for processing diffusion MRI data, and uses dcm2niix to import DICOM images.
   - [TractoR (Tracto­graphy with R) uses dcm2niix for image conversion](http://www.tractor-mri.org.uk/TractoR-and-DICOM).
   - [twice_exceptionality_repository](https://github.com/avery-water/twice_exceptionality_repository) converts DICOM to BIDS format, creates masks, and runs VBM.
+  - [vesselboost-webapp](https://github.com/neurodesk/vesselboost-webapp) blood vessel segmentation.
   - [XA30_workaround](https://github.com/vanandrew/XA30_workaround) uses dcm2niix.
   - [XNAT2BIDS](https://github.com/kamillipi/2bids) is a simple xnat pipeline to convert DICOM scans to BIDS-compatible output.
