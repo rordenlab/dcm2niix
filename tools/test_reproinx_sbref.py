@@ -19,7 +19,13 @@
      col 2), discovers/shifts dates that live only in scans.tsv or in a
      sidecar's AcquisitionDate, and fails closed (raises) on an unreadable
      sidecar.
-Run: python3 test_reproinx_sbref.py   (no pytest, no DICOM needed; 12 checks)."""
+  9. Multi-echo BOLD+phase families resolve to _part-<mag|phase>_<bold|sbref>
+     (BidsGuess/ImageType precedence, ambiguous or unclassifiable-sibling
+     families skipped whole), phase gets Units, _events.tsv is one-per-run
+     (echo/part stripped), and the resolver -> __dup recovery leaves no
+     base-less or temporary duplicate family after failure.
+This list is representative, not exhaustive; see the test functions below.
+Run: python3 test_reproinx_sbref.py   (no pytest, no DICOM needed)."""
 import gzip, json, struct, tempfile
 from pathlib import Path
 import reproinx
@@ -385,6 +391,173 @@ def test_shift_dates_subjectless_subname():
         assert "1925-01-01T10:00:00" in tsv and "2023" not in tsv
 
 
+def test_resolve_part_entities():
+    # Multi-echo BOLD with phase: magnitude/phase series collide onto one %H stem
+    # (dcm2niix appends a/b letters, and a phase SBRef can land in a _bold name).
+    # _resolve_part_entities must rename to _part-mag/_part-phase with the true
+    # bold/sbref suffix (from BidsGuess), add Units to Siemens phase sidecars,
+    # take part from BidsGuess even when ImageType is absent, and be idempotent.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01" / "ses-1"
+        func = ses / "func"; func.mkdir(parents=True)
+        base = "sub-01_ses-1_task-rest_acq-2d2echo_run-02_echo-1"
+
+        def mk(stem, imgtype, guess_suffix, nvols=1):
+            _write_nii_gz(func / f"{stem}.nii.gz", nvols)
+            j = {"Manufacturer": "Siemens",
+                 "BidsGuess": ["func", f"_echo-1_{guess_suffix}"]}
+            if imgtype is not None:  # imgtype None -> exercise BidsGuess-part precedence
+                j["ImageType"] = ["ORIGINAL", "PRIMARY", "FMRI", "NONE", imgtype]
+            (func / f"{stem}.json").write_text(json.dumps(j))
+        mk(f"{base}_bold", "MAGNITUDE", "bold", nvols=10)
+        mk(f"{base}_bolda", None, "part-phase_sbref")          # phase SBRef, no ImageType
+        mk(f"{base}_boldb", "PHASE", "part-phase_bold", nvols=10)
+        mk(f"{base}_sbref", "MAGNITUDE", "sbref")
+
+        n1 = reproinx._resolve_part_entities(ses)
+        names = {p.name for p in func.glob("*.nii.gz")}
+        for want in ("part-mag_bold", "part-phase_bold",
+                     "part-mag_sbref", "part-phase_sbref"):
+            assert f"{base}_{want}.nii.gz" in names, (want, names)
+        assert not any("bolda" in n or "boldb" in n for n in names)  # collisions resolved
+        assert _read(func / f"{base}_part-phase_bold.json").get("Units") == "arbitrary"
+        assert _read(func / f"{base}_part-mag_bold.json").get("Units") is None  # mag: no Units
+        # Idempotent: a second pass renames nothing and preserves names.
+        n2 = reproinx._resolve_part_entities(ses)
+        assert n2 == 0, n2
+        assert {p.name for p in func.glob("*.nii.gz")} == names
+
+
+def test_emit_events_tsv_one_per_run():
+    # A multi-echo, multi-part run must yield ONE run-level _events.tsv (no echo,
+    # no part entity) shared across all echoes and magnitude/phase.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"
+        func = ses / "func"; func.mkdir(parents=True)
+        base = "sub-01_task-rest_run-01"
+        for e in (1, 2):
+            for part in ("mag", "phase"):
+                _write_nii_gz(func / f"{base}_echo-{e}_part-{part}_bold.nii.gz", 10)
+        reproinx._emit_events_tsv(ses)
+        ev = sorted(p.name for p in func.glob("*_events.tsv"))
+        assert ev == [f"{base}_events.tsv"], ev
+
+
+def test_resolve_part_units_canonical():
+    # Idempotence gap: an already-canonical Siemens phase file lacking Units
+    # (e.g. a prior run moved it but failed the Units write) must still get Units
+    # on a rerun, though no rename occurs.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"; func = ses / "func"; func.mkdir(parents=True)
+        base = "sub-01_task-rest_run-01_echo-1"
+
+        def mk(stem, imgtype):
+            _write_nii_gz(func / f"{stem}.nii.gz", 10)
+            (func / f"{stem}.json").write_text(json.dumps({
+                "Manufacturer": "Siemens",
+                "ImageType": ["ORIGINAL", "PRIMARY", "FMRI", "NONE", imgtype]}))
+        mk(f"{base}_part-mag_bold", "MAGNITUDE")
+        mk(f"{base}_part-phase_bold", "PHASE")            # canonical, no Units
+        assert reproinx._resolve_part_entities(ses) == 0  # nothing to move
+        assert _read(func / f"{base}_part-phase_bold.json").get("Units") == "arbitrary"
+
+
+def test_resolve_part_ambiguous_skipped():
+    # A BidsGuess with conflicting components (Philips _part-phase_part-mag) is
+    # ambiguous; leave the file untouched rather than invent a single part.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"; func = ses / "func"; func.mkdir(parents=True)
+        stem = "sub-01_task-rest_run-01_bold"
+        _write_nii_gz(func / f"{stem}.nii.gz", 10)
+        (func / f"{stem}.json").write_text(json.dumps({
+            "Manufacturer": "Philips",
+            "BidsGuess": ["func", "_part-phase_part-mag_bold"]}))
+        reproinx._resolve_part_entities(ses)
+        assert (func / f"{stem}.nii.gz").exists()               # untouched
+        assert not list(func.glob("*part-phase_part-phase*"))  # no corruption
+
+
+def test_resolve_part_unclassifiable_sibling_skips_family():
+    # A recognized phase member plus a same-prefix sibling whose part cannot be
+    # inferred (no ImageType, bare BidsGuess) must NOT be partially resolved: the
+    # whole prefix family is left at its collision names rather than shipping an
+    # inconsistent _bold + _part-phase_bold pair.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"; func = ses / "func"; func.mkdir(parents=True)
+        base = "sub-01_task-rest_run-01"
+        _write_nii_gz(func / f"{base}_bold.nii.gz", 10)          # unclassifiable mag
+        (func / f"{base}_bold.json").write_text(json.dumps({
+            "Manufacturer": "Siemens", "BidsGuess": ["func", "_bold"]}))
+        _write_nii_gz(func / f"{base}_bolda.nii.gz", 10)         # recognized phase
+        (func / f"{base}_bolda.json").write_text(json.dumps({
+            "Manufacturer": "Siemens", "ImageType": ["ORIGINAL", "PRIMARY", "PHASE"],
+            "BidsGuess": ["func", "_part-phase_bold"]}))
+        n = reproinx._resolve_part_entities(ses)
+        assert n == 0, n
+        assert (func / f"{base}_bold.nii.gz").exists()           # untouched
+        assert (func / f"{base}_bolda.nii.gz").exists()          # phase NOT partial-renamed
+        assert not list(func.glob("*_part-phase_*"))             # no partial family
+
+
+def test_apply_dup_naming_missing_base():
+    # Pass-order coupling: if an earlier pass removed the unsuffixed base while a
+    # suffixed sibling survives, _apply_dup_naming must NOT rename the survivor to
+    # __dup-01 (a base-less duplicate family); it skips the group.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        func = root / "sub-01" / "func"; func.mkdir(parents=True)
+        base = "sub-01/func/sub-01_task-rest_bold"
+        _write_nii_gz(root / f"{base}a.nii.gz", 10)              # only the 'a' sibling exists
+        hdr = "OutputStem\tSeriesNumber\tStudyInstanceUID\tProtocolName\tSeriesDescription\n"
+        rows = f"{base}\t1\t1.2.3\trest\trest\n{base}a\t2\t1.2.3\trest\trest\n"
+        (root / reproinx._PROVENANCE_TSV).write_text(hdr + rows)
+        n = reproinx._apply_dup_naming(root)
+        assert n == 0, n
+        assert (root / f"{base}a.nii.gz").exists()               # survivor untouched
+        assert not (root / f"{base}__dup-01.nii.gz").exists()    # no dup-only family
+
+
+def test_apply_dup_naming_rolls_back():
+    # Both phases form one transaction. A failure after every source moved to a
+    # temporary stem must restore the as-written group, and a rerun must finish.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        func = root / "sub-01" / "func"; func.mkdir(parents=True)
+        base = "sub-01/func/sub-01_task-rest_bold"
+        _write_nii_gz(root / f"{base}.nii.gz", 10)
+        _write_nii_gz(root / f"{base}a.nii.gz", 10)
+        hdr = "OutputStem\tSeriesNumber\tStudyInstanceUID\tProtocolName\tSeriesDescription\n"
+        # The suffixed file has the lower SeriesNumber, so both stems must move.
+        rows = f"{base}\t2\t1.2.3\trest\trest\n{base}a\t1\t1.2.3\trest\trest\n"
+        (root / reproinx._PROVENANCE_TSV).write_text(hdr + rows)
+        move = reproinx._move_stem_files
+        calls = 0
+
+        def fail_second_phase(src, dst):
+            nonlocal calls
+            calls += 1
+            if calls == 4:  # both staged and one finalized; fail the next target
+                raise OSError("injected duplicate finalization failure")
+            return move(src, dst)
+
+        reproinx._move_stem_files = fail_second_phase
+        try:
+            try:
+                reproinx._apply_dup_naming(root)
+                assert False, "injected failure did not propagate"
+            except OSError:
+                pass
+        finally:
+            reproinx._move_stem_files = move
+        assert (root / f"{base}.nii.gz").exists()
+        assert (root / f"{base}a.nii.gz").exists()
+        assert not list(func.glob("*__reproinx-tmp-*"))
+        assert reproinx._apply_dup_naming(root) == 2
+        assert (root / f"{base}.nii.gz").exists()
+        assert (root / f"{base}__dup-01.nii.gz").exists()
+        assert not list(func.glob("*__reproinx-tmp-*"))
+
+
 if __name__ == "__main__":
     test_sbref_is_fmap_target()
     test_sbref_taskname_backfill()
@@ -401,4 +574,11 @@ if __name__ == "__main__":
     test_shift_dates_subjectless_unknown()
     test_shift_dates_runs_without_sessions()
     test_shift_dates_subjectless_subname()
-    print("OK: reproinx fixes pass (fmap-target, TaskName, multiecho-R1, b0-mirror x3, shift-dates x9)")
+    test_resolve_part_entities()
+    test_emit_events_tsv_one_per_run()
+    test_resolve_part_units_canonical()
+    test_resolve_part_ambiguous_skipped()
+    test_resolve_part_unclassifiable_sibling_skips_family()
+    test_apply_dup_naming_missing_base()
+    test_apply_dup_naming_rolls_back()
+    print("OK: reproinx fixes pass (fmap-target, TaskName, multiecho-R1, part-entities, b0-mirror x3, shift-dates x9)")

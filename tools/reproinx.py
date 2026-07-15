@@ -1533,6 +1533,14 @@ def _apply_dup_naming(bids_root: Path) -> int:
                 moves.append((current, target))
         if not moves:
             continue
+        # If NONE of the group's as-written members (including the unsuffixed
+        # base, which `moves` omits) still exist, an earlier pass (e.g.
+        # _resolve_part_entities renaming magnitude/phase members) fully resolved
+        # this group — skip silently. A partially-resolved group (some members
+        # still present) falls through to the stale/partial warning below.
+        if not any(_stem_has_files(bids_root / str(row.get("OutputStem", "")))
+                   for row in ordered):
+            continue
         current_stems = {current for current, _target in moves}
         unsafe = False
         for current, target in moves:
@@ -1542,6 +1550,16 @@ def _apply_dup_naming(bids_root: Path) -> int:
             if _stem_has_files(bids_root / target) and target not in current_stems:
                 unsafe = True
                 break
+        # A member already at its target (the unsuffixed base, omitted from
+        # `moves`) must still have files; if the base is gone while a suffixed
+        # sibling survives, renaming would leave a dup-only family. Validate it.
+        if not unsafe:
+            for idx, row in enumerate(ordered):
+                current = str(row.get("OutputStem", ""))
+                target = base if idx == 0 else f"{base}__dup-{idx:02d}"
+                if current == target and not _stem_has_files(bids_root / target):
+                    unsafe = True
+                    break
         if unsafe:
             print(f"reproinx: __dup rename skipped stale or partial group '{base}'",
                   file=sys.stderr)
@@ -1549,18 +1567,34 @@ def _apply_dup_naming(bids_root: Path) -> int:
         # Two-phase rename: stems first → tmp; tmp → target. Prevents an
         # ordering-dependent collision when the renaming would overwrite a
         # not-yet-moved sibling (e.g. lowest SeriesNumber currently at "_a").
-        tmp_stems: dict[str, str] = {}
-        for i, (current, _target) in enumerate(moves):
-            tmp = f"{base}__reproinx-tmp-{i:03d}"
-            if _move_stem_files(bids_root / current, bids_root / tmp) > 0:
-                tmp_stems[current] = tmp
-        for (current, target) in moves:
-            tmp = tmp_stems.get(current)
-            if tmp is None:
-                continue
-            n = _move_stem_files(bids_root / tmp, bids_root / target)
-            if n > 0:
-                renamed += 1
+        staged: list[tuple[str, str, str]] = []
+        finalized: list[tuple[str, str, str]] = []
+        try:
+            for i, (current, target) in enumerate(moves):
+                tmp = f"{base}__reproinx-tmp-{i:03d}"
+                if _move_stem_files(bids_root / current, bids_root / tmp) < 1:
+                    raise OSError(f"source family disappeared: {current}")
+                staged.append((current, tmp, target))
+            for current, tmp, target in staged:
+                if _move_stem_files(bids_root / tmp, bids_root / target) < 1:
+                    raise OSError(f"temporary family disappeared: {tmp}")
+                finalized.append((current, tmp, target))
+        except Exception:
+            # Reverse phase 2 first so every staged name is free, then phase 1.
+            for _current, tmp, target in reversed(finalized):
+                try:
+                    _move_stem_files(bids_root / target, bids_root / tmp)
+                except Exception:
+                    pass
+            for current, tmp, _target in reversed(staged):
+                if not _stem_has_files(bids_root / tmp):
+                    continue
+                try:
+                    _move_stem_files(bids_root / tmp, bids_root / current)
+                except Exception:
+                    pass
+            raise
+        renamed += len(finalized)
     return renamed
 
 
@@ -2097,9 +2131,11 @@ def _emit_events_tsv(session_dir: Path) -> None:
         return
     seen: set[str] = set()
     for bold in sorted(func_dir.glob("*_bold.nii*")):
-        # task-X_acq-Y_run-NN — strip _echo-N before generating events stem.
+        # task-X_acq-Y_run-NN — strip _echo-N and _part-<x> (events are shared
+        # across echoes and magnitude/phase) before generating the events stem.
         stem = bold.name.split("_bold")[0]
         stem = re.sub(r"_echo-[0-9]+", "", stem)
+        stem = re.sub(r"_part-[A-Za-z0-9]+", "", stem)
         if stem in seen:
             continue
         seen.add(stem)
@@ -2382,6 +2418,137 @@ def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
             if src.is_file():
                 src.rename(dst)
         renamed += 1
+    return renamed
+
+
+def _part_from_imagetype(data: dict) -> Optional[str]:
+    """BIDS `part` label from DICOM ImageType (0008,0008). None if absent or
+    ambiguous (more than one component token, e.g. Philips MAGNITUDE+PHASE)."""
+    it = data.get("ImageType")
+    if not isinstance(it, list):
+        return None
+    toks = {str(x).upper() for x in it}
+    found = [part for key, part in (("PHASE", "phase"), ("MAGNITUDE", "mag"),
+                                    ("REAL", "real"), ("IMAGINARY", "imag"))
+             if key in toks]
+    return found[0] if len(found) == 1 else None
+
+
+def _part_of(data: dict) -> Optional[str]:
+    """BIDS `part`. Prefer dcm2niix's explicit `_part-<x>` in BidsGuess (the C
+    side sets it from CSA isHasPhase even when public ImageType is absent), else
+    derive from ImageType. None if ambiguous (multiple/conflicting component
+    indications, e.g. a Philips `_part-phase_part-mag` BidsGuess): a genuine
+    single part cannot be invented, so leave the file untouched."""
+    g = data.get("BidsGuess")
+    if isinstance(g, list) and len(g) == 2 and isinstance(g[1], str):
+        ms = re.findall(r"_part-(mag|phase|real|imag)(?=_|$)", g[1])  # lookahead: don't consume the shared '_'
+        if len(ms) == 1:
+            return ms[0]
+        if len(ms) > 1:
+            return None
+    return _part_from_imagetype(data)
+
+
+def _func_suffix(data: dict, token: str) -> Optional[str]:
+    """`bold`/`sbref`, preferring BidsGuess (a phase SBRef can collide into a
+    `_bold`-named file), else the filename token minus its collision letter."""
+    g = data.get("BidsGuess")
+    if isinstance(g, list) and len(g) == 2 and isinstance(g[1], str):
+        last = g[1].rsplit("_", 1)[-1]
+        if last in ("bold", "sbref"):
+            return last
+    if token.startswith("sbref"):
+        return "sbref"
+    if token.startswith("bold"):
+        return "bold"
+    return None
+
+
+def _resolve_part_entities(session_dir: Path) -> int:
+    """Insert BIDS `part-mag`/`part-phase` and resolve dcm2niix magnitude/phase
+    collision suffixes for func series. A multi-echo BOLD with phase produces
+    magnitude+phase series that collide onto one %H stem; dcm2niix appends
+    `a`/`b` letters (and can mislabel a phase SBRef as `_bold`), which are then
+    unusable BIDS. `part` comes from BidsGuess's explicit `_part-` (fallback
+    ImageType), the true `bold`/`sbref` suffix from BidsGuess; the family is
+    renamed to `..._part-<mag|phase>_<bold|sbref>`. Only fires for a (prefix,
+    suffix) group containing a non-magnitude member. Group renames are
+    all-or-nothing: a mid-group failure rolls back and re-raises rather than
+    leave mixed collision/part names. Returns stems renamed."""
+    func_dir = session_dir / "func"
+    if not func_dir.is_dir():
+        return 0
+    groups: dict[tuple, list] = {}
+    unresolved_prefixes: set[str] = set()
+    for jp in sorted(func_dir.glob("*.json")):
+        stem = jp.stem
+        entities, token = (stem.rsplit("_", 1) + [""])[:2]
+        if not (token.startswith("bold") or token.startswith("sbref")):
+            continue
+        prefix = re.sub(r"_part-[A-Za-z0-9]+$", "", entities)
+        data = _load_json(jp)
+        part = _part_of(data) if isinstance(data, dict) else None
+        suffix = _func_suffix(data, token) if isinstance(data, dict) else None
+        if part is None or suffix is None:
+            unresolved_prefixes.add(prefix)  # unclassifiable sibling taints its whole family
+            continue
+        groups.setdefault((prefix, suffix), []).append((stem, part))
+    renamed = 0
+    resolved_phase: list[Path] = []
+    for (prefix, suffix), members in groups.items():
+        if prefix in unresolved_prefixes:
+            print(f"reproinx: skipping part-entity resolution for {prefix} — unclassifiable sibling in family", file=sys.stderr)
+            continue
+        if {p for _s, p in members} <= {"mag"}:
+            continue  # no phase/real/imag sibling: part entity not needed
+        # Preflight the whole group against the full BIDS family before any move.
+        plan: list[tuple[str, str, str]] = []
+        dsts: set[str] = set()
+        conflict = False
+        for stem, part in members:
+            dst = f"{prefix}_part-{part}_{suffix}"
+            if dst == stem:
+                continue
+            if dst in dsts or any((func_dir / f"{dst}{ext}").exists()
+                                  for ext in _BIDS_EXTS):
+                conflict = True
+                break
+            dsts.add(dst)
+            plan.append((stem, dst, part))
+        if conflict:
+            print(f"reproinx: skipping part-entity resolution for "
+                  f"{prefix}_{suffix} — target collision", file=sys.stderr)
+            continue
+        done: list[tuple[str, str, str]] = []
+        try:
+            for stem, dst, part in plan:
+                if _move_stem_files(func_dir / stem, func_dir / dst) > 0:
+                    done.append((stem, dst, part))
+        except Exception:
+            for stem, dst, _p in reversed(done):  # all-or-nothing per group
+                try:
+                    _move_stem_files(func_dir / dst, func_dir / stem)
+                except Exception:
+                    pass
+            raise
+        renamed += len(done)
+        # Collect the phase sidecar of EVERY fired group (not only moved
+        # members) so an already-canonical phase file — or a rerun after a
+        # move-then-Units-write failure — still gets its required Units.
+        if any(part == "phase" for _s, part in members):
+            resolved_phase.append(func_dir / f"{prefix}_part-phase_{suffix}.json")
+    # BIDS requires Units for phase data. Restrict to the phase files just
+    # resolved and to Siemens (scanner-scaled phase -> "arbitrary"; other
+    # vendors / rad scaling are out of scope). Never overwrite existing Units.
+    for jp in resolved_phase:
+        if not jp.is_file():
+            continue
+        d = _load_json(jp)
+        if (isinstance(d, dict) and "Units" not in d and
+                str(d.get("Manufacturer", "")).lower().startswith("siemens")):
+            d["Units"] = "arbitrary"
+            _save_json(jp, d)
     return renamed
 
 
@@ -2722,6 +2889,16 @@ def _bidsguess_cleanup(out_root: Path, strict: bool,
                       file=sys.stderr)
         except Exception as e:
             print(f"reproinx: 3D bold demote failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+        try:
+            n = _resolve_part_entities(ses)
+            if n > 0:
+                print(f"  {ses}: resolved {n} func part-mag/part-phase file(s)",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: part-entity resolution failed for {ses}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
