@@ -363,6 +363,12 @@ bool reproinParseSpec(const struct TDICOMdata *dcm, struct TReproinSpec *spec) {
 			snprintf(spec->suffix, sizeof(spec->suffix), "dwi");
 		}
 	}
+	// RF-off (noise) volume: force the BIDS _noRF suffix even for a canonical
+	// ReproIn protocol (which otherwise disables the _noRF filename postfix).
+	// Content-derived, so it overrides the inferred/explicit suffix; func only,
+	// matching setBidsSiemens (BIDS lists noRF under func/perf).
+	if (dcm->isNoRF && strcmp(spec->datatype, "func") == 0)
+		snprintf(spec->suffix, sizeof(spec->suffix), "noRF");
 	spec->isDerived = reproinIsDerived(dcm, spec);
 	return true;
 }

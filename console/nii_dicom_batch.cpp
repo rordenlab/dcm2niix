@@ -5348,6 +5348,12 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	snprintf(newstr, PATH_MAX, "_v%04d", dcm.gradDynVol+1); //+1 as indexed from zero
 	strcat (outname,newstr);
 	}*/
+	if ((isAddNamePostFixes) && (dcm.isNoRF)) {
+		strcat(outname, "_noRF"); // RF-off (noise) volumes split from their imaging series
+#ifdef USING_DCM2NIIXFSWRAPPER
+		sprintf(mrifsStruct.namePostFixes, "%s_noRF", mrifsStruct.namePostFixes);
+#endif
+	}
 	if ((isAddNamePostFixes) && (dcm.isHasImaginary)) {
 		strcat(outname, "_imaginary"); // has phase map
 #ifdef USING_DCM2NIIXFSWRAPPER
@@ -9014,6 +9020,8 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		// → sbref, regardless of protocol prefix.
 		if (strstr(d->seriesDescription, "_SBRef") != NULL)
 			strcpy(modalityBIDS, "sbref");
+		if (d->isNoRF) // RF-off volumes are noise, not BOLD/SBRef
+			strcpy(modalityBIDS, "noRF");
 		// todo issue753: infer task from d->protocolName here (was the original
 		// purpose of the gate; leave the TODO so the inference work is tracked).
 	} else if (strstr(d->sequenceName, "*epse2d") != NULL) {
@@ -14020,6 +14028,8 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		return false; // do not stack MR and CT data!
 	if (d1.isDerived != d2.isDerived)
 		return false; // do not stack raw and derived image types
+	if (d1.isNoRF != d2.isNoRF)
+		return false; // do not stack RF-off (noise) volumes with imaging volumes
 	bool isForceStackSeries = false;
 	if ((opts->isForceStackDCE) && (d1.isStackableSeries) && (d2.isStackableSeries) && (d1.seriesNum != d2.seriesNum)) {
 		if (!warnings->forceStackSeries)

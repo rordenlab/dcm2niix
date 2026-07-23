@@ -372,6 +372,8 @@ def _is_target_for_fmaps(json_path: Path) -> bool:
     pair."""
     if json_path.parent.name == "fmap":
         return False
+    if json_path.stem.endswith("_noRF"):
+        return False  # RF-off noise: nothing imaged, so no distortion to correct
     return True
 
 

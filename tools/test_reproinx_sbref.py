@@ -75,6 +75,9 @@ def test_sbref_is_fmap_target():
     assert reproinx._is_target_for_fmaps(Path("sub-1_task-x_bold.json")) is True
     # fmap files are never their own targets.
     assert reproinx._is_target_for_fmaps(Path("fmap/sub-1_phasediff.json")) is False
+    # RF-off noise images nothing, so it must not be distortion-corrected or land
+    # in a fieldmap's IntendedFor.
+    assert reproinx._is_target_for_fmaps(Path("sub-1_task-x_noRF.json")) is False
 
 
 def test_sbref_taskname_backfill():

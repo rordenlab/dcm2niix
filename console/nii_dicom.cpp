@@ -937,6 +937,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.is3DAcq = false;				  // e.g. MP-RAGE, SPACE, TFE
 	d.is2DAcq = false;				  //
 	d.isDerived = false;			  // 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
+	d.isNoRF = false;				  // 0021,1175 Siemens NOISE: RF-off volume, BIDS _noRF
 	d.isSegamiOasis = false;		  // these images do not store spatial coordinates
 	d.isBVecWorldCoordinates = false; // bvecs can be in image space (GE) or world coordinates (Siemens)
 	d.isGrayscaleSoftcopyPresentationState = false;
@@ -7601,6 +7602,18 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				for (int i = 0; i < slen; i++)
 					if (d.imageTypeText[i] == '\\')
 						d.imageTypeText[i] = '_';
+			}
+			// RF-off (noise) volume -> BIDS _noRF: match "NOISE" as a full
+			// '_'-delimited token in any position (sole/first/interior/final),
+			// never a bare substring like "NOISELESS".
+			d.isNoRF = false;
+			for (char *hit = strstr(d.imageTypeText, "NOISE"); hit != NULL; hit = strstr(hit + 1, "NOISE")) {
+				char before = (hit == d.imageTypeText) ? '_' : hit[-1];
+				char after = (hit[5] == '\0') ? '_' : hit[5];
+				if ((before == '_') && (after == '_')) {
+					d.isNoRF = true;
+					break;
+				}
 			}
 			break;
 		}
