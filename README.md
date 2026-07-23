@@ -120,9 +120,10 @@ make
  - [dinifti](https://as.nyu.edu/cbi/resources/Software/DINIfTI.html) is focused on conversion of classic Siemens DICOMs.
  - [DWIConvert](https://github.com/BRAINSia/BRAINSTools/tree/master/DWIConvert) converts DICOM images to NRRD and NIfTI formats.
  - [mcverter](http://lcni.uoregon.edu/%7Ejolinda/MRIConvert/) a great tool for classic DICOMs.
+ - [mrd2nii](https://github.com/shimming-toolbox/mrd2nii) converts ISMRMRD data into NIfTI images.
  - [mri_convert](https://surfer.nmr.mgh.harvard.edu/pub/docs/html/mri_convert.help.xml.html) is part of the popular FreeSurfer package.
  - [MRtrix mrconvert](http://mrtrix.readthedocs.io/en/latest/reference/commands/mrconvert.html) is a useful general purpose image converter and handles DTI data well. It is an outstanding tool for modern Philips enhanced images.
- - [nanconvert](https://github.com/spinicist/nanconvert) uses the ITK library to convert DICOM from GE and proprietary Bruker to standard formats like DICOM.  
+ - [nanconvert](https://github.com/spinicist/nanconvert) uses the ITK library to convert DICOM from GE and proprietary Bruker to standard formats like DICOM.
  - [Plastimatch](https://plastimatch.org/) is a Swiss Army knife - it computes registration, image processing, 
  statistics and it has a basic image format converter that can convert some DICOM images to NIfTI or NRRD.
  - [Simple Dicom Reader 2 (Sdr2)](http://ogles.sourceforge.net/sdr2-doc/index.html) uses [dcmtk](https://dicom.offis.de/dcmtk.php.en) to read DICOM images and convert them to the NIfTI format.
@@ -140,8 +141,9 @@ The following tools exploit dcm2niix
 
   - [@niivue/dcm2niix](https://www.npmjs.com/package/@niivue/dcm2niix) is a WebAssembly (WASM) package of dcm2niix, allowing it to be embedded into web pages, as seen in this [live demo](https://niivue.github.io/niivue-dcm2niix/).
   - [abcd-dicom2bids](https://github.com/DCAN-Labs/abcd-dicom2bids) selectively downloads high quality ABCD datasets.
-  - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
   - [AFNI](https://github.com/afni/afni) bundles dcm2niix_afni.
+  - [autobids](https://github.com/khanlab/autobids) automates dcm2bids which uses dcm2niix.
+  - [autobidsify](https://github.com/NeuroJSON/autobidsify) helps convert raw neuroimaging datasets into BIDS-compatible structures.
   - [BiDirect_BIDS_Converter](https://github.com/wulms/BiDirect_BIDS_Converter) for conversion from DICOM to the BIDS standard.
   - [BIDS Toolbox](https://github.com/cardiff-brain-research-imaging-centre/bids-toolbox) is a web service for the creation and manipulation of BIDS datasets, using dcm2niix for importing DICOM data.
   - [BIDScoin](https://github.com/Donders-Institute/bidscoin) is a DICOM to BIDS converter with a GUI and thorough [documentation](https://bidscoin.readthedocs.io).
@@ -151,6 +153,7 @@ The following tools exploit dcm2niix
   - [BIDS-Manager](https://github.com/ANCPLabOldenburg/BIDS-Manager) GUI and CLI tool for BIDS conversion, curation, metadata editing.
   - [BIDS_Manager](https://github.com/Dynamap/BIDS_Manager) organizes data in BIDS standard.
   - [bidsme](https://github.com/CyclotronResearchCentre/bidsme) flexible bidsificator for multimodal datasets.
+  - [BIDSvue](https://bidsvue.org/) graphical BIDS anonymization, validation and curation.
   - [BioImage Suite Web Project](https://github.com/bioimagesuiteweb/bisweb) is a JavaScript project that uses dcm2niix for its DICOM conversion module.
   - [birc-bids](https://github.com/bircibrain/birc-bids) provides a Docker/Singularity container with various BIDS conversion utilities.
   - [BMAT](https://github.com/ColinVDB/BMAT) translates data from MRI scanners to the BIDS structure.
@@ -160,6 +163,7 @@ The following tools exploit dcm2niix
   - [Brain Lesion Suite](https://github.com/BrainLesion) supports dcm2niix for DICOM to NifTI conversion.
   - [brainnetome DiffusionKit](http://diffusion.brainnetome.org/en/latest/) uses dcm2niix to convert images.
   - [BraTS-Preprocessor](https://neuronflow.github.io/BraTS-Preprocessor/) uses dcm2niix to import files for [Brain Tumor Segmentation](https://www.frontiersin.org/articles/10.3389/fnins.2020.00125/full).
+  - [browserqc](https://browserqc.org/) web-based quality metrics for DICOM and NIfTI brain scans inspired by [mriqc](https://mriqc.readthedocs.io/en/latest/#).
   - [CALMaR](https://github.com/neurodesk/calmar-webapp) Co-designed Automated Lesion Mapping and Reporting.
   - [CardioNIfTI](https://github.com/UK-Digital-Heart-Project/CardioNIfTI) processes cardiac MR DICOM datasets and converts them to NIfTI.
   - [clinica](https://github.com/aramis-lab/clinica) is a software platform for clinical neuroimaging studies that uses dcm2niix to convert DICOM images.
@@ -186,6 +190,8 @@ The following tools exploit dcm2niix
   - [dicompare-web](https://github.com/astewartau/dicompare-web) for automated validation and comparison of MRI acquisition protocols using DICOM metadata.
   - [divest](https://github.com/jonclayden/divest) R interface to dcm2niix.
   - [DPABI](https://github.com/Chaogan-Yan/DPABI) [Data Processing & Analysis for Brain Imaging](https://rfmri.org/DPABI) includes dcm2niix.
+  - [dwi2trx](https://tee-ar-ex.github.io/dwi2trx/) web app for processing diffusion data and generating custom gradient tables.
+  - [edgereg](https://www.edgereg.org/) DICOM and NIfTI brain registration in the browser.
   - [Easy-MP2RAGE-T1-Map](https://github.com/thomshaw92/Easy-MP2RAGE-T1-Map) Quantitative T1 maps from MP2RAGE for desktop or [web](https://thomshaw92.github.io/Easy-MP2RAGE-T1-Map/)
   - [ExploreASL](https://sites.google.com/view/exploreasl/exploreasl) uses dcm2niix to import images.
   - [ExploreASL-GUI](https://github.com/MauricePasternak/ExploreASL-GUI) uses dcm2niix for image conversion.
