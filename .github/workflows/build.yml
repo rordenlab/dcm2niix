@@ -51,7 +51,7 @@ jobs:
       if: matrix.name == 'win'
       shell: cmd
       run: |
-        cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B build
+        cmake -Wno-dev -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B build
         cmake --build build --config Release
     
     - name: Package (Windows)
@@ -71,7 +71,7 @@ jobs:
       run: |
         export CC=gcc
         export CXX=g++
-        cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B build
+        cmake -Wno-dev -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B build
         cmake --build build
     
     - name: Package (Linux)
@@ -85,11 +85,11 @@ jobs:
       if: matrix.name == 'mac'
       run: |
         # Build Intel version
-        cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=x86_64 -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B intel
+        cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=x86_64 -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B intel
         cmake --build intel
         
         # Build ARM version
-        cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=arm64 -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B apple
+        cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=arm64 -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B apple
         cmake --build apple
     
     - name: Package (macOS)

@@ -20,6 +20,7 @@ write_to_template = "__version__ = '{version}'\n"
 [tool.scikit-build.cmake.define]
 USE_JPEGLS = "ON"
 USE_OPENJPEG = "GitHub"
+ZLIB_IMPLEMENTATION = "zlib-ng"
 
 [tool.cibuildwheel]
 archs = "auto64"

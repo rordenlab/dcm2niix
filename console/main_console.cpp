@@ -53,7 +53,8 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -1..-9 : gz compression level (1=fastest..9=smallest, default %d)\n", opts.gzLevel);
 	printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
 	printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
-	printf("   -ba : anonymize BIDS (y/n, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
+	printf("   -ba : anonymize BIDS (y=strip dates+PII, n=keep both, o=strip PII only, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
+	printf("   -br : reproin project subfolder for '-f %%H' (e.g. '-br MyStudy'; '.' uses -o as the BIDS root)\n");
 	printf("  -c : comment stored in NIfTI aux_file (up to 24 characters e.g. '-c VIP', empty to anonymize e.g. 0020,4000 e.g. '-c \"\"')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
 #ifdef myEnableJNIFTI
@@ -262,6 +263,7 @@ int main(int argc, const char *argv[]) {
 		if ((strlen(argv[i]) > 1) && (argv[i][0] == '-')) { // command
 			if (argv[i][1] == 'h') {
 				showHelp(argv, opts);
+				return EXIT_SUCCESS; // explicit help request: don't fall through to the example-filename block
 			} else if ((!strcmp(argv[i], "--big-endian")) && ((i + 1) < argc)) {
 				i++;
 				if ((littleEndianPlatform()) && ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))) {
@@ -294,7 +296,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'a') && ((i + 1) < argc)) { // adjacent DICOMs
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 					opts.isOneDirAtATime = false;
 				else
@@ -307,7 +309,7 @@ int main(int argc, const char *argv[]) {
 				if (strlen(argv[i]) < 3) { //"-b y"
 					i++;
 					if (invalidParam(i, argv))
-						return 0;
+						return kEXIT_INVALID_PARAM;
 					if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 						opts.isCreateBIDS = false;
 					else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
@@ -319,13 +321,22 @@ int main(int argc, const char *argv[]) {
 						if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
 							opts.isOnlyBIDS = true;
 					}
-				} else if (argv[i][2] == 'a') { //"-ba y"
+				} else if (argv[i][2] == 'a') { //"-ba y|n|o"
 					i++;
 					if (invalidParam(i, argv))
-						return 0;
+						return kEXIT_INVALID_PARAM;
+					// y = full anon (strip dates AND patient PII; default)
+					// n = no anon  (keep both — useful when downstream tooling
+					//               will scrub later)
+					// o = omit PII only (strip patient block, keep dates) —
+					//     privacy-preserving middle ground for reproinx.py
+					opts.isOmitPiiBIDS = false;
 					if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 						opts.isAnonymizeBIDS = false;
-					else
+					else if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
+						opts.isAnonymizeBIDS = false;
+						opts.isOmitPiiBIDS = true;
+					} else
 						opts.isAnonymizeBIDS = true;
 				} else if (argv[i][2] == 'i') { //"-bi M2022" provide BIDS subject ID
 					i++;
@@ -333,6 +344,13 @@ int main(int argc, const char *argv[]) {
 				} else if (argv[i][2] == 'v') { //"-bv 1222" provide BIDS subject visit
 					i++;
 					snprintf(opts.bidsSession, kOptsStr - 1, "%s", argv[i]);
+				} else if (argv[i][2] == 'r') { //"-br MyStudy" override the reproin project subdirectory name; "-br ." means no subdir (use -o as BIDS root)
+					i++;
+					opts.isBidsRoot = true;
+					if (strcmp(argv[i], ".") == 0)
+						opts.bidsRoot[0] = '\0';
+					else
+						snprintf(opts.bidsRoot, kOptsStr - 1, "%s", argv[i]);
 				} else
 					printf("Error: Unknown command line argument: '%s'\n", argv[i]);
 			} else if ((argv[i][1] == 'c') && ((i + 1) < argc)) {
@@ -347,7 +365,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'e') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == '1'))
 					opts.saveFormat = kSaveFormatNRRD;
 				if ((argv[i][0] == 'o') || (argv[i][0] == 'O') || (argv[i][0] == '2'))
@@ -365,7 +383,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'g') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
 					isSaveIni = true;
 				if (((argv[i][0] == 'i') || (argv[i][0] == 'I')) && (!isResetDefaults)) {
@@ -386,7 +404,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'i') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'o') || (argv[i][0] == 'O')) {
 					opts.isKeepDirectionVaries = true;
 					opts.isIgnoreDerivedAnd2D = false;
@@ -397,7 +415,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'j') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == '1')) {
 					opts.isTestx0021x105E = true;
 					printf("undocumented '-j y' compares GE slice timing from 0021,105E\n");
@@ -421,7 +439,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'l') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
 					opts.isMaximize16BitRange = kMaximize16BitRange_Raw;
 				else if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
@@ -431,7 +449,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'm') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 					opts.isForceStackSameSeries = 0;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y') || (argv[i][0] == '1'))
@@ -449,7 +467,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'p') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'o') || (argv[i][0] == 'O'))
 					opts.isIgnoreIntensityScaling = true;
 				else if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
@@ -459,13 +477,13 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'r') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
 					opts.isRenameNotConvert = true;
 			} else if ((argv[i][1] == 'q') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y'))
 					opts.onlySearchDirForDICOM = 1;
 				else if ((argv[i][0] == 'l') || (argv[i][0] == 'L'))
@@ -473,7 +491,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 's') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 					opts.isOnlySingleFile = false;
 				else
@@ -481,7 +499,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 't') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 					opts.isCreateText = false;
 				else
@@ -496,7 +514,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'v') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0')) // 0: verbose OFF
 					opts.isVerbose = 0;
 				else if ((argv[i][0] == 'h') || (argv[i][0] == 'H') || (argv[i][0] == '2')) // 2: verbose HYPER
@@ -506,7 +524,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'w') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if (argv[i][0] == '0')
 					opts.nameConflictBehavior = 0;
 				if (argv[i][0] == '1')
@@ -516,7 +534,7 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'x') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'))
 					opts.isCrop = false;
 				else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
@@ -528,7 +546,7 @@ int main(int argc, const char *argv[]) {
 				i++;
 				bool isFlipY = opts.isFlipY;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 				if ((argv[i][0] == 'y') || (argv[i][0] == 'Y')) {
 					opts.isFlipY = true; // force use of internal compression instead of pigz
 					strcpy(opts.pigzname, "");
@@ -539,14 +557,14 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'z') && ((i + 1) < argc)) {
 				i++;
 				if (invalidParam(i, argv))
-					return 0;
+					return kEXIT_INVALID_PARAM;
 #ifdef myEnableZSTD
 				if ((argv[i][0] == 's') || (argv[i][0] == 'S')) {
 					opts.isGz = false;
 					opts.isZStd = true; // ZStd
 				} else
 #endif
-				if ((argv[i][0] == '3')) {
+					if ((argv[i][0] == '3')) {
 					opts.isGz = false; // uncompressed 3D
 					opts.isSave3D = true;
 				} else if ((argv[i][0] == 'i') || (argv[i][0] == 'I')) {
@@ -578,9 +596,12 @@ int main(int argc, const char *argv[]) {
 				} else {
 					printf("Warning: too many series specified, ignoring -n %s\n", argv[i]);
 				}
-			} else
-				printf(" Error: invalid option '%s %s'\n", argv[i], argv[i + 1]);
-			;
+			} else {
+				// issue 1020: bad option (or option missing its value, e.g. trailing `-d`). Bounds-check argv[i+1] since argv[argc] is guaranteed NULL but anything beyond is UB.
+				const char *next = ((i + 1) < argc) ? argv[i + 1] : "";
+				printf(" Error: invalid option '%s %s'\n", argv[i], next);
+				return kEXIT_INVALID_PARAM;
+			}
 			lastCommandArg = i;
 		} // if parameter is a command
 		i++; // read next parameter

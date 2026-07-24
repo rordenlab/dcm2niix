@@ -68,14 +68,14 @@ static int decode_frame(Decoder *d, uint16_t *plane_out, int scan_idx) {
 	}
 }
 
-unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose,
-									int *xDim, int *yDim, int *bits, int *frames, int diskBytes) {
+// Core decoder operating on an already-loaded byte buffer. Caller owns `buf` and frees it on return.
+// Issue 1017: the buffer-based core lets multi-fragment encapsulated pixel data be reassembled in RAM (see dicom_fragments.cpp + decode_JPEG_SOF_0XC3_mem below) without round-tripping through a temp file.
+static unsigned char *decode_JPEG_SOF_0XC3_core(uint8_t *buf, size_t flen, int skipBytes, bool verbose,
+												int *xDim, int *yDim, int *bits, int *frames, int diskBytes) {
 
 	/* Pre-declare and initialize to satisfy goto/fail uses */
-	FILE *f = NULL;
 	const char *err = NULL;
 	char errbuf[64];
-	uint8_t *buf = NULL;
 	unsigned char *out = NULL;
 	uint16_t *all_output = NULL;
 	int bytes_per_sample = 0;
@@ -90,42 +90,8 @@ unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose,
 	Decoder d;
 	memset(&d, 0, sizeof(d));
 
-	if (!fn)
+	if (buf == NULL)
 		return NULL;
-
-	/* read file into buffer */
-	f = fopen(fn, "rb");
-	if (!f) {
-		printError("Cannot open %s\n", fn);
-		return NULL;
-	}
-	if (fseek(f, 0, SEEK_END) != 0) {
-		fclose(f);
-		return NULL;
-	}
-	long tlen = ftell(f);
-	if (tlen < 0) {
-		fclose(f);
-		return NULL;
-	}
-	size_t flen = (size_t)tlen;
-	if (fseek(f, 0, SEEK_SET) != 0) {
-		fclose(f);
-		return NULL;
-	}
-
-	buf = (uint8_t *)malloc(flen ? flen : 1);
-	if (!buf) {
-		fclose(f);
-		return NULL;
-	}
-	if (fread(buf, 1, flen, f) != flen) {
-		free(buf);
-		fclose(f);
-		return NULL;
-	}
-	fclose(f);
-	f = NULL;
 
 	d.ds.buf = buf;
 	d.ds.len = flen;
@@ -184,7 +150,6 @@ unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose,
 		err = "Corrupt frame header";
 		goto done;
 	}
-
 
 	d.xDim = d.frame.xDim;
 	d.yDim = d.frame.yDim;
@@ -435,10 +400,7 @@ done:
 		free(all_output);
 		all_output = NULL;
 	}
-	if (buf) {
-		free(buf);
-		buf = NULL;
-	}
+	// Caller owns `buf`; do not free here.
 	if (err) {
 		if (out) {
 			free(out);
@@ -448,4 +410,50 @@ done:
 		return NULL;
 	}
 	return out;
+}
+
+// File-based public entry: reads the whole file into a buffer and forwards to the core. Preserves the existing API.
+unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose,
+									int *xDim, int *yDim, int *bits, int *frames, int diskBytes) {
+	if (fn == NULL)
+		return NULL;
+	FILE *f = fopen(fn, "rb");
+	if (f == NULL) {
+		printError("Cannot open %s\n", fn);
+		return NULL;
+	}
+	if (fseek(f, 0, SEEK_END) != 0) {
+		fclose(f);
+		return NULL;
+	}
+	long tlen = ftell(f);
+	if (tlen < 0) {
+		fclose(f);
+		return NULL;
+	}
+	size_t flen = (size_t)tlen;
+	if (fseek(f, 0, SEEK_SET) != 0) {
+		fclose(f);
+		return NULL;
+	}
+	uint8_t *buf = (uint8_t *)malloc(flen ? flen : 1);
+	if (buf == NULL) {
+		fclose(f);
+		return NULL;
+	}
+	if (fread(buf, 1, flen, f) != flen) {
+		free(buf);
+		fclose(f);
+		return NULL;
+	}
+	fclose(f);
+	unsigned char *out = decode_JPEG_SOF_0XC3_core(buf, flen, skipBytes, verbose, xDim, yDim, bits, frames, diskBytes);
+	free(buf);
+	return out;
+}
+
+// Buffer-based public entry (issue 1017). Caller owns `buf` and frees it on return.
+unsigned char *decode_JPEG_SOF_0XC3_mem(uint8_t *buf, size_t flen, int skipBytes, bool verbose,
+										int *xDim, int *yDim, int *bits, int *frames, int diskBytes) {
+	return decode_JPEG_SOF_0XC3_core(buf, flen, skipBytes, verbose, xDim, yDim, bits, frames, diskBytes);
 }

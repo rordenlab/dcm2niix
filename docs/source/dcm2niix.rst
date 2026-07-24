@@ -26,11 +26,25 @@ Options
 
 -1..-9          gz compression level (1=fastest..9=smallest, default 6)
 
--b <y/i/n>      Save additional BIDS metadata to a side-car .json file (default y).
-                The "i"nput-only option reads DICOMs but saves neither BIDS nor NIfTI.
+-a <n/y>        Adjacent DICOMs (default n). If "y", assume all images from a
+                series are in the same folder, for faster conversion.
 
--ba <y/n>       anonymize BIDS (default y).
-                If "n"o, side-car may report patient name, age and weight.
+-b <y/n/o>      Save additional BIDS metadata to a side-car .json file (default y).
+                The "o"nly option reads DICOMs and writes the BIDS side-car but
+                no NIfTI image.
+
+-ba <y/n/o>     Anonymize BIDS (default y). "y" strips dates and PII; "n" keeps
+                both; "o" strips PII only (keeps timestamps).
+
+-c <comment>    Comment stored in the NIfTI aux_file (up to 24 characters, e.g.
+                ``-c VIP``). Pass an empty string (``-c ""``) to anonymize tag
+                (0020,4000).
+
+-d <0..9>       Directory search depth: convert DICOMs in sub-folders of the
+                input folder (default 5).
+
+-e <y/n/o/j/b>  Export as NRRD ("y"), MGH ("o"), JSON/JNIfTI ("j") or BJNIfTI
+                ("b") instead of NIfTI (default n).
 
 -f <format>     Format string for the output filename(s). The following
                 specifiers are supported:
@@ -41,6 +55,7 @@ Options
                 - %d, description
                 - %e, echo number
                 - %f, folder name
+                - %g, accession number
                 - %i, patient ID
                 - %j, series instance UID
                 - %k, study instance UID
@@ -56,36 +71,44 @@ Options
                 - %x, study ID
                 - %z, sequence name
 
-                The default format string is "%p_%e_%4s".
+                The default format string is "%f_%p_%t_%s". The special
+                specifiers %h (legacy hierarchical BIDS) and %H (one-pass
+                ReproIn BIDS) generate BIDS-style directory layouts; see
+                REPROIN.md.
 
 -g <y/n/o/i>    Generate defaults file (default n)
                 If "y", create default file on completion
                 If "n", default will not be written
                 If "o", only reset and write defaults
                 If "i", the values of the defaults file are ignored
-                : reset defaults], default n)
 
 -h              Show help
 
--i <y/n>        Ignore derived, localizer and 2D images (default n)
+-i <y/n/o>      Ignore derived, localizer and 2D images (default n). "o"
+                overrides to also discard non-planar localizers.
 
 -l <y/n/o>      Losslessly scale 16-bit integers to use maximal dynamic range (default o).
                 If "y", then intensity rescaled to use full 16-bit range.
                 If "n", data not scaled uint16 will be saved as int16.
                 If "o", original data and datatype preserved.
 
--m <y/n/2>      Merge slices from the same series regardless of study time,
+-m <n/y/2>      Merge slices from the same series regardless of study time,
                 echo, coil, orientation, etc. (default 2).
                 If "2", automatic based on image modality.
 
--n <number>     Only convert this series CRC number. Provide a negative number for
-                listing of series CRC numbers in input folder.
+-n <number>     Only convert this series CRC number (may be repeated up to 16
+                times). Provide a negative number to list the series CRC numbers
+                in the input folder.
 
 -o <path>       Output directory where the converted files should be saved. If
                 unspecified, the files are saved within the specified source
                 directory.
 
--p <y/n>        Use Philips precise float (rather than display) scaling.
+-p <y/n/o>      Use Philips precise float (rather than display) scaling (default
+                y). "o" overrides and ignores variable intensity scaling.
+
+-q <y/l/n>      Only search the directory for DICOMs (default y). "y" reports the
+                number found, "l" additionally lists them, "n" disables.
 
 -r <y/n>        Rename instead of convert DICOMs. Useful for organizing images.
 
@@ -95,15 +118,19 @@ Options
 
 -u              Update check: attempts to see if newer version is available.
 
--v <2/y/n>  	Enable verbose output. "n" for succinct, "y" for verbose, "2" for
-                high verbosity
+-v <0/1/2>      Enable verbose output (default 0). "0"/"n" succinct, "1"/"y"
+                verbose, "2" high verbosity.
+
+-w <0/1/2>      Write behavior for name conflicts (default 2). "0" skips
+                duplicates, "1" overwrites, "2" adds a suffix.
 
 -x <y/n/i>      Crop images. This will attempt to remove excess neck from 3D acquisitions.
                 If "i", images are neither cropped nor rotated to canonical space.
 
--z <y/i/n>      Desired compression method. The "y"es option uses the external
-                program pigz if available. The "i" option compresses the image
-                using the slower built-in compression routines.
+-z <y/o/i/n/3>  Desired compression method (default n). "y" uses the external
+                program pigz if available, "o" optimal pigz, "i" the slower
+                built-in (miniz) routine, "n" no compression, "3" no
+                compression for 3D output.
 
 --big-endian <y/n/o>     Byte order (default o). Optimal is machine native
 

@@ -480,10 +480,10 @@ typedef struct nifti1_extension nifti1_extension;
    when it encounters a dataset with a type it doesn't like.
 -----------------------------------------------------------------------------*/
 
-#ifndef __USE_MISC  /* Check __USE_MISC which includes DT_UNKNOWN in dirent.h */
-  #ifndef DT_UNKNOWN
-    #define DT_UNKNOWN 0  /* Define DT_UNKNOWN only if it is not already defined */
-  #endif
+#ifndef __USE_MISC /* Check __USE_MISC which includes DT_UNKNOWN in dirent.h */
+#ifndef DT_UNKNOWN
+#define DT_UNKNOWN 0 /* Define DT_UNKNOWN only if it is not already defined */
+#endif
 #endif
 
 /*! \defgroup NIFTI1_DATATYPES

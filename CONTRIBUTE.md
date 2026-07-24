@@ -27,3 +27,5 @@ dcm2niix is written in C. Different programmers prefer different styles of inden
 ```
 clang-format -i -style="{BasedOnStyle: LLVM, IndentWidth: 4, IndentCaseLabels: false, TabWidth: 4, UseTab: Always, ColumnLimit: 0}" *.cpp *.h
 ```
+
+For markdown files, the convention is to have no hard-wrapping.

@@ -23,28 +23,28 @@ class dcm2niix_fswrapper {
 
 	// interface to nii_loadDirCore() to search all dicom files from the directory input file is in,
 	// and convert dicom files with the same series as given file.
-	static int dcm2NiiOneSeries(const char *dcmfile, bool convert=true);
+	static int dcm2NiiOneSeries(const char *dcmfile, bool convert = true);
 
-        // interface to singleDICOM() to convert only the single image provided
-        static int dcm2NiiSingleFile(const char* dcmfile);
+	// interface to singleDICOM() to convert only the single image provided
+	static int dcm2NiiSingleFile(const char *dcmfile);
 
 	// interface to nii_dicom_batch.cpp::nii_getMrifsStruct()
 	static MRIFSSTRUCT *getMrifsStruct(void);
 
-        // interface to nii_dicom_batch.cpp::nii_clrMrifsStruct()
-        static void clrMrifsStruct(void);
+	// interface to nii_dicom_batch.cpp::nii_clrMrifsStruct()
+	static void clrMrifsStruct(void);
 
 	// return nifti header saved in MRIFSSTRUCT
 	static nifti_1_header *getNiiHeader(void);
 
-        // interface to nii_dicom_batch.cpp::nii_getAutoScaleFactorVector()
-        static std::vector<std::vector<float>> *getAutoScaleFactorVector();
+	// interface to nii_dicom_batch.cpp::nii_getAutoScaleFactorVector()
+	static std::vector<std::vector<float>> *getAutoScaleFactorVector();
 
 	// interface to nii_dicom_batch.cpp::nii_getMrifsStructVector()
 	static std::vector<MRIFSSTRUCT> *getMrifsStructVector(void);
 
-        // interface to nii_dicom_batch.cpp::nii_clrMrifsStructVector()
-        static void clrMrifsStructVector(void);
+	// interface to nii_dicom_batch.cpp::nii_clrMrifsStructVector()
+	static void clrMrifsStructVector(void);
 
 	// return image data saved in MRIFSSTRUCT
 	static const unsigned char *getMRIimg(void);

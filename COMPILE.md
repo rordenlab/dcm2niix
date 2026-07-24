@@ -38,13 +38,13 @@ You can also append prefix(es) to each of these configurations, for example `JPE
 
 `cmake` can automatically aid complex builds. The [home page](https://github.com/rordenlab/dcm2niix) describes typical cmake options.
 
-To download and compile dcm2niix with cmake you can run these commands from the command line (remove `--branch development` to get the current stable release; remove `-DZLIB_IMPLEMENTATION=Cloudflare` to produce with the miniz compressor, remove `-DUSE_JPEGLS=ON` to build without CharLS and remove `-DUSE_OPENJPEG=ON` to compile without JPEG2000 support):
+To download and compile dcm2niix with cmake you can run these commands from the command line (remove `--branch development` to get the current stable release; remove `-DZLIB_IMPLEMENTATION=zlib-ng` to produce with the miniz compressor, remove `-DUSE_JPEGLS=ON` to build without CharLS and remove `-DUSE_OPENJPEG=GitHub` to compile without JPEG2000 support). This is the same configuration used for all released builds — zlib-ng and OpenJPEG are statically built from pinned source (zlib-ng 2.3.3, OpenJPEG 2.5.3):
 
 ```bash
 git clone --branch development git@github.com:rordenlab/dcm2niix.git
 cd dcm2niix
 mkdir build && cd build
-cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
+cmake -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub ..
 make
 ```
 
@@ -80,7 +80,7 @@ cmake -DUSE_OPENJPEG=ON -DCMAKE_CXX_FLAGS=-g .. && make
  If we have zlib, we can use it (-lz) and disable [miniz](https://code.google.com/p/miniz/) (-DmyDisableMiniZ)
 
 ```
-g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -lz -DmyDisableMiniZ g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -lz -DmyDisableMiniZ g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 ##### MINGW BUILD
@@ -88,7 +88,7 @@ g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cp
 If you use the (obsolete) compiler MinGW on Windows you will want to include the rare libgcc libraries with your executable so others can use it. Here I also demonstrate the optional "-DmyDisableZLib" to remove zip support.
 
 ```
-g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -static-libgcc g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -static-libgcc g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 ##### DISABLING CLASSIC JPEG
@@ -96,7 +96,7 @@ g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cp
 DICOM images can be stored as either raw data or compressed using one of many formats as described by the [transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Transfer_Syntaxes_and_Compressed_Images). One of the compressed formats is the lossy classic JPEG format (which is separate from and predates the JPEG2000 and JPEG-LS formats). This software comes with the [NanoJPEG](http://keyj.emphy.de/nanojpeg/) library to handle these images. However, you can use the `myDisableClassicJPEG` compiler switch to remove this dependency. The resulting executable will be smaller but will not be able to convert images stored with this format.
 
 ```
-g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableClassicJPEG -DmyDisableOpenJPEG g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableClassicJPEG -DmyDisableOpenJPEG g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 ##### USING LIBJPEG-TURBO TO DECODE CLASSIC JPEG
@@ -104,7 +104,7 @@ g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp nifti1_io_core.cpp nii_o
 By default, classic JPEG images will be decoded using the [compact NanoJPEG decoder](http://keyj.emphy.de/nanojpeg/). However, the compiler directive `myTurboJPEG`  will create an executable based on the [libjpeg-turbo](http://www.libjpeg-turbo.org) library. This library is a faster decoder and is the standard for many Linux distributions. On the other hand, the lossy classic JPEG is rarely used for DICOM images, so this compilation has extra dependencies and can result in a larger executable size (for static builds).
 
 ```
-g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -DmyTurboJPEG -I/opt/libjpeg-turbo/include /opt/libjpeg-turbo/lib/libturbojpeg.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -DmyTurboJPEG -I/opt/libjpeg-turbo/include /opt/libjpeg-turbo/lib/libturbojpeg.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 ##### JPEG-LS BUILD
@@ -112,7 +112,7 @@ g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core
 You can compile dcm2niix to convert DICOM images compressed with the [JPEG-LS](https://en.wikipedia.org/wiki/JPEG_2000) [transfer syntaxes 1.2.840.10008.1.2.4.80 and 1.2.840.10008.1.2.4.81](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Transfer_Syntaxes_and_Compressed_Images). Decoding this format is handled by the [CharLS library](https://github.com/team-charls/charls), which is included with dcm2niix in the `charls` folder. The included code was downloaded from the CharLS website on 6 June 2018. To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as a few file sin the `charls` folder. Therefore, a minimal compile (with just JPEG-LS and without JPEG2000) should look like this:
 
 ```
-g++ -I. -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -I. -DmyEnableJPEGLS  charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp  -o dcm2niix -DmyDisableOpenJPEG g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 Alternatively, you can decompress an image in JPEG-LS to an uncompressed DICOM using [gdcmconv](https://github.com/malaterre/GDCM) (e.g. `gdcmconv -w 3691459 3691459.dcm`). Or you can use gdcmconv compress a DICOM to JPEG-LS (e.g. `gdcmconv -L 3691459 3691459.dcm`). Alternatively, the DCMTK tool [dcmcjpls](https://support.dcmtk.org/docs/dcmcjpls.html) provides JPEG-LS support.
@@ -130,24 +130,24 @@ You can build dcm2niix with JPEG2000 decompression support using OpenJPEG 2.1.0.
 You should then be able to run:
 
 ```
-g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -lopenjp2 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -lopenjp2 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 But in my experience this works best if you explicitly tell the software how to find the libraries, so your compile will probably look like one of these options:
 
 ```
 #for MacOS
-g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/include/openjpeg-2.1 /usr/local/lib/libopenjp2.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/include/openjpeg-2.1 /usr/local/lib/libopenjp2.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 #For older Linux
-g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/lib /usr/local/lib/libopenjp2.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -I/usr/local/lib /usr/local/lib/libopenjp2.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 #For modern Linux
-g++ -O3 -s -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -lpthread -o dcm2niix -I/usr/local/include/openjpeg-2.2 ~/openjpeg-master/build/bin/libopenjp2.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -s -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -lpthread -o dcm2niix -I/usr/local/include/openjpeg-2.2 ~/openjpeg-master/build/bin/libopenjp2.a g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
  If you want to build this with JPEG2000 decompression support using Jasper: You will need to have the Jasper (http://www.ece.uvic.ca/~frodo/jasper/) and libjpeg (http://www.ijg.org) libraries installed which for Linux users may be as easy as running 'sudo apt-get install libjasper-dev' (otherwise, see http://www.ece.uvic.ca/~frodo/jasper/#doc). You can then run:
 
 ```
-g++ -O3 -DmyDisableOpenJPEG -DmyEnableJasper -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -s -o dcm2niix -ljasper -ljpeg g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -DmyDisableOpenJPEG -DmyEnableJasper -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -s -o dcm2niix -ljasper -ljpeg g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 ```
 
 ##### VISUAL STUDIO BUILD
@@ -157,7 +157,7 @@ This software can be compiled with [Microsoft's Visual Studio C compiler](http:/
 Crucially, you will want to [set a large stack allocation](https://learn.microsoft.com/en-us/cpp/build/reference/stack-stack-allocations?view=msvc-170). This allows dcm2niix to convert a huge number of DICOM images in a single pass (which requires a large amount of memory).
 
 ```
-cl /wd4018 /wd4068 /wd4101 /wd4244 /wd4267 /wd4305 /wd4308 /wd4334 /wd4800 /wd4819 /wd4996  base64.cpp cJSON.cpp  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp /Fe:dcm2niix.exe -DmyDisableOpenJPEG /link /STACK:8388608
+cl /wd4018 /wd4068 /wd4101 /wd4244 /wd4267 /wd4305 /wd4308 /wd4334 /wd4800 /wd4819 /wd4996  base64.cpp cJSON.cpp  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp /Fe:dcm2niix.exe -DmyDisableOpenJPEG /link /STACK:8388608
 ```
 
 ##### MacOS BUILD UNIVERSAl BINARIES SUPPORT
@@ -167,8 +167,8 @@ On MacOS you can create Universal binaries, that bundle optimized code for diffe
 Here is a simple example of creating independent 32-bit and 64-bit executables and then using `lipo` to create a single universal executable:
 
 ```
-g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -arch i386 -o dcm2niix32 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
-g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix64 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -arch i386 -o dcm2niix32 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
+g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix64 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
 lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
 ```
 

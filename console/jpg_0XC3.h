@@ -10,11 +10,16 @@
 #ifndef _JPEG_SOF_0XC3_
 #define _JPEG_SOF_0XC3_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 unsigned char *decode_JPEG_SOF_0XC3(const char *fn, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames, int diskBytes);
+// Issue 1017: buffer-based entry. Caller owns `buf` and frees it on return. Used by the multi-fragment reassembly path so the codec bitstream can be decoded from RAM (no temp file).
+unsigned char *decode_JPEG_SOF_0XC3_mem(uint8_t *buf, size_t flen, int skipBytes, bool verbose, int *dimX, int *dimY, int *bits, int *frames, int diskBytes);
 
 #ifdef __cplusplus
 }

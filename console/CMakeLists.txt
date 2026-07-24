@@ -20,13 +20,20 @@ if(NOT CMAKE_BUILD_TYPE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS  "Debug;Release;RelWithDebInfo;MinSizeRel")
 endif()
 
-if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
-    # using Clang
+if((${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang") OR (${CMAKE_CXX_COMPILER_ID} STREQUAL "AppleClang"))
+    # using Clang or AppleClang. Match both — Apple's clang reports the id
+    # "AppleClang", which would otherwise skip this entire block silently.
     add_definitions(-fno-caret-diagnostics)
-    # issue867 reduce stack pressure
-    # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip -Wl,-stack_size -Wl,0x1000000")
     if(APPLE)
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
+        # issue867: macOS main-thread stack defaults to 8 MB. The console
+        # makefile build uses -flto and hits ___chkstk_darwin on multi-study
+        # Siemens XA datasets; raise the stack to 16 MB there. cmake currently
+        # does not enable LTO, so the same dataset passes today — but the
+        # corpus keeps widening (deident sequences, dense diffusion, MRS) and
+        # readDICOMx is already ~1.5 MB stack frame at -fstack-usage measure.
+        # Matching the makefile here keeps both builds tracking each other.
+        # Per-frame source-side reductions (heap deID_CS, etc.) stay in place.
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip -Wl,-stack_size -Wl,0x1000000")
     endif()
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     # using GCC
@@ -91,10 +98,12 @@ set(DCM2NIIX_SRCS
     main_console.cpp
     nii_dicom.cpp
     jpg_0XC3.cpp
+    dicom_fragments.cpp
     nifti1_io_core.cpp
     nii_foreign.cpp
     nii_ortho.cpp
-    nii_dicom_batch.cpp)
+    nii_dicom_batch.cpp
+    reproin.cpp)
 
 if(NOT USE_TURBOJPEG)
     set(DCM2NIIX_SRCS ${DCM2NIIX_SRCS} ujpeg.cpp)
@@ -114,11 +123,13 @@ if(BUILD_DCM2NIIXFSLIB)
         dcm2niix_fswrapper.cpp
         nii_dicom.cpp
         jpg_0XC3.cpp
+        dicom_fragments.cpp
         ujpeg.cpp
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp)
+        nii_dicom_batch.cpp
+        reproin.cpp)
 endif()
 
 if(USE_JPEGLS)
@@ -148,6 +159,12 @@ else()
     endif()
 endif()
 
+# Direct console build: only Miniz (bundled) and System are self-contained here.
+# Cloudflare/zlib-ng are built by the top-level SuperBuild (which clones+builds
+# them and sets ZLIB_ROOT); reaching them from this entry point means supplying
+# a prebuilt tree via -DZLIB_IMPLEMENTATION=Custom -DZLIB_ROOT=... (any non-Miniz,
+# non-System value is treated as Custom below). Released builds use the top-level
+# cmake with -DZLIB_IMPLEMENTATION=zlib-ng (see SuperBuild/External-ZLIBNG.cmake).
 set(ZLIB_IMPLEMENTATION "Miniz" CACHE STRING "Choose zlib implementation.")
 set_property(CACHE ZLIB_IMPLEMENTATION PROPERTY STRINGS  "Miniz;System;Custom")
 if(NOT ${ZLIB_IMPLEMENTATION} STREQUAL "Miniz")
@@ -212,10 +229,12 @@ if(BATCH_VERSION)
         main_console_batch.cpp
         nii_dicom.cpp
         jpg_0XC3.cpp
+        dicom_fragments.cpp
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
-        nii_dicom_batch.cpp)
+        nii_dicom_batch.cpp
+        reproin.cpp)
 
     if(NOT USE_TURBOJPEG)
         set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} ujpeg.cpp)

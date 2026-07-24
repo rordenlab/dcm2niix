@@ -56,21 +56,21 @@ These fields are present regardless of modality (e.g. MR, CT, PET).
 
 These fields should be the same for all images acquired on a specific scanner.
 
-| Field                       | Unit | Comments             | Defined By |
-|-----------------------------|------|----------------------|------------|
-| Manufacturer                |      | DICOM tag 0008,0070  | B          |
-| DeviceSerialNumber          |      | DICOM tag 0018,1000  | B          |
-| StationName                 |      | DICOM tag 0008,1010  | B          |
-| SoftwareVersions            |      | DICOM tag 0018,1020  | B          |
-| Modality                    |      | DICOM tag 0008,1060  | D          |
-| ManufacturersModelName      |      | DICOM tag 0008,1090  | B          |
-| InstitutionName             |      | DICOM tag 0008,0080  | B          |
-| InstitutionalDepartmentName |      | DICOM tag 0008,1040  | B          |
-| InstitutionAddress          |      | DICOM tag 0008,0081  | B          |
-| DeviceSerialNumber          |      | DICOM tag 0018,1000  | B          |
-| StationName                 |      | DICOM tag 0008,1010  | B          |
-| ConversionSoftware          |      | e.g. `dcm2niix`      | D          |
-| ConversionSoftwareVersion   |      | e.g. `v1.0.20210317` | D          |
+| Field                         | Unit | Comments             | Defined By |
+|-------------------------------|------|----------------------|------------|
+| Manufacturer                  |      | DICOM tag 0008,0070  | B          |
+| DeviceSerialNumber            |      | DICOM tag 0018,1000  | B          |
+| StationName                   |      | DICOM tag 0008,1010  | B          |
+| SoftwareVersions              |      | DICOM tag 0018,1020  | B          |
+| Modality                      |      | DICOM tag 0008,0060  | D          |
+| ManufacturersModelName        |      | DICOM tag 0008,1090  | B          |
+| InstitutionName               |      | DICOM tag 0008,0080  | B          |
+| InstitutionalDepartmentName * |      | DICOM tag 0008,1040  | B          |
+| InstitutionAddress            |      | DICOM tag 0008,0081  | B          |
+| ConversionSoftware            |      | e.g. `dcm2niix`      | D          |
+| ConversionSoftwareVersion     |      | e.g. `v1.0.20210317` | D          |
+
+* Recent scanners (e.g. Siemens XA60) do not define 0008,1040. dcm2niix sets this value to `None` if this tag is absent.
 
 ### Global Series Information
 
@@ -167,8 +167,8 @@ Fields specific to MRI scans.
 | PhaseEncodingStepsOutOfPlane       |      | DICOM tag 0018,9232                                                        | D          |
 | PixelBandwidth                     | Hz   | DICOM tag 0018,0095                                                                     | D          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
-| RepetitionTime                     | s    | DICOM tag 0018,0080                                                                     | B          |
-| RepetitionTimeExcitation           | s    | DICOM tag 0018, 0080 for some manufacturers                                             | B          |
+| RepetitionTime                     | s    | DICOM tag 0018,0080. For 3D EPI (e.g. Siemens `vx_ep3d`) this is the volume-to-volume time, not the per-shot 0018,0080 (see `RepetitionTimeExcitation`, `MultiEchoShots`) | B          |
+| RepetitionTimeExcitation           | s    | DICOM tag 0018,0080 for some manufacturers. For 3D EPI, the per-shot (excitation) TR; `RepetitionTime` then holds the volume TR                              | B          |
 | RepetitionTimeInversion            | s    |                                                                                         | D          |
 | SAR                                |      | DICOM tag 0018,1316 or 0018,9181 defined by 0018,9179                                   | D          |
 | SliceThickness                     | mm   | [nb](http://dclunie.blogspot.com/2013/10/how-thick-am-i-sad-story-of-lonely-slice.html) | D          |
@@ -195,6 +195,8 @@ The term ECAT in the comments suggests that values are defined by the [ECAT7](ht
 | InjectedRadioactivity        | MBq  | DICOM tag 0018,1074              | B          |
 | RadionuclideHalfLife         | s    | DICOM tag 0018,1075              | D          |
 | RadionuclidePositronFraction | f    | DICOM tag 0018,1076              | D          |
+| MolarActivity                | Bq/umol | DICOM tag 0018,1077 (BIDS maps this "Radiopharmaceutical Specific Activity" to MolarActivity, molar; emitted raw with its DICOM unit) | B          |
+| MolarActivityUnits           |      | `Bq/umol` when 0018,1077 present | B          |
 | ConvolutionKernel            |      | DICOM tag 0018,1210              | D          |
 | Units                        |      | DICOM tag 0054,1001              | B          |
 | AttenuationCorrectionMethod  |      | DICOM tag 0054,1101              | B          |
@@ -363,8 +365,9 @@ Fields specific to [Siemens XA-series](https://github.com/rordenlab/dcm2niix/tre
 | NonlinearGradientCorrection  | b    | 0008,0008 or 0021,1175     | B          |
 | PhaseEncodingDirection       |      | polarity from 0021,111c    | B          |
 | SpoilingState                |      | DICOM tag 0021,105B        | B          |
+| MultiEchoShots               |      | 3D EPI concatenations (CSA `sSliceArray.lConc`); emitted only when > 1. Volume TR = single-shot VolTR × MultiEchoShots | D          |
 
-Siemens also includes some sequence information in the private MRPhoenixProtocol (0021,1019) tag. You can view this with [gdcmdump](https://gdcm.sourceforge.net/html/gdcmdump.html), e.g. `gdcmdump --mrprotocol img.dcm`. Fields that dcm2niix inspects include `sPat.lAccelFact3D `, `sPat.lAccelFactPE`, `sPat.lRefLinesPE` and `sPat.ucPATMode`. The behavior of dcm2niix will be more well documented as our understanding of this tag improves.
+Siemens also includes some sequence information in the private MRPhoenixProtocol (0021,1019) tag. You can view this with [gdcmdump](https://gdcm.sourceforge.net/html/gdcmdump.html), e.g. `gdcmdump --mrprotocol img.dcm`. Fields that dcm2niix inspects include `sPat.lAccelFact3D `, `sPat.lAccelFactPE`, `sPat.lRefLinesPE`, `sPat.ucPATMode` and `sSliceArray.lConc` (3D-EPI multi-echo shots, see `MultiEchoShots`). The behavior of dcm2niix will be more well documented as our understanding of this tag improves.
 
 ### Manufacturer UIH
 

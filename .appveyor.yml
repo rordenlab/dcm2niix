@@ -4,7 +4,7 @@ environment:
       appveyor_build_worker_image: Visual Studio 2022
 
     - job_name: linux
-      appveyor_build_worker_image: Ubuntu1604
+      appveyor_build_worker_image: Ubuntu2004
 
     - job_name: mac
       appveyor_build_worker_image: macos-catalina
@@ -39,7 +39,7 @@ for:
         - job_name: win
 
     build_script:
-      - cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B build
+      - cmake -Wno-dev -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B build
       - cmake --build build --config %configuration%
 
     after_build:
@@ -52,8 +52,7 @@ for:
         - job_name: linux
 
     build_script:
-      - export CC=gcc-8 CXX=g++-8
-      - cmake -Wno-dev -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B build
+      - cmake -Wno-dev -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B build
       - cmake --build build
 
     after_build:
@@ -68,10 +67,10 @@ for:
 
     build_script:
       - sudo xcode-select -s /Applications/Xcode-11.3.1.app
-      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=x86_64 -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B intel
+      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=x86_64 -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B intel
       - cmake --build intel
       - sudo xcode-select -s /Applications/Xcode-12.3.app
-      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=arm64 -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON -B apple
+      - cmake -Wno-dev -DCMAKE_OSX_ARCHITECTURES=arm64 -DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub -B apple
       - cmake --build apple
 
     after_build:

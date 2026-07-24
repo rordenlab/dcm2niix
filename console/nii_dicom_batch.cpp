@@ -26,9 +26,9 @@
 #else
 #undef MiniZ
 #endif
-#include "tinydir.h"
 #include "nifti1_io_core.h"
 #include "print.h"
+#include "tinydir.h"
 #ifndef USING_R
 #include "nifti1.h"
 #endif
@@ -38,6 +38,7 @@
 #endif
 #include "nii_dicom.h"
 #include "nii_ortho.h"
+#include "reproin.h"
 #ifdef myEnableJNIFTI
 #include "base64.h"
 #include "cJSON.h"
@@ -47,6 +48,7 @@
 #endif
 #include <ctype.h> //toupper
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h> //requires VS 2015 or later
 #include <stddef.h>
@@ -117,12 +119,11 @@ const char kFileSep[2] = "/";
 // no .nii, .bval, .bvec are created.
 MRIFSSTRUCT mrifsStruct;
 std::vector<MRIFSSTRUCT> mrifsStruct_vector;
-std::vector<std::vector<float>> autoscalefactor_vector;  // autoscale factor for each slice
+std::vector<std::vector<float>> autoscalefactor_vector; // autoscale factor for each slice
 
 // retrieve autoscalefactor_vector
-std::vector<std::vector<float>> *nii_getAutoScaleFactorVector()
-{
-        return &autoscalefactor_vector;
+std::vector<std::vector<float>> *nii_getAutoScaleFactorVector() {
+	return &autoscalefactor_vector;
 }
 
 // retrieve the struct
@@ -130,16 +131,27 @@ MRIFSSTRUCT *nii_getMrifsStruct() {
 	return &mrifsStruct;
 }
 
-// free the memory used for the image and dti
+// free the memory used for the image and dti.
+// dicomlst[] entries and the array itself are allocated with new[]
+// (see line ~11431, ~13154), so they must be released with delete[],
+// NOT free(). Fields are NULLed/zeroed after release so repeat calls
+// are safe.
 void nii_clrMrifsStruct() {
 	free(mrifsStruct.imgM);
+	mrifsStruct.imgM = NULL;
 	free(mrifsStruct.tdti);
-
-	for (int n = 0; n < mrifsStruct.nDcm; n++)
-		free(mrifsStruct.dicomlst[n]);
-
-	if (mrifsStruct.dicomlst != NULL)
-		free(mrifsStruct.dicomlst);
+	mrifsStruct.tdti = NULL;
+	free(mrifsStruct.dicomfile); // audit 2026-06-06 M5: dicomfile leaked here previously
+	mrifsStruct.dicomfile = NULL;
+	if (mrifsStruct.dicomlst != NULL) {
+		for (int n = 0; n < mrifsStruct.nDcm; n++) {
+			delete[] mrifsStruct.dicomlst[n];
+			mrifsStruct.dicomlst[n] = NULL;
+		}
+		delete[] mrifsStruct.dicomlst;
+		mrifsStruct.dicomlst = NULL;
+	}
+	mrifsStruct.nDcm = 0;
 }
 
 // retrieve the struct
@@ -147,19 +159,33 @@ std::vector<MRIFSSTRUCT> *nii_getMrifsStructVector() {
 	return &mrifsStruct_vector;
 }
 
-// free the memory used for the image and dti
+// free the memory used for the image and dti for every retained item in
+// the vector, then clear the vector. Three bugs in the previous version
+// (caught in the 2026-06-06 audit): inner loop variable `n` shadowed the
+// outer one (so vector indexing used a DICOM-file index), inner bound used
+// the global `mrifsStruct.nDcm` instead of the vector item's own `nDcm`,
+// and entries allocated with new[] were released via free() (UB in C++).
 void nii_clrMrifsStructVector() {
 	int nitem = mrifsStruct_vector.size();
-	for (int n = 0; n < nitem; n++) {
-		free(mrifsStruct_vector[n].imgM);
-		free(mrifsStruct_vector[n].tdti);
-
-		for (int n = 0; n < mrifsStruct.nDcm; n++)
-			free(mrifsStruct_vector[n].dicomlst[n]);
-
-		if (mrifsStruct_vector[n].dicomlst != NULL)
-			free(mrifsStruct_vector[n].dicomlst);
+	for (int i = 0; i < nitem; i++) {
+		MRIFSSTRUCT &item = mrifsStruct_vector[i];
+		free(item.imgM);
+		item.imgM = NULL;
+		free(item.tdti);
+		item.tdti = NULL;
+		free(item.dicomfile); // audit 2026-06-06 M5: dicomfile leaked here previously
+		item.dicomfile = NULL;
+		if (item.dicomlst != NULL) {
+			for (int n = 0; n < item.nDcm; n++) {
+				delete[] item.dicomlst[n];
+				item.dicomlst[n] = NULL;
+			}
+			delete[] item.dicomlst;
+			item.dicomlst = NULL;
+		}
+		item.nDcm = 0;
 	}
+	mrifsStruct_vector.clear();
 }
 #endif
 
@@ -382,7 +408,7 @@ void geCorrectBvecs(struct TDICOMdata *d, int sliceDir, struct TDTI *vx, int isV
 			vx[i].V[1] = vx[i].V[2];
 			vx[i].V[2] = swap;
 			vx[i].V[1] = -vx[i].V[1]; // because of transpose?
-		}		
+		}
 	}
 	// These next lines are only so files appear identical to old versions of dcm2niix:
 	//  dicm2nii and dcm2niix generate polar opposite gradient directions.
@@ -702,11 +728,12 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 #define freeDiffusionMaxN 512
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
-	int lInvContrasts, lContrasts, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
+	int lInvContrasts, lContrasts, lConc, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
 		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D, freeDiffusionN;
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
 	float alTI[kMaxWipFree];
+	float alTE[kMaxWipFree]; // Phoenix Protocol multi-echo TE list (us); sLASER sums these for total EchoTime (spec2nii dicomfunctions.py:649)
 	float sPostLabelingDelay, ulLabelingDuration, dAveragesDouble, dThickness, ulShape, sPositionDTra, sNormalDTra;
 	vec3 freeDiffusionVec[freeDiffusionMaxN];
 } TCsaAscii;
@@ -731,6 +758,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->echoSpacing = 0;
 	csaAscii->lInvContrasts = 0;
 	csaAscii->lContrasts = 0;
+	csaAscii->lConc = 0; // sSliceArray.lConc (concatenations); DZNE 3D-EPI encodes "multi-echo shots" here (issue 1024)
 	csaAscii->difBipolar = 0; // 0=not assigned,1=bipolar,2=monopolar
 	csaAscii->parallelReductionFactorInPlane = 0;
 	csaAscii->accelFact3D = 0; // lAccelFact3D
@@ -762,11 +790,16 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	}
 	fseek(pFile, csaOffset, SEEK_SET);
 	char *buffer = (char *)malloc(csaLength);
-	if (buffer == NULL)
+	if (buffer == NULL) {
+		fclose(pFile); // M2 fix (audit round-5): leaked pFile on OOM
 		return;
+	}
 	size_t result = fread(buffer, 1, csaLength, pFile);
-	if ((int)result != csaLength)
+	if ((int)result != csaLength) {
+		free(buffer); // M2 fix (audit round-5): leaked buffer + pFile on short read
+		fclose(pFile);
 		return;
+	}
 	fclose(pFile);
 	// next bit complicated: restrict to ASCII portion to avoid buffer overflow errors in BINARY portion
 	int startAscii = phoenixOffsetCSASeriesHeader((unsigned char *)buffer, csaLength);
@@ -811,6 +844,11 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
 		char keyStrNumEcho[] = "lContrasts";
 		csaAscii->lContrasts = readKey(keyStrNumEcho, keyPos, csaLengthTrim);
+		// issue 1024: number of concatenations. On the DZNE 3D-EPI (vx_ep3d) this
+		// is the "Multi-echo Shots" factor — each concatenation is a separate pass
+		// through the slab, so the true volume TR is the single-pass VolTR x lConc.
+		char keyStrConc[] = "sSliceArray.lConc";
+		csaAscii->lConc = readKey(keyStrConc, keyPos, csaLengthTrim);
 		// TODO: read sAsl.ulSuppressionMode for required BackgroundSuppression
 		char keyStrDS[] = "sDiffusion.dsScheme";
 		csaAscii->difBipolar = readKey(keyStrDS, keyPos, csaLengthTrim);
@@ -890,6 +928,22 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 				char txt[1024] = {""};
 				snprintf(txt, 1024, "%s%d]", keyStrTiFree, k);
 				csaAscii->alTI[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
+			}
+		}
+		// read ALL alTE[*] values. The single-echo DICOM tag (0018,0081)
+		// reports just alTE[0]; multi-echo MRS sequences (e.g. Siemens
+		// sLASER) split the total echo across alTE[0..N] and downstream
+		// tools want the SUM. Mirrors spec2nii dicomfunctions.py:649.
+		// TE0/TE1 above stay populated for back-compat (issue400 phase path).
+		for (int k = 0; k < kMaxWipFree; k++)
+			csaAscii->alTE[k] = NAN;
+		char keyStrTeFree[] = "alTE[";
+		char *keyPosTe = (char *)memmem(keyPos, csaLengthTrim, keyStrTeFree, strlen(keyStrTeFree));
+		if (keyPosTe) {
+			for (int k = 0; k < kMaxWipFree; k++) {
+				char txt[1024] = {""};
+				snprintf(txt, 1024, "%s%d]", keyStrTeFree, k);
+				csaAscii->alTE[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
 			}
 		}
 		// read ALL csaAscii.alFree[*] values
@@ -1141,11 +1195,12 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 double dicomTimeToSec(double dicomTime); // forward declaration: defined below, used by JSON writer
 
 void json_StrList(FILE *fp, const char *sLabel, char *sVal) {
-	if (strlen(sVal) < 1) return;
+	if (strlen(sVal) < 1)
+		return;
 	fprintf(fp, "\t\"%s\": [\"", sLabel);
 	for (size_t i = 0; i < strlen(sVal); i++) {
 		if (sVal[i] != '\\') {
-			if (i > 0 && sVal[i-1] == '\\') {
+			if (i > 0 && sVal[i - 1] == '\\') {
 				fprintf(fp, "\", \"");
 			}
 			unsigned char ch = (unsigned char)sVal[i];
@@ -1239,6 +1294,18 @@ void json_Float(FILE *fp, const char *sLabel, double sVal) {
 	fprintf(fp, sLabel, sVal);
 } // json_Float
 
+// MRS spectral width source-of-truth shared by the sidecar (json_Float
+// SpectralWidth / DwellTime emission ~line 3180) and the NIfTI writer
+// (hdr.pixdim[4] in saveDcm2NiiMRS ~line 11618). Prefers the integer-ns
+// Siemens private (0021,1142) RealDwellTime when available — float32 CSA
+// d.spectralWidth loses ~6 sig figs at typical SVS widths (audit 2026-06-07
+// H2). Returns 0.0 when neither source is populated; callers must gate.
+static double mrsSpectralWidthHz(const struct TDICOMdata *d) {
+	if (d->dwellTime > 0)
+		return 1.0e9 / (double)d->dwellTime;
+	return d->spectralWidth;
+}
+
 void json_Bool(FILE *fp, const char *sLabel, int sVal) {
 	// json_Str(fp, "\t\"MTState\"", d.mtState);
 	// n.b. in JSON, true and false are lower case, whereas in Python they are capitalized
@@ -1266,7 +1333,607 @@ void rescueProtocolName(struct TDICOMdata *d, const char *filename) {
 #endif
 }
 
-void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
+// MR-weighting classifier shared by vendor-specific BIDS modality heuristics.
+// Returns one of kMRWeighting{Unknown,T1,T2,PD,T2starw,FLAIR,STIR}.
+//
+// Source-of-truth order:
+//   1. DICOM (0008,9209) AcquisitionContrast if populated to a weighting value
+//      (T1/T2/PROTON_DENSITY/T2_STAR/FLUID_ATTENUATED/STIR). Standard tag is
+//      vendor-agnostic and authoritative; trust it over the physics estimate.
+//      AC values like DIFFUSION / PERFUSION / TOF / FLOW_ENCODED / TAGGING are
+//      acquisition-class markers (routed at the dataType level by the BIDS
+//      classifiers) — they fall through to physics here so the historical
+//      T1/T2/PD/T2starw return space is preserved for legacy callers.
+//   2. Bottomley + Ernst-angle physics. T1 = 0.8 * B0^0.38 (sec, gray/white
+//      matter), T2* = 0.050 / B0 (sec) — field-scaled so ultra-low field
+//      (Hyperfine ~0.064 T) and ultra-high field (7 T+) behave correctly. True
+//      T2 changes minimally with B0 vs T2*, so the SE T2 arm uses a fixed
+//      45 ms TE threshold rather than a B0-scaled one.
+//
+// SE arm only needs TE; GRE/Ernst arm additionally requires TR, fieldStrength,
+// and flipAngle. Returns kMRWeightingUnknown when no AC value applies AND any
+// required input is non-positive (caller falls through to other heuristics),
+// or when isVariableFlipAngle is set on the physics fallback — SPACE / tse_vfl
+// / FLAIR carry a nominal DICOM flipAngle that does NOT predict contrast (the
+// refocusing train is shaped). GRE thresholds (T1: flipAngle >= 1.3*Ernst,
+// PD: flipAngle <= 0.7*Ernst, T2*: TE >= 0.5*T2*_est) match the historical
+// fl3d_vibe classifier verbatim.
+int MRWeightingGuess(struct TDICOMdata *d, bool isSpinEcho, bool isVariableFlipAngle) {
+	if (d == NULL)
+		return kMRWeightingUnknown;
+	// (1) DICOM AcquisitionContrast short-circuit for weighting-class values.
+	switch (d->acquisitionContrast) {
+	case kMRWeightingT1:
+	case kMRWeightingT2:
+	case kMRWeightingPD:
+	case kMRWeightingT2starw:
+	case kMRWeightingFLAIR:
+	case kMRWeightingSTIR:
+		return d->acquisitionContrast;
+	default:
+		break;
+	}
+	// (2) Physics fallback.
+	if (d->TE <= 0.0f)
+		return kMRWeightingUnknown;
+	if (isVariableFlipAngle)
+		return kMRWeightingUnknown;
+	double te_sec = (double)d->TE / 1000.0;
+	if (isSpinEcho) {
+		if (te_sec >= 0.045)
+			return kMRWeightingT2;
+		return kMRWeightingPD;
+	}
+	if ((d->TR <= 0.0f) || (d->fieldStrength <= 0.0f) || (d->flipAngle <= 0.0f))
+		return kMRWeightingUnknown;
+	double tr_sec = (double)d->TR / 1000.0;
+	double t2star_est = 0.050 / (double)d->fieldStrength;
+	if (te_sec >= 0.5 * t2star_est)
+		return kMRWeightingT2starw;
+	double t1_est = 0.8 * pow((double)d->fieldStrength, 0.38);
+	double ernst_rad = acos(exp(-tr_sec / t1_est));
+	double ernst_deg = ernst_rad * (180.0 / M_PI);
+	if ((double)d->flipAngle >= 1.3 * ernst_deg)
+		return kMRWeightingT1;
+	if ((double)d->flipAngle <= 0.7 * ernst_deg)
+		return kMRWeightingPD;
+	return kMRWeightingPD; // mixed structural default
+}
+
+// ---- BIDS heuristic helpers (port of BIDS-Manager sequence_dict.py) -------
+// Vendor-agnostic post-pass refinements run after setBidsSiemens/Philips/GE
+// to add DWI-derivative routing, task-name hints, and acq-/dir- entity
+// extraction. See setBidsHeuristics() below for the policy and CLAUDE.md
+// "BIDS-Manager-derived heuristics" section for the design rationale.
+
+static void bidsStrLower(char *dst, const char *src, size_t cap) {
+	if (cap == 0)
+		return;
+	size_t i = 0;
+	for (; i + 1 < cap && src != NULL && src[i] != '\0'; i++)
+		dst[i] = (char)tolower((unsigned char)src[i]);
+	dst[i] = '\0';
+}
+
+// Word-boundary character for BIDS-Manager regex (?:^|[_-]) and (?=$|[_-]).
+// Mirrors the Python `_DIR_TOKEN` regex spirit: non-alphanumeric = boundary.
+static bool bidsIsBoundary(char c) {
+	return c == '\0' || c == '_' || c == '-' || c == ' ' ||
+		   c == '/' || c == '\\' || c == '.' || c == ',';
+}
+
+// Return pointer to first word-boundary occurrence of token in haystack,
+// or NULL. Both args must be lowercase. Mirrors `(?:^|[_-])token(?=$|[_-])`.
+static const char *bidsFindTokenBdy(const char *haystack, const char *token) {
+	if (haystack == NULL || token == NULL || token[0] == '\0')
+		return NULL;
+	size_t tlen = strlen(token);
+	const char *p = haystack;
+	while ((p = strstr(p, token)) != NULL) {
+		bool startOK = (p == haystack) || bidsIsBoundary(*(p - 1));
+		bool endOK = bidsIsBoundary(p[tlen]);
+		if (startOK && endOK)
+			return p;
+		p += 1;
+	}
+	return NULL;
+}
+
+// Splice `_<entity>-<value>` into suffix at canonical BIDS-2 entity order:
+//   _task- _acq- _ce- _rec- _dir- _run- _echo- _flip- _inv- _part- _<suffix>
+// No-op when the entity is already present. value must be already sanitised
+// (alphanumeric only). suffix is the in-place buffer holding the entity
+// suffix (e.g. "_dir-AP_run-3_bold"); cap is its byte capacity.
+static void bidsInsertEntity(char *suffix, const char *entity, const char *value, size_t cap) {
+	if (suffix == NULL || entity == NULL || value == NULL || value[0] == '\0')
+		return;
+	char marker[16];
+	snprintf(marker, sizeof(marker), "_%s-", entity);
+	if (strstr(suffix, marker) != NULL)
+		return; // already present
+	static const char *order[] = {
+		"_task-", "_acq-", "_ce-", "_rec-", "_dir-", "_run-",
+		"_echo-", "_flip-", "_inv-", "_part-", NULL};
+	int myIdx = -1;
+	for (int i = 0; order[i] != NULL; i++) {
+		if (strcmp(order[i], marker) == 0) {
+			myIdx = i;
+			break;
+		}
+	}
+	if (myIdx < 0)
+		return;
+	char *insertAt = NULL;
+	for (int i = myIdx + 1; order[i] != NULL; i++) {
+		char *found = strstr(suffix, order[i]);
+		if (found != NULL && (insertAt == NULL || found < insertAt))
+			insertAt = found;
+	}
+	if (insertAt == NULL) {
+		// No later entity. Insert before the trailing _<suffix> word.
+		insertAt = strrchr(suffix, '_');
+	}
+	char tail[kDICOMStrLarge];
+	if (insertAt == NULL) {
+		// No underscore at all (very short suffix); prepend.
+		snprintf(tail, sizeof(tail), "%s", suffix);
+		snprintf(suffix, cap, "_%s-%s%s", entity, value, tail);
+		return;
+	}
+	snprintf(tail, sizeof(tail), "%s", insertAt);
+	*insertAt = '\0';
+	char tmp[kDICOMStrLarge];
+	snprintf(tmp, sizeof(tmp), "%s_%s-%s%s", suffix, entity, value, tail);
+	snprintf(suffix, cap, "%s", tmp);
+}
+
+// Fallback BIDS routing from DICOM (0008,9209) Acquisition Contrast.
+// Runs after setBidsSiemens/Philips/GE and setBidsHeuristics. Only fires when
+// the vendor cascade and the post-pass both failed to assign a dataType — i.e.
+// the file is otherwise unclassified. AC values map to canonical BIDS dataType
+// + suffix. Modality is appended to the existing suffix so any `_acq-foo_run-N`
+// entity tags the vendor assembly already accumulated are preserved.
+//
+// Deliberately does NOT override an existing classification: an fMRI series
+// with AC=T2 stays func/_bold (vendor cascade caught it via FEEPI); an
+// MP2RAGE with AC=T1 stays anat/_UNIT1 (vendor caught it via mp2rage seqDetails);
+// a scanner DWI FA map with AC=DIFFUSION stays derivatives/scanner (setBidsHeuristics
+// caught it via the fa/adc/colfa text tokens). The fallback only catches files
+// the cascade couldn't classify at all.
+//
+// PERFUSION is intentionally NOT routed here — the DICOM enumeration is
+// AcquisitionContrast=PERFUSION, which covers both ASL and DSC/DCE (gad-bolus)
+// acquisitions. Routing all of them to perf/_asl would mis-label DSC/DCE files
+// with the ASL suffix and produce sidecars missing the required ASL metadata
+// (postLabelDelay, ArterialSpinLabelingType, m0scan pairing). The per-vendor
+// AC=Perfusion gates in setBidsSiemens/Philips/GE coexist with vendor-specific
+// ASL evidence (Philips aslFlags / ImageType=PERFUSION, sequence-name asl/
+// pcasl) so they remain safe; the unsupported (e.g. Canon DSC) case prefers
+// "Unknown/" over a misleading _asl filename.
+//
+// DIFFUSION is gated on `d->isDiffusion` having other corroborating evidence
+// (CSA.numDti > 0 OR a real DTI structure populated by the vendor parser),
+// so a bare AC=DIFFUSION without parsed gradients does NOT produce a _dwi
+// file with empty .bval/.bvec.
+static void setBidsFromAcquisitionContrast(struct TDICOMdata *d) {
+	if (d == NULL || d->modality != kMODALITY_MR)
+		return;
+	const char *dataType = NULL;
+	const char *modality = NULL;
+	switch (d->acquisitionContrast) {
+	case kMRWeightingT1:
+		dataType = "anat";
+		modality = "T1w";
+		break;
+	case kMRWeightingT2:
+		dataType = "anat";
+		modality = "T2w";
+		break;
+	case kMRWeightingPD:
+		dataType = "anat";
+		modality = "PDw";
+		break;
+	case kMRWeightingT2starw:
+		dataType = "anat";
+		modality = "T2starw";
+		break;
+	case kMRWeightingFLAIR:
+		dataType = "anat";
+		modality = "FLAIR";
+		break;
+	case kMRWeightingSTIR:
+		// STIR has no canonical BIDS suffix; T2w is the closest existing match
+		// (BEPs may add a dedicated STIR suffix later).
+		dataType = "anat";
+		modality = "T2w";
+		break;
+	case kMRWeightingDiffusion:
+		// Require corroborating diffusion evidence: CSA.numDti gets populated
+		// from every vendor path that produces real gradients (Siemens CSA,
+		// Canon enhanced multi-frame, Philips PAR/REC, etc.) so it stands in
+		// for "we actually parsed b-values". Otherwise a bare DIFFUSION tag
+		// would produce a _dwi file with empty .bval/.bvec.
+		if (d->CSA.numDti < 1)
+			return;
+		dataType = "dwi";
+		modality = "dwi";
+		break;
+	case kMRWeightingTOF:
+		dataType = "anat";
+		modality = "angio";
+		break;
+	case kMRWeightingPerfusion:
+		// See block comment above — not routed here. The per-vendor
+		// ASL gates already handle Philips ASL alongside aslFlags/ImageType.
+		return;
+	default:
+		return; // Unknown/Mixed/Other/Flow/Tagging — leave file in Unknown/
+	}
+	strcpy(d->CSA.bidsDataType, dataType);
+	char *suffix = d->CSA.bidsEntitySuffix;
+	size_t used = strlen(suffix);
+	// snprintf gives us bounded copy + automatic NUL-termination. If used
+	// already exhausts the buffer, the write is a no-op (snprintf truncates).
+	if (used < kDICOMStrLarge)
+		snprintf(suffix + used, kDICOMStrLarge - used, "_%s", modality);
+}
+
+// Apply BIDS-Manager-derived vendor-agnostic refinements. Runs after the
+// per-vendor setBidsSiemens/Philips/GE so vendor decisions are honoured
+// except where a clear text marker overrides (DWI scanner derivatives).
+static void setBidsHeuristics(struct TDICOMdata *d) {
+	if (d == NULL)
+		return;
+	if (d->modality != kMODALITY_MR)
+		return;
+	if (strstr(d->CSA.bidsDataType, "discard") != NULL)
+		return;
+	// Combine ProtocolName + SeriesDescription, lowercased, for matching.
+	char nameLower[kDICOMStrLarge * 2];
+	{
+		char tmp[kDICOMStrLarge * 2];
+		snprintf(tmp, sizeof(tmp), "%s %s", d->protocolName, d->seriesDescription);
+		bidsStrLower(nameLower, tmp, sizeof(nameLower));
+	}
+	if (nameLower[0] == '\0')
+		return;
+	// (1) DWI scanner-derivative override. Tokens at word boundary force
+	// the routing regardless of what the vendor heuristic chose. TENSOR
+	// goes to dataTypeBIDS="derived" so the file lands under
+	// derivatives/scanner/ (see setBids return-value gate). Order matters:
+	// "tracew" before "trace" so the longer form wins. (Siemens derived DWI
+	// maps are already classified discard/derivedDWI in setBidsSiemens via the
+	// DERIVED ImageType; this token table is the vendor-agnostic fallback.)
+	static const struct {
+		const char *token;
+		const char *suffix;
+		const char *dataType;
+	} kDwiDeriv[] = {
+		{"colfa", "colFA", "dwi"},
+		{"col_fa", "colFA", "dwi"},
+		{"col-fa", "colFA", "dwi"},
+		{"expadc", "expADC", "dwi"},
+		{"exp_adc", "expADC", "dwi"},
+		{"exp-adc", "expADC", "dwi"},
+		{"tracew", "trace", "dwi"},
+		{"trace", "trace", "dwi"},
+		{"tensor", "TENSOR", "derived"},
+		{"s0map", "S0map", "dwi"},
+		{"s0_map", "S0map", "dwi"},
+		{"s0-map", "S0map", "dwi"},
+		{"fa", "FA", "dwi"},
+		{"adc", "ADC", "dwi"},
+	};
+	for (size_t i = 0; i < sizeof(kDwiDeriv) / sizeof(kDwiDeriv[0]); i++) {
+		if (bidsFindTokenBdy(nameLower, kDwiDeriv[i].token) != NULL) {
+			snprintf(d->CSA.bidsDataType, sizeof(d->CSA.bidsDataType), "%s", kDwiDeriv[i].dataType);
+			snprintf(d->CSA.bidsEntitySuffix, sizeof(d->CSA.bidsEntitySuffix), "_%s", kDwiDeriv[i].suffix);
+			break;
+		}
+	}
+	// (2) Task-name hints. Only fires for func when no _task- already known.
+	// Explicit _task-<label> (word boundary) wins; else walk the curated
+	// hint dict (simple substring per BIDS-Manager).
+	if (strstr(d->CSA.bidsDataType, "func") != NULL && d->CSA.bidsTask[0] == '\0' &&
+		strstr(d->CSA.bidsEntitySuffix, "_task-") == NULL) {
+		char taskOut[kDICOMStr] = "";
+		// Explicit "_task-X" or "task-X" at word boundary.
+		const char *needle = "task-";
+		const char *p = nameLower;
+		while ((p = strstr(p, needle)) != NULL) {
+			bool startOK = (p == nameLower) || bidsIsBoundary(*(p - 1));
+			if (startOK) {
+				const char *q = p + strlen(needle);
+				size_t j = 0;
+				while (j + 1 < sizeof(taskOut) &&
+					   ((q[j] >= '0' && q[j] <= '9') ||
+						(q[j] >= 'a' && q[j] <= 'z') ||
+						(q[j] >= 'A' && q[j] <= 'Z'))) {
+					taskOut[j] = q[j];
+					j++;
+				}
+				taskOut[j] = '\0';
+				if (j > 0)
+					break;
+			}
+			p += 1;
+		}
+		// Fallback: curated hints dict (port of TASK_HINT_PATTERNS).
+		if (taskOut[0] == '\0') {
+			// Each entry: label, then a NULL-terminated list of patterns
+			// and a wordBoundary flag. Drift-prone tokens (rs/exec/task/
+			// motor) use bidsFindTokenBdy: "diverse" must not relabel as
+			// "rest" via the bare "rs" pattern; "ep_expert_task" must not
+			// relabel as "task"; "sensorimotor" must not relabel as
+			// "motor". Tokens whose letters do not appear inside common
+			// English words (movie, flanker, stroop, paradigm, sparse,
+			// activation, nback, checkerboard) stay on plain strstr.
+			static const struct {
+				const char *label;
+				const char *patterns[6];
+				bool wordBoundary;
+			} kTaskHints[] = {
+				{"rest", {"rs", "rest", "resting", NULL, NULL, NULL}, true},
+				{"movie", {"movie", NULL, NULL, NULL, NULL, NULL}, false},
+				{"nback", {"nback", "n-back", NULL, NULL, NULL, NULL}, false},
+				{"flanker", {"flanker", NULL, NULL, NULL, NULL, NULL}, false},
+				{"stroop", {"stroop", NULL, NULL, NULL, NULL, NULL}, false},
+				{"motor", {"motor", NULL, NULL, NULL, NULL, NULL}, true},
+				{"checkerboard", {"checker", "checkerboard", NULL, NULL, NULL, NULL}, false},
+				{"exec", {"exec", NULL, NULL, NULL, NULL, NULL}, true},
+				{"paradigm", {"paradigm", "paradigma", NULL, NULL, NULL, NULL}, false},
+				{"sparse", {"sparse", NULL, NULL, NULL, NULL, NULL}, false},
+				{"activation", {"activation", NULL, NULL, NULL, NULL, NULL}, false},
+				{"task", {"task", NULL, NULL, NULL, NULL, NULL}, true},
+			};
+			for (size_t i = 0; i < sizeof(kTaskHints) / sizeof(kTaskHints[0]); i++) {
+				bool hit = false;
+				for (size_t k = 0; kTaskHints[i].patterns[k] != NULL; k++) {
+					const char *pat = kTaskHints[i].patterns[k];
+					if (kTaskHints[i].wordBoundary) {
+						if (bidsFindTokenBdy(nameLower, pat) != NULL) {
+							hit = true;
+							break;
+						}
+					} else if (strstr(nameLower, pat) != NULL) {
+						hit = true;
+						break;
+					}
+				}
+				if (hit) {
+					snprintf(taskOut, sizeof(taskOut), "%s", kTaskHints[i].label);
+					break;
+				}
+			}
+		}
+		if (taskOut[0] != '\0')
+			snprintf(d->CSA.bidsTask, sizeof(d->CSA.bidsTask), "%s", taskOut);
+	}
+	// (3) acq-X token extraction (word-boundary, longest wins).
+	if (strstr(d->CSA.bidsEntitySuffix, "_acq-") == NULL) {
+		const char *needle = "acq-";
+		const char *p = nameLower;
+		char best[kDICOMStr] = "";
+		size_t bestLen = 0;
+		while ((p = strstr(p, needle)) != NULL) {
+			bool startOK = (p == nameLower) || bidsIsBoundary(*(p - 1));
+			if (startOK) {
+				const char *q = p + strlen(needle);
+				size_t j = 0;
+				char tok[kDICOMStr] = "";
+				while (j + 1 < sizeof(tok) &&
+					   ((q[j] >= '0' && q[j] <= '9') ||
+						(q[j] >= 'a' && q[j] <= 'z') ||
+						(q[j] >= 'A' && q[j] <= 'Z'))) {
+					tok[j] = q[j];
+					j++;
+				}
+				tok[j] = '\0';
+				if (j > bestLen) {
+					bestLen = j;
+					snprintf(best, sizeof(best), "%s", tok);
+				}
+			}
+			p += 1;
+		}
+		if (best[0] != '\0')
+			bidsInsertEntity(d->CSA.bidsEntitySuffix, "acq", best, sizeof(d->CSA.bidsEntitySuffix));
+	}
+	// (4) Phase-encoding direction (AP/PA/LR/RL) — word boundary on both sides.
+	if (strstr(d->CSA.bidsEntitySuffix, "_dir-") == NULL) {
+		static const char *kDirs[] = {"ap", "pa", "lr", "rl", NULL};
+		const char *found = NULL;
+		const char *foundUpper = NULL;
+		for (int i = 0; kDirs[i] != NULL; i++) {
+			const char *hit = bidsFindTokenBdy(nameLower, kDirs[i]);
+			if (hit != NULL && (found == NULL || hit < found)) {
+				found = hit;
+				foundUpper = (kDirs[i][0] == 'a')	? "AP"
+							 : (kDirs[i][0] == 'p') ? "PA"
+							 : (kDirs[i][0] == 'l') ? "LR"
+													: "RL";
+			}
+		}
+		if (foundUpper != NULL)
+			bidsInsertEntity(d->CSA.bidsEntitySuffix, "dir", foundUpper, sizeof(d->CSA.bidsEntitySuffix));
+	}
+}
+
+// Replace tab/CR/LF with space so a value can land in a single TSV cell.
+static void reproinTsvField(const char *src, char *dst, size_t cap) {
+	size_t j = 0;
+	if (cap == 0)
+		return;
+	for (size_t i = 0; src != NULL && src[i] != '\0' && j + 1 < cap; i++) {
+		char c = src[i];
+		if (c == '\t' || c == '\r' || c == '\n')
+			c = ' ';
+		dst[j++] = c;
+	}
+	dst[j] = '\0';
+}
+
+// Append a row to <studyRoot>/.reproin_provenance.tsv recording the DICOM
+// provenance of one converted series. Consumed by tools/reproinx.py to apply
+// heudiconv-style cross-series fixups (e.g. __dup-NN, ses- propagation) that
+// require a study-wide view the one-pass C parser does not have.
+// No-op unless the filename format contains literal "%H" (ReproIn one-pass).
+static void reproinAppendProvenance(const char *pathoutname, struct TDICOMdata d, struct TDCMopts opts) {
+	if (strstr(opts.filename, "%H") == NULL)
+		return;
+	char studyRoot[PATH_MAX] = {""};
+	if (strlen(opts.outdir) > 0)
+		snprintf(studyRoot, sizeof(studyRoot), "%s", opts.outdir);
+	char studyPath[PATH_MAX] = {""};
+	if (opts.isBidsRoot) {
+		snprintf(studyPath, sizeof(studyPath), "%s", opts.bidsRoot);
+		reproinSanitizeProjectPath(studyPath);
+	} else {
+		reproinBuildStudyPath(&d, studyPath, sizeof(studyPath));
+	}
+	if (strlen(studyPath) > 0) {
+		if (strlen(studyRoot) > 0 && studyRoot[strlen(studyRoot) - 1] != kPathSeparator &&
+			strlen(studyRoot) + 1 < sizeof(studyRoot))
+			strcat(studyRoot, kFileSep);
+		if (strlen(studyRoot) + strlen(studyPath) + 1 < sizeof(studyRoot))
+			strcat(studyRoot, studyPath);
+	}
+	if (strlen(studyRoot) < 1)
+		return;
+	// Stem relative to studyRoot (no extension — Python globs to find the
+	// .nii.gz / .json / .bval / .bvec siblings).
+	const char *relStem = pathoutname;
+	size_t rootLen = strlen(studyRoot);
+	if (strncmp(pathoutname, studyRoot, rootLen) == 0) {
+		relStem = pathoutname + rootLen;
+		while (*relStem == kPathSeparator || *relStem == '/')
+			relStem++;
+	} else {
+		const char *slash = strrchr(pathoutname, kPathSeparator);
+		if (slash != NULL)
+			relStem = slash + 1;
+	}
+	char tsvPath[PATH_MAX];
+	snprintf(tsvPath, sizeof(tsvPath), "%s%c.reproin_provenance.tsv", studyRoot, kPathSeparator);
+	char bakPath[PATH_MAX];
+	snprintf(bakPath, sizeof(bakPath), "%s.bak", tsvPath);
+	if (opts.isAnonymizeBIDS)
+		remove(bakPath);
+	// Pre-existing TSV: refuse to mix schemas (6-col vs 10-col rows under one
+	// header silently lose data when reproinx.py reads them by header name).
+	// Lightweight check: peek the first line, count tabs, compare to what we
+	// would write now. Mismatch -> rename the stale file so this run starts
+	// fresh with the current schema. Full anonymisation removes stale files
+	// instead of backing them up, so the output tree cannot retain demographics.
+	bool emitDemographicsPeek = !opts.isAnonymizeBIDS;
+	int expectedTabs = emitDemographicsPeek ? 10 : 5; // 11 or 6 columns
+	bool schemaMismatch = false;
+	FILE *peek = fopen(tsvPath, "r");
+	if (peek != NULL) {
+		char hdr[512] = "";
+		if (fgets(hdr, sizeof(hdr), peek) != NULL) {
+			int tabs = 0;
+			for (const char *p = hdr; *p; ++p)
+				if (*p == '\t')
+					tabs++;
+			if (tabs != expectedTabs)
+				schemaMismatch = true;
+		}
+		fclose(peek);
+	}
+	if (schemaMismatch) {
+		// Audit L1: if the rotation fails the appender would otherwise
+		// silently mix new-schema rows under the stale header. Bail
+		// when the OS won't let us cleanly stage the rename so the
+		// caller can re-try rather than accumulating broken rows.
+		if (opts.isAnonymizeBIDS) {
+			if (remove(tsvPath) != 0) {
+				printWarning("reproin provenance: could not remove stale %s; skipping append\n", tsvPath);
+				return;
+			}
+		} else {
+			(void)remove(bakPath); // best-effort: a prior .bak may exist
+			if (rename(tsvPath, bakPath) != 0) {
+				printWarning("reproin provenance: could not rotate %s -> %s; skipping append\n", tsvPath, bakPath);
+				return;
+			}
+		}
+	}
+	FILE *tp = fopen(tsvPath, "a");
+	if (tp == NULL)
+		return;
+	// PatientAge / PatientSex / StudyDate / StudyTime carry the minimum
+	// heudiconv reproinx.py needs for participants.tsv (age, sex, group) plus
+	// chronological subject ordering. `-ba y` (full anon) MUST scrub all four
+	// from the provenance TSV so a user running `reproinx.py --anonymize`
+	// (which maps to `-ba y`) actually gets a privacy-clean output tree —
+	// otherwise the hidden TSV silently retains demographics the per-series
+	// JSON sidecar already stripped. `-ba o` keeps these (age/sex aggregate
+	// into participants.tsv; that's the whole point of the `o` mode).
+	bool emitDemographics = !opts.isAnonymizeBIDS;
+	if (ftell(tp) == 0) {
+		if (emitDemographics)
+			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\tPatientAge\tPatientSex\tStudyDate\tStudyTime\tPatientID\n");
+		else
+			fprintf(tp, "StudyInstanceUID\tSeriesNumber\tProtocolName\tSeriesDescription\tStudyDescription\tOutputStem\n");
+	}
+	char f1[kDICOMStr], f2[kDICOMStr], f3[kDICOMStr], f4[kDICOMStr];
+	char f5[PATH_MAX];
+	reproinTsvField(d.studyInstanceUID, f1, sizeof(f1));
+	reproinTsvField(d.protocolName, f2, sizeof(f2));
+	reproinTsvField(d.seriesDescription, f3, sizeof(f3));
+	reproinTsvField(d.studyDescription, f4, sizeof(f4));
+	reproinTsvField(relStem, f5, sizeof(f5));
+	if (emitDemographics) {
+		// PatientID lives at column 11 so older 10-col readers that key on
+		// header names see it as an extra field they can ignore; the
+		// schema-mismatch peek above will rotate any pre-11-col TSV to .bak
+		// so a fresh run can't mix old/new rows under one header. Withheld
+		// in -ba y (anonymize) where the 6-col header omits the whole
+		// demographics block; PatientID is the strongest identifier the
+		// provenance carries and must follow the same privacy rule.
+		char f6[kDICOMStr], f7[kDICOMStr], f8[kDICOMStr], f9[kDICOMStr];
+		reproinTsvField(d.patientAge, f6, sizeof(f6));
+		reproinTsvField(d.studyDate, f7, sizeof(f7));
+		reproinTsvField(d.studyTime, f8, sizeof(f8));
+		reproinTsvField(d.patientID, f9, sizeof(f9));
+		char sexBuf[2] = "";
+		if (d.patientSex == 'M' || d.patientSex == 'F' || d.patientSex == 'O')
+			sexBuf[0] = d.patientSex;
+		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5, f6, sexBuf, f7, f8, f9);
+	} else {
+		fprintf(tp, "%s\t%ld\t%s\t%s\t%s\t%s\n", f1, d.seriesNum, f2, f3, f4, f5);
+	}
+	fclose(tp);
+}
+
+// MRS VOI (volume-of-interest) 4x4 matrix (LPS->RAS), shared by the BIDS
+// sidecar and the NIfTI-MRS extension. Returns false when no VOI box is present
+// (`voiThickness > 0 && hasVoiCenter` — see audit 2026-06-11 M8). row1 =
+// -IOP_row1*ReadoutFoV, row2 = -IOP_row2*PhaseFoV, row3 = +slice_normal*Thickness;
+// LPS->RAS sign flip on rows 0/1 (incl. the slice-normal column), row 2 positive.
+static bool mrsVoiMatrix(const struct TDICOMdata *d, double m[4][4]) {
+	if (!(d->voiThickness > 0.0f && d->hasVoiCenter))
+		return false;
+	double r1x = d->orient[1], r1y = d->orient[2], r1z = d->orient[3];
+	double r2x = d->orient[4], r2y = d->orient[5], r2z = d->orient[6];
+	double n1 = sqrt(r1x * r1x + r1y * r1y + r1z * r1z);
+	double n2 = sqrt(r2x * r2x + r2y * r2y + r2z * r2z);
+	if (n1 > 0.001) { r1x /= n1; r1y /= n1; r1z /= n1; }
+	if (n2 > 0.001) { r2x /= n2; r2y /= n2; r2z /= n2; }
+	double sn_x = r1y * r2z - r1z * r2y;
+	double sn_y = r1z * r2x - r1x * r2z;
+	double sn_z = r1x * r2y - r1y * r2x;
+	double phaseFov = d->voiPhaseFoV > 0.0f ? d->voiPhaseFoV : d->voiThickness;
+	double readFov = d->voiReadoutFoV > 0.0f ? d->voiReadoutFoV : d->voiThickness;
+	m[0][0] = -r1x * readFov; m[0][1] = -r2x * phaseFov; m[0][2] = -sn_x * d->voiThickness; m[0][3] = -(double)d->voiCenterLPS[0];
+	m[1][0] = -r1y * readFov; m[1][1] = -r2y * phaseFov; m[1][2] = -sn_y * d->voiThickness; m[1][3] = -(double)d->voiCenterLPS[1];
+	m[2][0] = r1z * readFov; m[2][1] = r2z * phaseFov; m[2][2] = sn_z * d->voiThickness; m[2][3] = (double)d->voiCenterLPS[2];
+	m[3][0] = m[3][1] = m[3][2] = 0.0; m[3][3] = 1.0;
+	return true;
+}
+
+static int nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
 	//  sidecar JSON file (with the same filename as the .nii.gz file, but with .json extension).
@@ -1276,7 +1943,7 @@ void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts
 	if ((!opts.isCreateBIDS) && (opts.isOnlyBIDS))
 		printMessage("Input-only mode: no BIDS/NIfTI output generated for '%s'\n", pathoutname);
 	if (!opts.isCreateBIDS)
-		return;
+		return EXIT_SUCCESS;
 	char txtname[2048] = {""};
 	strcpy(txtname, pathoutname);
 	strcat(txtname, ".json");
@@ -1291,6 +1958,10 @@ void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts
 #else
 	FILE *fp = fopen(txtname, "w");
 #endif
+	if (fp == NULL) {
+		printError("Unable to write BIDS sidecar %s\n", txtname);
+		return EXIT_FAILURE;
+	}
 	fprintf(fp, "{\n");
 	switch (d.modality) {
 	case kMODALITY_CR:
@@ -1413,16 +2084,27 @@ tse3d: T2*/
 	//	printWarning("Validate results for custom ABCD GE pepolar sequence\n");
 	json_Str(fp, "\t\"ManufacturersModelName\": \"%s\",\n", d.manufacturersModelName);
 	json_Str(fp, "\t\"InstitutionName\": \"%s\",\n", d.institutionName);
-	json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
+	// BIDS recommends InstitutionalDepartmentName; Siemens XA60 leaves the DICOM tag empty. Emit "None" when absent so the validator's recommendation is satisfied (honest absence, matching the MatrixCoilMode "None" convention).
+	if (strlen(d.institutionalDepartmentName) > 0)
+		json_Str(fp, "\t\"InstitutionalDepartmentName\": \"%s\",\n", d.institutionalDepartmentName);
+	else
+		fprintf(fp, "\t\"InstitutionalDepartmentName\": \"None\",\n");
 	json_Str(fp, "\t\"InstitutionAddress\": \"%s\",\n", d.institutionAddress);
 	json_Str(fp, "\t\"DeviceSerialNumber\": \"%s\",\n", d.deviceSerialNumber);
 	json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);
 	if (!opts.isAnonymizeBIDS) {
+		// Non-PII random UIDs and StudyID — emitted whenever the user disables
+		// full anonymisation. Stripped only in `-ba y` (full anon) mode; kept
+		// in `-ba n` and `-ba o`.
 		json_Str(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID);
 		json_Str(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID);
-		json_Str(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName);
 		json_Str(fp, "\t\"StudyID\": \"%s\",\n", d.studyID);
-		// Next lines directly reveal patient identity
+	}
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
+		// Patient-identifying block: only emitted under `-ba n` (no anon).
+		// `-ba o` strips this block but keeps AcquisitionDateTime, giving
+		// downstream tooling a privacy-preserving middle ground.
+		json_Str(fp, "\t\"ReferringPhysicianName\": \"%s\",\n", d.referringPhysicianName);
 		json_Str(fp, "\t\"PatientName\": \"%s\",\n", d.patientName);
 		json_Str(fp, "\t\"PatientID\": \"%s\",\n", d.patientID);
 		json_Str(fp, "\t\"AccessionNumber\": \"%s\",\n", d.accessionNumber);
@@ -1462,11 +2144,61 @@ tse3d: T2*/
 	json_Str(fp, "\t\"StudyDescription\": \"%s\",\n", d.studyDescription);
 	json_Str(fp, "\t\"SeriesDescription\": \"%s\",\n", d.seriesDescription);
 	json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", d.protocolName);
-	json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
+	// BIDS-MRS owns ScanningSequence for MRS files (constrained vocab:
+	// "SVS" / "MRSI" / "Unlocalized MRS"). Skip the DICOM-CS emission here
+	// so the MRS block below is the sole writer of that key.
+	if (!d.isMRS)
+		json_Str(fp, "\t\"ScanningSequence\": \"%s\",\n", d.scanningSequence);
 	json_Str(fp, "\t\"SequenceVariant\": \"%s\",\n", d.sequenceVariant);
+#ifndef myDisablePulseSequenceType
+	// BIDS PulseSequenceType (Recommended). Spec examples mix vendor jargon ("SPGR", "MPRAGE") with acquisition-class names ("Gradient Echo EPI"); we prefer the class name and only use marketing labels where SequenceVariant flags make them unambiguous. SequenceVariant is a DICOM CS multi-value field delimited by '\\'; isSP anchors to "\\SP" to avoid the OSP (oversampling phase) substring false positive. Define myDisablePulseSequenceType to suppress.
+	{
+		const char *pulseSequenceType = NULL;
+		bool isEPI = (strstr(d.scanningSequence, "EP") != NULL);
+		bool isGRE = (strstr(d.scanningSequence, "GR") != NULL);
+		bool isSEScan = (strstr(d.scanningSequence, "SE") != NULL);
+		bool isIRScan = (strstr(d.scanningSequence, "IR") != NULL);
+		bool isMP = (strstr(d.sequenceVariant, "MP") != NULL); // MP is not a substring of any other Siemens variant (SK/MTC/OSP/SP/SS/TRSS/NONE), so unanchored strstr is safe
+		// SP is contained in OSP (oversampling phase). Match SP at every legal token position: leading (start of field), middle/trailing (delimited by backslash), or sole value
+		bool isSP = (strncmp(d.sequenceVariant, "SP\\", 3) == 0) ||
+					(strcmp(d.sequenceVariant, "SP") == 0) ||
+					(strstr(d.sequenceVariant, "\\SP") != NULL);
+		bool isMB = (d.CSA.multiBandFactor > 1);
+		if (isEPI) {
+			if (isMB && isSEScan)
+				pulseSequenceType = "Multiband Spin Echo EPI";
+			else if (isMB)
+				pulseSequenceType = "Multiband Gradient Echo EPI";
+			else if (isSEScan)
+				pulseSequenceType = "Spin Echo EPI";
+			else
+				pulseSequenceType = "Gradient Echo EPI";
+		} else if (isGRE) {
+			if (isMP && isIRScan)
+				pulseSequenceType = "MPRAGE";
+			else if (isSP)
+				pulseSequenceType = "Spoiled Gradient Echo";
+			else
+				pulseSequenceType = "Gradient Echo";
+		} else if (isSEScan) {
+			if (isIRScan)
+				pulseSequenceType = "Inversion Recovery Spin Echo";
+			else
+				pulseSequenceType = "Spin Echo";
+		}
+		if (pulseSequenceType != NULL)
+			fprintf(fp, "\t\"PulseSequenceType\": \"%s\",\n", pulseSequenceType);
+	}
+#endif
 	json_Str(fp, "\t\"ScanOptions\": \"%s\",\n", d.scanOptions);
-	json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName);
-	json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
+	if (strlen(d.sequenceName) < 1) {
+		// XA60 fMRI populates (0018,9005) PulseSequenceName but not (0018,0024) SequenceName;
+		// promote PulseSequenceName so BIDS validator's recommended SequenceName is satisfied.
+		json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.pulseSequenceName);
+	} else {
+		json_Str(fp, "\t\"SequenceName\": \"%s\",\n", d.sequenceName);
+		json_Str(fp, "\t\"PulseSequenceName\": \"%s\",\n", d.pulseSequenceName);
+	}
 	if (strlen(d.imageType) > 0) {
 		fprintf(fp, "\t\"ImageType\": [\"");
 		bool isSep = false;
@@ -1479,9 +2211,9 @@ tse3d: T2*/
 			} else
 				isSep = true;
 		}
-		//issue881 Philips enhanced includes magnitude and Hz images into one file
+		// issue881 Philips enhanced includes magnitude and Hz images into one file
 		bool isHz = d.isHasReal && d.isRealIsPhaseMapHz;
-		//n.b. issue881 alias `M` does not prevent appending `MAGNITUDE`
+		// n.b. issue881 alias `M` does not prevent appending `MAGNITUDE`
 		if ((!isHz) && (d.isHasMagnitude) && (strstr(d.imageType, "_MAGNITUDE_") == NULL))
 			fprintf(fp, "\", \"MAGNITUDE");
 		if ((!isHz) && (d.isHasPhase) && (strstr(d.imageType, "_PHASE_") == NULL))
@@ -1518,29 +2250,25 @@ tse3d: T2*/
 		fprintf(fp, "\t\"RawImage\": false,\n");
 	json_StrList(fp, "DeidentificationMethod", d.deidentificationMethod);
 	if (d.deID_CS_n > 0) {
-		char *fname = (char *)malloc(strlen(filename) + 1);
-		strcpy(fname, filename);
-		if (is_fileexists(fname)) {
-			struct TDTI4D *d4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
-			struct TDICOMdata d2 = readDICOMv(fname, 0, 1, d4D);
-			fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
-			for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++) {
-				fprintf(fp, "\t  { \n");
-				json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d4D->deID_CS[i].CodeValue);
-				json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d4D->deID_CS[i].CodingSchemeDesignator);
-				json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d4D->deID_CS[i].CodingSchemeVersion);
-				json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d4D->deID_CS[i].CodeMeaning);
-				if (i + 1 < d.deID_CS_n)
-					fprintf(fp, "\t  },\n");
-				else
-					fprintf(fp, "\t  }\n");
-			}
-			fprintf(fp, "\t],\n");
-			free(d4D);
-		} else {
-			printWarning("Issue877 unable to find file for DeidentificationMethod: %s\n", fname);
+		// Issue #877: emit DeidentificationMethodCodeSequence from the strings
+		// already captured on TDICOMdata during the initial parse. The previous
+		// implementation re-read the source DICOM via readDICOMv here, which
+		// pushed the call chain past the macOS 8 MB main-thread stack on real
+		// deident data (readDICOMx alone has a ~1.5 MB stack frame). The strings
+		// now live on d.deID_CS[] so the sidecar writer is allocation-free.
+		fprintf(fp, "\t\"DeidentificationMethodCodeSequence\": [ \n");
+		for (int i = 0; i < d.deID_CS_n && i < MAX_DEID_CS; i++) {
+			fprintf(fp, "\t  { \n");
+			json_Str(fp, "\t\t\"CodeValue\": \"%s\",\n", d.deID_CS[i].CodeValue);
+			json_Str(fp, "\t\t\"CodingSchemeDesignator\": \"%s\",\n", d.deID_CS[i].CodingSchemeDesignator);
+			json_Str(fp, "\t\t\"CodingSchemeVersion\": \"%s\",\n", d.deID_CS[i].CodingSchemeVersion);
+			json_Str(fp, "\t\t\"CodeMeaning\": \"%s\"\n", d.deID_CS[i].CodeMeaning);
+			if (i + 1 < d.deID_CS_n)
+				fprintf(fp, "\t  },\n");
+			else
+				fprintf(fp, "\t  }\n");
 		}
-		free(fname);
+		fprintf(fp, "\t],\n");
 	} // d.deID_CS_n > 0
 	if (d.seriesNum > 0)
 		fprintf(fp, "\t\"SeriesNumber\": %ld,\n", d.seriesNum);
@@ -1558,15 +2286,20 @@ tse3d: T2*/
 		int count = 0;
 		sscanf(acqDateTimeBuf, "%5d%2d%2d%3d%2d%lf%n", &ayear, &amonth, &aday, &ahour, &amin, &asec, &count); // CR 20170404 %lf not %f for double precision
 		// printf("-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
-		// issue983 : do not include AcquisitionTime for PET
+		// PET AcquisitionTime is emitted in the PET block (with SeriesTime, ~L2547);
+		// skip it here to avoid double emission and to keep PET AcquisitionDateTime
+		// suppressed (issue983).
 		if ((count) && (d.modality != kMODALITY_PT)) { // ISO 8601 specifies a sign must exist for distant years.
 			// report time of the day only format, https://www.cs.tut.fi/~jkorpela/iso8601.html
-			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%02.6f\",\n", ahour, amin, asec);
+			// %09.6f gives zero-padded "06.647500"; %02.6f only sets total
+			// minimum width (always exceeded), leaving "6.647500" — which
+			// breaks ISO 8601 readers and trips BIDS validator ACQTIME_FMT.
+			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%09.6f\",\n", ahour, amin, asec);
 			// report date and time together
 			if (!opts.isAnonymizeBIDS) {
 				fprintf(fp, "\t\"AcquisitionDateTime\": ");
 				fprintf(fp, (ayear >= 0 && ayear <= 9999) ? "\"%4d" : "\"%+4d", ayear);
-				fprintf(fp, "-%02d-%02dT%02d:%02d:%02.6f\",\n", amonth, aday, ahour, amin, asec);
+				fprintf(fp, "-%02d-%02dT%02d:%02d:%09.6f\",\n", amonth, aday, ahour, amin, asec);
 			}
 		} // if (count)
 	} // if acquisitionTime and acquisitionDate recorded
@@ -1602,6 +2335,10 @@ tse3d: T2*/
 	json_Float(fp, "\t\"InjectedRadioactivity\": %.8g,\n", d.radionuclideTotalDose / 1.0e6);
 	if (d.radionuclideTotalDose > 0.0)
 		fprintf(fp, "\t\"InjectedRadioactivityUnits\": \"MBq\",\n");
+	// (0018,1077) -> BIDS MolarActivity (molar Bq/umol, not mass-based SpecificRadioactivity)
+	json_Float(fp, "\t\"MolarActivity\": %.9g,\n", d.radiopharmaceuticalSpecificActivity);
+	if (d.radiopharmaceuticalSpecificActivity > 0.0)
+		fprintf(fp, "\t\"MolarActivityUnits\": \"Bq/umol\",\n");
 	json_Float(fp, "\t\"InjectedVolume\": %g,\n", d.injectedVolume);
 
 	json_Float(fp, "\t\"RadionuclideHalfLife\": %g,\n", d.radionuclideHalfLife);
@@ -1715,7 +2452,11 @@ tse3d: T2*/
 	}
 	// printf("::::%s ->'%s' : s%d i%d\n", d.reconstructionMethod, reconMethodName, subsets, iterations);
 	// END issue 802
-	json_Float(fp, "\t\"ScatterFraction\": %g,\n", d.scatterFraction);
+	// BIDS-PET schema types ScatterFraction strictly as `array` (unlike
+	// ReconFilterSize which is number-or-array), so a scalar is a validator
+	// type error — emit a single-element array. Sibling DecayCorrectionFactor /
+	// FrameDuration are likewise arrays.
+	json_Float(fp, "\t\"ScatterFraction\": [%g],\n", d.scatterFraction);
 	if (dti4D->decayFactor[0] >= 0.0) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"DecayCorrectionFactor\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
@@ -1726,7 +2467,7 @@ tse3d: T2*/
 			fprintf(fp, "\t\t%g", dti4D->decayFactor[i]);
 		}
 		fprintf(fp, "\t],\n");
-	} else if (d.decayFactor > 0) { //single volume
+	} else if (d.decayFactor > 0) { // single volume
 		fprintf(fp, "\t\"DecayFactor\": [\n\t\t%g\t],\n", d.decayFactor);
 	}
 	if ((h->dim[4] > 1) && (dti4D->volumeOnsetTime[0] >= 0.0)) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
@@ -1749,10 +2490,10 @@ tse3d: T2*/
 			tStart = (acqSec >= 0) ? (acqSec - seriesSec) : -1.0;
 			if (tStart < 0)
 				tStart = 0;
-    }
-    fprintf(fp, "\t\"FrameTimesStart\": [\n\t\t%g\t],\n", tStart);
+		}
+		fprintf(fp, "\t\"FrameTimesStart\": [\n\t\t%g\t],\n", tStart);
 	}
-	
+
 	if ((h->dim[4] > 0) && (dti4D->frameDuration[0] >= 0.0)) { // see BEP009 PET https://docs.google.com/document/d/1mqMLnxVdLwZjDd4ZiWFqjEAmOmfcModA_R535v3eQs0
 		fprintf(fp, "\t\"FrameDuration\": [\n");
 		for (int i = 0; i < h->dim[4]; i++) {
@@ -1819,35 +2560,49 @@ tse3d: T2*/
 			int minutes = (time / 100) % 100;
 			int seconds = time % 100;
 			fprintf(fp, "\t\"SeriesTime\": \"%02d:%02d:%02d\",\n", hours, minutes, seconds);
-
+		}
+		// PET AcquisitionTime: emit the raw DICOM (0008,0032) alongside SeriesTime.
+		// The two can differ (dynamic / multi-bed / time-subset recons); PET2BIDS
+		// consumes both raw anchors to choose the time-zero convention. This is the
+		// raw tag (seconds %09.6f, ISO/BIDS ACQTIME_FMT), NOT the deprecated
+		// TimeZero=AcquisitionTime derivation the block comment below rejects. The
+		// general emitter (~L2286) skips PET, so this is the sole PET AcquisitionTime.
+		if (d.acquisitionTime > 0.0) {
+			int ahours = (int)(d.acquisitionTime / 10000);
+			int amins = ((int)(d.acquisitionTime / 100)) % 100;
+			double asecs = d.acquisitionTime - (ahours * 10000 + amins * 100);
+			fprintf(fp, "\t\"AcquisitionTime\": \"%02d:%02d:%09.6f\",\n", ahours, amins, asecs);
 		}
 		double t = (d.seriesTime > 0.0) ? d.seriesTime : d.acquisitionTime;
-		/* issue 983: leave out TimeZero
-		// issue 983: PET TimeZero should be SeriesTime (scan start), not AcquisitionTime
-		// (per-frame or delayed-reconstruction time). Decay correction is relative to SeriesTime.
-		// Fall back to AcquisitionTime if SeriesTime missing.
-		int time = (int)t;
-		int hours = time / 10000;
-		int minutes = (time / 100) % 100;
-		int seconds = time % 100;
-		fprintf(fp, "\t\"TimeZero\": \"%02d:%02d:%02d\",\n", hours, minutes, seconds);
-		*/
+		// DELIBERATELY do NOT emit TimeZero or InjectionStart (issue #983 / PR
+		// #1014). dcm2niix emits the raw SeriesTime (above) and lets a PET-BIDS
+		// finalizer (e.g. PET2BIDS) choose the time-zero convention:
+		//  - the old TimeZero used AcquisitionTime, which is wrong for dynamic /
+		//    multi-bed / time-subset reconstructions (AcquisitionTime != scan
+		//    start; decay correction + FrameTimesStart are relative to SeriesTime).
+		//  - InjectionStart can't be derived: Siemens RadiopharmaceuticalStartTime
+		//    is the dose-MEASUREMENT time, not the injection time, so any emitted
+		//    value (including 0) would be a fabrication. (The ADMIN branch below
+		//    still uses that field for ImageDecayCorrectionTime — a different,
+		//    DICOM-defined semantic: the decay-correction REFERENCE time, not an
+		//    injection assertion — so that use is defensible, not contradictory.)
+		// These fields ARE BIDS-PET required, so raw dcm2niix output is
+		// intentionally not validator-complete for PET — that is by design;
+		// PET2BIDS adds TimeZero/InjectionStart downstream. DO NOT re-enable.
+		// (`t` remains used by the ADMIN decay-correction branch below.)
 		fprintf(fp, "\t\"ScanStart\": 0,\n");
-		/* issue983: InjectionStart not be defined due to risk of ambiguity
-		if (d.radiopharmaceuticalStartTime > 0.0) {
-			double injSec = dicomTimeToSec(d.radiopharmaceuticalStartTime);
-			double t0Sec = dicomTimeToSec(t);
-			if ((injSec >= 0) && (t0Sec >= 0))
-				fprintf(fp, "\t\"InjectionStart\": %g,\n", injSec - t0Sec);
-		}
-		*/
 		if (strlen(d.decayCorrection) > 0) {
 			bool corrected = (strcmp(d.decayCorrection, "NONE") != 0);
 			fprintf(fp, "\t\"ImageDecayCorrected\": %s,\n", corrected ? "true" : "false");
 			if (corrected && (strcmp(d.decayCorrection, "START") == 0))
 				fprintf(fp, "\t\"ImageDecayCorrectionTime\": 0,\n");
 			else if (corrected && (strcmp(d.decayCorrection, "ADMIN") == 0) && (d.radiopharmaceuticalStartTime > 0.0)) {
-				// ADMIN: decay-corrected to injection time; report relative to TimeZero
+				// ADMIN = DICOM (0054,1102) "decay-corrected to the radiopharmaceutical
+				// ADMINistration time": the decay-correction REFERENCE, NOT an injection
+				// assertion (see block comment above). Reported relative to the
+				// raw series-time anchor `t` (SeriesTime, else AcquisitionTime) — NOT
+				// a TimeZero field, which dcm2niix deliberately does not emit (issue
+				// #983 / PR #1014); PET2BIDS picks the time-zero convention downstream.
 				double injSec = dicomTimeToSec(d.radiopharmaceuticalStartTime);
 				double t0Sec = dicomTimeToSec(t);
 				if ((injSec >= 0) && (t0Sec >= 0))
@@ -1892,7 +2647,13 @@ tse3d: T2*/
 	json_Bool(fp, "\t\"MTState\": %s,\n", d.mtState); // BIDS suggests 0018,9020 but Siemens V-series do not populate this, alternatives are CSA or (0018,0021) CS [SK\MTC\SP]
 	// SpoilingState
 	bool isSpoiled = (d.spoiling > kSPOILING_NONE);
-	if ((d.spoiling == kSPOILING_UNKNOWN) && (strstr(d.sequenceVariant, "\\SP") != NULL)) // BIDS suggests 0018,9016 Siemens V-series do not populate this, (0018,0021) CS [SK\MTC\SP]
+	if (d.spoiling == kSPOILING_NONE)
+		json_Bool(fp, "\t\"SpoilingState\": %s,\n", false);
+	// BIDS suggests 0018,9016 but Siemens V-series do not populate this, fall back to (0018,0021) CS [SK\MTC\SP]. Match SP at every legal token position (leading, sole, or delimited) so isSP and SpoilingState stay in sync with the PulseSequenceType heuristic
+	if ((d.spoiling == kSPOILING_UNKNOWN) &&
+		((strncmp(d.sequenceVariant, "SP\\", 3) == 0) ||
+		 (strcmp(d.sequenceVariant, "SP") == 0) ||
+		 (strstr(d.sequenceVariant, "\\SP") != NULL)))
 		isSpoiled = true;
 	if (isSpoiled)
 		json_Bool(fp, "\t\"SpoilingState\": %s,\n", true); // Siemens reports SpoilingState but not SpoilingType
@@ -1959,6 +2720,15 @@ tse3d: T2*/
 		siemensCsaAscii(filename, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 		if ((d.phaseEncodingLines < 1) && (csaAscii.phaseEncodingLines > 0))
 			d.phaseEncodingLines = csaAscii.phaseEncodingLines;
+		// issue 1024: Siemens 3D-EPI multi-echo shots = CSA sSliceArray.lConc concatenations.
+		// Each shot is a separate pass through the slab, so RepetitionTime = single-pass VolTR
+		// x MultiEchoShots. Emit from the in-scope csaAscii parsed just above (this is the
+		// series representative that setBidsSiemens also parsed, so it equals
+		// d.numberOfConcatenations; reading the local avoids depending on that transfer having
+		// run). Emitted only for 3D EPI (bandwidthPerPixelPhaseEncode > 0) when > 1, so it is
+		// not confused with generic 2D slice-group concatenations.
+		if ((d.is3DAcq) && (d.bandwidthPerPixelPhaseEncode > 0.0) && (csaAscii.lConc > 1))
+			fprintf(fp, "\t\"MultiEchoShots\": %d,\n", csaAscii.lConc);
 		// if (d.phaseEncodingLines != csaAscii.phaseEncodingLines) //e.g. phaseOversampling
 		//	printWarning("PhaseEncodingLines reported in DICOM (%d) header does not match value CSA-ASCII (%d) %s\n", d.phaseEncodingLines, csaAscii.phaseEncodingLines, pathoutname);
 		delayTimeInTR = csaAscii.delayTimeInTR;
@@ -2005,7 +2775,11 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); // usec -> sec
 			float num_RF_Block = csaAscii.adFree[3];
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
-			// Sep 5, 2023, at 7:56 PM, Danny JJ Wang the labeling duration is (0.92*20*Num_RF_Block) ms
+			// LabelingDuration = NumRFBlocks * 18.4 ms, where 18.4 ms = 0.92 (RF duty
+			// cycle) * 20 ms (nominal RF block). Per Danny JJ Wang (email 2023-09-05);
+			// the per-block timing is also documented in Korean J Radiol 2018;19(4)
+			// (doi:10.3348/kjr.2018.0651). The constant is empirical/sequence-specific
+			// — validate before reusing for non-LOFT pCASL implementations.
 			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", (0.92 * 20.0 * num_RF_Block) / 1000.0); // in seconds
 			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0));			  // usec -> sec
 			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);
@@ -2021,8 +2795,12 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"T1\": %g,\n", csaAscii.adFree[12] * (1.0 / 1000000.0));			   // usec -> sec
 			float num_RF_Block = csaAscii.adFree[3];
 			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", num_RF_Block);
-			// Sep 5, 2023, at 7:56 PM, Danny JJ Wang the labeling duration is (0.92*20*Num_RF_Block) ms
-			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", (0.92 * 20.0 * num_RF_Block) / 1000.0); // in seconds
+			// Unlike 2D ep2d_pcasl (which derives LabelingDuration from
+			// NumRFBlocks * 18.4 ms), this 3D tgse_pcasl reports an explicit labeling
+			// duration in adFree[2] (emitted above). Do NOT also emit the
+			// NumRFBlocks-derived value: the two disagree (e.g. 1.2 s vs 1.5088 s) and
+			// emitting both produced a duplicate "LabelingDuration" key. adFree[2] is
+			// authoritative for this sequence.
 		}
 		// ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails, "ep2d_pasl")) {
@@ -2104,7 +2882,7 @@ tse3d: T2*/
 			json_Float(fp, "\t\"Tag1\": %g,\n", csaAscii.alFree[11] / 1000.0);				// DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"Tag2\": %g,\n", csaAscii.alFree[12] / 1000.0);				// DelayTimeInTR usec -> sec
 			json_Float(fp, "\t\"Tag3\": %g,\n", csaAscii.alFree[13] / 1000.0);				// DelayTimeInTR usec -> sec
-			bool isValid = true; // detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
+			bool isValid = true;															// detect gaps in PLD array: If user sets PLD1=250, PLD2=0 PLD3=375 only PLD1 was acquired
 			for (int k = 30; k < 38; k++) {
 				if ((isnan(csaAscii.alFree[k])) || (csaAscii.alFree[k] <= 0.0))
 					isValid = false;
@@ -2144,7 +2922,7 @@ tse3d: T2*/
 		//  https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#common-metadata-fields-applicable-to-both-pcasl-and-pasl
 		if (((isPASL) || (isPCASL)) && (csaAscii.interp <= 0))
 			fprintf(fp, "\t\"AcquisitionVoxelSize\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.xyzMM[1], d.xyzMM[2], d.zThick);
-			int maxEchoNum = csaAscii.lContrasts; // this stores number of echoes, but maybe other contrasts (PLD)
+		int maxEchoNum = csaAscii.lContrasts; // this stores number of echoes, but maybe other contrasts (PLD)
 		if (maxEchoNum < 1)
 			maxEchoNum = 1;
 		if (nPLD < 1)
@@ -2203,7 +2981,8 @@ tse3d: T2*/
 				pf = 0.75;
 			if (csaAscii.partialFourier == 8)
 				pf = 0.875;
-			fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+			if (pf < 1.0)
+				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
 		}
 		if (csaAscii.interp > 0) { // in-plane interpolation
 			interp = true;
@@ -2239,7 +3018,21 @@ tse3d: T2*/
 		// ETD and epiFactor not useful/reliable https://github.com/rordenlab/dcm2niix/issues/127
 		// if (echoTrainDuration > 0) fprintf(fp, "\t\"EchoTrainDuration\": %g,\n", echoTrainDuration / 1000000.0); //usec -> sec
 		// if (epiFactor > 0) fprintf(fp, "\t\"EPIFactor\": %d,\n", epiFactor);
-		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", coilID);
+		// M4 audit follow-up: MRS sidecar parity with spec2nii. spec2nii's
+		// RxCoil reads CSA ReceivingCoil (short coil-element identifier,
+		// e.g. "HEA;HEP" on VB/VE sLASER) instead of the Phoenix Protocol
+		// sCoilElementID.tCoilID long marketing label (e.g. "Head_32")
+		// that the non-MRS image path emits as ReceiveCoilName. d.coilName
+		// is overridden to the CSA value by readCSAforMRS on the MRS gate
+		// (nii_dicom.cpp:~1858). For non-MRS Siemens, fall back to the
+		// existing Phoenix Protocol coilID source so the standard image-
+		// pipeline output is unchanged. XA-line MRS files where the CSA
+		// and public tag agree (e.g. svs_se_135sws -> "HeadNeck_64") see
+		// no observable difference either way.
+		char *rxCoilSource = coilID;
+		if (d.isMRS && d.coilName[0] != '\0')
+			rxCoilSource = d.coilName;
+		json_Str(fp, "\t\"ReceiveCoilName\": \"%s\",\n", rxCoilSource);
 		if (d.modality == kMODALITY_MR)
 			json_Str(fp, "\t\"ReceiveCoilActiveElements\": \"%s\",\n", coilElements);
 		if (strcmp(coilElements, d.coilName) != 0)
@@ -2269,9 +3062,14 @@ tse3d: T2*/
 				fprintf(fp, "\t\"MatrixCoilMode\": \"SENSE\",\n");
 			if (csaAscii.patMode == 2)
 				fprintf(fp, "\t\"MatrixCoilMode\": \"GRAPPA\",\n");
+			if ((csaAscii.patMode != 1) && (csaAscii.patMode != 2))
+				// e.g. pure SMS (patMode=32) on XA-line: no in-plane channel reduction. Emit "None" so BIDS validator's MatrixCoilMode recommendation is satisfied without claiming an iPAT mode the scan did not use
+				fprintf(fp, "\t\"MatrixCoilMode\": \"None\",\n");
 			d.accelFactPE = csaAscii.parallelReductionFactorInPlane; // issue672: csa precedence over value found in DICOM (0051,1011)
 			if ((csaAscii.accelFact3D < 1.01) && (csaAscii.parallelReductionFactorInPlane != (int)(d.accelFactPE)))
 				printWarning("ParallelReductionFactorInPlane reported in DICOM [0051,1011] (%d) does not match CSA series value %d\n", (int)(d.accelFactPE), csaAscii.parallelReductionFactorInPlane);
+		} else {
+			fprintf(fp, "\t\"MatrixCoilMode\": \"None\",\n");
 		}
 		if ((csaAscii.patMode == 256) && (!isnan(csaAscii.accelFactTotal)) && (csaAscii.accelFactTotal > (d.accelFactPE * d.accelFactOOP)))
 			d.compressedSensingFactor = csaAscii.accelFactTotal; // see dcm_qa_cs_dl
@@ -2392,11 +3190,13 @@ tse3d: T2*/
 		bandwidthPerPixelPhaseEncode = d.CSA.bandwidthPerPixelPhaseEncode;
 	json_Float(fp, "\t\"BandwidthPerPixelPhaseEncode\": %g,\n", bandwidthPerPixelPhaseEncode);
 	// if ((!d.is3DAcq) && (d.accelFactPE > 1.0)) fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
-	if (d.accelFactPE > 1.0)
+	// Emit whenever a real source populated the value (default sentinel is 0.0). Reporting "1.0" (no in-plane reduction) is honest and silences the BIDS validator's recommendation when (0018,9069) is present in DICOM; previous "> 1.0" gate dropped it for un-accelerated scans.
+	if (d.accelFactPE >= 1.0)
 		fprintf(fp, "\t\"ParallelReductionFactorInPlane\": %g,\n", d.accelFactPE);
 	json_Str(fp, "\t\"ParallelAcquisitionTechnique\": \"%s\",\n", d.parallelAcquisitionTechnique);
 	// https://github.com/rordenlab/dcm2niix/issues/314
-	if (d.accelFactOOP > 1.0)
+	// Same ">= 1.0" policy as ParallelReductionFactorInPlane above; (0018,9155) commonly reports 1.0 for 2D acquisitions and the validator wants it stated explicitly.
+	if (d.accelFactOOP >= 1.0)
 		json_Float(fp, "\t\"ParallelReductionFactorOutOfPlane\": %g,\n", d.accelFactOOP); // issue672
 	if (d.compressedSensingFactor > 1.0)
 		json_Float(fp, "\t\"CompressedSensingFactor\": %g,\n", d.compressedSensingFactor);
@@ -2489,12 +3289,192 @@ tse3d: T2*/
 	// we do not currently emit. See issue #991 and the PR that introduced this gate for full context.
 	if (d.manufacturer != kMANUFACTURER_UIH)
 		json_Float(fp, "\t\"AcquisitionDuration\": %g,\n", d.acquisitionDuration);
+	if (d.numberOfKSpaceTrajectories > 0)
+		fprintf(fp, "\t\"NumberOfKSpaceTrajectories\": %d,\n", d.numberOfKSpaceTrajectories);
+	if (d.isMRS) {
+		// MR Spectroscopy-specific fields, matched to BIDS-MRS:
+		// https://bids-specification.readthedocs.io/en/stable/modality-specific-files/magnetic-resonance-spectroscopy.html
+		// Required per BIDS-MRS: ResonantNucleus, SpectrometerFrequency,
+		// SpectralWidth, EchoTime. The first three land here; EchoTime
+		// is emitted by the general path further down. Warn when any
+		// required value is missing so the user knows the sidecar will
+		// fail bids-validator.
+		bool requiredMissing = false;
+		// Both d.spectralWidth (CSA float) and d.dwellTime (Siemens private
+		// 0021,1142 integer ns) can populate the spectral width; mrsSpectralWidthHz
+		// picks the higher-precision source and is shared with the NIfTI writer
+		// (saveDcm2NiiMRS at ~line 11618). Audit 2026-06-07 fix: previously
+		// gated on spectralWidth > 0 only, so a file with dwellTime set but
+		// spectralWidth still at sentinel would skip BIDS-MRS-required emission.
+		double spectralWidth = mrsSpectralWidthHz(&d);
+		if (spectralWidth > 0.0) {
+			json_Float(fp, "\t\"SpectralWidth\": %.17g,\n", spectralWidth);
+			json_Float(fp, "\t\"DwellTime\": %.17g,\n", 1.0 / spectralWidth);
+		} else {
+			requiredMissing = true;
+		}
+		// SpectrometerFrequency: proton (or other nucleus) resonance
+		// frequency in MHz, sourced from DICOM (0018,9098) FD as
+		// d.imagingFrequency. BIDS-MRS specifies an ARRAY (one entry per
+		// nucleus for multi-nucleus 2D-spectral acquisitions). We currently
+		// collapse to a single nucleus on parse — emit as a length-1 array
+		// to match the spec and stay round-trip-equivalent to spec2nii.
+		// Emit at full DICOM-stored precision (%.9g) — the 6-digit %g
+		// truncated 297.219572 -> 297.22, losing parity with the source.
+		if (d.imagingFrequency > 0.0)
+			json_Float(fp, "\t\"SpectrometerFrequency\": [%.9g],\n", d.imagingFrequency);
+		else
+			requiredMissing = true;
+		// ResonantNucleus: BIDS-MRS specifies a CS array (one entry per
+		// nucleus). json_Str handles any quote/backslash in the DICOM CS
+		// so a malformed value can't break the JSON; standard values
+		// "1H" / "31P" / "13C" pass through unchanged.
+		if (d.resonantNucleus[0] != '\0')
+			json_Str(fp, "\t\"ResonantNucleus\": [\"%s\"],\n", d.resonantNucleus);
+		else
+			requiredMissing = true;
+		// EchoTime is checked below at the general emission site; warn
+		// here only if both stages will be silent.
+		if (d.TE <= 0.0)
+			requiredMissing = true;
+		if (requiredMissing)
+			printWarning("MRS: sidecar is missing one or more BIDS-MRS required fields (ResonantNucleus, SpectrometerFrequency, SpectralWidth, EchoTime); will fail bids-validator.\n");
+		// Recommended per BIDS-MRS:
+		// - NumberOfSpectralPoints = complex data points per FID (DICOM
+		//   0028,9002 SpectroscopyAcquisitionDataColumns -> dataPointColumns).
+		// - AcquisitionVoxelSize = SVS voxel dimensions in mm [x, y, z].
+		//   Use zThick directly for the slice direction: xyzMM[3] is set
+		//   to SpacingBetweenSlices when that tag is present, which
+		//   over-states a single-voxel slab.
+		// - NumberOfTransients = total pulse-sequence applications recorded.
+		//   This is DICOM (0018,0083) NumberOfAverages * (NIfTI dim[5] when
+		//   each input DICOM is one shot). For 64 single-shot DICOMs the
+		//   factors are 1 * 64 = 64; for one DICOM that pre-averaged 32
+		//   shots it would be 32 * 1 = 32. Both factors default to 1 when
+		//   unavailable. If dim[5] later starts encoding coils instead of
+		//   transients (a Phase C MRSI / coil-storage concern), the audit
+		//   M1 deferral note in CLAUDE.md applies and this formula needs
+		//   to switch on the dim_5 semantic.
+		if (d.dataPointColumns > 0)
+			fprintf(fp, "\t\"NumberOfSpectralPoints\": %d,\n", d.dataPointColumns);
+		if ((d.xyzMM[1] > 0.0f) && (d.xyzMM[2] > 0.0f) && (d.zThick > 0.0f))
+			// F1 pixdim-mirror: AcquisitionVoxelSize follows NIfTI pixdim
+			// ordering — saveDcm2NiiMRS swaps xyzMM[1]/[2] into
+			// pixdim[1]/[2] (spec2nii row1/row2 swap), so x = xyzMM[2]
+			// (VoiReadoutFoV / PixelSpacing[1]) and y = xyzMM[1]
+			// (VoiPhaseFoV / PixelSpacing[0]). MIRROR site: saveDcm2NiiMRS
+			// pixdim assignment (grep "F1 pixdim-mirror" to locate both).
+			fprintf(fp, "\t\"AcquisitionVoxelSize\": [%g, %g, %g],\n",
+					d.xyzMM[2], d.xyzMM[1], d.zThick);
+		int avg = (d.numberOfAverages > 0.0f) ? (int)d.numberOfAverages : 1;
+		int dyn = (h != NULL && h->dim[0] >= 5 && h->dim[5] > 0) ? h->dim[5] : 1;
+		int transients = avg * dyn;
+		if (transients > 0)
+			fprintf(fp, "\t\"NumberOfTransients\": %d,\n", transients);
+		// ScanningSequence: BIDS-MRS constrains this to "SVS", "MRSI", or
+		// "Unlocalized MRS" — different vocabulary from the DICOM (0018,
+		// 0020) CS general path emits. Map from d.mrsAcqType when set,
+		// then suppress the general emission inside the writer (the
+		// general path key would otherwise collide).
+		const char *mrsScan = NULL;
+		if (d.mrsAcqType == kMRSAcqSingleVoxel)
+			mrsScan = "SVS";
+		else if (d.mrsAcqType == kMRSAcqRow || d.mrsAcqType == kMRSAcqPlane || d.mrsAcqType == kMRSAcqVolume)
+			mrsScan = "MRSI";
+		else
+			mrsScan = "Unlocalized MRS";
+		fprintf(fp, "\t\"ScanningSequence\": \"%s\",\n", mrsScan);
+		// dim_5 / dim_6 / dim_7 tag declarations (BIDS-MRS): for NIfTI MRS
+		// data the 5th dimension is the dynamic / averaging axis by default
+		// (DIM_DYN). dim_6 / dim_7 stay implicit unless we extend the
+		// writer to encode edit-on/off (DIM_EDIT) or coil (DIM_COIL) axes.
+		// SVS: emit DIM_DYN even for single-dynamic series — spec2nii does
+		// the same on Siemens SVS so downstream tools can rely on the tag's
+		// presence (UIH SVS spec2nii omits it; we keep emitting since the
+		// comparator treats `out_only` keys as informational, not parity
+		// failures).
+		// MRSI: do NOT emit — saveDcm2NiiMRSI writes hdr.dim[0]=4 with no
+		// dynamic axis, so a `dim_5: DIM_DYN` claim contradicts the header.
+		// Audit 2026-06-11 M9 (was: emitted unconditionally). spec2nii
+		// omits dim_5 for all MRSI variants (UIH csi_hise, Siemens VB/VE
+		// CSI, Enhanced XA CSI — verified 2026-06-11).
+		const bool isMRSIDimGate = (d.mrsAcqType == kMRSAcqRow ||
+									d.mrsAcqType == kMRSAcqPlane ||
+									d.mrsAcqType == kMRSAcqVolume);
+		if (!isMRSIDimGate)
+			fprintf(fp, "\t\"dim_5\": \"DIM_DYN\",\n");
+		// TransmitCoilName: BIDS-MRS recommended. spec2nii reads from the
+		// CSA header; we parse (0018,1251) inside (0018,9049) MRTransmit-
+		// CoilSequence directly. The general-path emission is gated on
+		// !d.isMRS by absence (we don't emit TransmitCoilName outside MRS)
+		// so this is the sole writer.
+		if (d.transmitCoilName[0] != '\0')
+			json_Str(fp, "\t\"TransmitCoilName\": \"%s\",\n", d.transmitCoilName);
+		// InversionTime is BIDS-MRS strongly-recommended; spec2nii emits 0
+		// even for non-IR sequences (the field signals "considered, none
+		// applied"). The general-path emission at ~line 2569 only fires when
+		// d.TI > 0 — bypass via fprintf so the 0.0 case still emits.
+		fprintf(fp, "\t\"InversionTime\": %g,\n", (d.TI > 0.0f) ? (d.TI / 1000.0) : 0.0);
+		// BIDS-MRS WaterSuppressed: required on _svs / _mrsi (true) and on
+		// _mrsref (false). saveDcm2NiiMRS sets d.isMrsRef = true on both the
+		// `<stem>_mrsref` companion write AND on standalone water-reference
+		// acquisitions (`wrsoff` / `no_Water_Suppression` series-naming);
+		// every other MRS write leaves isMrsRef = false. So the emission is
+		// the negation of isMrsRef — water-ref ⇒ NOT water-suppressed.
+		fprintf(fp, "\t\"WaterSuppressed\": %s,\n", d.isMrsRef ? "false" : "true");
+		// BIDS-MRS VOI matrix (spec2nii standard def 'VOI') — 4x4 in patient
+		// RAS coords describing the VOI box. spec2nii builds it via
+		// dcm_to_nifti_orientation(IOP, VoiCenter, [VoiPhaseFoV, VoiReadoutFoV,
+		// VoiThickness], (1,1,1)), which after the xyzMM[0]<->[1] swap on
+		// line 90 amounts to: row1 = -IOP_row1*VoiReadoutFoV, row2 = -IOP_row2
+		// *VoiPhaseFoV, row3 = +slice_normal*VoiThickness, with LPS->RAS sign
+		// flip on the first two columns of the translation.
+		// Emit only when both the box size (voiThickness > 0; phase/readout
+		// fall back to voiThickness when partial) AND the center (hasVoiCenter
+		// — explicit presence sentinel) are populated. Audit 2026-06-11 M8:
+		// the prior gate `voiThickness > 0.0f` alone let a partial-CSA file
+		// emit a fabricated VOI with translation `[0, 0, 0]` whenever the
+		// CSA payload had VoiThickness but not VoiPosition (e.g. Enhanced
+		// DICOM SlabThickness without MidSlabPosition). VoiCenterLPS was
+		// zero-init by initTDICOMdata and got serialized verbatim.
+		double voi[4][4];
+		if (mrsVoiMatrix(&d, voi)) {
+			// %.17g for full double round-trip precision — spec2nii emits at
+			// numpy's default repr; the comparator is bytewise-strict on numbers.
+			fprintf(fp,
+					"\t\"VOI\": [[%.17g, %.17g, %.17g, %.17g], "
+					"[%.17g, %.17g, %.17g, %.17g], "
+					"[%.17g, %.17g, %.17g, %.17g], "
+					"[0.0, 0.0, 0.0, 1.0]],\n",
+					voi[0][0], voi[0][1], voi[0][2], voi[0][3],
+					voi[1][0], voi[1][1], voi[1][2], voi[1][3],
+					voi[2][0], voi[2][1], voi[2][2], voi[2][3]);
+		}
+	}
+	// MR Spectroscopy acquisition type (DICOM 0018,9200). Emit only when set
+	// so non-MRS sidecars are unchanged.
+	switch (d.mrsAcqType) {
+	case kMRSAcqSingleVoxel:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"SINGLE_VOXEL\",\n");
+		break;
+	case kMRSAcqRow:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"ROW\",\n");
+		break;
+	case kMRSAcqPlane:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"PLANE\",\n");
+		break;
+	case kMRSAcqVolume:
+		fprintf(fp, "\t\"MRSpectroscopyAcquisitionType\": \"VOLUME\",\n");
+		break;
+	default:
+		break;
+	}
 	if ((d.manufacturer == kMANUFACTURER_UIH) && (effectiveEchoSpacing <= 0.0)) // issue225, issue531
 		json_Float(fp, "\t\"TotalReadoutTime\": %g,\n", d.acquisitionDuration / 1000.0);
 	else if ((reconMatrixPE > 0) && (effectiveEchoSpacing > 0.0))
 		fprintf(fp, "\t\"TotalReadoutTime\": %g,\n", effectiveEchoSpacing * (reconMatrixPE - 1.0));
 	json_Float(fp, "\t\"PixelBandwidth\": %g,\n", d.pixelBandwidth);
-	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0))
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.dwellTime > 0) && !d.isMRS)
 		fprintf(fp, "\t\"DwellTime\": %g,\n", d.dwellTime * 1E-9);
 	// Phase encoding polarity
 	/*
@@ -2508,11 +3488,30 @@ tse3d: T2*/
 	*/
 	// if ((phPos >= 0) && (d.phaseEncodingRC == 'R') && (d.manufacturer == kMANUFACTURER_UIH)) phPos = 1 - phPos; //issue410
 	bool isSkipPhaseEncodingAxis = d.is3DAcq;
-	if (d.echoTrainLength > 1)
-		isSkipPhaseEncodingAxis = false; // issue 371: ignore phaseEncoding for 3D MP-RAGE/SPACE, but report for 3D EPI
-	if (!d.is3DAcq) {					 // issue849
+	// Issue 371 + issue 849 + audit 2026-06-06 H2:
+	// 3D acquisitions normally skip PhaseEncodingDirection because the
+	// in-plane PE direction is not meaningful for volumetric MP-RAGE/SPACE.
+	// EXCEPTION: 3D sequences where ETL>1 AND the scanning sequence is NOT
+	// spin-echo. The !SE clause is load-bearing — Siemens SPACE / 3D TSE /
+	// FLAIR-SPACE report ScanningSequence "SE\IR" with ETL~200+, and we
+	// MUST keep suppressing PE for those (issue849). Restore emission for:
+	//   - 3D EPI BOLD: ScanningSequence "EP", ETL>1
+	//   - 3D multi-echo GRE QSM (Philips/GE): ScanningSequence "GR", ETL>1
+	// All three QSM consensus reference vendors (2022) emit PE direction
+	// for their multi-echo GRE QSM scans; this matches that.
+	if ((d.echoTrainLength > 1) && (strstr(d.scanningSequence, "SE") == NULL))
+		isSkipPhaseEncodingAxis = false;
+	// issue 1024: Siemens 3D EPI WIP sequences ("vx_ep3d") report EchoTrainLength=0
+	// and an uninformative ScanningSequence ("RM"), so the ETL test above misses
+	// them. They do carry an EPI phase-encode readout (bandwidthPerPixelPhaseEncode
+	// > 0), which 3D TSE / SPACE / FLAIR-SPACE (issue849) lack — so this stays
+	// disjoint from those. Still gated on !SE. n.b. these files often omit the
+	// polarity tag (0021,111C), so only the unsigned PhaseEncodingAxis is emitted.
+	if ((d.is3DAcq) && (d.bandwidthPerPixelPhaseEncode > 0.0) && (strstr(d.scanningSequence, "SE") == NULL))
+		isSkipPhaseEncodingAxis = false;
+	if (!isSkipPhaseEncodingAxis) {
 		int phPos = d.CSA.phaseEncodingDirectionPositive;
-		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos < 0)) {
+		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (phPos < 0)) {
 			// when phase encoding axis is known but we do not know phase encoding polarity
 			//  https://github.com/rordenlab/dcm2niix/issues/163
 			//  This will typically correspond with InPlanePhaseEncodingDirectionDICOM
@@ -2521,7 +3520,7 @@ tse3d: T2*/
 			else if (d.phaseEncodingRC == 'R')
 				fprintf(fp, "\t\"PhaseEncodingAxis\": \"i\",\n");
 		}
-		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (!isSkipPhaseEncodingAxis) && (phPos >= 0)) {
+		if (((d.phaseEncodingRC == 'R') || (d.phaseEncodingRC == 'C')) && (phPos >= 0)) {
 			// printf("%ld %d %d %c %d\n", d.seriesNum, d.echoTrainLength, isSkipPhaseEncodingAxis, d.phaseEncodingRC, phPos); //test issue 371
 			if (d.phaseEncodingRC == 'C') // Values should be "R"ow, "C"olumn or "?"Unknown
 				fprintf(fp, "\t\"PhaseEncodingDirection\": \"j");
@@ -2543,10 +3542,13 @@ tse3d: T2*/
 				fprintf(fp, "-");
 			fprintf(fp, "\",\n");
 		} // only save PhaseEncodingDirection if BOTH direction and POLARITY are known
-	} // if (!d.is3DAcq), e.g. only for 2D issue849
+	} // if (!isSkipPhaseEncodingAxis); skips 3D MP-RAGE/SPACE (issue849), emits for 2D + 3D ETL>1 (issue371)
 	// Slice Timing UIH or GE >>>>
 	// in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if ((d.modality != kMODALITY_SEG) && (d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.modality != kMODALITY_SEG) && (d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (h->dim[3] <= kMaxEPI3D) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
+		// h->dim[3] is bounded by kMaxEPI3D because d.CSA.sliceTiming is a
+		// fixed-size array of that capacity; a high-slice volume that
+		// somehow had timing[0]/[1] populated would otherwise read past it.
 		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < h->dim[3]; i++) {
 			if (i != 0)
@@ -2573,7 +3575,10 @@ tse3d: T2*/
 		fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"COL\",\n");
 	if (d.phaseEncodingRC == 'R')
 		fprintf(fp, "\t\"InPlanePhaseEncodingDirectionDICOM\": \"ROW\",\n");
-	if ((opts.isGuessBidsFilename) && (strlen(d.CSA.bidsDataType)) && (strlen(d.CSA.bidsDataType)))
+	// Audit round-6 LOW 1: second guard was a copy of the first (both
+	// checked bidsDataType), so a path that set datatype but left
+	// bidsEntitySuffix empty would emit `["mrs",""]`. Check both fields.
+	if ((opts.isGuessBidsFilename) && (strlen(d.CSA.bidsDataType)) && (strlen(d.CSA.bidsEntitySuffix)))
 		fprintf(fp, "\t\"BidsGuess\": [\"%s\",\"%s\"],\n", d.CSA.bidsDataType, d.CSA.bidsEntitySuffix);
 	// json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);
 
@@ -2582,8 +3587,22 @@ tse3d: T2*/
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMdate);
 	// fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMvers );kDCMdate
 	fprintf(fp, "}\n");
-	fclose(fp);
+	int writeError = ferror(fp);
+	int closeError = fclose(fp);
+	if (writeError || closeError) {
+		printError("Unable to write BIDS sidecar %s (disk full?)\n", txtname);
+		remove(txtname);
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // nii_SaveBIDSX()
+
+static void removeBIDSSidecar(const char *pathoutname) {
+	char txtname[2048] = {""};
+	strcpy(txtname, pathoutname);
+	strcat(txtname, ".json");
+	remove(txtname);
+}
 
 void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	// swap endian from big->little or little->big
@@ -2610,6 +3629,14 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 	if (datatype == DT_RGBA32)
 		return;
 	// n.b. do not swap 8-bit, 24-bit RGB, and 32-bit RGBA
+	// DT_COMPLEX64 (datatype 32, bitpix 64) is two interleaved float32
+	// values per voxel; swap as 4-byte components (2*nVox of them) — NOT
+	// as a single 8-byte scalar, which would swap the real/imag pair as
+	// one unit and corrupt the complex data. Audit H3.
+	if (datatype == DT_COMPLEX64) {
+		nifti_swap_4bytes((size_t)nVox * 2, im);
+		return;
+	}
 	if (bitpix == 16)
 		nifti_swap_2bytes(nVox, im);
 	if (bitpix == 32)
@@ -2618,18 +3645,46 @@ void swapEndian(struct nifti_1_header *hdr, unsigned char *im, bool isNative) {
 		nifti_swap_8bytes(nVox, im);
 }
 
-#ifndef USING_R
-
-void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename) {
-	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+// Init every `[0]`-slot sentinel that nii_SaveBIDSX reads as "unset"
+// (`>= 0.0` sentinel arrays + the two scalar repetition-time fields). Every
+// caller that builds a TDTI4D for nii_SaveBIDSX must call this — without it,
+// either heap noise (malloc'd TDTI4D) or a zero-init (stack `memset(0)`) can
+// trip the BEP009 PET emission gates at nii_dicom_batch.cpp:~2390-2457 and
+// leak `h->dim[4]`-long zero arrays into the sidecar (audit 2026-06-07
+// follow-up to 33da307 — the MRS fix was for one such case, this helper
+// closes the same class of bug at the nii_SaveBIDS wrapper).
+//
+// Listed fields are every `[0]`-read or scalar that nii_SaveBIDSX gates on:
+//   sliceOrder[0]          — `SliceTiming` emission (see L2940-ish)
+//   volumeOnsetTime[0]     — `FrameTimesStart` gate (L2403)
+//   decayFactor[0]         — `DecayCorrectionFactor` gate (L2390)
+//   frameDuration[0]       — `FrameDuration` + `RepetitionTime` gates (L2427, 2558)
+//   frameReferenceTime[0]  — `FrameReferenceTime` gate (L2441)
+//   triggerDelayTime[0]    — currently dead-code path (commented at L2987) — defensive
+//   intenScale[0]          — `IntensityScaleFactor` etc.
+//   repetitionTimeExcitation / repetitionTimeInversion — gated via json_Float (== 0 ⇒ skip)
+static void initTDTI4D(struct TDTI4D *dti4D) {
 	dti4D->sliceOrder[0] = -1;
 	dti4D->volumeOnsetTime[0] = -1;
 	dti4D->decayFactor[0] = -1;
+	dti4D->frameDuration[0] = -1;
+	dti4D->frameReferenceTime[0] = -1;
 	dti4D->triggerDelayTime[0] = -1.0;
 	dti4D->intenScale[0] = 0.0;
 	dti4D->repetitionTimeExcitation = 0.0;
 	dti4D->repetitionTimeInversion = 0.0;
-	nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
+}
+
+#ifndef USING_R
+
+void nii_SaveBIDS(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename) {
+	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+	if (dti4D == NULL)
+		return; // M1 fix (audit round-5): skip sidecar on OOM rather than NULL-deref in initTDTI4D
+	initTDTI4D(dti4D);
+	int bidsStatus = nii_SaveBIDSX(pathoutname, d, opts, h, filename, dti4D);
+	if (opts.isCreateBIDS && (bidsStatus == EXIT_SUCCESS))
+		reproinAppendProvenance(pathoutname, d, opts);
 	free(dti4D);
 } // nii_SaveBIDSX()
 
@@ -2766,8 +3821,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 #ifdef USING_DCM2NIIXFSWRAPPER
 		mrifsStruct.numDti = numVol;
 		mrifsStruct.tdti = (TDTI *)malloc(numVol * sizeof(TDTI));
-		for (int i = 0; i < numVol; i++)
-		{
+		for (int i = 0; i < numVol; i++) {
 			mrifsStruct.tdti[i].V[0] = 0;
 			mrifsStruct.tdti[i].V[1] = 0;
 			mrifsStruct.tdti[i].V[2] = 0;
@@ -2793,7 +3847,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 			fprintf(fp, "\n");
 		}
 		fclose(fp);
-#endif  // USING_DCM2NIIXFSWRAPPER
+#endif // USING_DCM2NIIXFSWRAPPER
 #endif
 	}
 	if (numDti < 1)
@@ -2803,10 +3857,10 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	TDTI *vx = NULL;
 	if (numDti > 1) {
 		vx = (TDTI *)malloc(numDti * sizeof(TDTI));
-		for (int i = 0; i < numDti; i++) {// for each direction
-			for (int v = 0; v < 4; v++) 	 // for each vector+B-value
+		for (int i = 0; i < numDti; i++) { // for each direction
+			for (int v = 0; v < 4; v++)	   // for each vector+B-value
 				vx[i].V[v] = dti4D->S[i].V[v];
-			}
+		}
 	} else { // if (numDti == 1) {//extract DTI from different slices
 		vx = (TDTI *)malloc(nConvert * sizeof(TDTI));
 		numDti = 0;
@@ -3380,8 +4434,10 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	} // for each volume
 	if (isSequential)
 		return true;
-	// second pass: fix if required
-	printWarning("Instance Number (0020,0013) order is not spatial.\n");
+	// second pass: fix if required (still re-sort; only the warning is noise for
+	// derived maps, whose instance order is routinely non-spatial)
+	if (!dcmList[dcmSort[0].indx].isDerived)
+		printWarning("Instance Number (0020,0013) order is not spatial.\n");
 	TFloatSort *floatSort = (TFloatSort *)malloc(nConvert * sizeof(TFloatSort));
 	int minVol = dcmList[dcmSort[0].indx].rawDataRunNumber;
 	int maxVol = minVol;
@@ -3394,7 +4450,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	for (int i = 0; i < nConvert; i++) {
 		int vol = dcmList[dcmSort[i].indx].rawDataRunNumber;
 		if (dcmList[dcmSort[i].indx].frameNum == 1) {
-			nFrameIs1 ++;
+			nFrameIs1++;
 			idxFrame1 = i;
 		}
 		minVol = min(minVol, vol);
@@ -3407,7 +4463,7 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 		maxPhase = max(maxPhase, dcmList[dcmSort[i].indx].phaseNumber);
 	}
 	if (nFrameIs1 > 1) {
-		//all samples of ReferencedFrameNumber (0008,1160) should have identical ImagePositionPatient
+		// all samples of ReferencedFrameNumber (0008,1160) should have identical ImagePositionPatient
 		int lastVol = idxFrame1;
 		float maxDx = 0.0;
 		for (int i = 0; i < idxFrame1; i++) {
@@ -3551,7 +4607,6 @@ bool bitDepthVaries(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	}
 	return false;
 } // bitDepthVaries()
-
 
 /*unsigned char * nii_bgr2rgb(unsigned char* bImg, struct nifti_1_header *hdr) {
  //DICOM planarappears to be BBB..B,GGG..G,RRR..R, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
@@ -3757,46 +4812,68 @@ void mkDirs(char *pth) {
 #endif
 } // mkDirs()
 
-void createDummyBidsBoilerplate(char *pth, bool isFunc) {
+void createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, const char *acqName) {
 	// https://remi-gau.github.io/bids_cookbook/#starters
 	char pathSep[2] = {"a"};
 	pathSep[0] = kPathSeparator;
 	char descfnm[PATH_MAX] = {""};
 	char taskfnm[PATH_MAX] = {""};
 	char fnm[PATH_MAX] = {""};
-	strcat(fnm, pth);
-	strcat(fnm, pathSep);
-	strcat(taskfnm, fnm);
-	strcat(descfnm, fnm);
+	int n = snprintf(fnm, sizeof(fnm), "%s%s", pth, pathSep);
+	if (n < 0 || n >= (int)sizeof(fnm))
+		return;
+	snprintf(taskfnm, sizeof(taskfnm), "%s", fnm);
+	snprintf(descfnm, sizeof(descfnm), "%s", fnm);
 	snprintf(fnm + strlen(fnm), PATH_MAX - strlen(fnm), "%s", "README.md");
 	if (!is_fileexists(fnm)) {
 		FILE *fp = fopen(fnm, "w");
 		static const char readmePre[] = "Generated using dcm2niix (";
 		static const char readmePost[] = ")\n\nDescribe your dataset here. This file was generated by dcm2niix in a single pass. Details like IntendedFor, Subject ID, Session and tasks are not defined.";
 
-		if (fp != NULL)
-			fprintf(fp, readmePre);
-		fprintf(fp, kDCMdate);
-		fprintf(fp, readmePost);
-		fclose(fp);
+		if (fp != NULL) {
+			fprintf(fp, "%s", readmePre);
+			fprintf(fp, "%s", kDCMdate);
+			fprintf(fp, "%s", readmePost);
+			fclose(fp);
+		}
 	}
 	snprintf(descfnm + strlen(descfnm), PATH_MAX - strlen(descfnm), "%s", "dataset_description.json");
 	if (!is_fileexists(descfnm)) {
 		FILE *fp = fopen(descfnm, "w");
-		static const char readme[] = "{\n    \"Name\": \"dcm2niix dummy dataset\",\n    \"Authors\": [\"Chris Rorden\", \"Alex Teghipco\"],\n    \"BIDSVersion\": \"1.6.0\"\n}\n";
-		if (fp != NULL)
-			fprintf(fp, readme);
-		fclose(fp);
+		// 1.7.0 introduced B0FieldIdentifier/B0FieldSource, which the
+		// reproinx.py post-pass writes; declare a version that supports them.
+		static const char readme[] = "{\n    \"Name\": \"dcm2niix dummy dataset\",\n    \"Authors\": [\"Chris Rorden\", \"Alex Teghipco\"],\n    \"BIDSVersion\": \"1.8.0\"\n}\n";
+		if (fp != NULL) {
+			fprintf(fp, "%s", readme);
+			fclose(fp);
+		}
 	}
 	if (!isFunc)
 		return; // only functional data gets a task file
-	snprintf(taskfnm + strlen(taskfnm), PATH_MAX - strlen(taskfnm), "%s", "task-rest_bold.json");
+	// Pick task/acq from caller (reproin %H supplies both); fall back to the
+	// legacy "rest" placeholder when no spec is available (legacy %h path).
+	// The reproinx.py post-pass removes generated bare task-X root stubs when
+	// _acq- variants for the same task exist, and writes TaskName into the
+	// per-series sidecar so bare task runs remain valid.
+	const char *taskNm = (taskName != NULL && taskName[0] != '\0') ? taskName : "rest";
+	const char *acqNm = (acqName != NULL && acqName[0] != '\0') ? acqName : NULL;
+	char taskBase[256];
+	if (acqNm != NULL)
+		snprintf(taskBase, sizeof(taskBase), "task-%s_acq-%s_bold.json", taskNm, acqNm);
+	else
+		snprintf(taskBase, sizeof(taskBase), "task-%s_bold.json", taskNm);
+	snprintf(taskfnm + strlen(taskfnm), PATH_MAX - strlen(taskfnm), "%s", taskBase);
 	if (!is_fileexists(taskfnm)) {
 		FILE *fp = fopen(taskfnm, "w");
-		static const char taskRest[] = "{\n\"TaskName\": \"rest\",\n\"CogAtlasID\": \"https://www.cognitiveatlas.org/task/id/trm_4c8a834779883/\"\n}\n";
-		if (fp != NULL)
-			fprintf(fp, taskRest);
-		fclose(fp);
+		if (fp != NULL) {
+			if (strcmp(taskNm, "rest") == 0) {
+				// Preserve historical CogAtlasID hint for the canonical "rest" task.
+				fprintf(fp, "{\n\"TaskName\": \"%s\",\n\"CogAtlasID\": \"https://www.cognitiveatlas.org/task/id/trm_4c8a834779883/\"\n}\n", taskNm);
+			} else {
+				fprintf(fp, "{\n\"TaskName\": \"%s\"\n}\n", taskNm);
+			}
+			fclose(fp);
+		}
 	}
 }
 
@@ -3880,66 +4957,185 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 			if (f == 'G')
 				strcat(outname, dcm.accessionNumber);
 			if (f == 'H') {
-				printWarning("hazardous (%%h) or reproin (%%H) bids naming experimental\n");
-				
+				// nii_createFilename runs once per series; emit the experimental
+				// warning only once per process so a 1700-file study does not
+				// repeat it for every series.
+				static bool warnedHazardousBids = false;
+				if (!warnedHazardousBids) {
+					printWarning("hazardous (%%h) or reproin (%%H) bids naming experimental\n");
+					warnedHazardousBids = true;
+				}
 				bool isReproin = (inname[pos] == 'H');
 				if (isReproin) {
-					// https://dbic-handbook.readthedocs.io/en/latest/mri/reproin.html
-					// reproin convention is hard for one-pass, as `ses` may only be reported in one series in the session (e.g. localizer)
-					// printf("study %s\n", dcm.studyDescription);
-					// printf("series %s\n", dcm.seriesDescription);
-					// printf("id %s\n", dcm.patientID);
-					snprintf(newstr, PATH_MAX, "%s", dcm.studyDescription);
-					heudiconvStrPth(newstr);
-					if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator))
-						strcat(pth, kFileSep); // kPathSeparator);
-					strcat(pth, newstr);
-					mkDirs(pth);
-					strcpy(opts.bidsSubject, dcm.patientID);
-					heudiconvStr(opts.bidsSubject);
-				}
-				char bidsSubject[kOptsStr] = "sub-";
-				if (strlen(opts.bidsSubject) <= 0)
-					strcat(bidsSubject, "1");
-				else
-					strcat(bidsSubject, opts.bidsSubject);
-#ifndef USING_R
-				//printf("%s<<<:::\n", bidsSubject);
-#endif
-				char bidsSession[kOptsStr] = "ses-";
-				if (strlen(opts.bidsSession) <= 0)
-					strcat(bidsSession, "1");
-				else
-					strcat(bidsSession, opts.bidsSession);
-				createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL));
-				if (strlen(dcm.CSA.bidsDataType) < 1) {
-					strcat(outname, "Unknown");
-					snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
-					strcat(outname, newstr);
-					snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
-					strcat(outname, newstr);
-					strcat(outname, "_");
-					strcat(outname, dcm.protocolName);
-
-				} else {
-					isAddNamePostFixes = false;
-					strcat(outname, bidsSubject);
-					strcat(outname, pathSep);
-					strcat(outname, bidsSession);
-					strcat(outname, pathSep);
-					strcat(outname, dcm.CSA.bidsDataType);
-					strcat(outname, pathSep);
-					strcat(outname, bidsSubject);
-					strcat(outname, "_");
-					strcat(outname, bidsSession);
-					if (strstr(dcm.CSA.bidsDataType, "func") != NULL) {
-						strcat(outname, "_task-");
-						if (strlen(dcm.CSA.bidsTask) > 0)
-							strcat(outname, dcm.CSA.bidsTask);
-						else
-							strcat(outname, "rest");
+					// One-pass ReproIn emulation. See REPROIN.md and console/reproin.cpp
+					// for design notes and known limitations (B0FieldIdentifier,
+					// IntendedFor, etc. require a second pass).
+					struct TReproinSpec spec;
+					bool specOk = reproinParseSpec(&dcm, &spec);
+					// Append <study> hierarchy from StudyDescription (or
+					// PerformedProcedureStepDescription as fallback). When
+					// `-br <name>` is supplied, override that derivation:
+					//   -br <name>  -> use <name> as the project subdir
+					//   -br ""      -> no project subdir; use -o as BIDS root
+					// (-br . is normalised to "" by the CLI parser so callers
+					// have a portable way to say "no subdir" on shells that
+					// strip empty argv.)
+					char studyPth[PATH_MAX] = {""};
+					if (opts.isBidsRoot) {
+						snprintf(studyPth, sizeof(studyPth), "%s", opts.bidsRoot);
+						// Apply the same path-safety scrub as the
+						// StudyDescription-derived default so '-br ../escape'
+						// or '-br /tmp/other' can't write outside -o.
+						reproinSanitizeProjectPath(studyPth);
+					} else {
+						reproinBuildStudyPath(&dcm, studyPth, sizeof(studyPth));
 					}
-					strcat(outname, dcm.CSA.bidsEntitySuffix);
+					if (strlen(studyPth) > 0) {
+						if ((strlen(pth) > 0) && (pth[strlen(pth) - 1] != kPathSeparator)) {
+							if (strlen(pth) + 1 >= sizeof(pth)) {
+								printError("ReproIn output path too long\n");
+								return EXIT_FAILURE;
+							}
+							strcat(pth, kFileSep);
+						}
+						if (strlen(pth) + strlen(studyPth) >= sizeof(pth)) {
+							printError("ReproIn output path too long\n");
+							return EXIT_FAILURE;
+						}
+						strcat(pth, studyPth);
+						mkDirs(pth);
+					}
+					createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0),
+											   specOk ? spec.task : NULL, specOk ? spec.acq : NULL);
+					if (specOk) {
+						isAddNamePostFixes = false;
+						bool isMultiEcho = dcm.isMultiEcho;
+						// Subject: -bi when set (scrubbed below); else heudiconv-style fixup
+						// of PatientID. reproinFixupSubjectId scrubs internally.
+						char subjectVal[kOptsStr];
+						if (strlen(opts.bidsSubject) > 0) {
+							snprintf(subjectVal, sizeof(subjectVal), "%s", opts.bidsSubject);
+							reproinSanitizeLabel(subjectVal);
+						} else {
+							reproinFixupSubjectId(dcm.patientID, subjectVal, sizeof(subjectVal));
+						}
+						// Session: spec _ses- > -bv > omit segment. {date}/DATE resolve to
+						// studyDate. reproinResolveSession scrubs internally.
+						char sessionVal[kOptsStr];
+						reproinResolveSession(&spec, &dcm, opts.bidsSession,
+											  sessionVal, sizeof(sessionVal));
+						char repName[PATH_MAX];
+						bool built = reproinBuildFilename(&spec,
+														  subjectVal, sessionVal,
+														  dcm.echoNum, isMultiEcho,
+														  repName, sizeof(repName));
+						if (built) {
+							// reproinBuildFilename uses native path separators;
+							// convert to the temp separator used by this loop.
+							for (size_t i = 0; i < strlen(repName); i++) {
+								if (repName[i] == kPathSeparator)
+									repName[i] = kTempPathSeparator;
+							}
+							strcat(outname, repName);
+						} else {
+							specOk = false;
+						}
+					}
+					if (!specOk) {
+						// Fallback: legacy "Unknown/<series>_<protocol>" basename.
+						strcat(outname, "Unknown");
+						snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
+						strcat(outname, newstr);
+						snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
+						strcat(outname, newstr);
+						strcat(outname, "_");
+						strcat(outname, dcm.protocolName);
+					}
+				} else {
+					// Legacy hazardous (%h) path.
+					// Subject: -bi when set, else heudiconv-style PatientID
+					// fixup, else literal "1" (legacy fallback).
+					// Subject/session sanitization: the %H path already filters
+					// -bi/-bv through reproinSanitizeLabel; the %h path now does
+					// the same so a hostile CLI value can't inject path
+					// separators or `..` segments. snprintf bounds the copy so
+					// strcat of "sub-"/"ses-" + the scrubbed value can't overflow
+					// the local kOptsStr buffer (audit H6).
+					char bidsSubject[kOptsStr] = "sub-";
+					if (strlen(opts.bidsSubject) > 0) {
+						char subjScrub[kOptsStr];
+						snprintf(subjScrub, sizeof(subjScrub), "%s", opts.bidsSubject);
+						reproinSanitizeLabel(subjScrub);
+						if (strlen(subjScrub) > 0 &&
+							strlen(bidsSubject) + strlen(subjScrub) < sizeof(bidsSubject))
+							strcat(bidsSubject, subjScrub);
+						else
+							strcat(bidsSubject, "1");
+					} else {
+						char subjGuess[kOptsStr] = "";
+						if (strlen(dcm.patientID) > 0)
+							reproinFixupSubjectId(dcm.patientID, subjGuess, sizeof(subjGuess));
+						if (strlen(subjGuess) > 0)
+							strcat(bidsSubject, subjGuess);
+						else
+							strcat(bidsSubject, "1");
+					}
+					// Session: -bv when set, else "YYYYMMDDTHHMMSS" from
+					// studyDate+studyTime when both present (studyTime is
+					// "HHMMSS.fff", truncate to first 6 chars). 'T' separator
+					// matches ISO 8601 compact form and keeps the label
+					// alphanumeric — BIDS forbids '-'/'_' in session labels
+					// (bids-validator error code 63).
+					char bidsSession[kOptsStr] = "ses-";
+					if (strlen(opts.bidsSession) > 0) {
+						char sessScrub[kOptsStr];
+						snprintf(sessScrub, sizeof(sessScrub), "%s", opts.bidsSession);
+						reproinSanitizeLabel(sessScrub);
+						if (strlen(sessScrub) > 0 &&
+							strlen(bidsSession) + strlen(sessScrub) < sizeof(bidsSession))
+							strcat(bidsSession, sessScrub);
+						else
+							strcat(bidsSession, "1");
+					} else if (strlen(dcm.studyDate) > 0 && strlen(dcm.studyTime) >= 6) {
+						char sessGuess[kOptsStr];
+						snprintf(sessGuess, sizeof(sessGuess), "%sT%.6s", dcm.studyDate, dcm.studyTime);
+						reproinSanitizeLabel(sessGuess);
+						if (strlen(sessGuess) > 0)
+							strcat(bidsSession, sessGuess);
+						else
+							strcat(bidsSession, "1");
+					} else {
+						strcat(bidsSession, "1");
+					}
+					createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL), NULL, NULL);
+					if (strlen(dcm.CSA.bidsDataType) < 1) {
+						strcat(outname, "Unknown");
+						snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
+						strcat(outname, newstr);
+						snprintf(newstr, PATH_MAX, "%ld", dcm.seriesNum);
+						strcat(outname, newstr);
+						strcat(outname, "_");
+						strcat(outname, dcm.protocolName);
+					} else {
+						isAddNamePostFixes = false;
+						strcat(outname, bidsSubject);
+						strcat(outname, pathSep);
+						strcat(outname, bidsSession);
+						strcat(outname, pathSep);
+						strcat(outname, dcm.CSA.bidsDataType);
+						strcat(outname, pathSep);
+						strcat(outname, bidsSubject);
+						strcat(outname, "_");
+						strcat(outname, bidsSession);
+						if (strstr(dcm.CSA.bidsDataType, "func") != NULL) {
+							strcat(outname, "_task-");
+							if (strlen(dcm.CSA.bidsTask) > 0)
+								strcat(outname, dcm.CSA.bidsTask);
+							else
+								strcat(outname, "rest");
+						}
+						strcat(outname, dcm.CSA.bidsEntitySuffix);
+					}
 				}
 			}
 			if (f == 'I')
@@ -3999,10 +5195,10 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				isSeriesReported = true;
 			}
 			if (f == 'T') {
-				//issue912
+				// issue912
 				int hh = (int)(dcm.dateTime / 10000);
 				int mm = (int)(fmod(dcm.dateTime, 10000) / 100);
-				double ss_raw = fmod(dcm.dateTime, 100);  // Extract seconds (with fraction)
+				double ss_raw = fmod(dcm.dateTime, 100); // Extract seconds (with fraction)
 				// Round seconds
 				int ss = (int)round(ss_raw);
 				// Ensure seconds are within 0-59 range
@@ -4054,7 +5250,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "NA");
 			}
 			if (f == 'W') { // Weird includes personal data in filename patientWeight
-					snprintf(newstr, PATH_MAX, "part%sdob%sg%cwt%d", dcm.bodyPartExamined, dcm.patientBirthDate, dcm.patientSex, (int)round(dcm.patientWeight));
+				snprintf(newstr, PATH_MAX, "part%sdob%sg%cwt%d", dcm.bodyPartExamined, dcm.patientBirthDate, dcm.patientSex, (int)round(dcm.patientWeight));
 				if (strstr(dcm.institutionName, "Richland"))
 					strcat(newstr, "R");
 				strcat(outname, newstr);
@@ -4152,6 +5348,12 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	snprintf(newstr, PATH_MAX, "_v%04d", dcm.gradDynVol+1); //+1 as indexed from zero
 	strcat (outname,newstr);
 	}*/
+	if ((isAddNamePostFixes) && (dcm.isNoRF)) {
+		strcat(outname, "_noRF"); // RF-off (noise) volumes split from their imaging series
+#ifdef USING_DCM2NIIXFSWRAPPER
+		sprintf(mrifsStruct.namePostFixes, "%s_noRF", mrifsStruct.namePostFixes);
+#endif
+	}
 	if ((isAddNamePostFixes) && (dcm.isHasImaginary)) {
 		strcat(outname, "_imaginary"); // has phase map
 #ifdef USING_DCM2NIIXFSWRAPPER
@@ -4347,8 +5549,7 @@ void nii_createDummyFilename(char *niiFilename, struct TDCMopts opts) {
 	} else {
 		if (opts.isZStd)
 			strcat(niiFilename, ".nii.zst'");
-		else
-		if (opts.isGz)
+		else if (opts.isGz)
 			strcat(niiFilename, ".nii.gz'");
 		else
 			strcat(niiFilename, ".nii'");
@@ -4375,7 +5576,11 @@ unsigned long mz_crc32(unsigned long crc, const unsigned char *ptr, size_t buf_l
 #define MZ_DEFAULT_LEVEL 6
 #endif
 
-void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buffer, unsigned long src_len, int gzLevel, bool isSkipHeader) {
+// Returns EXIT_SUCCESS / EXIT_FAILURE. NEVER frees src_buffer — the caller owns
+// it (callers pass either the outer image buffer or a locally-owned buffer they
+// free themselves); freeing here previously leaked on success and risked a
+// double-free of the caller's image on failure.
+int writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_buffer, unsigned long src_len, int gzLevel, bool isSkipHeader) {
 	// create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
 	//  in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
 	char fname[2048] = {""};
@@ -4386,7 +5591,11 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	if (isSkipHeader)
 		hdrPadBytes = 0;
 	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
+	if (cmp_len > (unsigned long)UINT_MAX) // avail_out is a 32-bit uInt; a bound that exceeds it would wrap and corrupt the stream
+		return EXIT_FAILURE;
 	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
+	if (pCmp == NULL)
+		return EXIT_FAILURE;
 	z_stream strm;
 	strm.total_in = 0;
 	strm.total_out = 0;
@@ -4402,12 +5611,17 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 		zLevel = MZ_UBER_COMPRESSION;
 	if (deflateInit(&strm, zLevel) != Z_OK) {
 		free(pCmp);
-		return;
+		return EXIT_FAILURE;
 	}
-	unsigned char *pHdr;
+	unsigned char *pHdr = NULL;
 	if (!isSkipHeader) {
 		// add header
 		pHdr = (unsigned char *)malloc(hdrPadBytes);
+		if (pHdr == NULL) {
+			deflateEnd(&strm);
+			free(pCmp);
+			return EXIT_FAILURE;
+		}
 		pHdr[hdrPadBytes - 1] = 0;
 		pHdr[hdrPadBytes - 2] = 0;
 		pHdr[hdrPadBytes - 3] = 0;
@@ -4420,9 +5634,15 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	// add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer;  // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_FINISH);			   // Z_NO_FLUSH;
+	int zret = deflate(&strm, Z_FINISH);   // Z_NO_FLUSH;
 	// finish up
 	deflateEnd(&strm);
+	if (zret != Z_STREAM_END) { // the compressBound + UINT_MAX guard should prevent Z_BUF_ERROR; fail closed if not
+		free(pCmp);
+		if (!isSkipHeader)
+			free(pHdr);
+		return EXIT_FAILURE;
+	}
 	unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
 	if (!isSkipHeader)
 		file_crc32 = mz_crc32(file_crc32, pHdr, (unsigned int)hdrPadBytes);
@@ -4430,14 +5650,16 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	cmp_len = strm.total_out;
 	if (cmp_len <= 0) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		if (!isSkipHeader)
+			free(pHdr);
+		return EXIT_FAILURE;
 	}
 	FILE *fileGz = fopen(fname, "wb");
 	if (!fileGz) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		if (!isSkipHeader)
+			free(pHdr);
+		return EXIT_FAILURE;
 	}
 	// write header http://www.gzip.org/zlib/rfc-gzip.html
 	fputc((char)0x1f, fileGz); // ID1
@@ -4451,7 +5673,7 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	fputc((char)0x00, fileGz); // XFL
 	fputc((char)0xff, fileGz); // OS
 	// write Z-compressed data
-	fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
+	size_t nWrit = fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
 	// write tail: write redundancy check and uncompressed size as bytes to ensure LITTLE-ENDIAN order
 	fputc((unsigned char)(file_crc32), fileGz);
 	fputc((unsigned char)(file_crc32 >> 8), fileGz);
@@ -4461,10 +5683,20 @@ void writeNiiGz(char *baseName, struct nifti_1_header hdr, unsigned char *src_bu
 	fputc((unsigned char)(strm.total_in >> 8), fileGz);
 	fputc((unsigned char)(strm.total_in >> 16), fileGz);
 	fputc((unsigned char)(strm.total_in >> 24), fileGz);
-	fclose(fileGz);
+	// fail closed on a short write or a flush/close error (e.g. disk full), so a
+	// caller does not emit a sidecar next to a truncated .nii.gz. ferror() covers
+	// every fputc/fwrite to the stream (header magic + trailer), mechanically
+	// completing the write contract without checking each fputc individually.
+	int streamErr = ferror(fileGz);
+	int closeErr = (fclose(fileGz) != 0);
 	free(pCmp);
 	if (!isSkipHeader)
 		free(pHdr);
+	if ((nWrit != (size_t)(cmp_len - 6)) || streamErr || closeErr) {
+		remove(fname); // do not leave a truncated .nii.gz that looks valid
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // writeNiiGz()
 #endif
 
@@ -4502,20 +5734,33 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	STARTUPINFO startupInfo = {0};
 	startupInfo.cb = sizeof(startupInfo);
 	// StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field
+	bool compressFailed = false;
 	if (CreateProcess(NULL, command, NULL, NULL, FALSE, NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW, NULL, NULL, &startupInfo, &ProcessInfo)) {
 		// printMessage("compression --- %s\n",command);
 		WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+		// fail closed when pigz starts but exits nonzero (e.g. disk full)
+		if (!GetExitCodeProcess(ProcessInfo.hProcess, &exitCode) || (exitCode != 0))
+			compressFailed = true;
 		CloseHandle(ProcessInfo.hThread);
 		CloseHandle(ProcessInfo.hProcess);
-	} else
+	} else {
 		printMessage("Compression failed %s\n", command);
+		compressFailed = true;
+	}
 #else  // if win else linux
 	int ret = system(command);
+	bool compressFailed = (ret != 0); // nonzero shell/pigz status = compression did not succeed
 	if (ret == -1)
 		printWarning("Failed to execute: %s\n", command);
 #endif // else linux
 	if (opts.isVerbose > 1)
 		printMessage("Compress: %s\n", command);
+	if (compressFailed) {
+		// fail closed: the requested .gz is missing/corrupt, so the caller must
+		// not report success (and emit a sidecar) for it.
+		printError("External compression failed: %s\n", command);
+		return EXIT_FAILURE;
+	}
 	return EXIT_SUCCESS;
 } // pigz_File()
 
@@ -4540,14 +5785,22 @@ PACKD(typedef struct {
 })
 TmghFooter;
 
-void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
+// Returns EXIT_SUCCESS / EXIT_FAILURE. NEVER frees src_buffer (caller owns it).
+// Hardened to the same contract as writeNiiGz() (audit: legacy MGZ writer).
+int writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_buffer, unsigned long src_len, int gzLevel) {
 	// create gz file in RAM, save to disk http://www.zlib.net/zlib_how.html
 	//  in general this single-threaded approach is slower than PIGZ but is useful for slow (network attached) disk drives
 	char fname[2048] = {""};
 	strcpy(fname, baseName);
-	unsigned long hdrPadBytes = sizeof(hdr); // 348 byte header + 4 byte pad
-	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes);
+	unsigned long hdrPadBytes = sizeof(hdr);
+	// Bound over EVERY byte fed to deflate: header + image + footer. (Sizing
+	// without the footer can under-allocate the output for worst-case input.)
+	unsigned long cmp_len = mz_compressBound(src_len + hdrPadBytes + sizeof(footer));
+	if (cmp_len > (unsigned long)UINT_MAX) // avail_out is a 32-bit uInt; refuse a bound that would wrap
+		return EXIT_FAILURE;
 	unsigned char *pCmp = (unsigned char *)malloc(cmp_len);
+	if (pCmp == NULL)
+		return EXIT_FAILURE;
 	z_stream strm;
 	strm.total_in = 0;
 	strm.total_out = 0;
@@ -4563,22 +5816,33 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 		zLevel = MZ_UBER_COMPRESSION;
 	if (deflateInit(&strm, zLevel) != Z_OK) {
 		free(pCmp);
-		return;
+		return EXIT_FAILURE;
 	}
+	// Z_FINISH must be on the LAST chunk (the footer). The previous code finished
+	// the stream on the image and then tried to deflate the footer with
+	// Z_NO_FLUSH (a no-op after Z_FINISH), so the footer was omitted from the
+	// stream while the gzip CRC/ISIZE still counted it -> every .mgz failed the
+	// decompressor's CRC check. (audit: legacy MGZ writer was producing corrupt output.)
 	// add header
 	strm.avail_in = (unsigned int)sizeof(hdr); // size of input
 	strm.next_in = (uint8_t *)&hdr.version;
-	deflate(&strm, Z_NO_FLUSH);
+	int zret = deflate(&strm, Z_NO_FLUSH);
 	// add image
 	strm.avail_in = (unsigned int)src_len; // size of input
 	strm.next_in = (uint8_t *)src_buffer;  // input image -- TPX strm.next_in = (Bytef *)src_buffer;
-	deflate(&strm, Z_FINISH);
-	// add footer
+	if (zret == Z_OK)
+		zret = deflate(&strm, Z_NO_FLUSH);
+	// add footer (last chunk -> Z_FINISH finalises the deflate stream)
 	strm.avail_in = (unsigned int)sizeof(footer); // size of input
 	strm.next_in = (uint8_t *)&footer.TR;
-	deflate(&strm, Z_NO_FLUSH);
+	if (zret == Z_OK)
+		zret = deflate(&strm, Z_FINISH);
 	// finish up
 	deflateEnd(&strm);
+	if (zret != Z_STREAM_END) { // the bound should prevent Z_BUF_ERROR; fail closed if not
+		free(pCmp);
+		return EXIT_FAILURE;
+	}
 	unsigned long file_crc32 = mz_crc32(0L, Z_NULL, 0);
 	file_crc32 = mz_crc32(file_crc32, (uint8_t *)&hdr.version, (unsigned int)sizeof(hdr));
 	file_crc32 = mz_crc32(file_crc32, src_buffer, (unsigned int)src_len);
@@ -4586,14 +5850,12 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	cmp_len = strm.total_out;
 	if (cmp_len <= 0) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		return EXIT_FAILURE;
 	}
 	FILE *fileGz = fopen(fname, "wb");
 	if (!fileGz) {
 		free(pCmp);
-		free(src_buffer);
-		return;
+		return EXIT_FAILURE;
 	}
 	// write header http://www.gzip.org/zlib/rfc-gzip.html
 	fputc((char)0x1f, fileGz); // ID1
@@ -4607,7 +5869,7 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	fputc((char)0x00, fileGz); // XFL
 	fputc((char)0xff, fileGz); // OS
 	// write Z-compressed data
-	fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
+	size_t nWrit = fwrite(&pCmp[2], sizeof(char), cmp_len - 6, fileGz); //-6 as LZ78 format has 2 bytes header (typically 0x789C) and 4 bytes tail (ADLER 32)
 	// write tail: write redundancy check and uncompressed size as bytes to ensure LITTLE-ENDIAN order
 	fputc((unsigned char)(file_crc32), fileGz);
 	fputc((unsigned char)(file_crc32 >> 8), fileGz);
@@ -4617,8 +5879,16 @@ void writeMghGz(char *baseName, Tmgh hdr, TmghFooter footer, unsigned char *src_
 	fputc((unsigned char)(strm.total_in >> 8), fileGz);
 	fputc((unsigned char)(strm.total_in >> 16), fileGz);
 	fputc((unsigned char)(strm.total_in >> 24), fileGz);
-	fclose(fileGz);
+	// fail closed on a short write / stream / close error (ferror covers the
+	// fputc magic + trailer); remove the truncated .mgz so it can't look valid.
+	int streamErr = ferror(fileGz);
+	int closeErr = (fclose(fileGz) != 0);
 	free(pCmp);
+	if ((nWrit != (size_t)(cmp_len - 6)) || streamErr || closeErr) {
+		remove(fname);
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // writeMghGz()
 
 int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, struct TDTI4D *dti4D, int numDTI) {
@@ -4706,22 +5976,33 @@ int nii_saveMGH(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 #ifdef __LITTLE_ENDIAN__		// mgh data ALWAYS big endian!
 	swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
 #endif
+	int mghErr = 0;
 	if (isGz) {
 		strcat(fname, ".mgz");
-		writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel);
+		mghErr = (writeMghGz(fname, mgh, footer, im, imgsz, opts.gzLevel) != EXIT_SUCCESS);
 	} else {
 		strcat(fname, ".mgh");
 		FILE *fp = fopen(fname, "wb");
-		if (!fp)
-			return EXIT_FAILURE;
-		fwrite(&mgh, sizeof(Tmgh), 1, fp);
-		fwrite(&im[0], imgsz, 1, fp);
-		fwrite(&footer, sizeof(TmghFooter), 1, fp);
-		fclose(fp);
+		if (!fp) {
+			mghErr = 1;
+		} else {
+			size_t w1 = fwrite(&mgh, sizeof(Tmgh), 1, fp);
+			size_t w2 = fwrite(&im[0], imgsz, 1, fp);
+			size_t w3 = fwrite(&footer, sizeof(TmghFooter), 1, fp);
+			int closeErr = (fclose(fp) != 0);
+			if (w1 != 1 || w2 != 1 || w3 != 1 || closeErr) {
+				remove(fname); // do not leave a truncated .mgh that looks valid
+				mghErr = 1;
+			}
+		}
 	}
 #ifdef __LITTLE_ENDIAN__		 // mgh data ALWAYS big endian!
-	swapEndian(&hdr, im, false); // byte-swap endian (e.g. little->big)
+	swapEndian(&hdr, im, false); // unswap: restore caller's image (even on error)
 #endif
+	if (mghErr) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		return EXIT_FAILURE;
+	}
 	return EXIT_SUCCESS;
 } // nii_saveMGH()
 
@@ -4746,6 +6027,10 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	else
 		strcat(fname, ".nrrd"); // nrrd or nhdr
 	FILE *fp = fopen(fname, "wb");
+	if (fp == NULL) { // permission / bad path / fd exhaustion: fail closed, do not deref
+		printError("Unable to create %s\n", fname);
+		return EXIT_FAILURE;
+	}
 	fprintf(fp, "NRRD0005\n");
 	fprintf(fp, "# Complete NRRD file format specification at:\n");
 	fprintf(fp, "# http://teem.sourceforge.net/nrrd/format.html\n");
@@ -4778,6 +6063,7 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	default:
 		printError("Unknown NRRD datatype %d\n", hdr.datatype);
 		fclose(fp);
+		remove(fname); // do not leave a partial header for an unsupported type
 		return EXIT_FAILURE;
 	}
 	// dimension tag
@@ -4969,30 +6255,62 @@ int nii_saveNRRD(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 		}
 	}
 	fprintf(fp, "\n"); // blank line: end of NRRD header
+	size_t imgW = 1;
 	if (!isGz)
-		fwrite(&im[0], imgsz, 1, fp);
-	fclose(fp);
+		imgW = fwrite(&im[0], imgsz, 1, fp);
+	int streamErr = ferror(fp); // covers the header fprintf + (uncompressed) image fwrite
+	int closeErr = (fclose(fp) != 0);
+	if (streamErr || closeErr || (!isGz && imgW != 1)) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		remove(fname);
+		return EXIT_FAILURE;
+	}
 	if (!isGz)
 		return EXIT_SUCCESS;
-// below: gzip file
+	// below: gzip file. The detached .nhdr header was just written and references
+	// <stem>.raw.gz. `fname` was already changed to the .raw.gz target by the
+	// header writer (~L6024), so derive the header name from niiFilename and remove
+	// it on ANY data-step failure (internal-gz, no-zlib, or external pigz) so a
+	// header never points at missing/partial data.
+	char nhdrName[2048] = "";
+	strcpy(nhdrName, niiFilename);
+	strcat(nhdrName, ".nhdr");
 #ifdef myDisableZLib
 	if (strlen(opts.pigzname) < 1) { // internal compression
 		printError("Compiled without gz support, unable to compress %s\n", fname);
+		remove(nhdrName);
 		return EXIT_FAILURE;
 	}
 #else
 	if (strlen(opts.pigzname) < 1) { // internal compression
-		writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
-		return EXIT_SUCCESS;
+		int gzret = writeNiiGz(fname, hdr, im, imgsz, opts.gzLevel, true);
+		if (gzret != EXIT_SUCCESS)
+			remove(nhdrName); // writeNiiGz removed its own .raw.gz; drop the orphan header too
+		return gzret;
 	}
 #endif
-	// below pigz
+	// below pigz: write a .raw staging file, then compress it externally
 	strcpy(fname, niiFilename); // without gz
 	strcat(fname, ".raw");
 	fp = fopen(fname, "wb");
-	fwrite(&im[0], imgsz, 1, fp);
-	fclose(fp);
-	return pigz_File(fname, opts, imgsz);
+	if (fp == NULL) {
+		printError("Unable to create %s\n", fname);
+		remove(nhdrName);
+		return EXIT_FAILURE;
+	}
+	size_t rawW = fwrite(&im[0], imgsz, 1, fp);
+	int rawCloseErr = (fclose(fp) != 0);
+	if (rawW != 1 || rawCloseErr) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		remove(fname);
+		remove(nhdrName);
+		return EXIT_FAILURE;
+	}
+	if (pigz_File(fname, opts, imgsz) != EXIT_SUCCESS) {
+		remove(nhdrName); // header would otherwise orphan a missing/partial .raw.gz
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
 } // nii_saveNRRD()
 
 enum TZipMethod { zmZlib,
@@ -5788,7 +7106,7 @@ void removeSclSlopeInter(struct nifti_1_header *hdr, unsigned char *img) {
 	// printWarning("NRRD unable to record scl_slope/scl_inter %g/%g\n", hdr->scl_slope, hdr->scl_inter);
 }
 
-int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d) {
+int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, const char *hdrExt = NULL) {
 #ifdef USING_R
 	ImageList *images = (ImageList *)opts.imageList;
 	if (opts.isImageInMemory) {
@@ -5826,6 +7144,52 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		printMessage("Error: Image size is zero bytes %s\n", niiFilename);
 		return EXIT_FAILURE;
 	}
+	// Bytes written between the 348-byte header and the image. Normally the
+	// 4-byte "no extension" terminator; when hdrExt is supplied (NIfTI-MRS
+	// ecode 44) it carries the JSON header extension. extBlockLen==4 with all
+	// zeros reproduces the historic output byte-for-byte, so every non-MRS call
+	// (hdrExt==NULL) is unchanged. esize/ecode follow the file byte order so the
+	// extension is valid even with --big-endian output.
+	unsigned char extPad4[4] = {0, 0, 0, 0};
+	unsigned char *extBlock = extPad4;
+	size_t extBlockLen = 4;
+	unsigned char *extAlloc = NULL;
+	if (hdrExt != NULL) {
+		size_t jlen = strlen(hdrExt);
+		// Compute esize in the size_t domain, then guard before the int32 cast:
+		// NIfTI's `esize` is a signed int32, so a pathologically large extension
+		// (e.g. a huge OriginalFile list) must not wrap the cast and under-allocate
+		// the calloc/memcpy below. Normal MRS JSON is a few KB; this only trips on
+		// hostile/degenerate input.
+		size_t esizeSz = (8 + jlen + 15) & ~((size_t)15); // round up to multiple of 16
+		if (esizeSz < 16)
+			esizeSz = 16;
+		if (esizeSz > (size_t)INT_MAX) {
+			// Degrade to a plain NIfTI (the sidecar still carries the metadata)
+			// rather than corrupt memory.
+			printWarning("MRS header extension too large (%zu bytes); writing plain NIfTI\n", esizeSz);
+		} else {
+			int esize = (int)esizeSz;
+			extAlloc = (unsigned char *)calloc(esizeSz + 4, 1);
+			if (extAlloc == NULL)
+				return EXIT_FAILURE;
+			extAlloc[0] = 1; // extender flag: extension present
+			int32_t es = esize, ec = 44;
+			if (!opts.isSaveNativeEndian) {
+				nifti_swap_4bytes(1, &es);
+				nifti_swap_4bytes(1, &ec);
+			}
+			memcpy(extAlloc + 4, &es, 4);
+			memcpy(extAlloc + 8, &ec, 4);
+			memcpy(extAlloc + 12, hdrExt, jlen); // trailing bytes already zero (calloc)
+			extBlock = extAlloc;
+			extBlockLen = esizeSz + 4;
+			hdr.vox_offset = 352 + esize;
+			// NIfTI-MRS magic: intent_name must be "mrs_v<major>_<minor>" or the
+			// validator rejects the file. ponytail: bump if the standard version changes.
+			strcpy(hdr.intent_name, "mrs_v0_11");
+		}
+	}
 #ifndef myDisableGzSizeLimits
 	// see https://github.com/rordenlab/dcm2niix/issues/124
 	uint64_t kMaxPigz = 4294967264;
@@ -5846,20 +7210,28 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		char fname[2048] = {""};
 		strcpy(fname, niiFilename);
 		strcat(fname, ".nii.zst");
-		unsigned long hdrPadBytes = sizeof(hdr) + 4; // 348 byte header + 4 byte pad
+		unsigned long hdrPadBytes = sizeof(hdr) + extBlockLen; // 348 byte header + extension (or 4-byte terminator)
 		size_t srcLen = hdrPadBytes + imgsz;
 		unsigned char *pSrc = (unsigned char *)malloc(srcLen);
-		if (!pSrc)
+		if (!pSrc) {
+			free(extAlloc);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
-		// write header + 4-byte pad
+		}
+		// write header + extension block
 		memcpy(pSrc, &hdr, sizeof(hdr));
-		memset(pSrc + sizeof(hdr), 0, 4);
+		memcpy(pSrc + sizeof(hdr), extBlock, extBlockLen);
+		free(extAlloc); // consumed
+		extAlloc = NULL;
 		// write image data
 		memcpy(pSrc + hdrPadBytes, im, imgsz);
 		size_t cmpBound = ZSTD_compressBound(srcLen);
 		unsigned char *pCmp = (unsigned char *)malloc(cmpBound);
 		if (!pCmp) {
 			free(pSrc);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
 		}
 		int zLevel = 3; // zstd default
@@ -5870,18 +7242,27 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		if (ZSTD_isError(cmpLen)) {
 			printError("Zstd compression failed: %s\n", ZSTD_getErrorName(cmpLen));
 			free(pCmp);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
 		}
 		FILE *fp = fopen(fname, "wb");
 		if (!fp) {
 			free(pCmp);
+			if (!opts.isSaveNativeEndian)
+				swapEndian(&hdr, im, false); // restore caller's buffer
 			return EXIT_FAILURE;
 		}
-		fwrite(pCmp, 1, cmpLen, fp);
-		fclose(fp);
+		size_t zWrit = fwrite(pCmp, 1, cmpLen, fp);
+		int zCloseErr = (fclose(fp) != 0);
 		free(pCmp);
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+		if (zWrit != cmpLen || zCloseErr) {
+			printError("Unable to write %s (disk full?)\n", fname);
+			remove(fname); // do not leave a truncated .nii.zst that looks valid
+			return EXIT_FAILURE;
+		}
 		return EXIT_SUCCESS;
 	}
 #endif
@@ -5893,12 +7274,39 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 	} else if ((opts.isGz) && (strlen(opts.pigzname) < 1) && ((imgsz + hdr.vox_offset) < kMaxGz)) { // use internal compressor
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
-		writeNiiGz(niiFilename, hdr, im, imgsz, opts.gzLevel, false);
+		int gzret;
+		if (extAlloc == NULL) {
+			gzret = writeNiiGz(niiFilename, hdr, im, imgsz, opts.gzLevel, false);
+		} else {
+			// writeNiiGz only emits the header itself when !isSkipHeader; with an
+			// extension we assemble header+extension+image and hand it the whole
+			// buffer. writeNiiGz never frees its src_buffer, so we own `full`.
+			size_t total = sizeof(hdr) + extBlockLen + imgsz;
+			unsigned char *full = (unsigned char *)malloc(total);
+			if (full == NULL) {
+				free(extAlloc);
+				if (!opts.isSaveNativeEndian)
+					swapEndian(&hdr, im, false);
+				return EXIT_FAILURE;
+			}
+			memcpy(full, &hdr, sizeof(hdr));
+			memcpy(full + sizeof(hdr), extBlock, extBlockLen);
+			memcpy(full + sizeof(hdr) + extBlockLen, im, imgsz);
+			free(extAlloc); // consumed
+			extAlloc = NULL;
+			char gzname[2048] = "";
+			strcpy(gzname, niiFilename);
+			strcat(gzname, ".nii.gz");
+			gzret = writeNiiGz(gzname, hdr, full, total, opts.gzLevel, true); // isSkipHeader
+			free(full);
+		}
+		if (!opts.isSaveNativeEndian)
+			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+		if (gzret != EXIT_SUCCESS)
+			return EXIT_FAILURE;
 #ifdef USING_R
 		images->appendPath(std::string(niiFilename) + ".nii.gz");
 #endif
-		if (!opts.isSaveNativeEndian)
-			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
 		return EXIT_SUCCESS;
 	}
 #endif
@@ -5934,36 +7342,57 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		FILE *pigzPipe;
 		if ((pigzPipe = popen(command, "w")) == NULL) {
 			printError("Unable to open pigz pipe\n");
+			free(extAlloc);
 			return EXIT_FAILURE;
 		}
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
-		fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
-		uint32_t pad = 0;
-		fwrite(&pad, sizeof(pad), 1, pigzPipe);
-		fwrite(&im[0], imgsz, 1, pigzPipe);
-		pclose(pigzPipe);
+		size_t pHdrW = fwrite(&hdr, sizeof(hdr), 1, pigzPipe);
+		size_t pExt = fwrite(extBlock, extBlockLen, 1, pigzPipe); // 4-byte terminator, or NIfTI-MRS extension
+		size_t pImg = fwrite(&im[0], imgsz, 1, pigzPipe);
+		int pigzStatus = pclose(pigzPipe); // nonzero = pigz failed (e.g. disk full)
+		free(extAlloc); // consumed
+		extAlloc = NULL;
 		if (!opts.isSaveNativeEndian)
 			swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+		if (pHdrW != 1 || pExt != 1 || pImg != 1 || pigzStatus != 0) {
+			printError("Unable to write %s via pigz pipe\n", fname);
+			char gzname[2056] = "";
+			snprintf(gzname, sizeof(gzname), "%s.gz", fname);
+			remove(gzname); // do not leave a truncated .nii.gz that looks valid
+			return EXIT_FAILURE;
+		}
 		return EXIT_SUCCESS;
 	}
 #endif
 
 #ifndef USING_DCM2NIIXFSWRAPPER
 	FILE *fp = fopen(fname, "wb");
-	if (!fp)
+	if (!fp) {
+		free(extAlloc);
 		return EXIT_FAILURE;
+	}
 	if (!opts.isSaveNativeEndian)
 		swapEndian(&hdr, im, true); // byte-swap endian (e.g. little->big)
-	fwrite(&hdr, sizeof(hdr), 1, fp);
-	uint32_t pad = 0;
-	fwrite(&pad, sizeof(pad), 1, fp);
-	fwrite(&im[0], imgsz, 1, fp);
-	fclose(fp);
+	size_t wHdr = fwrite(&hdr, sizeof(hdr), 1, fp);
+	size_t wExt = fwrite(extBlock, extBlockLen, 1, fp); // 4-byte terminator, or NIfTI-MRS extension
+	size_t wImg = fwrite(&im[0], imgsz, 1, fp);
+	int rawCloseErr = (fclose(fp) != 0);
+	free(extAlloc); // consumed
+	extAlloc = NULL;
 
 	if (!opts.isSaveNativeEndian)
 		swapEndian(&hdr, im, false); // unbyte-swap endian (e.g. big->little)
+	// fail closed on a short write or close error (e.g. disk full) so a caller
+	// does not emit a sidecar next to a truncated .nii.
+	if (wHdr != 1 || wExt != 1 || wImg != 1 || rawCloseErr) {
+		printError("Unable to write %s (disk full?)\n", fname);
+		remove(fname); // do not leave a truncated .nii that looks valid
+		return EXIT_FAILURE;
+	}
 #endif
+	free(extAlloc); // NULL-safe: already freed above unless the raw block was compiled out (FS wrapper)
+	extAlloc = NULL;
 
 #ifdef USING_R
 	images->appendPath(fname);
@@ -6222,73 +7651,77 @@ void adjustOriginForNegativeTilt(struct nifti_1_header *hdr, float shiftPxY) {
 
 // Compute the angle (in degrees) between two 3D vectors
 static float angle_between(float a[3], float b[3]) {
-    float dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-    float norm_a = sqrtf(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
-    float norm_b = sqrtf(b[0]*b[0] + b[1]*b[1] + b[2]*b[2]);
-    if (norm_a == 0.0f || norm_b == 0.0f)
-        return 0.0f;  // degenerate axis
-    float cos_angle = dot / (norm_a * norm_b);
-    if (cos_angle < -1.0f) cos_angle = -1.0f;
-    if (cos_angle >  1.0f) cos_angle =  1.0f;
-    return acosf(cos_angle) * (180.0f / M_PI);
+	float dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+	float norm_a = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+	float norm_b = sqrtf(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
+	if (norm_a == 0.0f || norm_b == 0.0f)
+		return 0.0f; // degenerate axis
+	float cos_angle = dot / (norm_a * norm_b);
+	if (cos_angle < -1.0f)
+		cos_angle = -1.0f;
+	if (cos_angle > 1.0f)
+		cos_angle = 1.0f;
+	return acosf(cos_angle) * (180.0f / M_PI);
 }
 
 float max_shear_degrees(const struct nifti_1_header *hdr) {
-	if (!hdr) return 0.0f;
-		// Extract 3x3 linear part of the sform matrix
+	if (!hdr)
+		return 0.0f;
+	// Extract 3x3 linear part of the sform matrix
 	float A[3][3] = {
-		{ hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2] }, // row 0
-		{ hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2] }, // row 1
-		{ hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2] }  // row 2
+		{hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2]}, // row 0
+		{hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2]}, // row 1
+		{hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2]}  // row 2
 	};
 	// Normalize axes
 	float axes[3][3];
 	for (int i = 0; i < 3; i++) {
-			float len = sqrtf(A[0][i]*A[0][i] + A[1][i]*A[1][i] + A[2][i]*A[2][i]);
-			if (len == 0.0f) len = 1.0f; // prevent divide-by-zero
-			axes[0][i] = A[0][i] / len;
-			axes[1][i] = A[1][i] / len;
-			axes[2][i] = A[2][i] / len;
+		float len = sqrtf(A[0][i] * A[0][i] + A[1][i] * A[1][i] + A[2][i] * A[2][i]);
+		if (len == 0.0f)
+			len = 1.0f; // prevent divide-by-zero
+		axes[0][i] = A[0][i] / len;
+		axes[1][i] = A[1][i] / len;
+		axes[2][i] = A[2][i] / len;
 	}
 	// Compute angle deviations from 90° between each pair of axes
 	float max_dev = 0.0f;
 	for (int i = 0; i < 2; i++) {
-			for (int j = i+1; j < 3; j++) {
-					float a[3] = { axes[0][i], axes[1][i], axes[2][i] };
-					float b[3] = { axes[0][j], axes[1][j], axes[2][j] };
-					float angle = angle_between(a, b);
-					float deviation = fabsf(angle - 90.0f);
-					if (deviation > max_dev)
-							max_dev = deviation;
-			}
+		for (int j = i + 1; j < 3; j++) {
+			float a[3] = {axes[0][i], axes[1][i], axes[2][i]};
+			float b[3] = {axes[0][j], axes[1][j], axes[2][j]};
+			float angle = angle_between(a, b);
+			float deviation = fabsf(angle - 90.0f);
+			if (deviation > max_dev)
+				max_dev = deviation;
+		}
 	}
 	return max_dev;
 }
 
-
 void deshear_sform(struct nifti_1_header *hdr) {
-// Remove residual shear from the sform affine matrix by converting it
-// to a quaternion representation (which cannot encode shear) and back.
-// Updates both qform and sform fields in the NIfTI header accordingly.
-	if (!hdr) return;
+	// Remove residual shear from the sform affine matrix by converting it
+	// to a quaternion representation (which cannot encode shear) and back.
+	// Updates both qform and sform fields in the NIfTI header accordingly.
+	if (!hdr)
+		return;
 	// Load current sform matrix
 	float shear = max_shear_degrees(hdr);
-	if (isSameFloatGE (shear, 0.0)) {
+	if (isSameFloatGE(shear, 0.0)) {
 		return;
 	}
 	printWarning("Correcting %g degree shear\n", shear);
 	mat44 Q44;
 	LOAD_MAT44(Q44,
-						 hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
-						 hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2], hdr->srow_y[3],
-						 hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2], hdr->srow_z[3]);
+			   hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
+			   hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2], hdr->srow_y[3],
+			   hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2], hdr->srow_z[3]);
 
 	// Convert sform matrix to quaternion — discards shear
 	float dx, dy, dz;
 	nifti_mat44_to_quatern(Q44,
-			&hdr->quatern_b, &hdr->quatern_c, &hdr->quatern_d,
-			&hdr->qoffset_x, &hdr->qoffset_y, &hdr->qoffset_z,
-			&dx, &dy, &dz, &hdr->pixdim[0]);
+						   &hdr->quatern_b, &hdr->quatern_c, &hdr->quatern_d,
+						   &hdr->qoffset_x, &hdr->qoffset_y, &hdr->qoffset_z,
+						   &dx, &dy, &dz, &hdr->pixdim[0]);
 
 	hdr->pixdim[1] = dx;
 	hdr->pixdim[2] = dy;
@@ -6296,9 +7729,9 @@ void deshear_sform(struct nifti_1_header *hdr) {
 
 	// Reconstruct affine matrix from quaternion
 	mat44 mat = nifti_quatern_to_mat44(
-			hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
-			hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
-			dx, dy, dz, hdr->pixdim[0]);
+		hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
+		hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
+		dx, dy, dz, hdr->pixdim[0]);
 
 	// Store reconstructed matrix back into srow_x/y/z
 	hdr->srow_x[0] = mat.m[0][0];
@@ -6543,39 +7976,47 @@ unsigned char *nii_saveNII3Dtilt(char *niiFilename, struct nifti_1_header *hdr, 
 
 // problem: changing pixdim[3] will introduce a shear in the presence of rotations.
 // solution: convert to quaternion which can not preserve shear, then rebuild matrix
-void set_slice_spacing_preserve_orientation(struct nifti_1_header* hdr, float dzNew) {
+void set_slice_spacing_preserve_orientation(struct nifti_1_header *hdr, float dzNew) {
 	if (!hdr || dzNew <= 0.0f)
-			return;
+		return;
 	// Load original sform matrix
 	mat44 Q44;
 	LOAD_MAT44(Q44,
-						 hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
-						 hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2], hdr->srow_y[3],
-						 hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2], hdr->srow_z[3]);
+			   hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
+			   hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2], hdr->srow_y[3],
+			   hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2], hdr->srow_z[3]);
 	// Convert to quaternion (removes shear)
 	float dx, dy, dz;
 	nifti_mat44_to_quatern(Q44,
-			&hdr->quatern_b, &hdr->quatern_c, &hdr->quatern_d,
-			&hdr->qoffset_x, &hdr->qoffset_y, &hdr->qoffset_z,
-			&dx, &dy, &dz, &hdr->pixdim[0]);
+						   &hdr->quatern_b, &hdr->quatern_c, &hdr->quatern_d,
+						   &hdr->qoffset_x, &hdr->qoffset_y, &hdr->qoffset_z,
+						   &dx, &dy, &dz, &hdr->pixdim[0]);
 	// Update voxel dimensions
 	hdr->pixdim[1] = dx;
 	hdr->pixdim[2] = dy;
 	hdr->pixdim[3] = dzNew;
 	// Rebuild affine matrix from quaternion with new spacing
 	mat44 mat = nifti_quatern_to_mat44(
-			hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
-			hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
-			hdr->pixdim[1], hdr->pixdim[2], hdr->pixdim[3], hdr->pixdim[0]);
+		hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
+		hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
+		hdr->pixdim[1], hdr->pixdim[2], hdr->pixdim[3], hdr->pixdim[0]);
 	// Update sform
-	hdr->srow_x[0] = mat.m[0][0]; hdr->srow_x[1] = mat.m[0][1]; hdr->srow_x[2] = mat.m[0][2]; hdr->srow_x[3] = mat.m[0][3];
-	hdr->srow_y[0] = mat.m[1][0]; hdr->srow_y[1] = mat.m[1][1]; hdr->srow_y[2] = mat.m[1][2]; hdr->srow_y[3] = mat.m[1][3];
-	hdr->srow_z[0] = mat.m[2][0]; hdr->srow_z[1] = mat.m[2][1]; hdr->srow_z[2] = mat.m[2][2]; hdr->srow_z[3] = mat.m[2][3];
+	hdr->srow_x[0] = mat.m[0][0];
+	hdr->srow_x[1] = mat.m[0][1];
+	hdr->srow_x[2] = mat.m[0][2];
+	hdr->srow_x[3] = mat.m[0][3];
+	hdr->srow_y[0] = mat.m[1][0];
+	hdr->srow_y[1] = mat.m[1][1];
+	hdr->srow_y[2] = mat.m[1][2];
+	hdr->srow_y[3] = mat.m[1][3];
+	hdr->srow_z[0] = mat.m[2][0];
+	hdr->srow_z[1] = mat.m[2][1];
+	hdr->srow_z[2] = mat.m[2][2];
+	hdr->srow_z[3] = mat.m[2][3];
 	// Set transform codes
 	hdr->qform_code = NIFTI_XFORM_SCANNER_ANAT;
 	hdr->sform_code = NIFTI_XFORM_SCANNER_ANAT;
 }
-
 
 int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, float *sliceMMarray) {
 	// convert image with unequal slice distances to equal slice distances
@@ -6630,9 +8071,9 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 	float *out32 = (float *)out8;
 	short *out16 = (short *)out8;
 	int isSeg = d.modality == kMODALITY_SEG;
-	#ifdef myForceNearestNeighborEq
+#ifdef myForceNearestNeighborEq
 	isSeg = true;
-	#endif
+#endif
 	for (int s = 0; s < outSlices; s++) {
 		float out_mm = s * mn;
 		// Find the closest two input slices
@@ -6671,7 +8112,7 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 		}
 		if (hdr.datatype == DT_FLOAT32) {
 			for (int v = 0; v < nVox2D; v++)
-				out32[outVox + v] =  (in32[lowVox + v] * lowWt) + (in32[hiVox + v] * hiWt);
+				out32[outVox + v] = (in32[lowVox + v] * lowWt) + (in32[hiVox + v] * hiWt);
 		} else if ((hdr.datatype == DT_RGB24) || (hdr.datatype == DT_UINT8)) {
 			for (int v = 0; v < nVox2D; v++)
 				out8[outVox + v] = round(((float)in8[lowVox + v] * lowWt) + (float)in8[hiVox + v] * hiWt);
@@ -6826,7 +8267,7 @@ int nii_saveCrop(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	hdrX.srow_x[3] += hdr.srow_x[2] * ventralCrop;
 	hdrX.srow_y[3] += hdr.srow_y[2] * ventralCrop;
 	hdrX.srow_z[3] += hdr.srow_z[2] * ventralCrop;
-	//issue889 - also change origin for qform
+	// issue889 - also change origin for qform
 	mat44 Q44;
 	LOAD_MAT44(Q44,
 			   hdrX.srow_x[0], hdrX.srow_x[1], hdrX.srow_x[2], hdrX.srow_x[3],
@@ -6920,7 +8361,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		for (int i = 0; i < nSlices; i++) {
 			if (d->CSA.sliceTiming[i] < minT)
 				minT = d->CSA.sliceTiming[i];
-			if (d->CSA.sliceTiming[i] < maxT)
+			if (d->CSA.sliceTiming[i] > maxT) // audit 2026-06-06 M7: was < which kept maxT stuck at minT
 				maxT = d->CSA.sliceTiming[i];
 		}
 		// printf("%d %g ---> %g..%g\n", nSlices, d->TR, minT, maxT);
@@ -6960,12 +8401,12 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		if (d1->CSA.sliceTiming[i] > maxT1)
 			maxT1 = d1->CSA.sliceTiming[i];
 	}
-	int isIssue870 = !isSameFloatGE(maxT-minT, maxT1-minT1);
+	int isIssue870 = !isSameFloatGE(maxT - minT, maxT1 - minT1);
 	if ((maxT1 < 0.0) && (minT1 < 0.0)) {
 		// issue 797 e.g. E11 2D slices where acquisition time used
 		// in this case d1->csa is not populated
-		if (((maxT-minT) > d->TR)  && (!d->isLocalizer))
-			printWarning("Issue797: Check slice timing range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT-minT, d->TR);
+		if (((maxT - minT) > d->TR) && (!d->isLocalizer) && (!d->isDerived))
+			printWarning("Issue797: Check slice timing range %g..%g, TA= %g, TR=%g ms)\n", minT, maxT, maxT - minT, d->TR);
 		isIssue870 = 0;
 	}
 	if (isSliceTimeHHMMSS) // convert HHMMSS to msec
@@ -6984,7 +8425,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		return; // fine: all slices single excitation
 	if ((strlen(d->seriesDescription) > 0) && (strstr(d->seriesDescription, "SBRef") != NULL))
 		return; // fine: single-band calibration data, the slice timing WILL exceed the TR
-	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && ((maxT-minT) <= TRms) && ((maxT-minT) > 0.0))
+	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && ((maxT - minT) <= TRms) && ((maxT - minT) > 0.0))
 		return; // assume issue875
 	// issue 1007: report all values in ms for consistency with TR.
 	// minT/maxT are in sec for HHMMSS vendors (d converted at line 6828), ms otherwise.
@@ -7025,11 +8466,26 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		return;
 	}
 	if (((d->isLocalizer) || (d->isDerived)) && ((minT1 == maxT1) || (maxT1 >= TRms))) {
-		//no need to store or report non-sensical slice times for derived or localizers
+		// no need to store or report non-sensical slice times for derived or localizers
 		d->CSA.sliceTiming[0] = -1.0;
 		return;
 	}
 	if ((!d->isLocalizer) && ((minT1 == maxT1) || (maxT1 >= TRms))) { // both first and second image corrupted
+		// Single-volume acquisitions (anatomical T1w/T2w/FLAIR/SPACE/MPRAGE)
+		// have TR == per-slice repetition time, NOT volume time. Slice
+		// acquisitionTimes legitimately span the whole scan duration (many
+		// TRs in TSE) so `maxT1 >= TR` is the normal case there, not a
+		// corruption. The slice timing also isn't meaningful for
+		// non-time-series data downstream. Treat the same way the
+		// localizer/derived branch above does: clear the array silently.
+		// EPI sequences (BOLD/DWI) keep their slice times <= TR (one volume
+		// per TR), so single-volume EPI never falls into this branch —
+		// preserving the Issue870 multiband-factor detection path for
+		// single-volume CMRR multiband scans.
+		if (hdr->dim[4] < 2) {
+			d->CSA.sliceTiming[0] = -1.0;
+			return;
+		}
 		printWarning("Slice timing appears corrupted (range %g..%g, TR=%g ms)\n", minT1, maxT1, TRms);
 		return;
 	}
@@ -7045,7 +8501,26 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		d->CSA.sliceTiming[i] = d1->CSA.sliceTiming[i] * d1scale;
 	}
 	if ((mbFactor > 1) && (mbFactor > d1->CSA.multiBandFactor)) {
-		printWarning("Issue870 ParallelReductionFactorOutOfPlane estimated as %d but DICOM reports %d\n", mbFactor, d1->CSA.multiBandFactor);
+		// Issue870: slice-timing analysis estimated a higher multiband
+		// factor than the DICOM CSA reports. On Siemens scanners (esp.
+		// XA-line running CMRR multiband sequences) the CSA tag is often
+		// stale (reports 1 even when the sequence is MB4), so the estimate
+		// is the truth. Override CSA but suppress the warning when we have
+		// independent positive evidence the data IS multiband:
+		//   1. d1->imageTypeText contains "_MB_" — the Siemens private
+		//      per-frame ImageType marker (0021,1175 / 0021,1075 after
+		//      private-creator remap; e.g. "ORIGINAL_PRIMARY_M_MB_DIS2D").
+		//   2. d1->imageComments contains "Unaliased MB" — the CMRR text
+		//      marker the sequence writes into (0020,4000) ImageComments
+		//      (e.g. "Not for diagnostic use, Unaliased MB4/PE4/LB").
+		// Either signal alone is a deliberate vendor declaration that the
+		// acquisition is multiband; the CSA report of 1 is the false
+		// alarm, not the estimate.
+		bool hasMbEvidence =
+			(strstr(d1->imageTypeText, "_MB_") != NULL) ||
+			(strstr(d1->imageComments, "Unaliased MB") != NULL);
+		if (!hasMbEvidence)
+			printWarning("Issue870 ParallelReductionFactorOutOfPlane estimated as %d but DICOM reports %d\n", mbFactor, d1->CSA.multiBandFactor);
 		d1->CSA.multiBandFactor = mbFactor;
 	}
 	d->CSA.multiBandFactor = d1->CSA.multiBandFactor;
@@ -7088,7 +8563,7 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 			offset = hdr->dim[3];
 		// XA11 2D classic: nb XA30 in `MFSPLIT` will save each 3D volume from 4D timeseries as a unique series number!
 		for (int v = 0; v < hdr->dim[3]; v++)
-			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v+offset].indx].CSA.sliceTiming[0];
+			dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v + offset].indx].CSA.sliceTiming[0];
 		setMultiBandFactor(hdr->dim[3], indx0, dcmList);
 	} else if ((nConvert == (hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1) && (hdr->dim[4] > 1)) {
 
@@ -7116,6 +8591,8 @@ void sliceTimeGE(struct TDICOMdata *d, int mb, int dim3, float TR, bool isInterl
 	// isInterleaved : interleaved or sequential slice order
 	// geMajorVersion: version, e.g. 29.0
 	// is27r3 : software release 27.0 R03 or later
+	if (dim3 > kMaxEPI3D)
+		return; // local `sliceTiming` and d->CSA.sliceTiming are sized kMaxEPI3D
 	float sliceTiming[kMaxEPI3D];
 	// multiband can be fractional! 'extra' slices discarded
 	int nExcitations = ceil(float(dim3) / float(mb));
@@ -7225,7 +8702,7 @@ void readSoftwareVersionsGE(char softwareVersionsGE[], int verbose, char geVersi
 	len = 12; // RX27.0_R02_, plus nul terminator
 	char *versionString = (char *)malloc(sizeof(char) * len);
 	versionString[len - 1] = 0;
-	memcpy(versionString, sepStart, len-1);
+	memcpy(versionString, sepStart, len - 1);
 	char c1, c2, c3, c4;
 	// RX27.0_R02_ or MR29.1_EA_2
 	int fields = sscanf(versionString, "%c%c%d.%d_%c%c%d", &c1, &c2, geMajorVersionInt, geMinorVersionInt, &c3, &c4, geReleaseVersionInt);
@@ -7292,8 +8769,8 @@ void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename, int isVer
 	char ioptGE[3000] = "";
 	char seqName[kDICOMStr] = "";
 	geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE, seqName);
-	size_t remaining_space = kDICOMStr - strlen(d->procedureStepDescription) - 1; //issue883
-	strncat(d->procedureStepDescription, seqName, remaining_space); // issue790
+	size_t remaining_space = kDICOMStr - strlen(d->procedureStepDescription) - 1; // issue883
+	strncat(d->procedureStepDescription, seqName, remaining_space);				  // issue790
 #endif
 } // bidsGE
 
@@ -7315,6 +8792,10 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		inv1 = csaAscii.alTI[0] / 1000.0;
 		inv2 = csaAscii.alTI[1] / 1000.0;
 		lContrasts = csaAscii.lContrasts;
+		if (csaAscii.lConc > 1) // issue 1024: concatenations = 3D-EPI "multi-echo shots"; used by the volume-TR formula fallback
+			d->numberOfConcatenations = csaAscii.lConc;
+		if ((d->accelFactOOP < 1.0) && (csaAscii.accelFact3D > 0)) // issue 1024: some XA 3D-EPI omit (0018,9155); fill-if-missing (DICOM tag wins) so the volume-TR fallback, which runs before nii_SaveBIDSX, can divide by it. Distinct from nii_SaveBIDSX:3033, which applies unconditional CSA precedence (issue672) to its by-value sidecar copy only — do not "unify" these.
+			d->accelFactOOP = csaAscii.accelFact3D;
 		// If parameter lInvContrasts exists in the protocol, a value of 1 indicates MPRAGE and a value of 2 MP2RAGE. Note that lInvContrasts is different from lContrasts and that only lInvContrasts must be considered.
 		// If parameter lInvContrasts does not exist, then the presence of alTI[1] indicates that this is an MP2RAGE protocol. An MPRAGE protocol will only contain alTI[0].
 		if (csaAscii.lInvContrasts == 1) // explicitly reports one TI
@@ -7350,9 +8831,28 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	}
 	if (d->modality != kMODALITY_MR)
 		return;
+	// Non-spatial: ImageOrientationPatient (0020,0037) absent -> orient[] all
+	// zero (e.g. Siemens derived color-FA, which drops spatial attributes). Such
+	// an image cannot be placed in BIDS space, so discard it as "nonspatial"
+	// (routes to derivatives/scanner) rather than mislabelling it Unknown.
+	bool isNonSpatial = true;
+	for (int i = 1; i <= 6; i++)
+		if (d->orient[i] != 0.0)
+			isNonSpatial = false;
 	if (((d->xyzDim[3] < 2) && (nConvert < 1)) || (d->isLocalizer)) { // need nConvert or nifti header
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
+	} else if (isDerived && (strstr(d->imageType, "DIFFUSION") != NULL)) {
+		// Scanner-derived diffusion maps (FA / colFA / trace / TENSOR / ADC):
+		// computed on the console, not raw acquisitions, and BIDS has no raw
+		// suffix for them. Discard — reproinx routes a "discard" BidsGuess to
+		// derivatives/scanner/ (dropped by default, kept with --keep-derivatives)
+		// rather than the raw tree. Raw DWI is ImageType ORIGINAL (not DERIVED).
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "derivedDWI");
+	} else if (isNonSpatial) {
+		strcpy(dataTypeBIDS, "discard");
+		strcpy(modalityBIDS, "nonspatial");
 	} else if (strstr(seqDetails, "b1map")) {
 		// issue 751 nb both T1 and b1map can use tfl base
 		// https://bids-specification.readthedocs.io/en/stable/appendices/qmri.html#tb1tfl-and-tb1rfm-specific-notes
@@ -7388,7 +8888,12 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(modalityBIDS, "sbref");
 		// if seriesDesc trace", "fa", "adc"  isDerived = true;
 		isDirLabel = true;
-	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { // prog_asl
+	} else if ((strstr(seqDetails, "fairest")) || (strstr(seqDetails, "_asl") != NULL) || (strstr(seqDetails, "_pasl") != NULL) || (strstr(seqDetails, "pcasl") != NULL) || (strstr(seqDetails, "PCASL") != NULL)) { // prog_asl: audit 2026-06-07 — AC=PERFUSION standalone term dropped; the fallback at setBidsFromAcquisitionContrast routes bare AC=PERFUSION to Unknown so DSC/DCE doesn't get misclassified as ASL (the vendor-positive Siemens ASL signals are the asl/pasl/pcasl sequence-name tokens above)
+		// AC=PERFUSION standalone term used to also gate this branch; dropped
+		// 2026-06-07 because PERFUSION also covers DSC/DCE and was misrouting
+		// non-ASL contrast series to perf/asl. Bare AC=PERFUSION now falls
+		// through to setBidsFromAcquisitionContrast, which returns early on
+		// PERFUSION and lands the file in Unknown/.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 		if (strstr(d->seriesDescription, "_m0") != NULL)
@@ -7396,9 +8901,18 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	} else if (strstr(d->pulseSequenceName, "spcR") != NULL) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2w");
-	} else if (strstr(seqDetails, "tse_vfl") != NULL) { // prog_tse_vfl
+	} else if ((strstr(seqDetails, "tse_vfl") != NULL) || (strstr(seqDetails, "\\space") != NULL)) { // prog_tse_vfl / Siemens SPACE
+		// SPACE = Sampling Perfection with Application-optimized Contrasts —
+		// same variable-flip-angle TSE family as tse_vfl, marketing name on
+		// XA-line scanners. Match `\space` (backslash-prefixed) to avoid
+		// false-positives on substrings like "spaceship".
 		strcpy(dataTypeBIDS, "anat");
-		if ((strstr(seqDetails, "spcir") != NULL) || (strstr(d->sequenceName, "spcir") != NULL))
+		// pulseSequenceName must be in the FLAIR check too: on XA-line Siemens,
+		// d->sequenceName can be empty while d->pulseSequenceName carries
+		// "*spcir_220ns" (the inversion-recovery variant signal).
+		if ((strstr(seqDetails, "spcir") != NULL) ||
+			(strstr(d->sequenceName, "spcir") != NULL) ||
+			(strstr(d->pulseSequenceName, "spcir") != NULL))
 			strcpy(modalityBIDS, "FLAIR");
 		else
 			strcpy(modalityBIDS, "T2w");
@@ -7408,10 +8922,13 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		if (strstr(d->sequenceName, "tir") != NULL)
 			strcpy(modalityBIDS, "FLAIR");
 		if ((strstr(d->sequenceName, "tse2d") != NULL) || (strstr(d->pulseSequenceName, "tse2d") != NULL)) {
-			if (d->TE < 50)
-				strcpy(modalityBIDS, "PDw");
-			else
+			// Siemens tse2d is regular spin echo, not VFL (tse_vfl branch above
+			// handles SPACE). Threshold moves 50ms -> 45ms with the unified helper.
+			int w = MRWeightingGuess(d, true, false);
+			if (w == kMRWeightingT2)
 				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
 		}
 	} else if ((strstr(seqDetails, "ep2d_ase") != NULL)) { // prog_ep2d_se
 		// oxygen extraction fraction(OEF) Asymmetric Spin Echo (ASE)
@@ -7440,6 +8957,25 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 		// nb ToF fl3d1r_ts fl3d1r_t70 fl3d1r7t but check for fl3d1r SWI
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "angio");
+	} else if (strstr(seqDetails, "fl3d_vibe") != NULL) {
+		// Siemens VIBE (Volumetric Interpolated Breath-hold) — fl3d_vibe
+		// can be tuned as T1w (high FA), PDw (low FA), or T2*-weighted
+		// (long TE). Classify by Ernst-angle physics so the BIDS suffix
+		// reflects the actual contrast rather than the marketing label
+		// (which is always "vibe"). MRWeightingGuess returns Unknown when
+		// any input is missing — cascade then falls through to the trailing
+		// "derived" clobber. fl3d_vibe is GRE, not VFL.
+		int w = MRWeightingGuess(d, false, false);
+		if (w != kMRWeightingUnknown) {
+			strcpy(dataTypeBIDS, "anat");
+			if (w == kMRWeightingT2starw)
+				strcpy(modalityBIDS, "T2starw");
+			else if (w == kMRWeightingT1)
+				strcpy(modalityBIDS, "T1w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or mixed structural default
+			isPart = true;
+		}
 	} else if (strstr(seqDetails, "ep_seg_fid") != NULL) {
 		// n.b. large echoTrainLength even for single echo acquisition
 		strcpy(dataTypeBIDS, "anat");
@@ -7465,21 +9001,49 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	} else if ((strstr(seqDetails, "AALScout") != NULL) || (strstr(seqDetails, "haste") != NULL)) { // localizer: unused
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
-	} else if ((strstr(seqDetails, "_bold")) || (strstr(seqDetails, "pace")) || (strstr(d->imageType, "FMRI")) || (strstr(seqDetails, "ep2d_fid"))) { // prog_bold
-		// n.b. "Space" is not "pace"
+	} else if ((strstr(seqDetails, "_bold")) || (strstr(seqDetails, "_pace")) || (strstr(d->imageType, "FMRI")) || (strstr(seqDetails, "ep2d_fid"))) { // prog_bold
+		// Anchor "pace" on "_pace" so "Space" / "_space" no longer match —
+		// Siemens PACE (Prospective Acquisition Correction) sequences are
+		// always written as e.g. ep2d_bold_PACE / ep2d_pace, never bare
+		// "pace". The pre-fix substring match was the bug behind the FLAIR
+		// (`*spcir_220ns` over `\space`) being misclassified as func/bold.
 		strcpy(dataTypeBIDS, "func");
 		strcpy(modalityBIDS, "bold");
 		isDirLabel = true;
-		char *p = strstr(d->protocolName, "func_");
-		if (p == d->protocolName)
-			// todo issue753 infer task from d->protocolName
-			if (strstr(d->seriesDescription, "_SBRef") != NULL)
-				strcpy(modalityBIDS, "sbref");
+		// _SBRef in SeriesDescription is the single-pass clue that a BOLD-EPI
+		// series is actually the Single-Band Reference (SBRef) volume that
+		// pairs with the main multiband acquisition. The previous gate
+		// required d->protocolName to start with "func_" (old Siemens
+		// convention) which silently skipped ReproIn-style "func-..." names
+		// (and any other modern protocol naming). Match the unconditional
+		// DWI-branch pattern at line 8308: SeriesDescription contains "_SBRef"
+		// → sbref, regardless of protocol prefix.
+		if (strstr(d->seriesDescription, "_SBRef") != NULL)
+			strcpy(modalityBIDS, "sbref");
+		if (d->isNoRF) // RF-off volumes are noise, not BOLD/SBRef
+			strcpy(modalityBIDS, "noRF");
+		// todo issue753: infer task from d->protocolName here (was the original
+		// purpose of the gate; leave the TODO so the inference work is tracked).
 	} else if (strstr(d->sequenceName, "*epse2d") != NULL) {
 		// pepolar?
 		strcpy(dataTypeBIDS, "fmap");
 		strcpy(modalityBIDS, "epi");
 		isDirLabel = true;
+	}
+	// SWI override: any image whose ImageType array contains the token
+	// "SWI" is T2*-weighted gradient-echo data per BIDS (T2starw). Fires
+	// regardless of which sequence-name branch above matched (or whether
+	// the trailing `if (isDerived)` would otherwise clobber to "derived").
+	// Covers EPI-based SWI (e.g. *swi3d_epr on XA80) that does not match
+	// any of the fl3d/gre/ep_seg_fid patterns, plus MINIMUM and SWI_Images
+	// derived projections that the user wants surfaced as anat rather than
+	// routed to derivatives/scanner/. ImageType is underscore-joined so
+	// `_SWI` is a substring match; no `_SWIRL`-type ImageType token occurs in practice.
+	if (strstr(d->imageType, "_SWI") != NULL) {
+		strcpy(dataTypeBIDS, "anat");
+		strcpy(modalityBIDS, "T2starw");
+		isPart = true;
+		isDerived = false;
 	}
 	strcpy(acqStr, "_acq-");
 	strcat(acqStr, preAcqStr);
@@ -7553,9 +9117,10 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	}
 	if ((isVerbose > 0) || (strlen(dataTypeBIDS) < 1))
 		printMessage("::autoBids:Siemens CSAseqFname:'%s' pulseSeq:'%s' seqName:'%s'\n",
-			   seqDetails, d->pulseSequenceName, d->sequenceName);
-	if (isDerived)
-		strcpy(dataTypeBIDS, "derived");
+					 seqDetails, d->pulseSequenceName, d->sequenceName);
+	if (isDerived && (strstr(dataTypeBIDS, "discard") == NULL))
+		strcpy(dataTypeBIDS, "derived"); // do not clobber an explicit discard
+	// (e.g. nonspatial color-FA, classified discard/nonspatial above)
 	// bork - ARC data follows
 	/*
 	if (strstr(dataTypeBIDS, "dwi")) {
@@ -7607,8 +9172,21 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 	} else if ((d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
 		strcpy(dataTypeBIDS, "dwi");
 		strcpy(modalityBIDS, "dwi");
-	} else if (strstr(d->imageType, "PERFUSION") != NULL) {
-		// scanSeq:'GR' seqVariant:'SK'
+	} else if ((strstr(d->imageType, "PERFUSION") != NULL) || (d->aslFlags != kASL_FLAG_NONE)) {
+		// Two orthogonal Philips ASL signals:
+		//   ImageType "PERFUSION" — top-level CS marker.
+		//   aslFlags (Philips private (2005,1429) MRImageLabelType) — set when
+		//     the per-frame value starts with 'L' (LABEL) or 'C' (CONTROL); the
+		//     "SOURCE -" raw label/control series strip "PERFUSION" from the
+		//     per-frame ImageType ("M\\SE\\M\\SE" / "M\\FFE\\M\\FFE") so the
+		//     top-level check alone misses them.
+		// Audit 2026-06-07: the third historical term `acquisitionContrast ==
+		// kMRWeightingPerfusion` was dropped — DICOM (0008,9209) PERFUSION is
+		// also the modality marker for DSC/DCE (the gad-bolus families), so
+		// using it as a standalone ASL signal mis-classified DSC/DCE series
+		// as ASL. Bare AC=PERFUSION without one of the two Philips signals
+		// now falls through to setBidsFromAcquisitionContrast which routes
+		// PERFUSION to Unknown — safer for non-ASL perfusion variants.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if ((strstr(d->pulseSequenceName, "SEEPI") != NULL) && (!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
@@ -7622,10 +9200,14 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		strcpy(dataTypeBIDS, "anat");
 		if (false) //((strstr(d->scanningSequence, "IR") != NULL))
 			strcpy(modalityBIDS, "FLAIR");
-		else if (d->TE < 40)
-			strcpy(modalityBIDS, "PDw");
-		else
-			strcpy(modalityBIDS, "T2w");
+		else {
+			// Philips SK+SE PD/T2 split. Threshold moves 40ms -> 45ms with the unified helper.
+			int w = MRWeightingGuess(d, true, false);
+			if (w == kMRWeightingT2)
+				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
+		}
 	} else if ((strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "IR") != NULL)) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "FLAIR");
@@ -7809,10 +9391,14 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(dataTypeBIDS, "anat");
 		if (strstr(d->scanningSequence, "IR"))
 			strcpy(modalityBIDS, "FLAIR");
-		else if (d->TE < 40)
-			strcpy(modalityBIDS, "PDw");
-		else
-			strcpy(modalityBIDS, "T2w");
+		else {
+			// GE FSE PD/T2 split. Threshold moves 40ms -> 45ms with the unified helper.
+			int w = MRWeightingGuess(d, true, false);
+			if (w == kMRWeightingT2)
+				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
+		}
 		// BIDS validator does not allow "_echo-2", rather PDw/T2w
 		isReportEcho = false;
 	} else if ((strcmp(seqName, "2DFAST") == 0) && (strstr(d->seriesDescription, "STAR"))) {
@@ -7820,6 +9406,12 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 		strcpy(modalityBIDS, "T2starw");
 		isPart = true;
 	} else if (strstr(seqName, "asl")) {
+		// GE-positive ASL evidence: PSD name contains "asl".
+		// Audit 2026-06-07: the historical `d->acquisitionContrast ==
+		// kMRWeightingPerfusion` OR-term was dropped — DICOM (0008,9209)
+		// PERFUSION also covers DSC/DCE, so it can't be a standalone ASL
+		// signal. Bare AC=PERFUSION falls through to
+		// setBidsFromAcquisitionContrast which routes it to Unknown.
 		strcpy(dataTypeBIDS, "perf");
 		strcpy(modalityBIDS, "asl");
 	} else if (((isEPSE) && (!d->isDiffusion)) || ((strstr(d->seriesDescription, "fieldmap")) && (strstr(seqName, "EPI")))) {
@@ -7917,13 +9509,23 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 
 bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVerbose) {
 	if (d->modality == kMODALITY_PT) {
-		strcpy(d->CSA.bidsDataType, "PET");
-		strcpy(d->CSA.bidsEntitySuffix, "PET");
+		// BIDS-PET (BEP009, stable since BIDS 1.5): datatype dir is lowercase
+		// "pet" and the suffix is "_pet" (lowercase, leading underscore — the
+		// convention both the BidsGuess consumer in reproinx and the -f %h
+		// filename builder at ~L5054 expect). The prior "PET"/"PET" produced an
+		// uppercase "PET/" dir and a separator-less "<sub>_<ses>PET" filename,
+		// which the BIDS validator rejects (NOT_INCLUDED). CT below uses the
+		// same lowercase `ct`/`_ct` forms — the BEP-024 datatype/suffix naming
+		// is stable even though the full BEP isn't ratified. (reproinx's
+		// _BIDS_DATATYPES allowlist still omits "ct", so under -f %H CT stays in
+		// Unknown/ — that's a separate reproinx-side decision, unchanged here.)
+		strcpy(d->CSA.bidsDataType, "pet");
+		strcpy(d->CSA.bidsEntitySuffix, "_pet");
 		return true;
 	}
 	if (d->modality == kMODALITY_CT) {
-		strcpy(d->CSA.bidsDataType, "CT");
-		strcpy(d->CSA.bidsEntitySuffix, "CT");
+		strcpy(d->CSA.bidsDataType, "ct");
+		strcpy(d->CSA.bidsEntitySuffix, "_ct");
 		return true;
 	}
 	if (d->manufacturer == kMANUFACTURER_SIEMENS)
@@ -7932,6 +9534,16 @@ bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVer
 		setBidsPhilips(d, nConvert, isVerbose);
 	if (d->manufacturer == kMANUFACTURER_GE)
 		setBidsGE(d, nConvert, isVerbose, filename);
+	// Vendor-agnostic refinement (DWI derivative override + task / acq / dir
+	// fallbacks). Sources: ProtocolName + SeriesDescription. See BIDS-Manager
+	// `sequence_dict.py` for the canonical patterns.
+	setBidsHeuristics(d);
+	// DICOM-standard fallback: if vendor cascade + heuristics produced no
+	// dataType, fall back to AcquisitionContrast. See
+	// setBidsFromAcquisitionContrast() for the safety rationale (only fires on
+	// the empty-classification case so existing vendor decisions are honoured).
+	if (d->CSA.bidsDataType[0] == '\0')
+		setBidsFromAcquisitionContrast(d);
 	return ((!strstr(d->CSA.bidsDataType, "discard")) && (!strstr(d->CSA.bidsDataType, "derived")));
 	// printf("%s\\%s\n", d->CSA.bidsDataType, d->CSA.bidsEntitySuffix);
 }
@@ -8285,7 +9897,7 @@ void oldSliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struc
 
 int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct nifti_1_header *hdr, int verbose, const char *filename, int nConvert, struct TDCMopts opts) {
 	int sliceDir = 0;
-	if ((hdr->dim[3] < 2) || (hdr->dim[3] > kMaxEPI3D))
+	if (hdr->dim[3] < 2)
 		return sliceDir;
 	// uint64_t indx0 = dcmSort[0].indx;
 	// uint64_t indx1 = dcmSort[1].indx;
@@ -8294,12 +9906,17 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	if (nConvert > 1) // use 2nd volume as CMRR bug can create bogus slice timing in first volume
 		indx1 = dcmSort[1].indx;
 	struct TDICOMdata *d1 = &dcmList[indx1];
-	// oldSliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
-	checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
-	rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
+	// Issue #1015: dim[3] > kMaxEPI3D (high-slice-count CT etc.) must still reach
+	// headerDcm2Nii2() below so sliceDir and the final sform/qform are computed.
+	// The slice-timing helpers each guard their own kMaxEPI3D writes.
+	if (hdr->dim[3] <= kMaxEPI3D) {
+		// oldSliceTimingGE(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		sliceTimingUIH(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		int isSliceTimeHHMMSS = sliceTimingSiemens2D(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		sliceTimingXA(dcmSort, dcmList, hdr, verbose, filename, nConvert);
+		checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
+		rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
+	}
 	if (hdr->dim[3] > 1)
 		sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1], hdr, true);
 	// UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
@@ -8322,7 +9939,10 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	// ensure slice times have variability
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	bool allSame = true;
-	if (d0->CSA.sliceTiming[0] >= 0.0) {
+	// Issue #1015 follow-up: cap the read range at kMaxEPI3D — d0->CSA.sliceTiming
+	// is a fixed kMaxEPI3D-element array; high-slice (>1024) volumes with a
+	// populated sliceTiming[0] would otherwise read past the end.
+	if (d0->CSA.sliceTiming[0] >= 0.0 && hdr->dim[3] <= kMaxEPI3D) {
 		for (int i = 0; i < hdr->dim[3]; i++)
 			if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0]))
 				allSame = false;
@@ -8363,6 +9983,1353 @@ void loadOverlay(char *imgname, unsigned char *img, int offset, int x, int y, in
 	return;
 } // loadOverlay()
 
+// ---------------------------------------------------------------------------
+// Siemens XA-line PhysioLogging support
+// ---------------------------------------------------------------------------
+// XA30/XA60 scanners (syngo MR XA*) export physio recordings as Raw Data
+// Storage DICOMs containing a gzip-compressed XML payload at private tag
+// (7FE1,1010). The parser flags these as d.isXAPhysio and stores the byte
+// offset/length of the payload. The helpers below decompress that payload,
+// extract <PhysioStream> samples and <Volume ACQUISITION_TIME_TICS> entries,
+// and emit BIDS-compliant `<base>_recording-<label>_physio.tsv.gz` plus
+// `_physio.json` sidecars (one pair per stream).
+//
+// Note: the MDH clock in XA tics is 2.5 ms; PMU recording start is operator-
+// initiated, so first PMU tic typically precedes the first scan-locked
+// <Volume> tic by a few seconds. BIDS StartTime carries this offset and is
+// usually negative (samples before the first scan trigger).
+//
+// XML parsing is intentionally hand-rolled (no XML dep): the payload schema
+// is fixed by Siemens and the structure is extremely regular. The DOCTYPE
+// block is stripped before scanning to neutralise internal-entity payloads.
+
+#define kMDHTicMs 2.5
+
+// Map an XA <PhysioStream TYPE="..."> to a BIDS recording label (matches
+// bidsphysio's to_physiosignal()). Returns NULL for unknown types so the
+// caller can skip them.
+static const char *xaPhysioBidsLabel(const char *streamType) {
+	if (strcmp(streamType, "PULS") == 0)
+		return "cardiac";
+	if (strcmp(streamType, "RESP") == 0)
+		return "respiratory";
+	if (strcmp(streamType, "ECG") == 0)
+		return "ecg";
+	if (strcmp(streamType, "EXT") == 0)
+		return "external_trigger";
+	return NULL;
+}
+
+// Read a quoted attribute value from an opening XML tag (a substring that
+// runs from the '<' through the matching '>'). Returns true on success.
+static bool xaPhysioReadAttr(const char *tag, const char *tagEnd, const char *attr,
+							 char *out, size_t outSz) {
+	out[0] = '\0';
+	char needle[64];
+	int n = snprintf(needle, sizeof(needle), "%s=\"", attr);
+	if (n <= 0 || n >= (int)sizeof(needle))
+		return false;
+	const char *p = strstr(tag, needle);
+	if ((p == NULL) || (p >= tagEnd))
+		return false;
+	p += n;
+	const char *q = strchr(p, '"');
+	if ((q == NULL) || (q >= tagEnd))
+		return false;
+	size_t len = (size_t)(q - p);
+	if (len >= outSz)
+		len = outSz - 1;
+	memcpy(out, p, len);
+	out[len] = '\0';
+	return true;
+}
+
+// Decompress a gzip blob from `pCmp` (length cmpSz) into a newly malloc'd
+// buffer. Returns the decompressed buffer and writes its length to *unCmpOut,
+// or NULL on failure. Caller frees.
+//
+// Note: the gzip ISIZE trailer is NOT trusted here. DICOM OB elements are
+// even-length-padded, so the (7FE1,1010) value can include trailing bytes
+// after the gzip stream's real end; the bytes at cmpSz-4..cmpSz-1 are then
+// arbitrary, not the original ISIZE. Instead we allocate a generous output
+// buffer (16x cmpSz, capped at 32 MB) and let inflate() report STREAM_END
+// when it has consumed the deflate stream — total_out is the truth.
+static uint8_t *xaPhysioInflate(uint8_t *pCmp, int cmpSz, uint32_t *unCmpOut) {
+	*unCmpOut = 0;
+	if ((cmpSz < 20) || (pCmp[0] != 0x1F) || (pCmp[1] != 0x8B) || (pCmp[2] != 0x08))
+		return NULL;
+	uint8_t flags = pCmp[3];
+	bool isFNAME = ((flags & 0x08) == 0x08);
+	bool isFCOMMENT = ((flags & 0x10) == 0x10);
+	int hdrSz = 10;
+	if (isFNAME) {
+		for (; hdrSz < cmpSz; hdrSz++)
+			if (pCmp[hdrSz] == 0)
+				break;
+		hdrSz++;
+	}
+	if (isFCOMMENT) {
+		for (; hdrSz < cmpSz; hdrSz++)
+			if (pCmp[hdrSz] == 0)
+				break;
+		hdrSz++;
+	}
+	if (hdrSz >= cmpSz)
+		return NULL;
+	// Output buffer: assume the payload won't exceed 16x compressed size,
+	// capped at 32 MB to bound a hostile expansion ratio.
+	size_t outCap = (size_t)cmpSz * 16;
+	if (outCap > (32u * 1024u * 1024u))
+		outCap = 32u * 1024u * 1024u;
+	if (outCap < 65536)
+		outCap = 65536;
+	uint8_t *pUnCmp = (uint8_t *)malloc(outCap + 1);
+	if (pUnCmp == NULL)
+		return NULL;
+	z_stream s;
+	memset(&s, 0, sizeof(z_stream));
+#ifdef myDisableMiniZ
+#define MZ_DEFAULT_WINDOW_BITS 15
+#endif
+	if (inflateInit2(&s, -MZ_DEFAULT_WINDOW_BITS) != Z_OK) {
+		free(pUnCmp);
+		return NULL;
+	}
+	s.next_in = pCmp + hdrSz;
+	s.avail_in = cmpSz - hdrSz; // include possible padding after the stream;
+								// inflate() stops at STREAM_END regardless.
+	s.next_out = pUnCmp;
+	s.avail_out = (unsigned int)outCap;
+#ifdef myDisableMiniZ
+	int ret = inflate(&s, Z_FINISH);
+	if ((ret != Z_STREAM_END) && (ret != Z_BUF_ERROR)) {
+#else
+	int ret = mz_inflate(&s, MZ_FINISH);
+	if ((ret != MZ_STREAM_END) && (ret != MZ_BUF_ERROR)) {
+#endif
+		inflateEnd(&s);
+		free(pUnCmp);
+		return NULL;
+	}
+	// Z_BUF_ERROR is ambiguous: it fires both when the deflate stream
+	// ended normally with input padding remaining (legit, the common path
+	// for DICOM-padded gzip blobs) AND when the output buffer cap is hit
+	// before the deflate end-marker is reached (output truncated). The
+	// two are distinguishable by avail_in: if any input is left after a
+	// non-STREAM_END exit, the input wasn't exhausted, which means the
+	// output cap was the limiting factor. Surface that as a warning so
+	// the user knows the resulting BIDS sidecar may be incomplete.
+#ifdef myDisableMiniZ
+	if ((ret == Z_BUF_ERROR) && (s.avail_in > 0))
+#else
+	if ((ret == MZ_BUF_ERROR) && (s.avail_in > 0))
+#endif
+		printWarning("XA PhysioLogging payload exceeded internal decompression cap; output may be truncated.\n");
+	uint32_t produced = (uint32_t)s.total_out;
+	inflateEnd(&s);
+	if (produced == 0) {
+		free(pUnCmp);
+		return NULL;
+	}
+	pUnCmp[produced] = '\0'; // null-terminate so strstr() is safe
+	*unCmpOut = produced;
+	return pUnCmp;
+}
+
+// Strip every <!DOCTYPE ...> block from xmlText, modifying it in place.
+// XA payloads carry a structural DTD with no entities; removing it closes
+// the billion-laughs / internal-entity surface (matches the bidsphysio
+// Python parser). Each DOCTYPE is overwritten with spaces to preserve
+// byte offsets (cheap and avoids reallocation).
+static void xaPhysioStripDoctype(char *xmlText) {
+	for (;;) {
+		char *p = strstr(xmlText, "<!DOCTYPE");
+		if (p == NULL)
+			return;
+		// Look for an internal subset; if absent, end at the first '>'.
+		char *bracket = strchr(p, '[');
+		char *gt = strchr(p, '>');
+		char *end;
+		if ((bracket != NULL) && ((gt == NULL) || (bracket < gt))) {
+			char *closeBracket = strstr(bracket, "]");
+			if (closeBracket == NULL)
+				return;
+			end = strchr(closeBracket, '>');
+			if (end == NULL)
+				return;
+		} else {
+			end = gt;
+			if (end == NULL)
+				return;
+		}
+		for (char *q = p; q <= end; q++)
+			*q = ' ';
+	}
+}
+
+// Stable-sort (ticArr, signal) jointly by tic in ascending order. Document
+// order matches scanner emission order in known Siemens output, but a
+// malformed payload with reordered samples would otherwise yield non-
+// monotonic timestamps, breaking the span/(N-1) sample-rate calc and the
+// trigger rasteriser's monotonicity assumption. Bubble sort is adequate:
+// it short-circuits to O(n) on already-sorted input (the typical case),
+// and even O(n^2) is one-shot per series. Used by both XA and CMRR paths.
+static void physioBidsSortByTic(long *ticArr, double *signal, int n) {
+	bool swapped = true;
+	while (swapped) {
+		swapped = false;
+		for (int i = 1; i < n; i++) {
+			if (ticArr[i - 1] > ticArr[i]) {
+				long tt = ticArr[i - 1];
+				ticArr[i - 1] = ticArr[i];
+				ticArr[i] = tt;
+				double ts = signal[i - 1];
+				signal[i - 1] = signal[i];
+				signal[i] = ts;
+				swapped = true;
+			}
+		}
+	}
+}
+
+// Rebuild a sparsely-sampled physio stream on the uniform timeline implied
+// by its sampling rate. Returns malloc'd `outSignal` (length *outN) with
+// missing samples set to NaN, and `outTrigger` (length *outN) with 1s at
+// the indices nearest each volume tic that falls inside the recording
+// window. This matches the bidsphysio Python parser's plug_missing_data
+// step so consumers see uniform-rate BIDS output regardless of whether
+// the source PMU was regular (PULS, RESP) or sparse (EXT pulses).
+//
+// Inputs: ticArr / signal of length n in MDH tics, dtMs sample period in
+// ms, volTics / volN volume timeline. Output expected sample count is
+// round(duration_ms / dtMs) + 1 (fencepost), matching bidsphysio.
+// Rasterise a sparse trigger-tic array onto an existing uniform grid.
+// firstTic = origin (ticArr[0] of the carrying stream), lastTic = end
+// (ticArr[n-1]), dtTics = sample period in tics, expN = grid length.
+// Returns a calloc'd uint8_t array of length expN with 1 at each matching
+// sample (ceil-snap, "first sample whose time is >= trigger") or NULL on
+// allocation failure / empty input. Triggers outside [firstTic, lastTic]
+// are dropped to match bidsphysio's behaviour. Shared by the scanner
+// volume trigger pass and any per-stream physio-event trigger pass.
+static uint8_t *physioBidsRasterTrigger(long firstTic, long lastTic, double dtTics,
+										int expN, const long *tics, int n) {
+	if ((tics == NULL) || (n <= 0) || (expN <= 0) || (dtTics <= 0.0))
+		return NULL;
+	uint8_t *u = (uint8_t *)calloc((size_t)expN, sizeof(uint8_t));
+	if (u == NULL)
+		return NULL;
+	for (int i = 0; i < n; i++) {
+		long t = tics[i];
+		if ((t < firstTic) || (t > lastTic))
+			continue;
+		double off = (double)(t - firstTic) / dtTics;
+		int idx = (int)ceil(off);
+		if (idx < 0)
+			idx = 0;
+		if (idx >= expN)
+			idx = expN - 1;
+		u[idx] = 1;
+	}
+	return u;
+}
+
+static void physioBidsFillUniform(const long *ticArr, const double *signal, int n,
+								  double dtMs,
+								  const long *volTics, int volN,
+								  const long *peakTics, int peakN,
+								  double **outSignal,
+								  uint8_t **outTrigger,
+								  uint8_t **outPeakTrigger,
+								  int *outN,
+								  bool *outOom) {
+	*outSignal = NULL;
+	*outTrigger = NULL;
+	if (outPeakTrigger != NULL)
+		*outPeakTrigger = NULL;
+	*outN = 0;
+	// outOom distinguishes an allocation failure (caller must fail the
+	// stream, not roll it into "no sensors connected") from degenerate
+	// input (n<2 / non-positive dt — legitimately skippable). M1/M2 fixed
+	// the writer + peak-raster OOM paths; this closes the signal-buffer and
+	// scanner-trigger-raster OOM paths the same way.
+	if (outOom != NULL)
+		*outOom = false;
+	// Reject non-finite dt as well as non-positive: CMRR SampleTime is parsed
+	// with atof (~:10711), so a malformed "inf"/"nan" token yields dtMs = inf/nan.
+	// inf passes a bare `> 0` test and nan passes a bare `<= 0` test, so without
+	// the isfinite() gate dtTics would be inf/nan, expD would collapse to 1.0
+	// (passing the span guard below), and every sample would map to index ~0 —
+	// a corrupt-but-"successful" TSV. Fail closed instead (degenerate skip).
+	if ((n < 2) || (dtMs <= 0.0) || (!isfinite(dtMs)))
+		return;
+	// Sample period expressed in tics so we can index without losing
+	// precision on the 2.5 ms tic boundaries.
+	double dtTics = dtMs / kMDHTicMs;
+	if (dtTics <= 0.0)
+		return;
+	double spanTics = (double)(ticArr[n - 1] - ticArr[0]);
+	// Bound the raster length in the double domain BEFORE the int cast. ticArr
+	// tics are strtol-parsed with only a >=0 floor (XA/CMRR), so a corrupt or
+	// hostile timestamp can make spanTics/dtTics exceed INT_MAX — the (int) cast
+	// would then be undefined behaviour, and a wrap to a small positive value
+	// would under-allocate uS and silently funnel many samples into the last
+	// bucket (idx clamps below). Reject the implausible span fail-closed (same
+	// contract as the alloc-OOM path) rather than rasterising corrupt data.
+	double expD = floor(spanTics / dtTics + 0.5) + 1.0;
+	if ((!isfinite(expD)) || (expD < 1.0) || (expD > (double)(INT_MAX - 2))) {
+		printWarning("Physio: implausible time span (%g tics / %g) — discarding stream\n", spanTics, dtTics);
+		if (outOom != NULL)
+			*outOom = true;
+		return;
+	}
+	int expN = (int)expD;
+	if (expN < n)
+		expN = n; // never lose a real sample to rounding
+	double *uS = (double *)malloc(sizeof(double) * (size_t)expN);
+	if (uS == NULL) {
+		if (outOom != NULL)
+			*outOom = true;
+		return;
+	}
+	for (int i = 0; i < expN; i++)
+		uS[i] = NAN;
+	long firstTic = ticArr[0];
+	for (int i = 0; i < n; i++) {
+		double off = (double)(ticArr[i] - firstTic) / dtTics;
+		int idx = (int)floor(off + 0.5);
+		if (idx < 0)
+			idx = 0;
+		if (idx >= expN)
+			idx = expN - 1;
+		uS[idx] = signal[i];
+	}
+	long lastTic = ticArr[n - 1];
+	// Allocate the scanner-trigger raster only when there are scanner tics
+	// to write. The caller (physioBidsEmitStream) already gates the writer's
+	// column 2 on `volN > 0`, so an empty raster is never emitted. Skipping
+	// the alloc when volN == 0 keeps the signal+peak schema (no scanner
+	// triggers but firmware peaks present) from being silently dropped on
+	// an unused calloc OOM.
+	uint8_t *uT = NULL;
+	if (volN > 0) {
+		uT = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, volTics, volN);
+		if (uT == NULL) {
+			// physioBidsRasterTrigger returned NULL despite volN > 0 — calloc
+			// failed. The writer hard-requires a non-NULL pointer for column 2
+			// when scanner triggers were requested, so the entire stream
+			// cannot be emitted. Bail with the signal buffer cleaned up.
+			if (outOom != NULL)
+				*outOom = true;
+			free(uS);
+			return;
+		}
+	}
+	uint8_t *uP = NULL;
+	if ((outPeakTrigger != NULL) && (peakN > 0)) {
+		uP = physioBidsRasterTrigger(firstTic, lastTic, dtTics, expN, peakTics, peakN);
+		// Warn-once if the peak column was promised (peakN>0) but the
+		// rasteriser returned NULL (calloc OOM). Caller will see uP=NULL
+		// and return kPhysioEmitFailed (M2) — the stream is failed rather
+		// than silently degraded to 2 columns. Rare, but worth surfacing.
+		if (uP == NULL)
+			printWarning("CMRR PMU: physio-event trigger column dropped (allocation failure for %d-sample raster)\n", expN);
+	}
+	*outSignal = uS;
+	*outTrigger = uT;
+	if (outPeakTrigger != NULL)
+		*outPeakTrigger = uP;
+	*outN = expN;
+}
+
+// Forward declaration so physioBidsEmitStream below can call it; the
+// definition follows immediately after. Returns true when both the JSON
+// sidecar and the gzipped TSV were written successfully; false on any
+// allocation, fopen, fwrite-short, or deflate failure (audit 2026-06-11
+// M1). On false return, the caller MUST treat the stream as failed
+// rather than partially-written; the writer best-effort unlinks any
+// partial files before returning.
+static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
+									 const double *signal, const uint8_t *trigger,
+									 const char *peakLabel, const uint8_t *peakTrigger,
+									 int nSamples, double sampFreq,
+									 double startTimeSec, int gzLevel);
+
+// One-shot emit of a single physio stream as a BIDS sidecar pair, given
+// per-stream sample arrays and the volume timeline. Encapsulates the steps
+// shared by both the XA and CMRR converters: rebuild on a uniform timeline
+// (with NaN-fill for sparse streams), compute the BIDS StartTime by
+// truncating to integer milliseconds (matching bidsphysio's `int(t_start_ms)
+// / 1000`), and call xaPhysioWriteStreamFiles. Returns a tri-state
+// PhysioEmitStatus: kPhysioEmitOk when a stream was emitted, kPhysioEmitSkipped
+// for a degenerate/empty input (not an error), and kPhysioEmitFailed on an
+// allocation or write failure (caller must treat as a conversion failure).
+// See the Return semantics note on the enum below for the canonical detail.
+//
+// `peakTics`/`peakN` + `peakLabel` are optional: when non-NULL/positive
+// they emit a 3rd column carrying the physiological-event triggers
+// (`PULS_TRIGGER` / `RESP_TRIGGER` from the CMRR PMU log) at the nearest
+// BIDS sample, with `peakLabel` as the JSON `Columns` entry (e.g.
+// `cardiac_trigger`, `respiratory_trigger`). The standalone BIDS-canonical
+// `trigger` column keeps its scanner-volume-only semantics — this matches
+// the BIDS spec's "continuous measurement of the scanner trigger signal"
+// description and stays byte-compatible with bidsphysio for that column.
+//
+// Caller retains ownership of ticArr/signal/volTics/peakTics; this
+// function only allocates and frees the uniform-grid working buffers
+// internally.
+//
+// Return semantics (audit 2026-06-11 M1+M2): three-state, distinguishing
+//   kPhysioEmitOk      — file pair written to disk.
+//   kPhysioEmitSkipped — nothing emit-able from the input (degenerate
+//                        timeline / empty grid); not an error.
+//   kPhysioEmitFailed  — tried but hit an allocation / write failure
+//                        (raster OOM, JSON alloc, fopen, fwrite-short,
+//                        deflate, etc.). Caller MUST treat this as a
+//                        conversion failure rather than rolling it into
+//                        "no sensors connected".
+typedef enum {
+	kPhysioEmitOk = 0,
+	kPhysioEmitSkipped,
+	kPhysioEmitFailed,
+} PhysioEmitStatus;
+
+static PhysioEmitStatus physioBidsEmitStream(const char *baseName, const char *label,
+											 const long *ticArr, const double *signal, int n,
+											 double dtMs, double sampFreq,
+											 const long *volTics, int volN,
+											 const long *peakTics, int peakN,
+											 const char *peakLabel,
+											 int gzLevel) {
+	double *uSignal = NULL;
+	uint8_t *uTrig = NULL;
+	uint8_t *uPeak = NULL;
+	int uN = 0;
+	bool fillOom = false;
+	physioBidsFillUniform(ticArr, signal, n, dtMs,
+						  volTics, volN,
+						  peakTics, peakN,
+						  &uSignal, &uTrig, &uPeak, &uN, &fillOom);
+	if ((uSignal == NULL) || (uN < 1)) {
+		free(uSignal);
+		free(uTrig);
+		free(uPeak);
+		// An allocation failure (signal buffer or scanner-trigger raster) must
+		// surface as a conversion failure; only genuinely degenerate input
+		// (n<2 / non-positive dt) is a benign skip. Pre-M2 both collapsed to
+		// Skipped → "no sensors connected" → EXIT_SUCCESS under memory pressure.
+		return fillOom ? kPhysioEmitFailed : kPhysioEmitSkipped;
+	}
+	// M2: a requested peak column that came back NULL means the raster
+	// allocator failed. The writer would silently emit a 2-column TSV when
+	// the JSON Columns list (built from `peakLabel` separately downstream)
+	// still claimed 3 — schema drift under memory pressure. Treat as
+	// stream failure so the caller can report it instead of pretending
+	// success. (physioBidsFillUniform already warned about the OOM.)
+	if ((peakN > 0) && (uPeak == NULL)) {
+		free(uSignal);
+		free(uTrig);
+		return kPhysioEmitFailed;
+	}
+	// StartTime per BIDS: physio-timeline t=0 expressed relative to the
+	// first scan trigger. Negative means PMU recording started before
+	// the first acquired volume (the typical manual head-start).
+	// Truncate to integer ms in the integer-tic domain to match bidsphysio
+	// while avoiding the floating-point precision loss bidsphysio incurs
+	// from its tics → seconds → milliseconds → int chain.
+	double startTimeSec;
+	if (volN > 0) {
+		double startTimeMs = (double)(ticArr[0] - volTics[0]) * kMDHTicMs;
+		startTimeSec = (double)((long)startTimeMs) / 1000.0;
+	} else
+		startTimeSec = 0.0;
+	bool wroteOk = xaPhysioWriteStreamFiles(baseName, label, uSignal,
+											(volN > 0) ? uTrig : NULL,
+											(uPeak != NULL) ? peakLabel : NULL, uPeak,
+											uN, sampFreq, startTimeSec, gzLevel);
+	free(uSignal);
+	free(uTrig);
+	free(uPeak);
+	return wroteOk ? kPhysioEmitOk : kPhysioEmitFailed;
+}
+
+// Write `<base>_recording-<label>_physio.tsv.gz` (gzipped, no header row,
+// per BIDS convention) plus the matching JSON sidecar with Columns,
+// SamplingFrequency, and StartTime. NaN signal values are emitted as
+// the literal string `n/a` per the bids-validator's TSV missing-value
+// convention.
+//
+// Two optional columns:
+//   * `trigger`  — scanner volume triggers (BIDS-canonical column).
+//   * `<peakLabel>` — per-stream physiological-event triggers (e.g.
+//     `cardiac_trigger` from `PULS_TRIGGER`, `respiratory_trigger`
+//     from `RESP_TRIGGER`). Out-of-band marker that the firmware
+//     detected a heartbeat / breath at this sample. Independent of
+//     the scanner column so consumers can pick what they need.
+static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
+									 const double *signal, const uint8_t *trigger,
+									 const char *peakLabel, const uint8_t *peakTrigger,
+									 int nSamples, double sampFreq,
+									 double startTimeSec, int gzLevel) {
+	char outBase[PATH_MAX];
+	snprintf(outBase, sizeof(outBase), "%s_recording-%s_physio", baseName, label);
+	char jsonPath[PATH_MAX];
+	snprintf(jsonPath, sizeof(jsonPath), "%s.json", outBase);
+	char tsvPath[PATH_MAX];
+	snprintf(tsvPath, sizeof(tsvPath), "%s.tsv.gz", outBase);
+	// JSON sidecar via cJSON. Audit 2026-06-11 M1: every allocator can return
+	// NULL under memory pressure; previously these were unchecked and the
+	// writer happily passed NULLs into cJSON_AddItemToObject (UB) or fwrote
+	// a NULL jsonStr. On any failure we now bail with the partial outputs
+	// unlinked so a follow-up retry doesn't see a half-written file.
+	cJSON *root = cJSON_CreateObject();
+	cJSON *cols = cJSON_CreateArray();
+	cJSON *sigName = cJSON_CreateString(label);
+	cJSON *trigName = (trigger != NULL) ? cJSON_CreateString("trigger") : NULL;
+	cJSON *peakName = ((peakTrigger != NULL) && (peakLabel != NULL) && (peakLabel[0] != '\0'))
+						  ? cJSON_CreateString(peakLabel)
+						  : NULL;
+	// PhysioType is RECOMMENDED by BIDS (default "generic", which MUST be
+	// assumed when absent). The scanner cardiac/respiratory/trigger streams we
+	// emit follow the column-naming recommendations for "generic" recordings
+	// (the only other allowed keyword is "eyetrack"), so "generic" is correct
+	// and silences the validator's SIDECAR_KEY_RECOMMENDED(PhysioType) warning.
+	cJSON *physioType = cJSON_CreateString("generic");
+	cJSON *sampHz = cJSON_CreateNumber(sampFreq);
+	cJSON *startT = cJSON_CreateNumber(startTimeSec);
+	if (root == NULL || cols == NULL || sigName == NULL || physioType == NULL || sampHz == NULL || startT == NULL ||
+		(trigger != NULL && trigName == NULL) || (peakName == NULL && peakTrigger != NULL &&
+												  peakLabel != NULL && peakLabel[0] != '\0')) {
+		cJSON_Delete(root);
+		cJSON_Delete(cols);
+		cJSON_Delete(sigName);
+		cJSON_Delete(trigName);
+		cJSON_Delete(peakName);
+		cJSON_Delete(physioType);
+		cJSON_Delete(sampHz);
+		cJSON_Delete(startT);
+		printWarning("Physio: JSON allocation failed for %s — skipping stream\n", label);
+		return false;
+	}
+	cJSON_AddItemToArray(cols, sigName);
+	if (trigName != NULL)
+		cJSON_AddItemToArray(cols, trigName);
+	if (peakName != NULL)
+		cJSON_AddItemToArray(cols, peakName);
+	cJSON_AddItemToObject(root, "PhysioType", physioType);
+	cJSON_AddItemToObject(root, "Columns", cols);
+	cJSON_AddItemToObject(root, "SamplingFrequency", sampHz);
+	cJSON_AddItemToObject(root, "StartTime", startT);
+	// The bundled cJSON's public cJSON_AddItemTo{Array,Object} return void, but
+	// the private add_item_to_object can still fail (key strdup OOM) — silently
+	// dropping a BIDS-required key while cJSON_Print happily serializes the
+	// short object as "success". Verify every attach landed (expected column
+	// count + all three object keys present) before trusting the sidecar; fail
+	// closed otherwise, matching the cycle-3 physio fail-closed contract. (A
+	// sub-strdup OOM here also orphans the dropped item; on this already-doomed
+	// allocator-failure path the one-shot leak is acceptable versus the bug
+	// risk of manual orphan tracking against a void-returning vendored API.)
+	int expectCols = 1 + ((trigName != NULL) ? 1 : 0) + ((peakName != NULL) ? 1 : 0);
+	if ((cJSON_GetArraySize(cols) != expectCols) ||
+		(cJSON_GetObjectItem(root, "PhysioType") == NULL) ||
+		(cJSON_GetObjectItem(root, "Columns") == NULL) ||
+		(cJSON_GetObjectItem(root, "SamplingFrequency") == NULL) ||
+		(cJSON_GetObjectItem(root, "StartTime") == NULL)) {
+		cJSON_Delete(root);
+		printWarning("Physio: JSON key attachment failed for %s — discarding stream\n", label);
+		return false;
+	}
+	// Document the non-standard firmware-peak column so the validator does not
+	// warn TSV_ADDITIONAL_COLUMNS_UNDEFINED. `cardiac`/`respiratory`/`trigger`
+	// are BIDS-recognized generic-physio column names (no description needed);
+	// the per-stream peak column (peakLabel, e.g. `cardiac_trigger`) is a
+	// dcm2niix-specific deviation and MUST carry a column-description object.
+	// Best-effort RECOMMENDED metadata: a strdup OOM here degrades to the prior
+	// validator warning rather than a corrupt sidecar, so it stays outside the
+	// fail-closed required-key check above.
+	if (peakName != NULL) {
+		cJSON *peakDesc = cJSON_CreateObject();
+		if (peakDesc != NULL) {
+			cJSON_AddStringToObject(peakDesc, "Description",
+									"Firmware-detected physiological event peak (e.g. cardiac R-wave or respiratory peak): 1 at a sample the scanner flagged as a detected peak, 0 otherwise. Independent of the scanner-volume `trigger` column.");
+			cJSON_AddItemToObject(root, peakLabel, peakDesc);
+		}
+	}
+	char *jsonStr = cJSON_Print(root);
+	cJSON_Delete(root);
+	if (jsonStr == NULL) {
+		printWarning("Physio: JSON serialization failed for %s — skipping stream\n", label);
+		return false;
+	}
+	FILE *fJson = fopen(jsonPath, "wb");
+	if (fJson == NULL) {
+		printWarning("Physio: could not open %s for writing — skipping stream\n", jsonPath);
+		free(jsonStr);
+		return false;
+	}
+	size_t jsonLen = strlen(jsonStr);
+	bool jsonOk = (fwrite(jsonStr, 1, jsonLen, fJson) == jsonLen) && (fputc('\n', fJson) != EOF);
+	if (fclose(fJson) != 0)
+		jsonOk = false;
+	free(jsonStr);
+	if (!jsonOk) {
+		printWarning("Physio: short write on %s — discarding partial output\n", jsonPath);
+		unlink(jsonPath);
+		return false;
+	}
+	// TSV: build the uncompressed body, then gzip it (mirrors writeNiiGz).
+	// Worst case per sample: signal up to ~24 chars + tab + "1" + newline.
+	size_t bufCap = (size_t)nSamples * 32 + 16;
+	char *tsv = (char *)malloc(bufCap);
+	if (tsv == NULL) {
+		printWarning("Physio: TSV buffer alloc failed for %s — discarding partial output\n", label);
+		unlink(jsonPath);
+		return false;
+	}
+	size_t tsvLen = 0;
+	int i;
+	for (i = 0; i < nSamples; i++) {
+		int n;
+		// NaN values come from physioBidsFillUniform when a uniform-rate
+		// timeline is reconstructed from sparsely-sampled input (e.g. EXT
+		// trigger pulses) or when the source PMU stream had sample dropouts.
+		// Emit BIDS-canonical "n/a" — the bids-validator rejects "nan"/"NaN"/
+		// "NA"/"na" with TSV_VALUE_INCORRECT_TYPE and an explicit "did you
+		// mean 'n/a'?" hint (bids-core/src/tables.rs nan_hint_regex). Earlier
+		// versions emitted the literal "nan" to byte-match bidsphysio /
+		// pandas; that compatibility goal is retired in favour of validator
+		// compliance.
+		// Build the row column-by-column: each optional column emits only
+		// when its source pointer is non-NULL. This makes the four schemas
+		// (signal / signal+trigger / signal+peak / signal+trigger+peak)
+		// fall out of the same code path. A previous version gated the peak
+		// emission inside the `trigger != NULL` branch — emitting the JSON
+		// peak column but no TSV value when ACQUISITION_INFO was absent
+		// (silent data loss).
+		// Emit BIDS "n/a" for any non-finite value, not just NaN: a hostile/
+		// malformed CMRR sample token ("inf") parsed by strtod (~:10785) would
+		// otherwise print the literal "inf" — invalid TSV. isfinite() folds
+		// inf/-inf into the same n/a path as NaN (valid data is always finite).
+		bool isNan = !isfinite(signal[i]);
+		char *q = tsv + tsvLen;
+		size_t rem = bufCap - tsvLen;
+		n = isNan ? snprintf(q, rem, "n/a") : snprintf(q, rem, "%.4f", signal[i]);
+		if (n < 0 || (size_t)n >= rem)
+			break;
+		size_t used = (size_t)n;
+		if (trigger != NULL) {
+			n = snprintf(q + used, rem - used, "\t%d", (int)trigger[i]);
+			if (n < 0 || (size_t)n >= rem - used)
+				break;
+			used += (size_t)n;
+		}
+		if (peakTrigger != NULL) {
+			n = snprintf(q + used, rem - used, "\t%d", (int)peakTrigger[i]);
+			if (n < 0 || (size_t)n >= rem - used)
+				break;
+			used += (size_t)n;
+		}
+		n = snprintf(q + used, rem - used, "\n");
+		if (n < 0 || (size_t)n >= rem - used)
+			break;
+		tsvLen += used + (size_t)n;
+	}
+	// Fail closed if any row could not be serialized (snprintf overflow on a
+	// hostile/oversized value broke the loop early). The bufCap budget of 32
+	// bytes/sample is the in-range worst case; an out-of-range double printed
+	// with %.4f can exceed it. Emitting a silently-truncated TSV with success
+	// status would lose physio samples without surfacing the failure — same
+	// fail-closed contract as the JSON/deflate paths above (M1/M2 cycle).
+	if (i != nSamples) {
+		printWarning("Physio: TSV row %d of %d overflowed buffer for %s — discarding partial output\n", i, nSamples, label);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
+	}
+	// Gzip-compress tsv body. Same single-shot deflate-then-write pattern as
+	// writeNiiGz: raw deflate output, then prepend a 10-byte gzip header and
+	// append CRC32 + ISIZE.
+	unsigned long cmpCap = mz_compressBound((unsigned long)tsvLen);
+	unsigned char *pCmp = (unsigned char *)malloc(cmpCap);
+	if (pCmp == NULL) {
+		printWarning("Physio: gzip buffer alloc failed for %s — discarding partial output\n", label);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
+	}
+	z_stream strm;
+	memset(&strm, 0, sizeof(z_stream));
+	strm.next_out = pCmp;
+	strm.avail_out = (unsigned int)cmpCap;
+	int zLevel = MZ_DEFAULT_LEVEL;
+	if ((gzLevel > 0) && (gzLevel < 11))
+		zLevel = gzLevel;
+	if (zLevel > MZ_UBER_COMPRESSION)
+		zLevel = MZ_UBER_COMPRESSION;
+	if (deflateInit(&strm, zLevel) != Z_OK) {
+		printWarning("Physio: deflateInit failed for %s — discarding partial output\n", label);
+		free(pCmp);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
+	}
+	strm.next_in = (uint8_t *)tsv;
+	strm.avail_in = (unsigned int)tsvLen;
+	int defStatus = deflate(&strm, Z_FINISH);
+	deflateEnd(&strm);
+	if (defStatus != Z_STREAM_END) {
+		printWarning("Physio: deflate did not finish stream for %s — discarding partial output\n", label);
+		free(pCmp);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
+	}
+	unsigned long crc = mz_crc32(0L, Z_NULL, 0);
+	crc = mz_crc32(crc, (unsigned char *)tsv, (unsigned int)tsvLen);
+	unsigned long cmpLen = strm.total_out;
+	FILE *fGz = fopen(tsvPath, "wb");
+	if (fGz == NULL) {
+		printWarning("Physio: could not open %s for writing — discarding partial output\n", tsvPath);
+		free(pCmp);
+		free(tsv);
+		unlink(jsonPath);
+		return false;
+	}
+	bool tsvOk = true;
+	tsvOk = tsvOk && (fputc(0x1F, fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)0x8B, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x08, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF); // mtime
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF);
+	tsvOk = tsvOk && (fputc(0x00, fGz) != EOF); // xfl
+	tsvOk = tsvOk && (fputc((unsigned char)0xFF, fGz) != EOF); // os = unknown
+	// Skip 2-byte zlib header at pCmp[0..1] and 4-byte adler at the tail.
+	if (cmpLen >= 6) {
+		size_t deflBytes = (size_t)cmpLen - 6;
+		tsvOk = tsvOk && (fwrite(&pCmp[2], 1, deflBytes, fGz) == deflBytes);
+	}
+	tsvOk = tsvOk && (fputc((unsigned char)(crc), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(crc >> 8), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(crc >> 16), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(crc >> 24), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in >> 8), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in >> 16), fGz) != EOF);
+	tsvOk = tsvOk && (fputc((unsigned char)(strm.total_in >> 24), fGz) != EOF);
+	if (fclose(fGz) != 0)
+		tsvOk = false;
+	free(pCmp);
+	free(tsv);
+	if (!tsvOk) {
+		printWarning("Physio: short write on %s — discarding partial output\n", tsvPath);
+		unlink(jsonPath);
+		unlink(tsvPath);
+		return false;
+	}
+	printMessage("Wrote %s and %s\n", tsvPath, jsonPath);
+	return true;
+}
+
+// Top-level: read the gzip-XML payload from infname, parse out streams and
+// volume tics, and write a BIDS sidecar pair per stream. Returns
+// EXIT_FAILURE only on read/parse errors that block the run; an empty
+// payload (no streams matched, or all rejected by physioBidsEmitStream)
+// returns EXIT_SUCCESS with a printWarning so a missing-sensors series
+// does not flip the outer "all done" report to kEXIT_SOME_OK_SOME_BAD.
+static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
+						   const char *baseName, struct TDCMopts opts) {
+	if ((d.xaPhysioOffset <= 0) || (d.xaPhysioBytes < 20))
+		return EXIT_FAILURE;
+	FILE *f = fopen(infname, "rb");
+	if (f == NULL)
+		return EXIT_FAILURE;
+	fseek(f, d.xaPhysioOffset, SEEK_SET);
+	uint8_t *pCmp = (uint8_t *)malloc(d.xaPhysioBytes);
+	if (pCmp == NULL) {
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	if ((int)fread(pCmp, 1, d.xaPhysioBytes, f) != d.xaPhysioBytes) {
+		free(pCmp);
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	fclose(f);
+	uint32_t xmlLen = 0;
+	uint8_t *xmlBytes = xaPhysioInflate(pCmp, d.xaPhysioBytes, &xmlLen);
+	free(pCmp);
+	if (xmlBytes == NULL) {
+		printWarning("XA PhysioLogging payload could not be decompressed.\n");
+		return EXIT_FAILURE;
+	}
+	char *xml = (char *)xmlBytes;
+	xaPhysioStripDoctype(xml);
+	// Collect Volume ACQUISITION_TIME_TICS from <VolumeAcquisitionDescription>.
+	// These are scan-locked timestamps (one per acquired volume) and are used
+	// both as triggers and to compute the StartTime offset relative to the
+	// PMU stream (which starts manually, before the scan).
+	int volCap = 64, volN = 0;
+	long *volTics = (long *)malloc(sizeof(long) * volCap);
+	if (volTics == NULL) {
+		free(xmlBytes);
+		return EXIT_FAILURE;
+	}
+	const char *vp = xml;
+	while ((vp = strstr(vp, "<Volume ")) != NULL) {
+		const char *vEnd = strchr(vp, '>');
+		if (vEnd == NULL)
+			break;
+		char buf[64];
+		if (xaPhysioReadAttr(vp, vEnd, "ACQUISITION_TIME_TICS", buf, sizeof(buf))) {
+			// strtol+endp (not atol): a malformed XA volume tic would collapse
+			// to 0, fabricating a scanner trigger at tic 0 AND poisoning
+			// volTics[0] — the StartTime anchor (ticArr[0] - volTics[0]).
+			// Mirrors the CMRR ACQ_START parse; consumed-the-start check only
+			// (not full-token) so a trailing-space XML attr value is tolerated.
+			// Malformed → skip the volume, do not grow or store.
+			char *endpV;
+			long vt = strtol(buf, &endpV, 10);
+			if ((endpV != buf) && (vt >= 0)) {
+				if (volN >= volCap) {
+					volCap *= 2;
+					long *tmp = (long *)realloc(volTics, sizeof(long) * volCap);
+					if (tmp == NULL) {
+						free(volTics);
+						free(xmlBytes);
+						return EXIT_FAILURE;
+					}
+					volTics = tmp;
+				}
+				volTics[volN++] = vt;
+			}
+		}
+		vp = vEnd + 1;
+	}
+	int wrote = 0;
+	int writeFails = 0; // M1: tally attempts that hit a write/alloc failure
+	// Iterate <PhysioStream TYPE="X">...</PhysioStream> blocks.
+	const char *sp = xml;
+	while ((sp = strstr(sp, "<PhysioStream ")) != NULL) {
+		const char *sTagEnd = strchr(sp, '>');
+		if (sTagEnd == NULL)
+			break;
+		char streamType[32];
+		if (!xaPhysioReadAttr(sp, sTagEnd, "TYPE", streamType, sizeof(streamType))) {
+			sp = sTagEnd + 1;
+			continue;
+		}
+		const char *sClose = strstr(sTagEnd, "</PhysioStream>");
+		if (sClose == NULL)
+			break;
+		const char *label = xaPhysioBidsLabel(streamType);
+		if (label == NULL) {
+			if (opts.isVerbose)
+				printMessage("Skipping unknown XA PhysioStream TYPE='%s'\n", streamType);
+			sp = sClose + 1;
+			continue;
+		}
+		// Pre-count <PMU> elements within this stream.
+		int nCap = 0;
+		const char *cp = sTagEnd;
+		while ((cp = strstr(cp, "<PMU ")) != NULL) {
+			if (cp >= sClose)
+				break;
+			nCap++;
+			cp += 5;
+		}
+		if (nCap < 2) {
+			if (opts.isVerbose)
+				printMessage("Skipping XA stream %s: only %d sample(s)\n", streamType, nCap);
+			sp = sClose + 1;
+			continue;
+		}
+		double *signal = (double *)malloc(sizeof(double) * nCap);
+		long *ticArr = (long *)malloc(sizeof(long) * nCap);
+		if ((signal == NULL) || (ticArr == NULL)) {
+			free(signal);
+			free(ticArr);
+			sp = sClose + 1;
+			continue;
+		}
+		int n = 0;
+		const char *pp = sTagEnd;
+		while (((pp = strstr(pp, "<PMU ")) != NULL) && (pp < sClose) && (n < nCap)) {
+			const char *pEnd = strchr(pp, '>');
+			if ((pEnd == NULL) || (pEnd > sClose))
+				break;
+			char ticBuf[32], dataBuf[32];
+			if (xaPhysioReadAttr(pp, pEnd, "TIME_TICS", ticBuf, sizeof(ticBuf)) &&
+				xaPhysioReadAttr(pp, pEnd, "DATA", dataBuf, sizeof(dataBuf))) {
+				char *endp;
+				long tic = strtol(ticBuf, &endp, 10);
+				if ((endp != ticBuf) && (tic >= 0)) {
+					double v = strtod(dataBuf, &endp);
+					if (endp != dataBuf) {
+						ticArr[n] = tic;
+						signal[n] = v;
+						n++;
+					}
+				}
+			}
+			pp = pEnd + 1;
+		}
+		if (n < 2) {
+			free(signal);
+			free(ticArr);
+			sp = sClose + 1;
+			continue;
+		}
+		physioBidsSortByTic(ticArr, signal, n);
+		// As-acquired sample interval: span / (N-1) ms (fencepost). After
+		// sorting, ticArr[n-1] >= ticArr[0]; if they are equal (all samples
+		// share one timestamp) the recording is malformed and producing a
+		// SamplingFrequency of 0 in the JSON sidecar would be invalid BIDS,
+		// so skip the stream with a warning.
+		double dtMs = ((double)(ticArr[n - 1] - ticArr[0]) * kMDHTicMs) / (double)(n - 1);
+		if (dtMs <= 0.0) {
+			printWarning("XA stream %s has non-positive sample interval; skipping.\n", streamType);
+			free(signal);
+			free(ticArr);
+			sp = sClose + 1;
+			continue;
+		}
+		double sampFreq = 1000.0 / dtMs;
+		// XA-line PhysioLogging gzip-XML has no per-row PULS_TRIGGER /
+		// RESP_TRIGGER markers (the <PhysioTriggers> XML element carries
+		// those, in a separate parser path that isn't wired in here yet).
+		// Pass NULL for the peak channel so we emit a 2-column TSV.
+		PhysioEmitStatus st = physioBidsEmitStream(baseName, label, ticArr, signal, n, dtMs,
+												   sampFreq, volTics, volN,
+												   NULL, 0, NULL, opts.gzLevel);
+		if (st == kPhysioEmitOk)
+			wrote++;
+		else if (st == kPhysioEmitFailed)
+			writeFails++;
+		free(signal);
+		free(ticArr);
+		sp = sClose + 1;
+	}
+	free(volTics);
+	free(xmlBytes);
+	if (writeFails > 0) {
+		// Audit 2026-06-11 M1: any stream attempted but failed to write
+		// (raster OOM, JSON alloc, fopen, short fwrite, deflate) propagates
+		// as a hard failure. Previously these were silently rolled into the
+		// "wrote == 0 → no sensors connected" branch and reported success.
+		printError("XA PhysioLogging: %d stream(s) failed to write — see warnings above\n", writeFails);
+		return EXIT_FAILURE;
+	}
+	if (wrote == 0) {
+		// Mirror the CMRR case: an XA PhysioLogging payload with no
+		// cardiac/respiratory streams (sensors not connected) is not a
+		// conversion failure for the user — return success so $? stays 0
+		// and the "Converted X of Y" partial-failure message doesn't fire.
+		printWarning("XA PhysioLogging: no physio streams written — were sensors connected, or see any per-stream warnings above\n");
+		return EXIT_SUCCESS;
+	}
+	return EXIT_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy CMRR Multi-Band (VE11C) PMU support
+// ---------------------------------------------------------------------------
+// VE11C-era Siemens DICOMs from the CMRR Multi-Band sequence carry physio
+// at the same private tag (7FE1,1010) as the XA payload, but the body is a
+// raw binary blob rather than gzip-XML. Layout:
+//   * The blob is partitioned into N waveforms of equal stride
+//     wave_len = AcquisitionNumber * 1024 bytes.
+//   * Each waveform begins with a 1024-byte header: data_len (uint32 LE),
+//     fname_len (uint32 LE), fname (variable, e.g. "..._PULS.log"), then
+//     padding to 1024.
+//   * Bytes [1024 .. 1024+data_len) are ASCII log text. Header lines have
+//     the form "Key = Value"; sample lines are "<tics> <CHAN> <value> ...";
+//     ACQUISITION_INFO waveforms instead carry a 5-column table giving
+//     volume/slice/start/finish/echo per scanner trigger.
+//
+// The output schema is identical to the XA path (same per-stream BIDS
+// labels, same `_recording-<label>_physio.tsv.gz` + `.json`), and the
+// shared helper xaPhysioWriteStreamFiles writes the actual sidecars. Only
+// the parsing differs.
+
+#define kCMRRMaxStreams 8 // PULS, RESP, EXT, ECG, plus headroom for forward-compat
+
+typedef struct {
+	char chan[32];	   // "PULS" / "RESP" / "EXT" / "ECG" / "ACQUISITION_INFO"
+	const char *label; // BIDS label, e.g. "cardiac"
+	long *ticArr;	   // per-sample MDH tics (2.5 ms units)
+	double *signal;	   // per-sample value
+	int n;			   // sample count
+	int cap;		   // backing array capacity
+	double dtMs;	   // sample interval, populated from "SampleTime" header (in ms)
+	// Physio-event triggers (PULS_TRIGGER / RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER)
+	// captured from the per-row SIGNAL annotation. Tics are in the same MDH
+	// 2.5-ms units as ticArr. Emitted as a DEDICATED `<label>_trigger`
+	// column (separate from the scanner-only `trigger` column populated
+	// from ACQUISITION_INFO volTics) via the same nearest-sample snap.
+	// See cmrrPhysioParseLine for the parse policy.
+	long *triggerTics;
+	int triggerN;
+	int triggerCap;
+} TCmrrStream;
+
+// Append one (tic, value) pair to a stream, growing the backing arrays as
+// needed. Returns true on success, false on allocation failure.
+//
+// Realloc safety: each result is committed back into the stream BEFORE
+// attempting the next allocation. If the second realloc fails, the first
+// is preserved (already in the struct), so the caller's cleanup path
+// frees the right pointer rather than a dangling one.
+static bool cmrrPhysioAppend(TCmrrStream *st, long tic, double v) {
+	if (st->n >= st->cap) {
+		int newCap = (st->cap == 0) ? 1024 : st->cap * 2;
+		long *t2 = (long *)realloc(st->ticArr, sizeof(long) * newCap);
+		if (t2 == NULL)
+			return false;
+		st->ticArr = t2;
+		double *s2 = (double *)realloc(st->signal, sizeof(double) * newCap);
+		if (s2 == NULL)
+			return false; // st->ticArr already updated; legitimate live ptr.
+		st->signal = s2;
+		st->cap = newCap;
+	}
+	st->ticArr[st->n] = tic;
+	st->signal[st->n] = v;
+	st->n++;
+	return true;
+}
+
+// Append one physio-event trigger tic to a stream, growing the backing
+// array as needed. Returns true on success, false on allocation failure.
+// Used for PULS_TRIGGER / RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER rows
+// whose sentinel VALUE=2048 must NOT enter the sample stream. At emit time
+// (cmrrPhysioConvert) these tics are passed to physioBidsEmitStream as a
+// SEPARATE channel from the global ACQUISITION_INFO volTics and rasterised
+// onto a dedicated `<label>_trigger` TSV column.
+static bool cmrrTriggerAppend(TCmrrStream *st, long tic) {
+	if (st->triggerN >= st->triggerCap) {
+		int newCap = (st->triggerCap == 0) ? 64 : st->triggerCap * 2;
+		long *t2 = (long *)realloc(st->triggerTics, sizeof(long) * newCap);
+		if (t2 == NULL)
+			return false;
+		st->triggerTics = t2;
+		st->triggerCap = newCap;
+	}
+	st->triggerTics[st->triggerN++] = tic;
+	return true;
+}
+
+// Walk one ASCII line of a CMRR log body. Recognises:
+//   * "<key> = <value>" lines (LogDataType, SampleTime).
+//   * Sample lines: "<tics> <chan> <value> [...]". The channel name is
+//     "PULS" / "RESP" / "EXT" / "ECG"; downstream BIDS label is set on
+//     first encounter.
+//   * ACQUISITION_INFO 5-column trigger lines (volume, slice, acq_start,
+//     acq_finish, echo). The parser stores echo==0 entries as volume tics.
+//
+// Updates `st` (when this is a sample/header line for the current stream)
+// or `volTics` (when the current waveform is ACQUISITION_INFO).
+//
+// `streamHeaderRead` tracks the first 5-column line of an ACQUISITION_INFO
+// table — that line is column headers (VOLUME SLICE ACQ_START_TICS ...),
+// not data, and must be skipped exactly once.
+static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
+								long **volTicsP, int *volNP, int *volCapP,
+								char *prevVol, bool *streamHeaderRead) {
+	// Trim trailing CR / whitespace introduced by the source file's CRLF.
+	size_t L = strlen(line);
+	while ((L > 0) && ((line[L - 1] == '\r') || (line[L - 1] == '\n') || (line[L - 1] == ' ') || (line[L - 1] == '\t'))) {
+		line[L - 1] = '\0';
+		L--;
+	}
+	if (L == 0)
+		return;
+	// Tokenise on whitespace, capturing up to 5 fields. Anything past 5 is
+	// extra trigger metadata we don't need (e.g. "PULS_TRIGGER" tags).
+	char *toks[5] = {NULL, NULL, NULL, NULL, NULL};
+	int nToks = 0;
+	char *p = line;
+	while ((nToks < 5) && (*p != '\0')) {
+		while ((*p == ' ') || (*p == '\t'))
+			p++;
+		if (*p == '\0')
+			break;
+		toks[nToks++] = p;
+		while ((*p != '\0') && (*p != ' ') && (*p != '\t'))
+			p++;
+		if (*p != '\0') {
+			*p = '\0';
+			p++;
+		}
+	}
+	if (nToks < 3)
+		return;
+	// "<key> = <value>" — match on the second token being "=".
+	if (strcmp(toks[1], "=") == 0) {
+		if (strcmp(toks[0], "LogDataType") == 0) {
+			snprintf(st->chan, sizeof(st->chan), "%s", toks[2]);
+			st->label = xaPhysioBidsLabel(toks[2]);
+		} else if (strcmp(toks[0], "SampleTime") == 0) {
+			st->dtMs = kMDHTicMs * atof(toks[2]); // SampleTime is in MDH-tic units
+		}
+		return;
+	}
+	// ACQUISITION_INFO 5-column trigger table, e.g.
+	//   "0 0 39008572 39008611 0"  (VOLUME SLICE ACQ_START_TICS ACQ_FINISH_TICS ECHO)
+	// First such line is column headers.
+	if ((strcmp(st->chan, "ACQUISITION_INFO") == 0) && (nToks == 5)) {
+		if (!*streamHeaderRead) {
+			*streamHeaderRead = true;
+			return;
+		}
+		// Save only echo==0 to avoid double-counting multi-echo volumes.
+		if (strcmp(toks[4], "0") != 0)
+			return;
+		// Only emit a trigger when the volume number changes — within a
+		// volume each slice produces its own row.
+		if (strcmp(toks[0], prevVol) == 0)
+			return;
+		strncpy(prevVol, toks[0], 31);
+		prevVol[31] = '\0';
+		// strtol+endp (not atol): a non-numeric ACQ_START token would otherwise
+		// collapse to tic=0 and be pushed onto the scanner-trigger timeline,
+		// silently corrupting volume timing. Matches the PMU sample-line tic
+		// parse below. Malformed row → drop (return), same as a negative tic.
+		char *endpTic;
+		long tic = strtol(toks[2], &endpTic, 10);
+		if ((endpTic == toks[2]) || (tic < 0))
+			return;
+		if (*volNP >= *volCapP) {
+			int newCap = (*volCapP == 0) ? 64 : (*volCapP * 2);
+			long *tmp = (long *)realloc(*volTicsP, sizeof(long) * newCap);
+			if (tmp == NULL)
+				return;
+			*volTicsP = tmp;
+			*volCapP = newCap;
+		}
+		(*volTicsP)[(*volNP)++] = tic;
+		return;
+	}
+	// PMU sample line: "<tics> <CHAN> <value> [SIGNAL]". Channel must match
+	// the LogDataType header parsed earlier — guards against malformed rows
+	// inside an ACQUISITION_INFO body or an unknown stream.
+	//
+	// Trigger-sentinel rows carry a 4th SIGNAL token (PULS_TRIGGER /
+	// RESP_TRIGGER / EXT_TRIGGER / ECG_TRIGGER) and use VALUE=2048 as a
+	// reserved marker injected at off-grid odd ticks. They must NOT be
+	// pushed into the sample stream — otherwise 2048 leaks into the cardiac
+	// / respiratory waveform and distorts HR estimation or spectral
+	// analysis. Upstream bidsphysio currently *does* push them through
+	// (commented "we can ignore" in dcm2bidsphysio.py:213 of
+	// https://github.com/cbinyu/bidsphysio @ 96433fec); the Siemens
+	// reference physiodcm2tsv.py separates them by row-width
+	// (`if len(parts) > 3: trigger_events.append(...) else: values[...]`).
+	// We follow the Siemens-reference policy: drop the sample, but keep the
+	// trigger tic in st->triggerTics so it can be surfaced at the nearest
+	// BIDS sample in a DEDICATED `<label>_trigger` column (separate from
+	// the scanner-only `trigger` column populated from ACQUISITION_INFO
+	// volTics).
+	if ((nToks >= 3) && (st->label != NULL) && (strcmp(toks[1], st->chan) == 0)) {
+		char *endp;
+		long tic = strtol(toks[0], &endp, 10);
+		if ((endp == toks[0]) || (tic < 0))
+			return;
+		if ((nToks >= 4) && (toks[3] != NULL) && (strstr(toks[3], "_TRIGGER") != NULL)) {
+			cmrrTriggerAppend(st, tic);
+			return;
+		}
+		double v = strtod(toks[2], &endp);
+		if (endp == toks[2])
+			return;
+		cmrrPhysioAppend(st, tic, v);
+	}
+}
+
+// Top-level: re-read the CMRR blob from infname, parse all waveforms,
+// rasterise volume tics onto each stream's timeline, and emit BIDS sidecar
+// pairs via the existing xaPhysioWriteStreamFiles helper.
+static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
+							 const char *baseName, struct TDCMopts opts) {
+	if ((d.xaPhysioOffset <= 0) || (d.xaPhysioBytes < 1024))
+		return EXIT_FAILURE;
+	// Bound acquNum before the multiply: a malformed/hostile DICOM with a
+	// huge AcquisitionNumber would otherwise trigger signed-int overflow on
+	// `acquNum * 1024`, then divide-by-(possibly-zero/negative) on the
+	// xaPhysioBytes/waveLen and xaPhysioBytes%waveLen checks below. Cap
+	// against INT_MAX/1024 so the multiplication is safe; legitimate CMRR
+	// payloads have AcquisitionNumber on the order of slice count (<1000).
+	if ((d.acquNum < 1) || (d.acquNum > (INT_MAX / 1024)))
+		return EXIT_FAILURE;
+	int waveLen = d.acquNum * 1024; // bytes per waveform slot in the blob
+	if ((d.xaPhysioBytes % waveLen) != 0) {
+		printWarning("CMRR PMU payload size %d is not a multiple of (AcquisitionNumber=%d)*1024.\n",
+					 d.xaPhysioBytes, d.acquNum);
+		return EXIT_FAILURE;
+	}
+	int nWaves = d.xaPhysioBytes / waveLen;
+	if ((nWaves < 1) || (nWaves > kCMRRMaxStreams + 4)) {
+		printWarning("CMRR PMU payload reports %d waveforms (suspicious).\n", nWaves);
+		return EXIT_FAILURE;
+	}
+	FILE *f = fopen(infname, "rb");
+	if (f == NULL)
+		return EXIT_FAILURE;
+	fseek(f, d.xaPhysioOffset, SEEK_SET);
+	uint8_t *blob = (uint8_t *)malloc(d.xaPhysioBytes);
+	if (blob == NULL) {
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	if ((int)fread(blob, 1, d.xaPhysioBytes, f) != d.xaPhysioBytes) {
+		free(blob);
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	fclose(f);
+	TCmrrStream streams[kCMRRMaxStreams];
+	memset(streams, 0, sizeof(streams));
+	int nStreams = 0;
+	long *volTics = NULL;
+	int volN = 0, volCap = 0;
+	for (int w = 0; (w < nWaves) && (nStreams < kCMRRMaxStreams); w++) {
+		uint8_t *wave = blob + (size_t)w * (size_t)waveLen;
+		uint32_t dataLen = ((uint32_t)wave[0]) +
+						   ((uint32_t)wave[1] << 8) +
+						   ((uint32_t)wave[2] << 16) +
+						   ((uint32_t)wave[3] << 24);
+		if (dataLen > (uint32_t)(waveLen - 1024)) {
+			printWarning("CMRR waveform %d header reports data_len=%u exceeding slot; skipping.\n", w, dataLen);
+			continue;
+		}
+		// Body is plain ASCII; copy into a NUL-terminated scratch buffer so
+		// we can strtok / strstr with no out-of-bounds risk.
+		char *body = (char *)malloc((size_t)dataLen + 1);
+		if (body == NULL)
+			continue;
+		memcpy(body, wave + 1024, dataLen);
+		body[dataLen] = '\0';
+		// Per-waveform parser state. Each waveform is one stream OR the
+		// ACQUISITION_INFO trigger table.
+		TCmrrStream *st = &streams[nStreams];
+		memset(st, 0, sizeof(*st));
+		st->dtMs = kMDHTicMs; // fallback if SampleTime header is missing
+		bool streamHeaderRead = false;
+		char prevVol[32] = "";
+		// Walk lines in place. Replace each '\n' with '\0' temporarily so
+		// the line-parser sees a regular C string.
+		char *lineStart = body;
+		for (uint32_t i = 0; i <= dataLen; i++) {
+			if ((i == dataLen) || (body[i] == '\n')) {
+				body[i] = '\0';
+				cmrrPhysioParseLine(lineStart, st, &volTics, &volN, &volCap, prevVol, &streamHeaderRead);
+				lineStart = body + i + 1;
+			}
+		}
+		free(body);
+		if (strcmp(st->chan, "ACQUISITION_INFO") == 0) {
+			// Volume tics already collected via the line parser; nothing
+			// further to do for this slot. The stream object itself is
+			// recycled. (triggerTics is always NULL on ACQUISITION_INFO —
+			// the parser's *_TRIGGER branch keys on st->chan matching a
+			// PULS/RESP/EXT/ECG label and is unreachable for the
+			// ACQUISITION_INFO waveform.)
+			free(st->ticArr);
+			free(st->signal);
+			free(st->triggerTics);
+			memset(st, 0, sizeof(*st));
+			continue;
+		}
+		if ((st->label == NULL) || (st->n < 2)) {
+			if (opts.isVerbose)
+				printMessage("CMRR waveform %d (%s) has %d samples or no BIDS mapping; skipping.\n",
+							 w, st->chan, st->n);
+			free(st->ticArr);
+			free(st->signal);
+			free(st->triggerTics);
+			memset(st, 0, sizeof(*st));
+			continue;
+		}
+		nStreams++;
+	}
+	int wrote = 0;
+	int writeFails = 0; // M1: tally attempts that hit a write/alloc failure
+	for (int s = 0; s < nStreams; s++) {
+		TCmrrStream *st = &streams[s];
+		physioBidsSortByTic(st->ticArr, st->signal, st->n);
+		// Sample interval: prefer the SampleTime header (exact rate from
+		// scanner) and fall back to span/(N-1) only if the header was
+		// missing or non-positive.
+		double spanMs = (double)(st->ticArr[st->n - 1] - st->ticArr[0]) * kMDHTicMs;
+		double dtMs = (st->dtMs > 0.0) ? st->dtMs
+									   : (spanMs / (double)(st->n - 1));
+		if (dtMs <= 0.0) {
+			printWarning("CMRR stream %s has non-positive sample interval; skipping.\n", st->chan);
+			continue;
+		}
+		double sampFreq = 1000.0 / dtMs;
+		// Pass scanner volume triggers (volTics) and per-stream physio-event
+		// triggers (st->triggerTics) to the emitter as TWO separate channels.
+		// The BIDS-canonical `trigger` column keeps scanner-only semantics
+		// (matching bidsphysio and the spec's "scanner trigger signal"
+		// description); the physio peaks land in a parallel `<label>_trigger`
+		// column (e.g. `cardiac_trigger`, `respiratory_trigger`) so HRV /
+		// RETROICOR consumers can pick them up while volume-trigger consumers
+		// keep reading column 2 unchanged.
+		//
+		// peakLabel is built per stream from the BIDS label + "_trigger" —
+		// "cardiac_trigger" for PULS, "respiratory_trigger" for RESP,
+		// "ecg_trigger" for ECG. EXT is a special case: its BIDS label is
+		// already "external_trigger" (the entire channel is a TTL pulse
+		// train), so we use "_peak" as the suffix to avoid the awkward
+		// "external_trigger_trigger".
+		char peakLabel[64];
+		const char *peakLabelPtr = NULL;
+		if ((st->label != NULL) && (st->triggerN > 0)) {
+			const char *suffix = (strcmp(st->chan, "EXT") == 0) ? "_peak" : "_trigger";
+			snprintf(peakLabel, sizeof(peakLabel), "%s%s", st->label, suffix);
+			peakLabelPtr = peakLabel;
+		}
+		PhysioEmitStatus stStat = physioBidsEmitStream(baseName, st->label, st->ticArr,
+													   st->signal, st->n,
+													   dtMs, sampFreq,
+													   volTics, volN,
+													   st->triggerTics, st->triggerN, peakLabelPtr,
+													   opts.gzLevel);
+		if (stStat == kPhysioEmitOk)
+			wrote++;
+		else if (stStat == kPhysioEmitFailed)
+			writeFails++;
+	}
+	for (int s = 0; s < kCMRRMaxStreams; s++) {
+		free(streams[s].ticArr);
+		free(streams[s].signal);
+		free(streams[s].triggerTics);
+	}
+	free(volTics);
+	free(blob);
+	if (writeFails > 0) {
+		// Audit 2026-06-11 M1: any stream attempted but failed to write
+		// (raster OOM, JSON alloc, fopen, short fwrite, deflate) propagates
+		// as a hard failure. Previously these were silently rolled into the
+		// "wrote == 0 → no sensors connected" branch and reported success.
+		printError("CMRR PMU: %d stream(s) failed to write — see warnings above\n", writeFails);
+		return EXIT_FAILURE;
+	}
+	if (wrote == 0) {
+		// CMRR records the slice-timing companion (ACQUISITION_INFO) for
+		// every physio-capable acquisition even when the patient is not
+		// connected to the pulse/respiration belts, so this case means the
+		// (7FE1,1010) blob contains only the Info.log slice-timing table
+		// with no PULS / RESP / ECG / EXT streams. Reporting it as a
+		// conversion failure (kEXIT_SOME_OK_SOME_BAD) misleads downstream
+		// scripts checking $?; return success and let the user decide.
+		printWarning("CMRR PMU: no physio streams written — were sensors connected, or see any per-stream warnings above\n");
+		return EXIT_SUCCESS;
+	}
+	return EXIT_SUCCESS;
+}
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
 #if 0
 #ifdef USING_DCM2NIIXFSWRAPPER
@@ -8378,9 +11345,57 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 #endif
 
+	// Siemens PMU short-circuit. The DICOM is a Raw Data Storage SOP
+	// carrying a physio payload at (7FE1,1010) — either a gzip-XML XA-line
+	// PhysioLogging document or a legacy CMRR Multi-Band binary blob. In
+	// both cases skip the NIfTI machinery and emit BIDS physio sidecars
+	// directly. nii_createFilename is invoked on a local TDICOMdata copy
+	// with isRawDataStorage suppressed so the "_Raw" suffix doesn't pollute
+	// the BIDS `_recording-<label>_physio` filename.
+	{
+		uint64_t pIdx = dcmSort[0].indx;
+		if (dcmList[pIdx].isXAPhysio || dcmList[pIdx].isCMRRPhysio) {
+			// Discard SBRef physio. The SBRef (single-band reference) is a
+			// single-volume calibration acquisition; its paired physio
+			// recording is useless for time-series physio modelling
+			// (RETROICOR etc.) and downstream tools (fmriprep) pair physio
+			// with the multi-volume BOLD, not the SBRef. Siemens XA-line
+			// protocols that bundle a legacy CMRR multiband SBRef alongside
+			// a Siemens product BOLD emit BOTH an SBRef physio AND a BOLD
+			// physio with overlapping BIDS stems; keeping the SBRef physio
+			// would either collide (same stem after reproin parsing strips
+			// the SeriesDescription suffix) or clutter the tree. Detection:
+			// the source SeriesDescription includes the "_SBRef" substring
+			// (Siemens convention; matches the same signal we use to
+			// classify the imaging SBRef at line ~8436).
+			//
+			// Note on naming vs format: the SeriesDescription suffix
+			// ("_PhysioLog" / "_SBRef_PMU") reflects the SOURCE acquisition's
+			// role, not the (7FE1,1010) payload binary format. On Siemens
+			// XA60 we observe a "_PhysioLog"-suffixed series carrying CMRR
+			// PMU binary (parser sets isCMRRPhysio=true via the validated
+			// log-fname sniff) and a "_SBRef_PMU"-suffixed series carrying
+			// gzip-XML PhysioLog (parser sets isXAPhysio=true via the gzip
+			// magic). The discard gate is therefore on SeriesDescription,
+			// not on the isXAPhysio/isCMRRPhysio format flags.
+			if (strstr(dcmList[pIdx].seriesDescription, "_SBRef") != NULL) {
+				if (opts.isVerbose > 0)
+					printMessage("Skipping SBRef physio series %ld (%s); the paired BOLD physio is the time-series source\n", dcmList[pIdx].seriesNum, dcmList[pIdx].seriesDescription);
+				return EXIT_SUCCESS;
+			}
+			struct TDICOMdata dPhysio = dcmList[pIdx];
+			dPhysio.isRawDataStorage = false;
+			char baseName[PATH_MAX] = {""};
+			nii_createFilename(dPhysio, baseName, opts);
+			if (dcmList[pIdx].isXAPhysio)
+				return xaPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
+			return cmrrPhysioConvert(dcmList[pIdx], nameList->str[pIdx], baseName, opts);
+		}
+	}
+
 	bool iVaries = intensityScaleVaries(nConvert, dcmSort, dcmList);
 	bool bppVaries = false;
-	if (iVaries) 
+	if (iVaries)
 		bppVaries = bitDepthVaries(nConvert, dcmSort, dcmList);
 	float *sliceMMarray = NULL; // only used if slices are not equidistant
 	uint64_t indx = dcmSort[0].indx;
@@ -8389,9 +11404,22 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	// if (nConvert > 1)
 	//	indx1 = dcmSort[1].indx;
 	uint64_t indxEnd = dcmSort[nConvert - 1].indx;
+	// issue 616: not enhanced DICOMs: infer these arrays from multiple volumes.
+	// Reset ONLY the BEP009/PET sentinel arrays + the two repetition-time
+	// scalars here. Do NOT call initTDTI4D() at this site: by this point the
+	// enhanced/multiframe parser (and PAR/REC) has ALREADY populated dti4D, and
+	// dti4D->sliceOrder[0], dti4D->intenScale[0] and dti4D->triggerDelayTime[0]
+	// are LIVE per-frame data consumed downstream — they gate enhanced
+	// per-slice reordering (nii_loadImgXLCore, nii_dicom.cpp ~4430), per-slice
+	// intensity rescale (nii_dicom.cpp ~3663) and ASL post-label delays.
+	// Clobbering them scrambles Philips/Canon enhanced 4D output (the
+	// regression introduced by commit 54fe303, which over-broadened this reset
+	// via the initTDTI4D helper). The high-slice-count CT path (issue #1015) is
+	// unaffected: those sentinels are reset by the parser per file, and only
+	// the 4 PET arrays need clearing here.
 	dti4D->repetitionTimeInversion = 0.0;  // only set for Siemens and GE 3D T1 "TR"
 	dti4D->repetitionTimeExcitation = 0.0; // only set for Philips 3D T1 "TR"
-	if (nConvert > 0) {					   // issue 616: not enhanced DICOMs: infer these arrays from multiple volumes
+	if (nConvert > 0) {
 		dti4D->volumeOnsetTime[0] = -1;
 		dti4D->decayFactor[0] = -1;
 		dti4D->frameDuration[0] = -1;
@@ -8424,20 +11452,23 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			dcmList[dcmSort[i].indx].CSA.mosaicSlices = n;
 #endif
 	}
+	bool isSkip = false;
 	if (opts.isIgnoreDerivedAnd2D && dcmList[indx].isDerived) {
-		printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
-		return EXIT_SUCCESS;
+		isSkip = true;
 	}
 	if ((opts.isIgnoreDerivedAnd2D) && ((dcmList[indx].isLocalizer) || (strcmp(dcmList[indx].sequenceName, "_tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "_fl2d1") == 0))) {
-		printMessage("Ignoring localizer (sequence '%s') of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum, nameList->str[indx]);
-		return EXIT_SUCCESS;
+		isSkip = true;
 	}
 	if ((opts.isIgnoreDerivedAnd2D) && ((strcmp(dcmList[indx].sequenceName, "*tfl2d1") == 0) || (strcmp(dcmList[indx].sequenceName, "*fl3d1_ns") == 0) || (strcmp(dcmList[indx].sequenceName, "*fl2d1") == 0))) {
-		printMessage("Ignoring localizer (sequence '%s') of series %ld %s\n", dcmList[indx].sequenceName, dcmList[indx].seriesNum, nameList->str[indx]);
-		return EXIT_SUCCESS;
+		isSkip = true;
 	} // issue398 old versions of dcm2niix converted "*" to "_" as it is an illegal filename, modern versions preserve
 	if ((opts.isIgnoreDerivedAnd2D) && (nConvert < 2) && (dcmList[indx].CSA.mosaicSlices < 2) && (dcmList[indx].xyzDim[3] < 2)) {
-		printMessage("Ignoring 2D image of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
+		isSkip = true;
+	}
+	if (isSkip) {
+		if (opts.isVerbose > 1) {
+			printMessage("Ignoring 2D/derived/localizer image of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
+		}
 		return EXIT_SUCCESS;
 	}
 	if (dcmList[indx].manufacturer == kMANUFACTURER_UNKNOWN)
@@ -8451,10 +11482,21 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #ifdef USING_DCM2NIIXFSWRAPPER
 	std::vector<float> ascalefactors;
 	mrifsStruct.tdicomData = dcmList[indx]; // first in sorted list dcmSort
+	// dcmList[indx] owns its heap-allocated deID_CS[] (freed in
+	// nii_loadDirCore's cleanup). The shallow copy here would otherwise
+	// expose a dangling pointer once dcmList is freed. Issue #877.
+	mrifsStruct.tdicomData.deID_CS = NULL;
+	mrifsStruct.tdicomData.deID_CS_n = 0;
+	// isMrsRef is a plain bool that saveDcm2NiiMRS may flip true on the
+	// standalone water-reference path. Reset on shallow-copy retention so
+	// future MRS-aware dump-mode work doesn't inherit stale state (audit
+	// 2026-06-07 H2 follow-up; defensive — current dump-mode short-circuits
+	// before MRS dispatch).
+	mrifsStruct.tdicomData.isMrsRef = false;
 #endif
 
 	struct nifti_1_header hdr0 = {0};
-	
+
 	if ((iVaries) && (dcmList[indx].manufacturer != kMANUFACTURER_PHILIPS) && (!opts.isPhilipsFloatNotDisplayScaling)) {
 		printWarning("Variance of DICOM slope/intercept is being ignored due to use of the `-p n` option.\n");
 		iVaries = false;
@@ -8869,20 +11911,19 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				free(img);
 
 #ifdef USING_DCM2NIIXFSWRAPPER
-                                /* At the MGH Martinos scanners, AutoScale functor scales data before saving them to DICOM.
-                                 * The scale factor is saved in DICOM tag (0020, 4000). Dcm2niix retrieves (0020, 4000) as image comments,
-                                 * and saves it in nifti header field aux_file. The string format is `Scale Factor: %f`.
-                                 *
-                                 * Save the scale factors for each slice.
-                                 * Freesurfer mri_convert uses the scale factors to undo the scaling applied by AutoScale functor.
-                                 */
-                                const char *AutoScale_Key = "Scale Factor:";
-                                float ascale_factor = 1.0;
-                                if (strncmp(hdrI.aux_file, AutoScale_Key, strlen(AutoScale_Key)) == 0)
-                                {
-                                        ascale_factor = (float)strtod(&(hdrI.aux_file[strlen(AutoScale_Key) + 1]), NULL);
-                                        ascalefactors.push_back(ascale_factor);
-                                }				
+				/* At the MGH Martinos scanners, AutoScale functor scales data before saving them to DICOM.
+				 * The scale factor is saved in DICOM tag (0020, 4000). Dcm2niix retrieves (0020, 4000) as image comments,
+				 * and saves it in nifti header field aux_file. The string format is `Scale Factor: %f`.
+				 *
+				 * Save the scale factors for each slice.
+				 * Freesurfer mri_convert uses the scale factors to undo the scaling applied by AutoScale functor.
+				 */
+				const char *AutoScale_Key = "Scale Factor:";
+				float ascale_factor = 1.0;
+				if (strncmp(hdrI.aux_file, AutoScale_Key, strlen(AutoScale_Key)) == 0) {
+					ascale_factor = (float)strtod(&(hdrI.aux_file[strlen(AutoScale_Key) + 1]), NULL);
+					ascalefactors.push_back(ascale_factor);
+				}
 				if (opts.isVerbose)
 					printMessage("(verbose) load Image #%d %s (autoscale factor: %f)\n", i, nameList->str[indx], ascale_factor);
 #endif
@@ -8893,7 +11934,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	}
 	bool ok = setBids(&dcmList[indx0], nameList->str[dcmSort[0].indx], nConvert, opts.isVerbose);
 	if (opts.isIgnoreDerivedAnd2D && !ok) {
-		printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
+		if (opts.isVerbose > 1)
+			printMessage("Ignoring derived image(s) of series %ld %s\n", dcmList[indx].seriesNum, nameList->str[indx]);
 		return EXIT_SUCCESS;
 	}
 	int sliceDir = sliceTimingCore(dcmSort, dcmList, &hdr0, opts.isVerbose, nameList->str[dcmSort[0].indx], nConvert, opts);
@@ -8943,14 +11985,60 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		return EXIT_SUCCESS;
 #endif
 
+	// issue 1024: Siemens 3D EPI (WIP "vx_ep3d") reports the per-shot TR in
+	// (0018,0080), but BIDS RepetitionTime must be the volume-to-volume time.
+	// These enhanced multiframe series (one 3D volume per file) bypass the
+	// classic issue-560 estimator, which only runs in the dim[3]<2 stacking
+	// path. Prefer the measured inter-volume AcquisitionDateTime spacing
+	// (robust, vendor-neutral, cf. Philips issue369); fall back to the
+	// shot-TR x partitions / 3D-acceleration formula (which assumes a single
+	// multi-echo shot, a factor DICOM does not encode) when timestamps are
+	// unavailable. The per-shot TR is preserved as RepetitionTimeExcitation.
+	{
+		uint64_t tIdx = dcmSort[0].indx;
+		if ((dcmList[tIdx].is3DAcq) && (hdr0.dim[4] > 1) && (dcmList[tIdx].TR > 0.0)) {
+			int nVol = 0;
+			float span = -1.0;
+			for (int i = 0; i < nConvert; i++)
+				if (isSamePosition(dcmList[tIdx], dcmList[dcmSort[i].indx])) {
+					nVol++;
+					span = max(span, (float)acquisitionTimeDifference(&dcmList[tIdx], &dcmList[dcmSort[i].indx]));
+				}
+			float volTRsec = -1.0;
+			if ((nVol > 1) && (span > 0.0)) // primary: measured volume-to-volume spacing
+				volTRsec = span / (nVol - 1.0);
+			else if ((dcmList[tIdx].bandwidthPerPixelPhaseEncode > 0.0) && (dcmList[tIdx].phaseEncodingStepsOutOfPlane > 0) && (dcmList[tIdx].accelFactOOP >= 1.0)) // fallback: parameter formula
+				// per-shot TR x partitions / 3D-accel x concatenations (multi-echo shots, issue 1024)
+				volTRsec = (dcmList[tIdx].TR * dcmList[tIdx].phaseEncodingStepsOutOfPlane / dcmList[tIdx].accelFactOOP * dcmList[tIdx].numberOfConcatenations) / 1000.0;
+			float reportedTRsec = dcmList[tIdx].TR / 1000.0;
+			if ((volTRsec > 0.0) && ((volTRsec - reportedTRsec) > 0.050)) { // only when volume TR exceeds the reported per-shot TR
+				printMessage("3D EPI: RepetitionTime set to volume TR %.4gs (per-shot TR %.4gs, RepetitionTimeExcitation) [issue 1024]\n", volTRsec, reportedTRsec);
+				dti4D->repetitionTimeExcitation = reportedTRsec;
+				dcmList[tIdx].TR = volTRsec * 1000.0;
+				hdr0.pixdim[4] = volTRsec;
+			}
+		}
+	}
+	char bidsPathoutname[2048] = {""};
+	strcpy(bidsPathoutname, pathoutname);
+	bool isBIDSSidecar = (opts.numSeries >= 0) && opts.isCreateBIDS;
+	int bidsStatus = EXIT_SUCCESS;
 	if (opts.numSeries >= 0) // issue453
-		nii_SaveBIDSX(pathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
+		bidsStatus = nii_SaveBIDSX(bidsPathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
 	if (opts.isOnlyBIDS) {
+		if (isBIDSSidecar && (bidsStatus == EXIT_SUCCESS))
+			reproinAppendProvenance(bidsPathoutname, dcmList[dcmSort[0].indx], opts);
 		// note we waste time loading every image, however this ensures hdr0 matches actual output
 #ifndef USING_DCM2NIIXFSWRAPPER
 		free(imgM);
 #endif
-		return EXIT_SUCCESS;
+		return bidsStatus;
+	}
+	if (bidsStatus != EXIT_SUCCESS) {
+#ifndef USING_DCM2NIIXFSWRAPPER
+		free(imgM);
+#endif
+		return EXIT_FAILURE;
 	}
 	if ((segVol >= 0) && (hdr0.dim[4] > 1)) {
 		int inVol = hdr0.dim[4];
@@ -8960,6 +12048,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				nVol++;
 		if (nVol < 1) {
 			printError("Series %d does not exist\n", segVol);
+			removeBIDSSidecar(bidsPathoutname);
 			return EXIT_FAILURE;
 		}
 		size_t imgsz4D = imgsz;
@@ -9243,16 +12332,1385 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	mrifsStruct.imgM = imgM;
 
 	mrifsStruct_vector.push_back(mrifsStruct);
+	// audit 2026-06-06 M5: transfer dicomfile/dicomlst ownership to the
+	// vector entry; null the globals so nii_clrMrifsStruct() can't double-free.
+	mrifsStruct.dicomfile = NULL;
+	mrifsStruct.dicomlst = NULL;
+	mrifsStruct.nDcm = 0;
 	autoscalefactor_vector.push_back(ascalefactors);
 #else
 	free(imgM);
 #endif
+	if (isBIDSSidecar) {
+		if (returnCode == EXIT_SUCCESS)
+			reproinAppendProvenance(bidsPathoutname, dcmList[dcmSort[0].indx], opts);
+		else
+			removeBIDSSidecar(bidsPathoutname);
+	}
 	if (dcmList[dcmSort[0].indx].xyzDim[0] > 1)
 		returnCode = kEXIT_INCOMPLETE_VOLUMES_FOUND; // issue515
 	return returnCode;								 // EXIT_SUCCESS;
 } // saveDcm2NiiCore()
 
+// Returns true when a single-frame MRS DICOM is named as a standalone
+// water-reference acquisition (no main FID + no trailing companion; the
+// DICOM itself IS the water reference). spec2nii lands these as `_mrsref`.
+// Heuristic: vendor series-naming tokens that explicitly mark water
+// suppression off / water-reference scan. Siemens dkd_von sLASER uses
+// `wrsoff`; Philips uses `no_Water_Suppression`; generic vendors use
+// `noWS` / `_mrsref`. Checks seriesDescription + protocolName +
+// sequenceName + pulseSequenceName. Refactored out of saveDcm2NiiMRS so
+// the same logic can be reused when MRSI / `_mrsiref` lands in Phase 6.
+static bool mrsIsStandaloneWaterRef(const struct TDICOMdata *d) {
+	if (d == NULL)
+		return false;
+	const char *naming[] = {d->seriesDescription, d->protocolName,
+							d->sequenceName, d->pulseSequenceName};
+	for (unsigned k = 0; k < sizeof(naming) / sizeof(naming[0]); k++) {
+		const char *s = naming[k];
+		if (s == NULL || s[0] == '\0')
+			continue;
+		if (strstr(s, "wrsoff") != NULL ||
+			strstr(s, "wrs_off") != NULL ||
+			strstr(s, "no_Water_Suppression") != NULL ||
+			strstr(s, "no_water_suppression") != NULL ||
+			strstr(s, "noWS") != NULL ||
+			strstr(s, "_mrsref") != NULL)
+			return true;
+	}
+	return false;
+}
+
+// Siemens MRS multi-echo total TE: the DICOM EchoTime tag (0018,0081)
+// reports only alTE[0], but multi-echo sequences (e.g. sLASER) split the
+// total echo across alTE[0..N] in the Phoenix Protocol. spec2nii
+// dicomfunctions.py:649 sums alTE[*] until the first missing key — we
+// mirror that here so downstream EchoTime emission matches. Reuses the
+// existing siemensCsaAscii Phoenix parser (TCsaAscii.alTE was extended
+// alongside alTI). Returns sum in microseconds, or 0.0 when CSA series
+// header is absent / no alTE keys are present (no-op for the caller).
+static double siemensMrsTotalEchoTimeUs(const char *filename, struct TDICOMdata *d) {
+	if (d == NULL)
+		return 0.0;
+	if (d->manufacturer != kMANUFACTURER_SIEMENS)
+		return 0.0;
+	if (d->CSA.SeriesHeader_offset < 1 || d->CSA.SeriesHeader_length < 1)
+		return 0.0;
+	float shimSetting[8];
+	char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge],
+		coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge],
+		coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge],
+		wipMemBlock[kDICOMStrExtraLarge];
+	// H1 fix (audit 2026-06-07 round-5): zero-init so the helper's early
+	// returns (fopen / size / malloc / fread / no-ASCCONV-marker paths)
+	// don't leave alTE[] as stack garbage. Without this, the sum below can
+	// see positive float bit-patterns and corrupt d0->TE downstream. Zero
+	// is not NaN so it survives the `!=` sentinel; siemensMrsTotalEchoTimeUs
+	// then returns 0.0 → no `> 0.0` gate trip → no TE overwrite. The other
+	// five siemensCsaAscii callers don't read alTE[]; fixing them too would
+	// expand scope without a corpus driver, so they're left.
+	TCsaAscii csaAscii = {};
+	siemensCsaAscii(filename, &csaAscii, d->CSA.SeriesHeader_offset,
+					d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo,
+					coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName,
+					wipMemBlock);
+	double sum = 0.0;
+	bool found = false;
+	for (int k = 0; k < kMaxWipFree; k++) {
+		// NaN (readKeyFloatNan sentinel on miss) marks end of contiguous list.
+		if (csaAscii.alTE[k] != csaAscii.alTE[k])
+			break;
+		sum += (double)csaAscii.alTE[k];
+		found = true;
+	}
+	return found ? sum : 0.0;
+}
+
+// MR Spectroscopy converter — handles MR Spectroscopy Storage SOP class
+// DICOMs (SOP UID 1.2.840.10008.5.1.4.1.1.4.2). Each input DICOM carries a
+// single FID (free-induction decay) in the (5600,0020) Spectroscopy Data
+// tag as interleaved real/imag float32. N input DICOMs are stacked along
+// NIfTI dim[5] as separate "averages" / coil channels / repetitions; output
+// shape is [1, 1, 1, DataPointColumns, N] with datatype DT_COMPLEX64.
+//
+// Affine, dwell time, spectral metadata, and the XA-vs-VX phase convention
+// are ported from spec2nii (BSD-3-Clause, William Clarke, U. Oxford 2020).
+// Reference: spec2nii/Siemens/dicomfunctions.py and
+// spec2nii/dcm2niiOrientation/orientationFuncs.py. Covers Siemens VB/VE/XA
+// SVS, Philips classic SVS, and UIH SVS; emits `_svs` and `_mrsref` (Philips
+// 2× companion via the parallel fidRef buffer + standalone water-reference
+// relabel via `wrsoff` / `no_Water_Suppression` series-name tokens). MRSI
+// `_unloc` is deferred — no corpus driver. `_mrsi` is now handled by the
+// sibling `saveDcm2NiiMRSI()` below; this function only writes SVS.
+
+// --- NIfTI-MRS header extension (ecode 44) ---------------------------------
+// Embeds the spectroscopy metadata as a JSON extension INSIDE the .nii(.gz),
+// in addition to the BIDS sidecar, so a tool can read SVS/MRSI parameters
+// directly from the NIfTI (e.g. sandboxed drag-and-drop where the paired JSON
+// is unreadable). Mirrors spec2nii's hdr_ext. All values come from TDICOMdata
+// fields already parsed for the sidecar. Spec: https://wtclarke.github.io/mrs_nifti_standard/
+static void mrsAddStrIf(cJSON *root, const char *key, const char *val) {
+	if (val && val[0])
+		cJSON_AddStringToObject(root, key, val);
+}
+static const char *mrsManufacturerStr(int m) {
+	switch (m) {
+	case kMANUFACTURER_SIEMENS: return "Siemens";
+	case kMANUFACTURER_GE: return "GE";
+	case kMANUFACTURER_PHILIPS: return "Philips";
+	case kMANUFACTURER_UIH: return "UIH";
+	case kMANUFACTURER_CANON: return "Canon";
+	case kMANUFACTURER_BRUKER: return "Bruker";
+	default: return "";
+	}
+}
+// Returns a malloc'd JSON string (caller frees), or NULL on alloc failure.
+static char *mrsHdrExtJson(struct TDICOMdata d, struct nifti_1_header hdr,
+						   struct TDCMsort dcmSort[], int nConvert, struct TSearchList *nameList,
+						   struct TDCMopts opts) {
+	// NIfTI-MRS requires SpectrometerFrequency + ResonantNucleus. If the parser
+	// lacked them, do NOT fabricate a valid-looking extension (the sidecar
+	// already warns) — return NULL so the writer emits a plain NIfTI.
+	if ((d.imagingFrequency <= 0.0) || (d.resonantNucleus[0] == '\0'))
+		return NULL;
+	cJSON *root = cJSON_CreateObject();
+	if (!root)
+		return NULL;
+	// --- required ---
+	cJSON *sf = cJSON_CreateArray();
+	cJSON_AddItemToArray(sf, cJSON_CreateNumber(d.imagingFrequency));
+	cJSON_AddItemToObject(root, "SpectrometerFrequency", sf);
+	cJSON *rn = cJSON_CreateArray();
+	cJSON_AddItemToArray(rn, cJSON_CreateString(d.resonantNucleus));
+	cJSON_AddItemToObject(root, "ResonantNucleus", rn);
+	// --- dimension tags: the 5th NIfTI axis is the dynamic/averaging axis
+	// (a singleton when there is one transient). spec2nii emits dim_5=DIM_DYN
+	// for both SVS and MRSI regardless of whether dim[0] is 4 or 5, and the
+	// nifti_mrs validator accepts it; mirror that for parity. ---
+	cJSON_AddStringToObject(root, "dim_5", "DIM_DYN");
+	// --- standard-defined (optional; emit when known) ---
+	double sw = mrsSpectralWidthHz(&d);
+	if (sw > 0)
+		cJSON_AddNumberToObject(root, "SpectralWidth", sw);
+	if (d.TE > 0)
+		cJSON_AddNumberToObject(root, "EchoTime", d.TE / 1000.0);
+	if (d.TR > 0)
+		cJSON_AddNumberToObject(root, "RepetitionTime", d.TR / 1000.0);
+	// InversionTime: spec2nii and the dcm2niix sidecar emit 0.0 even for
+	// non-inversion sequences, so emit unconditionally for parity.
+	cJSON_AddNumberToObject(root, "InversionTime", d.TI / 1000.0);
+	if (d.flipAngle > 0)
+		cJSON_AddNumberToObject(root, "ExcitationFlipAngle", d.flipAngle);
+	mrsAddStrIf(root, "Manufacturer", mrsManufacturerStr(d.manufacturer));
+	mrsAddStrIf(root, "ManufacturersModelName", d.manufacturersModelName);
+	mrsAddStrIf(root, "DeviceSerialNumber", d.deviceSerialNumber);
+	mrsAddStrIf(root, "SoftwareVersions", d.softwareVersions);
+	mrsAddStrIf(root, "InstitutionName", d.institutionName);
+	mrsAddStrIf(root, "InstitutionAddress", d.institutionAddress);
+	mrsAddStrIf(root, "TxCoil", d.transmitCoilName);
+	mrsAddStrIf(root, "RxCoil", d.coilName);
+	// d.sequenceName is empty on the XA line (it uses (0018,9005) PulseSequenceName);
+	// promote it like the sidecar does (~L2156) so SequenceName matches spec2nii.
+	mrsAddStrIf(root, "SequenceName", d.sequenceName[0] ? d.sequenceName : d.pulseSequenceName);
+	mrsAddStrIf(root, "ProtocolName", d.protocolName);
+	mrsAddStrIf(root, "PatientPosition", d.patientOrient);
+	// Patient-identifying block: mirror the BIDS sidecar gate (nii_SaveBIDSX
+	// ~L2065) so `-ba y` (full anon) and `-ba o` (omit PII) strip these from the
+	// embedded extension exactly as they do from the .json — no PII may survive
+	// in the NIfTI when it is stripped from the sidecar.
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
+		mrsAddStrIf(root, "PatientName", d.patientName);
+		mrsAddStrIf(root, "PatientID", d.patientID);
+		if (d.patientWeight > 0)
+			cJSON_AddNumberToObject(root, "PatientWeight", d.patientWeight);
+		mrsAddStrIf(root, "PatientDoB", d.patientBirthDate);
+		if (d.patientSex == 'M' || d.patientSex == 'F' || d.patientSex == 'O') {
+			char sex[2] = {d.patientSex, '\0'};
+			cJSON_AddStringToObject(root, "PatientSex", sex);
+		}
+	}
+	cJSON_AddBoolToObject(root, "WaterSuppressed", !d.isMrsRef);
+	// VOI 4x4 (excitation volume), shared computation with the sidecar. spec2nii
+	// emits this for MRSI; for SVS it omits it (the voxel == the image extent),
+	// but the dcm2niix sidecar emits it for both, so we follow the sidecar gate.
+	double voi[4][4];
+	if (mrsVoiMatrix(&d, voi)) {
+		cJSON *vm = cJSON_CreateArray();
+		for (int r = 0; r < 4; r++) {
+			cJSON *row = cJSON_CreateArray();
+			for (int c = 0; c < 4; c++)
+				cJSON_AddItemToArray(row, cJSON_CreateNumber(voi[r][c]));
+			cJSON_AddItemToArray(vm, row);
+		}
+		cJSON_AddItemToObject(root, "VOI", vm);
+	}
+	cJSON_AddStringToObject(root, "ConversionMethod", "dcm2niix " kDCMdate);
+	// kSpace: image-domain data, false on all three spatial axes.
+	cJSON *ks = cJSON_CreateArray();
+	for (int i = 0; i < 3; i++)
+		cJSON_AddItemToArray(ks, cJSON_CreateBool(false));
+	cJSON_AddItemToObject(root, "kSpace", ks);
+	// OriginalFile: source DICOM basenames. Filenames can encode identifiers, so
+	// drop the list under BOTH `-ba y` (full anon) and `-ba o` (omit PII) — same
+	// gate as the patient block. Strip POSIX and Windows separators so no
+	// directory tree leaks into the basename.
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
+		cJSON *of = cJSON_CreateArray();
+		for (int i = 0; i < nConvert; i++) {
+			const char *p = nameList->str[dcmSort[i].indx];
+			const char *b = strrchr(p, '/');
+			const char *bw = strrchr(p, '\\');
+			if (bw > b)
+				b = bw;
+			cJSON_AddItemToArray(of, cJSON_CreateString(b ? b + 1 : p));
+		}
+		cJSON_AddItemToObject(root, "OriginalFile", of);
+	}
+	// ponytail: ConversionTime omitted — optional + volatile, and dropping it
+	// keeps our own regression output deterministic. Add via time()/strftime if
+	// a consumer needs it.
+	// Fail closed: a cJSON alloc failure makes AddItemToObject a silent no-op, so
+	// verify the NIfTI-MRS required arrays (+ the unconditional dim_5) actually
+	// landed. If not, emit no extension — the writer falls back to a plain NIfTI
+	// rather than a half-built header. Mirrors the physio post-attach check.
+	cJSON *sfChk = cJSON_GetObjectItem(root, "SpectrometerFrequency");
+	cJSON *rnChk = cJSON_GetObjectItem(root, "ResonantNucleus");
+	if (!sfChk || !cJSON_IsArray(sfChk) || (cJSON_GetArraySize(sfChk) < 1) ||
+		!rnChk || !cJSON_IsArray(rnChk) || (cJSON_GetArraySize(rnChk) < 1) ||
+		!cJSON_GetObjectItem(root, "dim_5")) {
+		cJSON_Delete(root);
+		return NULL;
+	}
+	char *s = cJSON_PrintUnformatted(root);
+	cJSON_Delete(root);
+	return s;
+}
+
+// The MRS/MRSI writers bypass saveDcm2NiiCore, which is where the standard
+// "Convert N DICOM as ..." line is printed; without this a warning emitted by
+// the MRS path cannot be associated with the NIfTI that was written. Mirrors
+// saveDcm2NiiCore: suppresses the output path under the FS wrapper build, and
+// includes the 5th (dynamics) axis for multi-dynamic MRS — dim[4] is spectral
+// points, so a dim[1..4]-only line would make multi-dynamic SVS look single.
+static void mrsReportConvert(int nConvert, const char *pathoutname, struct nifti_1_header hdr) {
+	bool has5 = (hdr.dim[0] >= 5) && (hdr.dim[5] > 1);
+#ifndef USING_DCM2NIIXFSWRAPPER
+	if (has5)
+		printMessage("Convert %d DICOM as %s (%dx%dx%dx%dx%d)\n", nConvert, pathoutname, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4], hdr.dim[5]);
+	else
+		printMessage("Convert %d DICOM as %s (%dx%dx%dx%d)\n", nConvert, pathoutname, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4]);
+#else
+	(void)pathoutname;
+	if (has5)
+		printMessage("Convert %d DICOM (%dx%dx%dx%dx%d)\n", nConvert, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4], hdr.dim[5]);
+	else
+		printMessage("Convert %d DICOM (%dx%dx%dx%d)\n", nConvert, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4]);
+#endif
+}
+
+static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
+						  struct TDICOMdata dcmList[],
+						  struct TSearchList *nameList,
+						  struct TDCMopts opts) {
+	if (nConvert < 1)
+		return EXIT_FAILURE;
+	struct TDICOMdata *d0 = &dcmList[dcmSort[0].indx];
+	// Foreign save formats (MGH / NRRD / BJNIfTI) don't support DT_COMPLEX64,
+	// and the BJNIfTI complex-split path has a header/data shape mismatch.
+	// Reject early so we don't read the FID buffer just to fail at the writer.
+	if (opts.saveFormat != kSaveFormatNIfTI) {
+		printError("MRS: only NIfTI output (-e n) is supported; rerun without alternate save format\n");
+		return EXIT_FAILURE;
+	}
+	// Phase 6: MRSI dispatch. MRSpectroscopyAcquisitionType ROW / PLANE /
+	// VOLUME carry spatial CSI data; route to saveDcm2NiiMRSI for the
+	// spatially-packed writer. Forward declared below saveDcm2NiiMRS.
+	// Classic VB/VE Siemens MRSI uses the CSA Non-Image SOP and has no
+	// public (0018,9200) tag; the CSA reader populates xyzDim from CSA
+	// `Rows` / `Columns` / `NumberOfFrames` (nii_dicom.cpp Phase 6 block).
+	// Any spatial grid > 1 voxel on either in-plane axis or > 1 frame
+	// signals MRSI in that case.
+	bool hasSpatialGridForMrsi = (d0->xyzDim[1] > 1) || (d0->xyzDim[2] > 1) ||
+								 (d0->xyzDim[3] > 1);
+	if (d0->mrsAcqType == kMRSAcqRow || d0->mrsAcqType == kMRSAcqPlane ||
+		d0->mrsAcqType == kMRSAcqVolume ||
+		(d0->mrsAcqType == kMRSAcqNone && hasSpatialGridForMrsi)) {
+		extern int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
+								   struct TDICOMdata dcmList[],
+								   struct TSearchList *nameList,
+								   struct TDCMopts opts);
+		return saveDcm2NiiMRSI(nConvert, dcmSort, dcmList, nameList, opts);
+	}
+	int N_pts = d0->dataPointColumns;
+	if (N_pts <= 0) {
+		printError("MRS: DataPointColumns (0028,9002) not set; cannot determine FID length\n");
+		return EXIT_FAILURE;
+	}
+	int N_files = nConvert;
+	// P2.d Philips Enhanced multi-dynamic SVS: a single Enhanced DICOM packs
+	// `nframes × spec_points` interleaved complex floats in (5600,0020).
+	// spec2nii's _process_philips_svs_new reshapes to (spec_points, nframes);
+	// we mirror that by computing nDynPerFile from the actual payload size
+	// AFTER the _mrsref reference-pair case is excluded. The byte-multiplier
+	// approach (vs reading NumberOfFrames directly) sidesteps the conflict
+	// with the classic 2-frame Philips SVS where NumberOfFrames=2 carries
+	// [main_FID, water_ref_FID] not 2 dynamics — that case has multiplier=2
+	// and stays on the existing _mrsref companion path below. Multipliers
+	// >= 3 are treated as dynamics (svsWSAntCing 32, press_mega 297, etc.).
+	// Multiplier must agree across N_files; otherwise we drop to nDynPerFile=1
+	// and the per-file mismatch is caught by the FID-size check in the read
+	// loop. MEGA-PRESS edit-on/off + reference-frame interpretation moves to
+	// tools/mrs_post.py per the MRS split policy (see CLAUDE.md "MRS split
+	// policy" and dcm_qa_mrs/caveats.md); press_mega lands here as
+	// raw dim[5]=297 (288 main + 9 ref frames, no reorder, no drop), and
+	// the Python tool reshapes to (1024, 144, 2) with edit ON/OFF + paired
+	// _mrsref in post.
+	size_t single_frame_bytes = (size_t)N_pts * 2 * sizeof(float);
+	int nDynPerFile = 1;
+	if (d0->manufacturer == kMANUFACTURER_PHILIPS && N_files == 1 &&
+		single_frame_bytes > 0 && d0->imageBytes > 0 &&
+		((size_t)d0->imageBytes % single_frame_bytes) == 0) {
+		int mult = (int)((size_t)d0->imageBytes / single_frame_bytes);
+		if (mult >= 3)
+			nDynPerFile = mult;
+	}
+	// M4 fix (audit round-5): widen the multiplication so the dim[5] range
+	// check is correct even at pathological inputs. Signed int overflow on
+	// `nDynPerFile * N_files` is UB and would silently bypass the > 32767
+	// guard below.
+	int64_t N_dyn64 = (int64_t)nDynPerFile * (int64_t)N_files;
+	// NIfTI-1 stores `dim[k]` as int16. Anything above 32767 wraps to a
+	// negative number after the (short) cast at header construction. Refuse
+	// rather than silently produce a corrupt header.
+	if (N_pts > 32767) {
+		printError("MRS: DataPointColumns %d exceeds NIfTI-1 dim[4] limit (32767)\n", N_pts);
+		return EXIT_FAILURE;
+	}
+	if (N_dyn64 > 32767) {
+		printError("MRS: %lld effective dynamics exceeds NIfTI-1 dim[5] limit (32767)\n", (long long)N_dyn64);
+		return EXIT_FAILURE;
+	}
+	int N_dyn = (int)N_dyn64;
+	// Stack invariants. Every member of the series must agree on the values
+	// the writer assumes from d0. Mixed series silently stack under d0's
+	// metadata and the first DICOM's affine, so fail loud before reading
+	// any FIDs. Geometry (orient + position + voxel size) is compared with
+	// a float-tolerant epsilon — DICOM-stored values can have last-place
+	// rounding noise across the per-frame entries of a multi-DICOM series.
+	const float kGeomEps = 1e-4f;
+	for (int i = 1; i < N_files; i++) {
+		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
+		if (!d->isMRS) {
+			printError("MRS: DICOM %d is not MR Spectroscopy; refusing to stack\n", i);
+			return EXIT_FAILURE;
+		}
+		if (d->dataPointColumns != N_pts) {
+			printError("MRS: DICOM %d has DataPointColumns %d, expected %d\n",
+					   i, d->dataPointColumns, N_pts);
+			return EXIT_FAILURE;
+		}
+		// Tolerance: parse noise across per-file FD reads, or the float→
+		// double promotion noise on CSA-derived widths, can drift the last
+		// digit between files of the same series. 1e-6 relative tolerance
+		// still rejects genuine acquisition-parameter mismatches (audit
+		// 2026-06-07 M8). Use the canonical mrsSpectralWidthHz source so a
+		// series with matching dwellTime but slightly noisy CSA spectralWidth
+		// is not rejected (audit 2026-06-07 follow-up M3).
+		double swD = mrsSpectralWidthHz(d);
+		double swD0 = mrsSpectralWidthHz(d0);
+		double swEps = fabs(swD0) * 1e-6;
+		if (swEps < 1e-9) swEps = 1e-9;
+		if (fabs(swD - swD0) > swEps) {
+			printError("MRS: DICOM %d has SpectralWidth %g, expected %g\n",
+					   i, swD, swD0);
+			return EXIT_FAILURE;
+		}
+		if (d->isLittleEndian != d0->isLittleEndian) {
+			printError("MRS: DICOM %d byte order disagrees with series; refusing to stack\n", i);
+			return EXIT_FAILURE;
+		}
+		if (d->manufacturer != d0->manufacturer || d->isXA != d0->isXA) {
+			printError("MRS: DICOM %d vendor/phase convention disagrees with series\n", i);
+			return EXIT_FAILURE;
+		}
+		// Orientation (6 components) + Position (3 components).
+		for (int k = 1; k <= 6; k++) {
+			if (fabsf(d->orient[k] - d0->orient[k]) > kGeomEps) {
+				printError("MRS: DICOM %d ImageOrientationPatient disagrees with d0; refusing to stack\n", i);
+				return EXIT_FAILURE;
+			}
+		}
+		for (int k = 1; k <= 3; k++) {
+			if (fabsf(d->patientPosition[k] - d0->patientPosition[k]) > kGeomEps) {
+				printError("MRS: DICOM %d ImagePositionPatient disagrees with d0; refusing to stack\n", i);
+				return EXIT_FAILURE;
+			}
+		}
+		// Voxel size: PixelSpacing[0/1] (-> xyzMM[1/2]) and SliceThickness
+		// (-> d.zThick). Use zThick rather than xyzMM[3] because the latter
+		// is set to SpacingBetweenSlices when present (gap-inclusive), but
+		// MRS voxels have no slice grid so we want the thickness directly.
+		for (int k = 1; k <= 2; k++) {
+			if (fabsf(d->xyzMM[k] - d0->xyzMM[k]) > kGeomEps) {
+				printError("MRS: DICOM %d PixelSpacing disagrees with d0; refusing to stack\n", i);
+				return EXIT_FAILURE;
+			}
+		}
+		if (fabsf(d->zThick - d0->zThick) > kGeomEps) {
+			printError("MRS: DICOM %d SliceThickness disagrees with d0; refusing to stack\n", i);
+			return EXIT_FAILURE;
+		}
+	}
+	// Validate spatial tags before stamping sform_code=2. Zero / NaN / Inf,
+	// non-positive voxel spacing, or two parallel row vectors would
+	// otherwise be written as authoritative geometry. NaN/Inf checks use
+	// the standard self-comparison idiom so we don't need <math.h>.
+	bool orientFinite = true;
+	for (int i = 1; i <= 6; i++)
+		if (d0->orient[i] != d0->orient[i] || d0->orient[i] > 1e30 || d0->orient[i] < -1e30)
+			orientFinite = false;
+	// Row 1 and Row 2 must each have non-zero magnitude. A proper DICOM IOP
+	// has unit rows. UIH MRS is the only known vendor that encodes IOP as
+	// direction*VoxelSize (rows have magnitude == PixelSpacing); on that
+	// branch we test the normalized cross product. For every other vendor
+	// stay with the strict unit-magnitude check so a malformed non-UIH IOP
+	// fails closed (sform_code=0 + warning) instead of being silently
+	// renormalized by the writer below (audit 2026-06-07 H1).
+	float r1mag = 0.0f, r2mag = 0.0f, crossmag = 0.0f;
+	bool orientShapeOK = false;
+	if (orientFinite) {
+		float r1x = d0->orient[1], r1y = d0->orient[2], r1z = d0->orient[3];
+		float r2x = d0->orient[4], r2y = d0->orient[5], r2z = d0->orient[6];
+		r1mag = sqrtf(r1x * r1x + r1y * r1y + r1z * r1z);
+		r2mag = sqrtf(r2x * r2x + r2y * r2y + r2z * r2z);
+		if (d0->manufacturer == kMANUFACTURER_UIH) {
+			if (r1mag > 0.5f && r2mag > 0.5f) {
+				float u1x = r1x / r1mag, u1y = r1y / r1mag, u1z = r1z / r1mag;
+				float u2x = r2x / r2mag, u2y = r2y / r2mag, u2z = r2z / r2mag;
+				float cx = u1y * u2z - u1z * u2y;
+				float cy = u1z * u2x - u1x * u2z;
+				float cz = u1x * u2y - u1y * u2x;
+				float crossUnit = sqrtf(cx * cx + cy * cy + cz * cz); // 1.0 when orthogonal
+				orientShapeOK = (crossUnit > 0.5f);
+			}
+		} else {
+			float cx = r1y * r2z - r1z * r2y;
+			float cy = r1z * r2x - r1x * r2z;
+			float cz = r1x * r2y - r1y * r2x;
+			crossmag = sqrtf(cx * cx + cy * cy + cz * cz);
+			orientShapeOK = (r1mag > 0.5f) && (r1mag < 1.5f) &&
+							(r2mag > 0.5f) && (r2mag < 1.5f) &&
+							(crossmag > 0.5f);
+		}
+	}
+	bool posFinite = true;
+	for (int i = 1; i <= 3; i++)
+		if (d0->patientPosition[i] != d0->patientPosition[i] ||
+			d0->patientPosition[i] > 1e30 || d0->patientPosition[i] < -1e30)
+			posFinite = false;
+	// MRS voxel size: PixelSpacing (xyzMM[1..2]) + SliceThickness (zThick).
+	// zThick is the original DICOM SliceThickness (mm) without any
+	// SpacingBetweenSlices gap added; xyzMM[3] is normally the same value
+	// but gets replaced with spacing when SpacingBetweenSlices is set, so
+	// it can over-state the SVS voxel size. Use the thickness directly.
+	bool spacingOK = (d0->xyzMM[1] > 0.0f) && (d0->xyzMM[2] > 0.0f) && (d0->zThick > 0.0f);
+	bool geomValid = orientFinite && orientShapeOK && posFinite && spacingOK;
+	bool hasSpatialGrid = (d0->xyzDim[1] > 1) || (d0->xyzDim[2] > 1) || (d0->xyzDim[3] > 1);
+	// Genuine non-spatial (unlocalized) FID: no spatial grid, no VOI localization,
+	// and no valid orientation/position/voxel spacing. Distinguishes an acquisition
+	// that is intentionally non-spatial (e.g. IR_fid T1 calibration, whole-coil FID)
+	// from a localized single-voxel SVS or spatial MRSI whose geometry is merely
+	// missing/corrupt — the warnings below then say "unlocalized" instead of the
+	// misleading "missing or invalid". Note: hasVoiCenter is NOT a localization
+	// signal here — the Siemens CSA path records a VoiPosition (often [0,0,0])
+	// even for unlocalized FIDs, so the real discriminator is voxel size
+	// (zThick + in-plane FoV), which is absent for a non-spatial acquisition.
+	// Also require no EXPLICIT localization tag: an XA `(0018,9200)=SINGLE_VOXEL`
+	// series with missing/invalid geometry is still a localized SVS (and below
+	// gets _svs), so reporting it as non-spatial/Unknown would be contradictory.
+	bool isNonSpatialFID = (d0->mrsAcqType == kMRSAcqNone) && !hasSpatialGrid && !geomValid &&
+						   !(d0->zThick > 0.0f && d0->xyzMM[1] > 1.0f && d0->xyzMM[2] > 1.0f);
+
+	size_t bytes_per_dicom = (size_t)N_pts * 2 * sizeof(float); // interleaved real/imag per single frame
+	// P2.d: when each DICOM packs nDynPerFile frames (Philips Enhanced
+	// multi-dynamic), the FID payload to allocate is bytes_per_dicom *
+	// nDynPerFile per DICOM. Total dynamics across the stack = N_dyn.
+	size_t bytes_per_dicom_total = bytes_per_dicom * (size_t)nDynPerFile;
+	size_t total_bytes = bytes_per_dicom * (size_t)N_dyn;
+	float *fid = (float *)malloc(total_bytes);
+	if (fid == NULL) {
+		printError("MRS: malloc failed for %zu bytes\n", total_bytes);
+		return EXIT_FAILURE;
+	}
+	// Per-call (per series) warning gate for the oversized-payload partial
+	// conversion case below. Audit 2026-06-07 L1: previous `static bool`
+	// silenced the warning for the rest of the process after the first
+	// series tripped it; now we only suppress on subsequent DICOMs of the
+	// SAME series.
+	bool warned_trailing_this_series = false;
+	// _mrsref water-reference companion (P2.c / P4.4): Philips classic SVS
+	// packs nframes × spec_points complex points in (5600,0020); a common
+	// variant trails a water-reference FID immediately after the main FID,
+	// so the per-DICOM payload is exactly 2× expected. spec2nii emits the
+	// trailing chunk as <stem>_mrsref.nii.gz. We support that case here:
+	// detect a consistent 2× multiplier across the stack, allocate a parallel
+	// fidRef buffer, read each DICOM's trailing chunk into it, then emit a
+	// companion NIfTI + sidecar after the main _svs files are written.
+	int trailingMultiplier = 0;
+	for (int i = 0; i < N_files; i++) {
+		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
+		if ((size_t)d->imageBytes < bytes_per_dicom_total ||
+			((size_t)d->imageBytes % bytes_per_dicom_total) != 0) {
+			// gate is enforced again in the read loop below; here we just
+			// want a defensible multiplier read.
+			trailingMultiplier = 0;
+			break;
+		}
+		// Multiplier is measured AFTER accounting for the per-file dynamics
+		// pack (P2.d): a Philips Enhanced single-DICOM 32-dyn file with NO
+		// trailing companion has mult=1 (i.e. trail=0). The classic 2× case
+		// (main + water-ref companion) still presents as mult=2 / trail=1.
+		int mult = (int)((size_t)d->imageBytes / bytes_per_dicom_total);
+		int trail = mult - 1;
+		if (i == 0)
+			trailingMultiplier = trail;
+		else if (trail != trailingMultiplier) {
+			trailingMultiplier = 0;
+			break;
+		}
+	}
+	// Only emit a companion for the canonical 2× case (main + 1 water-ref).
+	// 3×+ multipliers are dynamics / edit-on-off / multi-coil — Phase 2.d
+	// work that needs DIM_DYN / DIM_EDIT axis handling and is out of scope
+	// for the _mrsref deliverable.
+	bool emitMrsref = (trailingMultiplier == 1);
+	float *fidRef = NULL;
+	if (emitMrsref) {
+		fidRef = (float *)malloc(total_bytes);
+		if (fidRef == NULL) {
+			printWarning("MRS: malloc failed for _mrsref companion buffer; skipping water-reference output\n");
+			emitMrsref = false;
+		}
+	}
+	// Read each DICOM's FID into the buffer (stacked along dim[5]).
+	for (int i = 0; i < N_files; i++) {
+		struct TDICOMdata *d = &dcmList[dcmSort[i].indx];
+		// Philips classic SVS packs (5600,0020) with `nframes × spec_points`
+		// complex points and a frequent variant carries a trailing water-
+		// reference FID alongside the main one (the payload is therefore
+		// 2× expected bytes for a single-frame, single-dynamic acquisition).
+		// We accept any integer multiple — read only the first
+		// `bytes_per_dicom` (the main FID) and ignore the rest. spec2nii
+		// splits the trailing chunk into a separate _ref output; doing the
+		// same is Philips multi-coil follow-on; see dcm_qa_mrs/caveats.md.
+		if ((size_t)d->imageBytes < bytes_per_dicom_total ||
+			((size_t)d->imageBytes % bytes_per_dicom_total) != 0) {
+			printError("MRS: DICOM %d has FID size %d, expected %zu (or integer multiple)\n",
+					   i, d->imageBytes, (size_t)bytes_per_dicom_total);
+			free(fid);
+			free(fidRef);
+			return EXIT_FAILURE;
+		}
+		if (((size_t)d->imageBytes > bytes_per_dicom_total) && !warned_trailing_this_series) {
+			if (emitMrsref) {
+				printMessage("MRS: DICOM payload is 2x expected size; emitting _mrsref water-reference companion\n");
+			} else {
+				printWarning("MRS: DICOM payload is %dx expected size; using first FID only "
+							 "(_mrsref companion only supported for exact 2x case)\n",
+							 (int)((size_t)d->imageBytes / bytes_per_dicom_total));
+			}
+			warned_trailing_this_series = true;
+		}
+		FILE *f = fopen(nameList->str[dcmSort[i].indx], "rb");
+		if (f == NULL) {
+			printError("MRS: cannot open %s\n", nameList->str[dcmSort[i].indx]);
+			free(fid);
+			free(fidRef);
+			return EXIT_FAILURE;
+		}
+		if (fseek(f, d->imageStart, SEEK_SET) != 0) {
+			printError("MRS: fseek failed in %s\n", nameList->str[dcmSort[i].indx]);
+			fclose(f);
+			free(fid);
+			free(fidRef);
+			return EXIT_FAILURE;
+		}
+		// Each DICOM contributes nDynPerFile sequential frames; pack them
+		// contiguously into the fid buffer starting at slot i × nDynPerFile.
+		float *slot = fid + (size_t)i * nDynPerFile * N_pts * 2;
+		if (fread(slot, 1, bytes_per_dicom_total, f) != bytes_per_dicom_total) {
+			printError("MRS: short read from %s\n", nameList->str[dcmSort[i].indx]);
+			fclose(f);
+			free(fid);
+			free(fidRef);
+			return EXIT_FAILURE;
+		}
+		// Trailing water-reference FID immediately follows the main FID; read
+		// it into the parallel buffer with the same indexing.
+		if (emitMrsref && fidRef != NULL) {
+			float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+			if (fread(refSlot, 1, bytes_per_dicom_total, f) != bytes_per_dicom_total) {
+				printWarning("MRS: short read for trailing water-reference FID in %s; dropping _mrsref companion\n",
+							 nameList->str[dcmSort[i].indx]);
+				free(fidRef);
+				fidRef = NULL;
+				emitMrsref = false;
+			}
+		}
+		fclose(f);
+		// Audit H2: the standard image pipeline byte-swaps non-native
+		// transfer syntaxes via swapEndian; the MRS reader bypasses that.
+		// XA-line Siemens always emits Explicit VR Little Endian, but
+		// Explicit VR Big Endian MRS Storage is legal per the DICOM
+		// standard (rare in practice) and we should not silently produce
+		// corrupt complex data when one shows up. d->isLittleEndian is
+		// populated by the DICOM parser; swap each float32 component
+		// (2*N_pts of them) when the file was big-endian.
+		if (!d->isLittleEndian) {
+			nifti_swap_4bytes((size_t)N_pts * 2 * nDynPerFile, slot);
+			if (emitMrsref && fidRef != NULL) {
+				float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+				nifti_swap_4bytes((size_t)N_pts * 2 * nDynPerFile, refSlot);
+			}
+		}
+		// NumarisX (Siemens XA) phase convention: complex = real - 1j*imag,
+		// i.e. negate the odd-indexed (imag) floats. Older VE/VX systems use
+		// real + 1j*imag — no negation needed. See spec2nii
+		// process_siemens_svs_xa vs process_siemens_svs_vx.
+		// Phase-convention passes operate on all complex samples this DICOM
+		// contributed (nDynPerFile × N_pts points). For single-dynamic stacks
+		// nDynPerFile == 1 and the iteration count is unchanged.
+		int N_complex_this_dicom = N_pts * nDynPerFile;
+		if ((d->manufacturer == kMANUFACTURER_SIEMENS) && d->isXA) {
+			// Preserve +0.0 in the imag channel — unconditional negation
+			// produces -0.0, which is mathematically identical but differs
+			// byte-for-byte from spec2nii's reference output.
+			for (int p = 0; p < N_complex_this_dicom; p++)
+				if (slot[2 * p + 1] != 0.0f)
+					slot[2 * p + 1] = -slot[2 * p + 1];
+			if (emitMrsref && fidRef != NULL) {
+				float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+				for (int p = 0; p < N_complex_this_dicom; p++)
+					if (refSlot[2 * p + 1] != 0.0f)
+						refSlot[2 * p + 1] = -refSlot[2 * p + 1];
+			}
+		}
+		// Philips classic SVS conjugation (P2.c follow-up): spec2nii
+		// philips_dcm.py:91 applies `.conj()` (imag negation) to the FID
+		// before writing, with the comment "Data appears to require
+		// conjugation to meet standard's conventions." The raw (5600,0020)
+		// payload uses the opposite sign convention from NIfTI-MRS, so
+		// without this step the imag channel comes out negated relative
+		// to spec2nii — verified bit-equal on SV_phantom_center after the
+		// negation. Same +0.0 preservation as the XA branch above.
+		if (d->manufacturer == kMANUFACTURER_PHILIPS) {
+			for (int p = 0; p < N_complex_this_dicom; p++)
+				if (slot[2 * p + 1] != 0.0f)
+					slot[2 * p + 1] = -slot[2 * p + 1];
+			if (emitMrsref && fidRef != NULL) {
+				float *refSlot = fidRef + (size_t)i * nDynPerFile * N_pts * 2;
+				for (int p = 0; p < N_complex_this_dicom; p++)
+					if (refSlot[2 * p + 1] != 0.0f)
+						refSlot[2 * p + 1] = -refSlot[2 * p + 1];
+			}
+		}
+	}
+	// Build NIfTI-1 header.
+	struct nifti_1_header hdr;
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.sizeof_hdr = 348;
+	memcpy(hdr.magic, "n+1\0", 4);
+	hdr.datatype = DT_COMPLEX64; // 32; bitpix 64 = 2*float32
+	hdr.bitpix = 64;
+	hdr.dim[0] = (N_dyn > 1) ? 5 : 4;
+	hdr.dim[5] = (short)N_dyn;
+	hdr.dim[6] = 1;
+	hdr.dim[1] = 1;
+	hdr.dim[2] = 1;
+	hdr.dim[3] = 1;
+	hdr.dim[4] = (short)N_pts;
+	hdr.dim[7] = 1;
+	hdr.pixdim[0] = 1.0f;
+	// F1 pixdim-mirror: pixdim must match the sform column norms below.
+	// The sform build applies spec2nii's row1/row2 pixdim swap (m00 scales
+	// the first column by py = xyzMM[2] = VoiReadoutFoV; m01 scales the
+	// second by px = xyzMM[1] = VoiPhaseFoV), so the NIfTI x-axis carries
+	// VoiReadoutFoV and the y-axis carries VoiPhaseFoV. Mirror that swap
+	// in pixdim or the header reports per-axis voxel sizes that contradict
+	// the affine. MIRROR site: AcquisitionVoxelSize emission in
+	// nii_SaveBIDSX (grep "F1 pixdim-mirror" to locate both).
+	hdr.pixdim[1] = (float)d0->xyzMM[2];
+	hdr.pixdim[2] = (float)d0->xyzMM[1];
+	hdr.pixdim[3] = (float)d0->zThick; // see px/py/pz comment below re: zThick vs xyzMM[3]
+	// Spectral width: shared source-of-truth with the sidecar via
+	// mrsSpectralWidthHz (see helper definition near line 1270). Both prefer
+	// the Siemens private (0021,1142) integer-ns dwell over CSA-float
+	// spectralWidth (audit 2026-06-07 H2).
+	double mrsSpectralWidth = mrsSpectralWidthHz(d0);
+	hdr.pixdim[4] = (mrsSpectralWidth > 0.0) ? (float)(1.0 / mrsSpectralWidth) : 1.0f;
+	hdr.pixdim[5] = 1.0f;
+	hdr.pixdim[6] = 1.0f;
+	hdr.pixdim[7] = 1.0f;
+	hdr.xyzt_units = NIFTI_UNITS_MM | NIFTI_UNITS_SEC;
+	hdr.vox_offset = 352.0f;
+	hdr.scl_slope = 1.0f;
+	// Affine: port of spec2nii.dcm_to_nifti_orientation for XA SVS.
+	// d->orient[1..6] = ImageOrientationPatient (row1 then row2, both unit
+	// vectors in LPS). Third row = cross(row1, row2). spec2nii multiplies
+	// by diag([PixelSpacing[1], PixelSpacing[0], SliceThickness]) — note
+	// the row1/row2 pixdim swap — then negates the first two rows for the
+	// LPS -> RAS conversion that NIfTI requires.
+	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
+	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	// P2.b VolumeLocalizationSequence override: spec2nii reads SlabOrientation
+	// from (0018,9126) directly (philips_dcm.py:339) instead of the per-frame
+	// (0020,0037) ImageOrientationPatient. The two agree on 5 of 6 classic
+	// Philips SVS phantoms in the corpus, but on SV_phantom_45deg_AP the
+	// per-frame IOP carries slabs[1]+slabs[2] while spec2nii's path reads
+	// slabs[0]+slabs[1]. When the parser captured two SlabOrientations, prefer
+	// them on the Philips MRS branch so 45deg_AP and any other Enhanced-DICOM
+	// MRS with the same quirk lands at sform parity. slabOrientCount == 0
+	// means the tag was absent (classic-format Philips SVS, or non-Philips)
+	// — fall through to the per-frame IOP path.
+	if (d0->manufacturer == kMANUFACTURER_PHILIPS && d0->slabOrientCount >= 2) {
+		rx0 = d0->slabOrient[1]; rx1 = d0->slabOrient[2]; rx2 = d0->slabOrient[3];
+		ry0 = d0->slabOrient[4]; ry1 = d0->slabOrient[5]; ry2 = d0->slabOrient[6];
+	}
+	// P2.b Philips orientation handedness: spec2nii's `_enhanced_dcm_svs_to_orientation`
+	// (philips_dcm.py:341) does `imageOrientationPatient *= -1` on both IOP
+	// rows before building the rotation, so columns 0 and 1 of spec2nii's
+	// sform are sign-flipped relative to dcm2niix's. Column 2 (slice = cross
+	// of two negated rows) stays the same sign. Negation applies to both the
+	// per-frame IOP source and the SlabOrientation source (spec2nii negates
+	// after reading slabs at philips_dcm.py:341, before passing to
+	// dcm_to_nifti_orientation).
+	if (d0->manufacturer == kMANUFACTURER_PHILIPS) {
+		rx0 = -rx0; rx1 = -rx1; rx2 = -rx2;
+		ry0 = -ry0; ry1 = -ry1; ry2 = -ry2;
+	}
+	// F2: UIH MRS encodes IOP as direction * VoxelSize (rows have non-unit
+	// magnitude that equals PixelSpacing). The voxel size is already carried
+	// in xyzMM[]/zThick, so normalize the row vectors so the m_ij scalings
+	// below don't double-count it. Gated on UIH so a hypothetical pre-scaled
+	// IOP from another vendor doesn't get silently renormalized through this
+	// path (audit 2026-06-07 H1 follow-up).
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		double r1n = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
+		double r2n = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
+		if (r1n > 1.001) { rx0 /= r1n; rx1 /= r1n; rx2 /= r1n; }
+		if (r2n > 1.001) { ry0 /= r2n; ry1 /= r2n; ry2 /= r2n; }
+	}
+	double rz0 = rx1 * ry2 - rx2 * ry1;
+	double rz1 = rx2 * ry0 - rx0 * ry2;
+	double rz2 = rx0 * ry1 - rx1 * ry0;
+	// Use zThick directly for the slice-direction component — xyzMM[3] gets
+	// rewritten to SpacingBetweenSlices when present, which over-states the
+	// SVS voxel size.
+	double px = d0->xyzMM[1], py = d0->xyzMM[2], pz = d0->zThick;
+	double m00 = rx0 * py, m01 = ry0 * px, m02 = rz0 * pz;
+	double m10 = rx1 * py, m11 = ry1 * px, m12 = rz1 * pz;
+	double m20 = rx2 * py, m21 = ry2 * px, m22 = rz2 * pz;
+	double tx = d0->patientPosition[1];
+	double ty = d0->patientPosition[2];
+	double tz = d0->patientPosition[3];
+	// F2: UIH SVS expects a half-voxel shift in the first two axes (matches
+	// spec2nii uih.py with half_shift=True). The shift is [0.5, 0.5, 0] @
+	// M_RAS.T where M_RAS = diag(-1,-1,1) * M built above. Skip for non-UIH
+	// vendors so the existing Siemens/Philips parity is unchanged.
+	double sx = 0.0, sy = 0.0, sz = 0.0;
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		sx = -0.5 * (m00 + m01);
+		sy = -0.5 * (m10 + m11);
+		sz = 0.5 * (m20 + m21);
+	}
+	if (geomValid) {
+		hdr.srow_x[0] = (float)(-m00);
+		hdr.srow_x[1] = (float)(-m01);
+		hdr.srow_x[2] = (float)(-m02);
+		hdr.srow_x[3] = (float)(-tx + sx);
+		hdr.srow_y[0] = (float)(-m10);
+		hdr.srow_y[1] = (float)(-m11);
+		hdr.srow_y[2] = (float)(-m12);
+		hdr.srow_y[3] = (float)(-ty + sy);
+		hdr.srow_z[0] = (float)m20;
+		hdr.srow_z[1] = (float)m21;
+		hdr.srow_z[2] = (float)m22;
+		hdr.srow_z[3] = (float)(tz + sz);
+		hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT; // 2
+	} else {
+		// Audit M3: zero / NaN / Inf in orient/position would otherwise be
+		// stamped as authoritative geometry. Leave sform_code=0 and warn so
+		// the user knows the spatial transform is not encoded.
+		// Non-spatial FID gets ONE laconic warning here (covers both the
+		// sform_code=0 and the no-BidsGuess consequence); the second warning at
+		// the BidsGuess site below is suppressed for this case via isNonSpatialFID.
+		if (isNonSpatialFID)
+			printWarning("MRS: non-spatial (unlocalized) FID — no geometry (sform_code=0), no BIDS class (Unknown/)\n");
+		else
+			printWarning("MRS: spatial tags (orient/position/spacing) missing or invalid; emitting sform_code=0\n");
+		hdr.sform_code = NIFTI_XFORM_UNKNOWN;
+	}
+	hdr.qform_code = NIFTI_XFORM_UNKNOWN; // qform left empty (matches spec2nii)
+	// Audit H4 sanity check: the writer derives byte count from the header.
+	// If anything mismatches (e.g. NIfTI internal accounting changes), bail
+	// rather than write a truncated or oversized file.
+	if (nii_ImgBytes(hdr) != total_bytes) {
+		printError("MRS: header byte count (%zu) != FID buffer (%zu); aborting\n",
+				   nii_ImgBytes(hdr), total_bytes);
+		free(fid);
+		free(fidRef);
+		return EXIT_FAILURE;
+	}
+	// Detect a standalone water-reference acquisition (no trailing FID, but
+	// the whole DICOM IS the water reference). spec2nii lands these as
+	// _mrsref. Only fire when the trailing-FID detection above did NOT
+	// already classify the file (emitMrsref==false): if a Philips classic
+	// DICOM is BOTH 2× payload AND named "no_Water_Suppression", the
+	// trailing-FID case wins (main SVS + ref companion). Naming heuristic
+	// lives in `mrsIsStandaloneWaterRef()` above so Phase 6 MRSI can reuse it.
+	bool isStandaloneMrsRef = !emitMrsref && mrsIsStandaloneWaterRef(d0);
+	// BidsGuess: emit ["mrs","_svs"] only when we have positive SVS evidence.
+	// kMRSAcqSingleVoxel is the explicit (0018,9200) signal. For
+	// kMRSAcqNone (Numaris4 / VB/VE classic — no (0018,9200) at all), require
+	// CSA VOI corroboration (VoiThickness AND VoiPhaseFoV populated above
+	// sentinels) before claiming SVS. Without either, leave bidsDataType
+	// empty so the file lands in Unknown/ rather than getting a misleading
+	// _svs label — guards against classic Siemens CSI/MRSI inputs (which
+	// reach this writer when (0018,9200) is absent) being mislabeled as
+	// singleton SVS (audit 2026-06-07 H3).
+	// MRSI negative evidence: classic Siemens CSI/MRSI files set Rows / Columns
+	// (and optionally NumberOfFrames) > 1 to encode the spatial grid; SVS files
+	// always have all three == 1. When (0018,9200) is absent, reject as not-SVS
+	// when ANY spatial dim is > 1 — guards against classic CSI/MRSI inputs
+	// (sm_classic, VB/VE 3D CSI, voi_in_mrsi) being mislabeled _svs even when
+	// they carry VOI tags (audit 2026-06-07 round-3 H2).
+	bool isSVSConfirmed = (d0->mrsAcqType == kMRSAcqSingleVoxel) ||
+						  (d0->mrsAcqType == kMRSAcqNone && !hasSpatialGrid &&
+						   d0->zThick > 0.0f &&
+						   d0->xyzMM[1] > 1.0f && d0->xyzMM[2] > 1.0f);
+	if (isSVSConfirmed) {
+		strcpy(d0->CSA.bidsDataType, "mrs");
+		if (isStandaloneMrsRef) {
+			strcpy(d0->CSA.bidsEntitySuffix, "_mrsref");
+			d0->isMrsRef = true;
+		} else {
+			strcpy(d0->CSA.bidsEntitySuffix, "_svs");
+		}
+	} else if (!isNonSpatialFID) {
+		// isNonSpatialFID already warned once at the sform site above.
+		printWarning("MRS: MRSpectroscopyAcquisitionType absent and CSA VOI evidence missing; not emitting BidsGuess _svs (file lands in Unknown/)\n");
+	}
+	// Siemens multi-echo MRS (e.g. sLASER): the DICOM EchoTime tag (0018,0081)
+	// only reports alTE[0]; the pulse sequence's true total TE is the sum of
+	// alTE[0..N] from the Phoenix Protocol. Override d0->TE before filename
+	// generation + sidecar emission so both reflect the corrected value. For
+	// single-echo MRS the helper returns alTE[0] alone (no-op) and for non-
+	// Siemens vendors it returns 0.0 (skip). Helper definition above.
+	double totalTeUs = siemensMrsTotalEchoTimeUs(nameList->str[dcmSort[0].indx], d0);
+	if (totalTeUs > 0.0)
+		d0->TE = (float)(totalTeUs / 1000.0); // us -> ms (d.TE units)
+	// Generate filename + save NIfTI body via the standard writer (handles
+	// .nii vs .nii.gz, output-dir, conflict resolution).
+	char pathoutname[2048] = "";
+	if (nii_createFilename(*d0, pathoutname, opts) == EXIT_FAILURE) {
+		free(fid);
+		free(fidRef);
+		return EXIT_FAILURE;
+	}
+	if (strlen(pathoutname) < 1) {
+		free(fid);
+		free(fidRef);
+		return EXIT_FAILURE;
+	}
+	char *mrsExt = mrsHdrExtJson(*d0, hdr, dcmSort, nConvert, nameList, opts);
+	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0, mrsExt);
+	free(mrsExt);
+	// Report the saved output (see mrsReportConvert: the MRS path bypasses
+	// saveDcm2NiiCore's standard "Convert ..." line, so a warning above would
+	// otherwise have no associated NIfTI).
+	if (ret == EXIT_SUCCESS)
+		mrsReportConvert(nConvert, pathoutname, hdr);
+	// JSON sidecar via the existing writer — most fields (TR, TE, FlipAngle,
+	// ProtocolName, ...) are still meaningful for MRS, and the MRS-specific
+	// emissions (SpectralWidth, DwellTime, TransmitterFrequency,
+	// ResonantNucleus, DataPointColumns) are gated on d.isMRS inside
+	// nii_SaveBIDSX.
+	if (ret == EXIT_SUCCESS) {
+		// Stack-local TDTI4D for the MRS sidecar pass. `initTDTI4D` sets the
+		// full set of "unset" sentinels so the PET-flavored BEP009 emission
+		// gates at ~L2390-2457 don't fire on MRS — without this, dim[4]-long
+		// zero arrays of `DecayCorrectionFactor` / `FrameTimesStart` leak in
+		// (commit 33da307; helper consolidates the pattern with nii_SaveBIDS).
+		struct TDTI4D dti4D_local;
+		initTDTI4D(&dti4D_local);
+		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
+					  nameList->str[dcmSort[0].indx], &dti4D_local);
+	}
+	// _mrsref companion writer (P2.c / P4.4): emits the trailing water-
+	// reference FID as <stem>_mrsref.nii(.gz) + <stem>_mrsref.json. Derived
+	// from the main pathoutname by substituting the _svs suffix; falls back
+	// to appending _mrsref if the user template does not embed %s/_svs.
+	// Sidecar is identical to the main except WaterSuppressed flips to
+	// false (d.isMrsRef gates the emission in nii_SaveBIDSX).
+	if (ret == EXIT_SUCCESS && emitMrsref && fidRef != NULL) {
+		char refPath[2048] = "";
+		strncpy(refPath, pathoutname, sizeof(refPath) - 1);
+		refPath[sizeof(refPath) - 1] = '\0';
+		// Replace the last occurrence of "_svs" with "_mrsref" (suffix is the
+		// final BIDS entity, never followed by another "_svs" in a reproin
+		// stem). If not present, append "_mrsref" — the writer handles the
+		// .nii/.nii.gz extension separately.
+		char *svsLoc = strstr(refPath, "_svs");
+		char *lastSvs = NULL;
+		while (svsLoc != NULL) {
+			lastSvs = svsLoc;
+			svsLoc = strstr(svsLoc + 1, "_svs");
+		}
+		if (lastSvs != NULL) {
+			// move tail (after "_svs") into position after "_mrsref"
+			char tail[2048];
+			strncpy(tail, lastSvs + 4, sizeof(tail) - 1);
+			tail[sizeof(tail) - 1] = '\0';
+			size_t prefixLen = (size_t)(lastSvs - refPath);
+			if (prefixLen + 7 + strlen(tail) < sizeof(refPath)) {
+				memcpy(lastSvs, "_mrsref", 7);
+				strcpy(lastSvs + 7, tail);
+			} else {
+				printWarning("MRS: _mrsref path overflows buffer; dropping companion\n");
+				free(fidRef);
+				fidRef = NULL;
+			}
+		} else {
+			if (strlen(refPath) + 7 < sizeof(refPath))
+				strcat(refPath, "_mrsref");
+			else {
+				printWarning("MRS: _mrsref path overflows buffer; dropping companion\n");
+				free(fidRef);
+				fidRef = NULL;
+			}
+		}
+		if (fidRef != NULL) {
+			// Build a companion-flavoured TDICOMdata: same metadata but
+			// flag isMrsRef so the sidecar emits WaterSuppressed=false, and
+			// override the BIDS entity suffix so any downstream consumer
+			// sees the companion's identity.
+			struct TDICOMdata dRef = *d0;
+			dRef.isMrsRef = true;
+			strcpy(dRef.CSA.bidsDataType, "mrs");
+			strcpy(dRef.CSA.bidsEntitySuffix, "_mrsref");
+			char *mrsExtRef = mrsHdrExtJson(dRef, hdr, dcmSort, nConvert, nameList, opts);
+			int retRef = nii_saveNII(refPath, hdr, (unsigned char *)fidRef, opts, dRef, mrsExtRef);
+			free(mrsExtRef);
+			if (retRef == EXIT_SUCCESS) {
+				struct TDTI4D dti4D_ref;
+				initTDTI4D(&dti4D_ref); // see main-writer comment (audit 33da307)
+				nii_SaveBIDSX(refPath, dRef, opts, &hdr,
+							  nameList->str[dcmSort[0].indx], &dti4D_ref);
+			} else {
+				printWarning("MRS: _mrsref companion NIfTI write failed (path %s)\n", refPath);
+			}
+		}
+	}
+	free(fid);
+	free(fidRef);
+	return ret;
+}
+
+// Phase 6 MRSI writer. Handles MRSpectroscopyAcquisitionType ROW / PLANE /
+// VOLUME — single-file Enhanced DICOM only for this first landing. spec2nii
+// path: dicomfunctions.py:process_siemens_csi_xa (XA Enhanced CSI). Spatial
+// dims (Rows, Columns, NumberOfFrames) packed on NIfTI dim[1..3]; spectral
+// on dim[4]. Phase convention: NumarisX (XA) negates imag, Numaris4 (VB/VE)
+// does not — mirrors the SVS path's existing `d->isXA` branch.
+//
+// DICOM byte order in (5600,0020) for Enhanced CSI: spectral varies fastest,
+// then column, then row, then slice. Numpy reshape((slices,rows,cols,spec))
+// + moveaxis((0,1,2),(2,1,0)) gives (cols,rows,slices,spec) with new[c][r][s][p]
+// = old[s][r][c][p]. NIfTI Fortran-order layout has dim[1]=cols varying
+// fastest, so we transpose with an explicit nested loop below.
+int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
+					struct TDICOMdata dcmList[],
+					struct TSearchList *nameList,
+					struct TDCMopts opts) {
+	if (nConvert < 1)
+		return EXIT_FAILURE;
+	struct TDICOMdata *d0 = &dcmList[dcmSort[0].indx];
+	if (opts.saveFormat != kSaveFormatNIfTI) {
+		printError("MRSI: only NIfTI output (-e n) is supported\n");
+		return EXIT_FAILURE;
+	}
+	if (nConvert != 1) {
+		printError("MRSI: multi-DICOM CSI stacking not yet implemented (got %d files)\n", nConvert);
+		return EXIT_FAILURE;
+	}
+	int N_pts = d0->dataPointColumns;
+	int cols = d0->xyzDim[1];
+	int rows = d0->xyzDim[2];
+	int slices = d0->xyzDim[3];
+	if (N_pts <= 0 || cols < 1 || rows < 1 || slices < 1) {
+		printError("MRSI: unexpected dims (cols=%d rows=%d slices=%d N_pts=%d)\n",
+				   cols, rows, slices, N_pts);
+		return EXIT_FAILURE;
+	}
+	// Audit round-6 HIGH 3: refuse any per-axis dim above the NIfTI-1 int16
+	// limit BEFORE the (size_t)cols*rows*slices*N_pts multiplication, so a
+	// pathological input can't wrap the allocation size and silently pass
+	// the post-malloc byte-count check.
+	if (cols > 32767 || rows > 32767 || slices > 32767 || N_pts > 32767) {
+		printError("MRSI: per-axis dim exceeds NIfTI-1 limit (cols=%d rows=%d slices=%d N_pts=%d)\n",
+				   cols, rows, slices, N_pts);
+		return EXIT_FAILURE;
+	}
+	size_t total_samples = (size_t)cols * (size_t)rows * (size_t)slices * (size_t)N_pts;
+	size_t total_bytes = total_samples * 2 * sizeof(float);
+	if ((size_t)d0->imageBytes != total_bytes) {
+		printError("MRSI: FID payload %zu B != expected %zu B (%dx%dx%dx%d complex64)\n",
+				   (size_t)d0->imageBytes, total_bytes, cols, rows, slices, N_pts);
+		return EXIT_FAILURE;
+	}
+	// Read the raw FID block (DICOM byte order).
+	float *raw = (float *)malloc(total_bytes);
+	if (raw == NULL)
+		return EXIT_FAILURE;
+	FILE *fp = fopen(nameList->str[dcmSort[0].indx], "rb");
+	if (fp == NULL) {
+		free(raw);
+		return EXIT_FAILURE;
+	}
+	if (fseek(fp, d0->imageStart, SEEK_SET) != 0) {
+		fclose(fp);
+		free(raw);
+		return EXIT_FAILURE;
+	}
+	if (fread(raw, 1, total_bytes, fp) != total_bytes) {
+		fclose(fp);
+		free(raw);
+		printError("MRSI: FID short read\n");
+		return EXIT_FAILURE;
+	}
+	fclose(fp);
+	// Audit round-6 HIGH 4: byte-swap explicit-VR big-endian payloads to
+	// host order before phase conversion / transpose. SVS writer does the
+	// same just above its phase block (~11922). Rare in practice but BIDS
+	// validity requires it when the source is.
+	if (!d0->isLittleEndian) {
+		nifti_swap_4bytes(total_samples * 2, raw);
+	}
+	// Phase convention: spec2nii dispatches by SOPClassUID. Enhanced MR
+	// Spectroscopy Storage (1.2.840.10008.5.1.4.1.1.4.2) -> process_siemens_csi_xa
+	// negates imag. Classic CSA Non-Image (1.3.12.2.1107.5.9.1) ->
+	// process_siemens_csi_vx does NOT negate (dicomfunctions.py:406). dcm2niix's
+	// proxy: Enhanced SOP sets mrsAcqType (PLANE/VOLUME/ROW from public (0018,
+	// 9200)); classic SOP has no such public tag so mrsAcqType remains
+	// kMRSAcqNone, and the dispatch above admitted the file via the
+	// hasSpatialGridForMrsi branch. Only negate on the Enhanced/XA arm.
+	//
+	// Zero canonicalization: trailing zero-padded spectral samples in the
+	// DICOM source can have imag=-0.0 (0x80000000); spec2nii's
+	// `specData[0::2] - 1j * specData[1::2]` expression returns +0.0 for both
+	// +0.0 and -0.0 raw bytes (numpy collapses the sign on complex64 store).
+	// The SVS-path guard `if (imag != 0.0f) imag = -imag;` accidentally
+	// preserves -0.0 because both ±0.0 compare equal to 0.0f. For MRSI's
+	// frequent zero-padded tails that diverges by ~5% of total bytes vs
+	// spec2nii. `-x + 0.0f` canonicalises -0.0 to +0.0 per IEEE 754. The
+	// classic (no-negate) arm also needs zero canonicalization for
+	// consistency, applied below as `0.0f + raw[2*i+1]` (no negation).
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
+		if (d0->mrsAcqType != kMRSAcqNone) {
+			// Enhanced XA path: negate + canonicalize.
+			for (size_t i = 0; i < total_samples; i++) {
+				raw[2 * i + 1] = -raw[2 * i + 1] + 0.0f;
+			}
+		} else {
+			// Classic VB/VE path: no negation but still canonicalize -0.0 -> +0.0.
+			for (size_t i = 0; i < total_samples; i++) {
+				raw[2 * i + 1] = raw[2 * i + 1] + 0.0f;
+			}
+		}
+	}
+	// Transpose: byte layout in (5600,0020) differs by vendor.
+	//   Siemens: (slices, rows, cols, spec) C-order — spec varies fastest,
+	//     then col, then row, then slice. Permute to NIfTI Fortran-order
+	//     (cols, rows, slices, spec): new[c,r,s,p] = raw[s,r,c,p].
+	//   UIH: (cols, rows, frames, spec) C-order, then spec2nii applies
+	//     swapaxes(0,1) yielding NIfTI shape (rows, cols, frames, spec).
+	//     We write the same shape to match FID byte parity.
+	// Each element is complex64 = 8 bytes.
+	float *fid = (float *)malloc(total_bytes);
+	if (fid == NULL) {
+		free(raw);
+		return EXIT_FAILURE;
+	}
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		// UIH: DICOM (cols, rows, frames, spec) -> NIfTI Fortran (rows, cols,
+		// frames, spec). new[r,c,f,p] = raw[c,r,f,p].
+		for (int c = 0; c < cols; c++) {
+			for (int r = 0; r < rows; r++) {
+				for (int f = 0; f < slices; f++) {
+					for (int p = 0; p < N_pts; p++) {
+						size_t src = (((size_t)c * rows + r) * slices + f) * N_pts + p;
+						size_t dst = (((size_t)p * slices + f) * cols + c) * rows + r;
+						fid[2 * dst] = raw[2 * src];
+						fid[2 * dst + 1] = raw[2 * src + 1];
+					}
+				}
+			}
+		}
+	} else {
+		// Siemens / generic Enhanced MRSI.
+		for (int s = 0; s < slices; s++) {
+			for (int r = 0; r < rows; r++) {
+				for (int c = 0; c < cols; c++) {
+					for (int p = 0; p < N_pts; p++) {
+						size_t src = (((size_t)s * rows + r) * cols + c) * N_pts + p;
+						size_t dst = (((size_t)p * slices + s) * rows + r) * cols + c;
+						fid[2 * dst] = raw[2 * src];
+						fid[2 * dst + 1] = raw[2 * src + 1];
+					}
+				}
+			}
+		}
+	}
+	free(raw);
+	// Build NIfTI-1 header. MRSI 4D base. dim[1..3] axis convention is per-
+	// vendor and MUST match the payload byte order written above:
+	//   Siemens transpose writes dst with `c` innermost  → dim[1]=cols, dim[2]=rows.
+	//   UIH transpose writes dst with `r` innermost      → dim[1]=rows, dim[2]=cols.
+	// The UIH layout matches spec2nii's `swapaxes(0,1)` on the (Cols,Rows,Frames,Spec)
+	// reshape (uih.py:223+226), giving NIfTI shape (Rows,Cols,Frames,Spec). Audit
+	// 2026-06-11 H2: pre-fix the UIH branch wrote dim[1]=cols/dim[2]=rows here,
+	// which silently agreed with the rows-fastest payload only for square grids
+	// (the 16×16 / 8×8×8 spec2nii_test_data corpus). Non-square synthetics
+	// (e.g. Rows=8, Cols=16) showed dcm2niix shape (16,8,...) vs spec2nii (8,16,
+	// ...); voxel lookups wrapped across the wrong axis.
+	struct nifti_1_header hdr;
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.sizeof_hdr = 348;
+	memcpy(hdr.magic, "n+1\0", 4);
+	hdr.datatype = DT_COMPLEX64;
+	hdr.bitpix = 64;
+	hdr.dim[0] = 4;
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		hdr.dim[1] = (short)rows;
+		hdr.dim[2] = (short)cols;
+	} else {
+		hdr.dim[1] = (short)cols;
+		hdr.dim[2] = (short)rows;
+	}
+	hdr.dim[3] = (short)slices;
+	hdr.dim[4] = (short)N_pts;
+	hdr.dim[5] = 1;
+	hdr.dim[6] = 1;
+	hdr.dim[7] = 1;
+	// pixdim[0] = qfac: +1 if the slice axis follows the right-hand cross of
+	// IOP rows, -1 if it's reversed. UIH MRSI reverses (see negation in the
+	// affine build below); Siemens MRSI follows the cross.
+	hdr.pixdim[0] = (d0->manufacturer == kMANUFACTURER_UIH) ? -1.0f : 1.0f;
+	// MRSI pixdim: Siemens swaps PixelSpacing[0]<->[1] per spec2nii line 90
+	// (matches the m_ij swap below). UIH uses raw `voxel_sizes` order.
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
+		hdr.pixdim[1] = (float)d0->xyzMM[2];
+		hdr.pixdim[2] = (float)d0->xyzMM[1];
+	} else {
+		hdr.pixdim[1] = (float)d0->xyzMM[1];
+		hdr.pixdim[2] = (float)d0->xyzMM[2];
+	}
+	hdr.pixdim[3] = (float)d0->zThick;
+	double mrsSpectralWidth = mrsSpectralWidthHz(d0);
+	hdr.pixdim[4] = (mrsSpectralWidth > 0.0) ? (float)(1.0 / mrsSpectralWidth) : 1.0f;
+	hdr.pixdim[5] = 1.0f;
+	hdr.pixdim[6] = 1.0f;
+	hdr.pixdim[7] = 1.0f;
+	hdr.xyzt_units = NIFTI_UNITS_MM | NIFTI_UNITS_SEC;
+	hdr.vox_offset = 352.0f;
+	hdr.scl_slope = 1.0f;
+	// Affine: spec2nii uses dcm_to_nifti_orientation with half_shift=False for
+	// XA Enhanced CSI (Siemens) and half_shift=True for UIH MRSI. IOP rows in
+	// d0->orient[1..6]; third axis = cross product. Scale each axis by its
+	// corresponding xyzMM; LPS -> RAS sign flip on the first two rows.
+	double rx0 = d0->orient[1], rx1 = d0->orient[2], rx2 = d0->orient[3];
+	double ry0 = d0->orient[4], ry1 = d0->orient[5], ry2 = d0->orient[6];
+	// UIH MRSI: same direction-×-VoxelSize IOP encoding as UIH SVS — the IOP
+	// rows have non-unit magnitude (== PixelSpacing). Normalize before the
+	// m_ij scaling so xyzMM isn't double-counted. F2 follow-up for the
+	// MRSI path.
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		double r1n = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
+		double r2n = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
+		if (r1n > 1.001) { rx0 /= r1n; rx1 /= r1n; rx2 /= r1n; }
+		if (r2n > 1.001) { ry0 /= r2n; ry1 /= r2n; ry2 /= r2n; }
+	}
+	double rz0 = rx1 * ry2 - rx2 * ry1;
+	double rz1 = rx2 * ry0 - rx0 * ry2;
+	double rz2 = rx0 * ry1 - rx1 * ry0;
+	// UIH MRSI uses qfac=-1 (slice axis points OPPOSITE to the IOP cross
+	// product), encoded in spec2nii via dcm_to_nifti_orientation's pixdim[0]
+	// = -1 output. Mirror by negating the cross-product result on the UIH
+	// MRSI branch; we also set pixdim[0]=-1 below for parity.
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		rz0 = -rz0; rz1 = -rz1; rz2 = -rz2;
+	}
+	// Siemens MRSI: apply spec2nii's PixelSpacing[0]<->[1] swap (line 90
+	// orientationFuncs.py — `xyzMM[1], xyzMM[0] = xyzMM[0], xyzMM[1]`). For
+	// non-square pixels (e.g. VB 3D CSI 11.25x9.375) this is required for
+	// sform parity; for square pixels it's a no-op. UIH's own MRSI path in
+	// spec2nii (uih.py:231) reads `voxel_sizes` directly without this swap,
+	// so we only swap for Siemens here.
+	double px, py;
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS) {
+		px = d0->xyzMM[2];
+		py = d0->xyzMM[1];
+	} else {
+		px = d0->xyzMM[1];
+		py = d0->xyzMM[2];
+	}
+	double pz = d0->zThick;
+	double m00 = rx0 * px, m01 = ry0 * py, m02 = rz0 * pz;
+	double m10 = rx1 * px, m11 = ry1 * py, m12 = rz1 * pz;
+	double m20 = rx2 * px, m21 = ry2 * py, m22 = rz2 * pz;
+	double tx = d0->patientPosition[1];
+	double ty = d0->patientPosition[2];
+	double tz = d0->patientPosition[3];
+	// Classic Siemens MRSI: dcm2niix's CSA reader populates patientPosition
+	// from CSA VoiPosition (the SVS-path source-of-truth = grid center for
+	// MRSI). spec2nii reads CSA ImagePositionPatient instead (the first-
+	// voxel corner). The two are related by an axis-aligned shift along
+	// the row/col/slice directions, computed here in patient LPS coords:
+	//   IPP = VoiCenter
+	//          - (cols/2)*PxlSp[0]*row1_dir
+	//          - (rows/2)*PxlSp[1]*row2_dir
+	//          - ((slices-1)/2)*SliceThickness*slice_normal
+	// Empirical for the sm_classic / csi_se_3D / F3T_voi_in_mrsi corpus.
+	// Note x/y use cols/2 (whole half-grid) while z uses (slices-1)/2 —
+	// the DICOM IPP convention is first-voxel-center, so the grid corner
+	// is `cols/2 - 0.5` half-pixels from grid center; for the slice axis,
+	// VoiPosition is at the middle slice's center, not the geometric
+	// center of the whole slab.
+	if (d0->manufacturer == kMANUFACTURER_SIEMENS &&
+		d0->mrsAcqType == kMRSAcqNone) {
+		double rxn = sqrt(rx0 * rx0 + rx1 * rx1 + rx2 * rx2);
+		double ryn = sqrt(ry0 * ry0 + ry1 * ry1 + ry2 * ry2);
+		double r1x = (rxn > 0.0) ? rx0 / rxn : 0.0;
+		double r1y = (rxn > 0.0) ? rx1 / rxn : 0.0;
+		double r1z = (rxn > 0.0) ? rx2 / rxn : 0.0;
+		double r2x = (ryn > 0.0) ? ry0 / ryn : 0.0;
+		double r2y = (ryn > 0.0) ? ry1 / ryn : 0.0;
+		double r2z = (ryn > 0.0) ? ry2 / ryn : 0.0;
+		double snx = r1y * r2z - r1z * r2y;
+		double sny = r1z * r2x - r1x * r2z;
+		double snz = r1x * r2y - r1y * r2x;
+		double dx = -(double)(cols / 2) * px;
+		double dy = -(double)(rows / 2) * py;
+		double dz = -(double)((slices - 1)) * 0.5 * pz;
+		tx += dx * r1x + dy * r2x + dz * snx;
+		ty += dx * r1y + dy * r2y + dz * sny;
+		tz += dx * r1z + dy * r2z + dz * snz;
+	}
+	// MRSI half-voxel shift per spec2nii:
+	//  - Classic Siemens VB/VE (process_siemens_csi_vx): half_shift=True →
+	//    `[0.5, 0.5, 0] @ Q44.T` on positions.
+	//  - Siemens Enhanced XA (process_siemens_csi_xa): half_shift=False (no
+	//    shift) — already covered by sx=sy=sz=0 default.
+	//  - UIH: half_shift=True PLUS extra `[0, 0, 0.5] @ Q44.T` on z
+	//    (uih.py:247), combined `[0.5, 0.5, 0.5] @ Q44.T`.
+	double sx = 0.0, sy = 0.0, sz = 0.0;
+	if (d0->manufacturer == kMANUFACTURER_UIH) {
+		sx = -0.5 * (m00 + m01 + m02);
+		sy = -0.5 * (m10 + m11 + m12);
+		sz = 0.5 * (m20 + m21 + m22);
+	} else if (d0->manufacturer == kMANUFACTURER_SIEMENS &&
+			   d0->mrsAcqType == kMRSAcqNone) {
+		// Classic Siemens VB/VE MRSI: spec2nii applies `[0.5, 0.5, 0] @ Q44.T`
+		// across ALL three position components. For axis-aligned scans
+		// (sm_classic identity IOP) the z component falls out because
+		// Q44[2,0]=Q44[2,1]=0; but for rotated VB/VE 3D CSI (e.g.
+		// csi_se_3D_C>S23.5>T20.3) the rotated IOP makes Q44[2,0] and
+		// Q44[2,1] nonzero, so the slice-axis translation picks up a
+		// real -0.5*(m20+m21) contribution. Mirror that here.
+		sx = -0.5 * (m00 + m01);
+		sy = -0.5 * (m10 + m11);
+		sz = 0.5 * (m20 + m21);
+	}
+	bool geomValid = !isnan(rx0) && !isnan(ry0) && !isinf(rx0) && !isinf(ry0) &&
+					 (px > 0.0) && (py > 0.0) && (pz > 0.0) &&
+					 (fabs(rx0) + fabs(rx1) + fabs(rx2) > 0.001) &&
+					 (fabs(ry0) + fabs(ry1) + fabs(ry2) > 0.001);
+	if (geomValid) {
+		hdr.srow_x[0] = (float)(-m00);
+		hdr.srow_x[1] = (float)(-m01);
+		hdr.srow_x[2] = (float)(-m02);
+		hdr.srow_x[3] = (float)(-tx + sx);
+		hdr.srow_y[0] = (float)(-m10);
+		hdr.srow_y[1] = (float)(-m11);
+		hdr.srow_y[2] = (float)(-m12);
+		hdr.srow_y[3] = (float)(-ty + sy);
+		hdr.srow_z[0] = (float)m20;
+		hdr.srow_z[1] = (float)m21;
+		hdr.srow_z[2] = (float)m22;
+		hdr.srow_z[3] = (float)(tz + sz);
+		hdr.sform_code = NIFTI_XFORM_ALIGNED_ANAT;
+	} else {
+		printWarning("MRSI: spatial tags missing or invalid; emitting sform_code=0\n");
+		hdr.sform_code = NIFTI_XFORM_UNKNOWN;
+	}
+	hdr.qform_code = NIFTI_XFORM_UNKNOWN;
+	if (nii_ImgBytes(hdr) != total_bytes) {
+		printError("MRSI: header byte count (%zu) != FID buffer (%zu); aborting\n",
+				   nii_ImgBytes(hdr), total_bytes);
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	// BIDS suffix _mrsi (BEP-MRS).
+	strcpy(d0->CSA.bidsDataType, "mrs");
+	strcpy(d0->CSA.bidsEntitySuffix, "_mrsi");
+	// Audit round-6 HIGH 1: classic Siemens VB/VE MRSI arrives here with
+	// mrsAcqType==kMRSAcqNone (no public (0018,9200) on the CSA Non-Image
+	// SOP). Without correction, the sidecar block at nii_SaveBIDSX would
+	// fall through to ScanningSequence: "Unlocalized MRS" and omit
+	// MRSpectroscopyAcquisitionType — yielding `_mrsi` filename with
+	// SVS/Unlocalized sidecar semantics. Derive from xyzDim instead so
+	// the sidecar emission picks the right MRSI branch.
+	if (d0->mrsAcqType == kMRSAcqNone) {
+		if (d0->xyzDim[3] > 1)
+			d0->mrsAcqType = kMRSAcqVolume;
+		else if (d0->xyzDim[2] > 1)
+			d0->mrsAcqType = kMRSAcqPlane;
+		else if (d0->xyzDim[1] > 1)
+			d0->mrsAcqType = kMRSAcqRow;
+	}
+	char pathoutname[2048] = "";
+	if (nii_createFilename(*d0, pathoutname, opts) == EXIT_FAILURE) {
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	if (strlen(pathoutname) < 1) {
+		free(fid);
+		return EXIT_FAILURE;
+	}
+	char *mrsExt = mrsHdrExtJson(*d0, hdr, dcmSort, nConvert, nameList, opts);
+	int ret = nii_saveNII(pathoutname, hdr, (unsigned char *)fid, opts, *d0, mrsExt);
+	free(mrsExt);
+	// Report the saved output (see mrsReportConvert: the MRS path bypasses
+	// saveDcm2NiiCore's standard "Convert ..." line, so a warning above would
+	// otherwise have no associated NIfTI).
+	if (ret == EXIT_SUCCESS)
+		mrsReportConvert(nConvert, pathoutname, hdr);
+	if (ret == EXIT_SUCCESS) {
+		struct TDTI4D dti4D_local;
+		initTDTI4D(&dti4D_local);
+		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
+					  nameList->str[dcmSort[0].indx], &dti4D_local);
+	}
+	free(fid);
+	return ret;
+}
+
 int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
+	// MRS dispatch: a series of MR Spectroscopy DICOMs uses its own pipeline
+	// (FID extraction + complex-valued 5D output). The image-data branch
+	// below assumes scalar pixel data and would mangle the FID.
+	if ((nConvert > 0) && dcmList[dcmSort[0].indx].isMRS)
+		return saveDcm2NiiMRS(nConvert, dcmSort, dcmList, nameList, opts);
 #ifdef USING_DCM2NIIXFSWRAPPER
 	memset(&mrifsStruct, 0, sizeof(mrifsStruct));
 
@@ -9265,6 +13723,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 
 	if (opts.isDumpNotConvert) {
 		mrifsStruct.tdicomData = dcmList[indx0]; // first in sorted list dcmSort
+		// dcmList owns deID_CS[]; null the shallow copy. Issue #877.
+		mrifsStruct.tdicomData.deID_CS = NULL;
+		mrifsStruct.tdicomData.deID_CS_n = 0;
+		mrifsStruct.tdicomData.isMrsRef = false; // see retention notes at ~line 10567 (audit H2)
 		mrifsStruct.dicomlst = new char *[nConvert];
 		mrifsStruct.nDcm = nConvert;
 
@@ -9284,6 +13746,12 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		dcmListDump(nConvert, dcmSort, dcmList, nameList, opts);
 
 		mrifsStruct_vector.push_back(mrifsStruct);
+		// audit 2026-06-06 M5: transfer dicomfile/dicomlst ownership to the
+		// vector entry; null the globals so nii_clrMrifsStruct() cannot
+		// double-free.
+		mrifsStruct.dicomfile = NULL;
+		mrifsStruct.dicomlst = NULL;
+		mrifsStruct.nDcm = 0;
 
 		return 0;
 	}
@@ -9419,7 +13887,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 				if (dti4Ds->intenScalePhilips[i] != dti4Ds->intenScalePhilips[0])
 					dcmList[indx].isScaleVariesEnh = true;
 			}
-	
+
 			dcmList[indx].intenScale = dti4Ds->intenScale[0];
 			dcmList[indx].intenIntercept = dti4Ds->intenIntercept[0];
 			dcmList[indx].intenScalePhilips = dti4Ds->intenScalePhilips[0];
@@ -9504,7 +13972,7 @@ int isSameFloatDouble(double a, double b) {
 }
 
 struct TWarnings { // generate a warning only once per set
-	bool manufacturerVaries, modalityVaries, derivedVaries, acqNumVaries, dimensionVaries, dateTimeVaries, studyUidVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries;
+	bool manufacturerVaries, modalityVaries, derivedVaries, acqNumVaries, dimensionVaries, dateTimeVaries, studyUidVaries, echoVaries, triggerVaries, phaseVaries, coilVaries, forceStackSeries, seriesUidVaries, nameVaries, nameEmpty, orientVaries, skipDerived;
 };
 
 TWarnings setWarnings() {
@@ -9525,6 +13993,7 @@ TWarnings setWarnings() {
 	r.nameVaries = false;
 	r.nameEmpty = false;
 	r.orientVaries = false;
+	r.skipDerived = false;
 	return r;
 }
 
@@ -9534,6 +14003,10 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		return false;
 	if (!d2.isValid)
 		return false;
+	if ((opts->isVerbose < 2) && opts->isIgnoreDerivedAnd2D && (d1.isLocalizer || d2.isLocalizer || d1.isDerived || d2.isDerived) && (!warnings->skipDerived)) {
+		printMessage("Skipping derived image(s). Run with `-v 2` for details\n");
+		warnings->skipDerived = true;
+	}
 	if ((opts->isVerbose) && (d1.seriesNum == d2.seriesNum)) {
 		// one would never want to combine in these situations: only raise warning for verbose modes to help troubleshooting
 		if ((d1.manufacturer != d2.manufacturer) && (!warnings->manufacturerVaries)) {
@@ -9555,6 +14028,8 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		return false; // do not stack MR and CT data!
 	if (d1.isDerived != d2.isDerived)
 		return false; // do not stack raw and derived image types
+	if (d1.isNoRF != d2.isNoRF)
+		return false; // do not stack RF-off (noise) volumes with imaging volumes
 	bool isForceStackSeries = false;
 	if ((opts->isForceStackDCE) && (d1.isStackableSeries) && (d2.isStackableSeries) && (d1.seriesNum != d2.seriesNum)) {
 		if (!warnings->forceStackSeries)
@@ -9766,6 +14241,7 @@ int singleDICOM(struct TDCMopts *opts, char *fname) {
 	freeNameList(nameList);
 	free(dti4D);
 	free(dcmSort);
+	free_TDICOMdata_deID_CS(&dcmList[0]);
 	free(dcmList);
 	return ret;
 } // singleDICOM()
@@ -9888,6 +14364,8 @@ int convert_parRec(char *fnm, struct TDCMopts opts) {
 	if (dcmList[0].isValid)
 		ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, opts, dti4D);
 	free(dti4D);
+	for (int i = 0; i < (int)nameList.numItems; i++)
+		free_TDICOMdata_deID_CS(&dcmList[i]);
 	free(dcmList); // if (nConvertTotal == 0)
 	if (nameList.numItems < 1)
 		printMessage("No valid PAR/REC files were found\n");
@@ -10005,6 +14483,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 						printWarning("Unable to copy to path %s\n", targetPath.c_str());
 					}
 				}
+				free_TDICOMdata_deID_CS(&dcm); // dcm goes out of scope; release its heap deID_CS[]
 			}
 		}
 	}
@@ -10072,6 +14551,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 						printMessage("Renaming %s -> %s\n", filename, outname);
 				}
 			}
+			free_TDICOMdata_deID_CS(&dcm); // dcm goes out of scope; release its heap deID_CS[]
 		}
 		tinydir_next(&dir);
 	}
@@ -10227,6 +14707,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 	opts2Prefs(opts, &prefs);
 	bool compressionWarning = false;
 	bool convertError = false;
+	bool isAnyJP2K = false;
 	bool isDcmExt = isExt(opts->filename, ".dcm"); // "%r.dcm" with multi-echo should generate "1.dcm", "1e2.dcm"
 	if (isDcmExt)
 		opts->filename[strlen(opts->filename) - 4] = 0; // "%s_%r.dcm" -> "%s_%r"
@@ -10244,6 +14725,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 			continue;
 		}
 		dcmList[i] = readDICOMx(nameList.str[i], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
+		if (dcmList[i].compressionScheme == kCompressJP2K)
+			isAnyJP2K = true;
 		// dcmList[i] = readDICOMv(nameList.str[i], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
 		if (opts->isIgnoreSeriesInstanceUID)
 			dcmList[i].seriesUidCrc = dcmList[i].seriesNum;
@@ -10258,12 +14741,15 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 			else
 				convertError = true;
 		}
-		if ((dcmList[i].compressionScheme != kCompressNone) && (!compressionWarning) && (opts->compressFlag != kCompressNone)) {
+		if ((dcmList[i].compressionScheme != kCompressNone) && (!compressionWarning) && (opts->compressFlag != kCompressNone) && ((opts->isVerbose > 1))) {
 			compressionWarning = true; // generate once per conversion rather than once per image
 			printMessage("Image Decompression is new: please validate conversions\n");
 		}
 		if (opts->isProgress)
 			progressPct = reportProgress(progressPct, kStage1Frac + (kStage2Frac * (float)i / (float)nDcm)); // proportion correct, 0..100
+	}
+	if ((kCompressSupport != kCompressJP2K) && isAnyJP2K) {
+		printWarning("Unsupported JPEG2000 transfer syntax (use dcm2niix compiled with OpenJPEG)\n");
 	}
 #ifdef myTimer
 	if (opts->isProgress > 1)
@@ -10271,6 +14757,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 	start = clock();
 #endif
 	if ((opts->isRenameNotConvert) || (opts->onlySearchDirForDICOM != 0)) {
+		for (int i = 0; i < (int)nameList.numItems; i++)
+			free_TDICOMdata_deID_CS(&dcmList[i]);
 		free(dcmList);
 		free(dti4D);
 		return EXIT_SUCCESS;
@@ -10284,6 +14772,10 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 		nii_createFilename(dcmList[0], firstSeriesName, *opts);
 		firstSeries.name = firstSeriesName;
 		firstSeries.representativeData = dcmList[0];
+		// dcmList[0] owns deID_CS[]; null the shallow copy in the retained R-side struct.
+		firstSeries.representativeData.deID_CS = NULL;
+		firstSeries.representativeData.deID_CS_n = 0;
+		firstSeries.representativeData.isMrsRef = false; // audit H2 follow-up; see ~line 10567
 		firstSeries.files.push_back(nameList.str[0]);
 		opts->series.push_back(firstSeries);
 		// Iterate over the remaining files
@@ -10305,6 +14797,10 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 				nii_createFilename(dcmList[i], nextSeriesName, *opts);
 				nextSeries.name = nextSeriesName;
 				nextSeries.representativeData = dcmList[i];
+				// dcmList[i] owns deID_CS[]; null the shallow copy in the retained R-side struct.
+				nextSeries.representativeData.deID_CS = NULL;
+				nextSeries.representativeData.deID_CS_n = 0;
+				nextSeries.representativeData.isMrsRef = false; // audit H2 follow-up; see ~line 10567
 				nextSeries.files.push_back(nameList.str[i]);
 				opts->series.push_back(nextSeries);
 			}
@@ -10476,6 +14972,8 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 #endif
 	if (opts->isProgress)
 		progressPct = reportProgress(progressPct, 1); // proportion correct, 0..100
+	for (int i = 0; i < (int)nameList.numItems; i++)
+		free_TDICOMdata_deID_CS(&dcmList[i]);
 	free(dcmList);
 	free(dti4D);
 	freeNameList(nameList);
@@ -10716,12 +15214,12 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	}
 	if (is_exe(opts->pigzname))
 		return;
-	#ifdef myDisableZLib
-		printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
-	#else // myUseZLib
-		if (opts->isVerbose > 0)
-			printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
-	#endif
+#ifdef myDisableZLib
+	printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
+#else // myUseZLib
+	if (opts->isVerbose > 0)
+		printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
+#endif
 	strcpy(opts->pigzname, "");
 	return;
 #else // if windows else linux
@@ -10732,7 +15230,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		"pigz_mricron",
 		"pigz_afni",
 	};
-	#define n_nam (sizeof(names) / sizeof(const char *))
+#define n_nam (sizeof(names) / sizeof(const char *))
 	for (int n = 0; n < (int)n_nam; n++) {
 		if (findpathof(str, names[n])) {
 			strcpy(opts->pigzname, str);
@@ -10745,7 +15243,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		"/usr/bin/",
 		"/opt/homebrew/bin/",
 	};
-	#define n_pth (sizeof(pths) / sizeof(const char *))
+#define n_pth (sizeof(pths) / sizeof(const char *))
 	char exepth[PATH_MAX];
 	strcpy(exepth, argv[0]);
 	dropFilenameFromPath(exepth); //, opts.pigzname);
@@ -10799,12 +15297,12 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 		readFindPigz(opts, argv);
 #endif
 #ifdef myEnableJasper
-	opts->compressFlag = kCompressYes; // JASPER for JPEG2000
+	opts->compressFlag = kCompressJP2K; // JASPER for JPEG2000
 #else
 #ifdef myDisableOpenJPEG
 	opts->compressFlag = kCompressNone; // no decompressor
 #else
-	opts->compressFlag = kCompressYes; // OPENJPEG for JPEG2000
+	opts->compressFlag = kCompressJP2K; // OPENJPEG for JPEG2000
 #endif
 #endif
 	// printMessage("%d %s\n",opts->compressFlag, opts->compressname);
@@ -10816,6 +15314,8 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	strcpy(opts->imageComments, "");
 	strcpy(opts->bidsSubject, "");
 	strcpy(opts->bidsSession, "");
+	strcpy(opts->bidsRoot, "");
+	opts->isBidsRoot = false;
 	opts->isOnlySingleFile = false; // convert all files in a directory, not just a single file
 	opts->isOneDirAtATime = false;
 	opts->isRenameNotConvert = false;
@@ -10861,6 +15361,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 #else
 	opts->isAnonymizeBIDS = true;
 #endif
+	opts->isOmitPiiBIDS = false; // `-ba o` opts in to PII-strip / keep-dates
 	opts->isCreateText = false;
 #ifdef myDebug
 	opts->isVerbose = true;
@@ -10963,12 +15464,12 @@ void saveIniFile(struct TDCMopts opts) {
 // the following fields from struct TDICOMdata are printed:
 //   patientName  seriesNum  studyDate  studyTime  TE  TR  flipAngle  xyzMM[1]\xyzMM[2]  phaseEncodingRC  pixelBandwidth  dicom-file  imageType
 void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts) {
-        FILE *fp = stdout;
+	FILE *fp = stdout;
 	const char *imagelist = getenv("MGH_DCMUNPACK_IMAGELIST");
 	if (imagelist != NULL) {
-	        fp = fopen(imagelist, "a");
-	        if (!fp)
-	                fp = stdout;
+		fp = fopen(imagelist, "a");
+		if (!fp)
+			fp = stdout;
 	}
 	for (int i = 0; i < nConvert; i++) {
 		int indx = dcmSort[i].indx;
@@ -10976,7 +15477,7 @@ void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmL
 		memset(mrifsStruct.dicomlst[i], 0, strlen(nameList->str[indx]) + 1);
 		memcpy(mrifsStruct.dicomlst[i], nameList->str[indx], strlen(nameList->str[indx]));
 
-                // output imagelist as csv file
+		// output imagelist as csv file
 		fprintf(fp, "%s,%ld,%s,%s,%f,%f,%f,%f\\%f,%c,%f,%s,%s\n",
 				dcmList[indx].patientName, dcmList[indx].seriesNum, dcmList[indx].studyDate, dcmList[indx].studyTime,
 				dcmList[indx].TE, dcmList[indx].TR, dcmList[indx].flipAngle, dcmList[indx].xyzMM[1], dcmList[indx].xyzMM[2],
@@ -10984,6 +15485,5 @@ void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmL
 	}
 	if (fp != stdout)
 		fclose(fp);
-
 }
 #endif

@@ -2,7 +2,7 @@
 CFLAGS=-O3 -s -flto
 
 # Common files used for everything
-CFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix
+CFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp -o dcm2niix
 
 # Universal files used for almost everything
 UFILES=$(CFILES) -DmyDisableOpenJPEG
@@ -55,8 +55,15 @@ ifneq ($(OS),Windows_NT)
 		# otool -l ./dcm2niix | grep info_plist -B1 -A10
 		# launchctl plist ./dcm2niix
 		#MacOS links g++ to clang++, for gcc install via homebrew and replace g++ with /usr/local/bin/gcc-9
-		#issue867 reduce stack pressure
-		#LFLAGS=-Wl,-stack_size -Wl,0x1000000
+		# issue867: macOS main-thread stack defaults to 8 MB. The console
+		# makefile uses -flto which inlines aggressively and inflates the
+		# per-function frame sizes (readDICOMx ~1.5 MB stack frame). On
+		# multi-study Siemens XA datasets (multiple Enhanced-DICOM series
+		# with deident sequences) the conversion chain exceeds 8 MB and
+		# trips ___chkstk_darwin. Raise to 16 MB. The cmake build does NOT
+		# use -flto and so does not need this; both builds otherwise produce
+		# byte-identical NIfTI/JSON output.
+		LFLAGS=-Wl,-stack_size -Wl,0x1000000
 	endif
 endif
 all:
