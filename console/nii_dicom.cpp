@@ -225,6 +225,10 @@ unsigned char *nii_loadImgCoreOpenJPEG(char *imgname, struct nifti_1_header hdr,
 	long size;
 	if (data != NULL) {
 		size = (long)fragLen;
+		if (size <= 8) { // degenerate codestream: mirror the single-fragment guard so the magic sniff below stays in-bounds
+			free(data);
+			return NULL;
+		}
 	} else {
 		FILE *reader = fopen(imgname, "rb");
 		fseek(reader, 0, SEEK_END);

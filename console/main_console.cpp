@@ -54,6 +54,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	printf("  -a : adjacent DICOMs (images from same series always in same folder) for faster conversion (n/y, default n)\n");
 	printf("  -b : BIDS sidecar (y/n/o [o=only: no NIfTI], default %c)\n", bool2Char(opts.isCreateBIDS));
 	printf("   -ba : anonymize BIDS (y=strip dates+PII, n=keep both, o=strip PII only, default %c)\n", bool2Char(opts.isAnonymizeBIDS));
+	printf("   -br : reproin project subfolder for '-f %%H' (e.g. '-br MyStudy'; '.' uses -o as the BIDS root)\n");
 	printf("  -c : comment stored in NIfTI aux_file (up to 24 characters e.g. '-c VIP', empty to anonymize e.g. 0020,4000 e.g. '-c \"\"')\n");
 	printf("  -d : directory search depth. Convert DICOMs in sub-folders of in_folder? (0..9, default %d)\n", opts.dirSearchDepth);
 #ifdef myEnableJNIFTI
