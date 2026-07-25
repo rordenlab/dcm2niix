@@ -6,6 +6,13 @@ include(GNUInstallDirs)
 
 # Option Choose whether to use static runtime
 include(ucm.cmake)
+# ucm.cmake force-enables IPO/LTO when check_ipo_supported() passes, but CMake's
+# internal LTO verification test does not inherit CMAKE_<LANG>_COMPILER_AR, so a
+# cross toolchain that supplies AR only via the outer cache (e.g. conda-forge
+# osx_arm64) fails the probe with AR-NOTFOUND. Keep LTO for native builds only.
+if(CMAKE_CROSSCOMPILING)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+endif()
 option(USE_STATIC_RUNTIME "Use static runtime" ON)
 if(USE_STATIC_RUNTIME)
     ucm_set_runtime(STATIC)
