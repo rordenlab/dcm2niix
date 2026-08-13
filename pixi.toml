@@ -25,5 +25,8 @@ tar = ">=1.34,<2"
 [target.osx-64.dependencies]
 emscripten = ">=3.1.58,<4"
 
+[target.osx-arm64.dependencies]
+emscripten = ">=3.1.58,<4"
+
 [target.linux-64.dependencies]
 emscripten = ">=3.1.58,<4"

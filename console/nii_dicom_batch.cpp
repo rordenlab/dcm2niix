@@ -39,9 +39,9 @@
 #include "nii_dicom.h"
 #include "nii_ortho.h"
 #include "reproin.h"
+#include "cJSON.h" // physio/MRS JSON sidecars use cJSON regardless of JNIFTI
 #ifdef myEnableJNIFTI
 #include "base64.h"
-#include "cJSON.h"
 #endif
 #ifdef myEnableZSTD
 #include <zstd.h>

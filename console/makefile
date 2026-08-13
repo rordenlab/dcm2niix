@@ -89,10 +89,10 @@ noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois
 
 wasm:
-	emcc -O3 $(UFILES) -lz -s USE_ZLIB -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -o ../js/src/dcm2niix.js
+	emcc -O3 cJSON.cpp $(UFILES) -lz -s USE_ZLIB -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -o ../js/src/dcm2niix.js
 	# STACK_SIZE=16MB is the minimum value found to work with the current codebase when targeting WASM
 
 wasm-jpeg:
-	emcc -O3 $(JFLAGS) $(CFILES) -DUSE_OPENJPEG -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/src/lib/openjp2/ -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/src/lib/openjp2/ -L${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/bin/ -lopenjp2 -lz -s USE_ZLIB -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -o ../js/src/dcm2niix.jpeg.js
+	emcc -O3 cJSON.cpp $(JFLAGS) $(CFILES) -DUSE_OPENJPEG -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/src/lib/openjp2/ -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/src/lib/openjp2/ -L${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/bin/ -lopenjp2 -lz -s USE_ZLIB -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -o ../js/src/dcm2niix.jpeg.js
 	# STACK_SIZE=16MB is the minimum value found to work with the current codebase when targeting WASM
 
