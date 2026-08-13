@@ -12057,7 +12057,14 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	// unavailable. The per-shot TR is preserved as RepetitionTimeExcitation.
 	{
 		uint64_t tIdx = dcmSort[0].indx;
-		if ((dcmList[tIdx].is3DAcq) && (hdr0.dim[4] > 1) && (dcmList[tIdx].TR > 0.0)) {
+		// Skip the volume-TR override for ASL (perf): multi-PLD ASL volumes are
+		// unevenly spaced by design (each PLD has different timing), so there is no
+		// single volume TR — the per-shot RepetitionTime is correct and the
+		// per-volume timing is carried by PostLabelingDelay. setBids() above set
+		// bidsDataType from the (non-renameable) CSA sequence name, so this excludes
+		// tgse_pcasl/ep2d_pcasl etc. without touching 3D-EPI fMRI (bidsDataType func).
+		bool isPerfusionAsl = (strcmp(dcmList[tIdx].CSA.bidsDataType, "perf") == 0);
+		if ((dcmList[tIdx].is3DAcq) && (hdr0.dim[4] > 1) && (dcmList[tIdx].TR > 0.0) && (!isPerfusionAsl)) {
 			int nVol = 0;
 			float span = -1.0;
 			for (int i = 0; i < nConvert; i++)
