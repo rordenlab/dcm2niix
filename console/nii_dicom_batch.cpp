@@ -2786,7 +2786,9 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"PhiAdjust\": %g,\n", csaAscii.adFree[11]); // percent
 		}
 		// ASL specific tags - 3D pCASL Danny J.J. Wang http://www.loft-lab.org
-		if (strstr(pulseSequenceDetails, "tgse_pcasl")) {
+		// The multi-delay LOFT variant "tgse_pcasl_loft" is handled separately below;
+		// exclude it here so its keys are not emitted twice.
+		if ((strstr(pulseSequenceDetails, "tgse_pcasl")) && (!strstr(pulseSequenceDetails, "tgse_pcasl_loft"))) {
 			isPCASL = true;
 			repetitionTimePreparation = d.TR;
 			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); // usec -> sec
@@ -2801,6 +2803,65 @@ tse3d: T2*/
 			// NumRFBlocks-derived value: the two disagree (e.g. 1.2 s vs 1.5088 s) and
 			// emitting both produced a duplicate "LabelingDuration" key. adFree[2] is
 			// authoritative for this sequence.
+		}
+		// ASL specific tags - 3D multi-delay pCASL, LOFT (Danny J.J. Wang) tgse_pcasl_loft.
+		// Modern Siemens sequence-designer build: the (up to 5) post-labeling delays are
+		// in alFree[1..5] (usec) and their per-PLD control/label repeat counts in
+		// alFree[8..12]; adFree[2] is the explicit labeling duration. Acquisition order is
+		// M0 scan(s) first, then for each PLD alFree[8+i] label/control pairs (label first).
+		// BIDS PostLabelingDelay lists the PLD of every volume in acquisition order, with 0
+		// for each m0scan; reproinx.py derives _aslcontext.tsv from this array.
+		if (strstr(pulseSequenceDetails, "tgse_pcasl_loft")) {
+			isPCASL = true;
+			repetitionTimePreparation = d.TR;
+			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", csaAscii.adFree[2] * (1.0 / 1000000.0)); // usec -> sec
+			json_FloatNotNan(fp, "\t\"LabelingDistance\": %g,\n", csaAscii.adFree[1]);					 // mm
+			json_FloatNotNan(fp, "\t\"NumRFBlocks\": %g,\n", csaAscii.adFree[3]);
+			json_FloatNotNan(fp, "\t\"RFGap\": %g,\n", csaAscii.adFree[4] * (1.0 / 1000000.0)); // usec -> sec
+			json_FloatNotNan(fp, "\t\"MeanGzx10\": %g,\n", csaAscii.adFree[10]);				   // mT/m
+			// Background suppression is intrinsic to this multi-delay design (two M0 scans,
+			// one PD- and one T1-weighted). Emit true; if a future variant makes it optional,
+			// parse sPrepPulses.ucBloodSuppression instead.
+			fprintf(fp, "\t\"BackgroundSuppression\": true,\n");
+			fprintf(fp, "\t\"M0Type\": \"Included\",\n");
+			int nRep[5], nPairs = 0;
+			for (int i = 0; i < 5; i++) {
+				nRep[i] = (int)(csaAscii.alFree[i + 8] + 0.5);
+				if (nRep[i] < 0)
+					nRep[i] = 0;
+				nPairs += nRep[i];
+			}
+			fprintf(fp, "\t\"TotalAcquiredPairs\": %d,\n", nPairs); // BIDS-required for ASL
+			int nM0 = h->dim[4] - (2 * nPairs); // leading volumes that are not a control/label pair
+			// nM0 < 0 means the reps mapping disagrees with the acquired volume count;
+			// skip the per-volume array rather than emit one longer than the image
+			// (nM0 >= 0 guarantees nM0 + 2*nPairs == h->dim[4] exactly).
+			if (nM0 >= 0) {
+			// The first leading volume is the M0; any additional leading volumes are
+			// Siemens dummy scans (acquired for T1 steady state, normally discarded).
+			// BIDS has no dummy volume_type, so they must be dropped from the series;
+			// tell reproinx which 0-based volumes to remove.
+			if (nM0 > 1) {
+				fprintf(fp, "\t\"ReproinxDropVolumes\": [");
+				for (int i = 1; i < nM0; i++)
+					fprintf(fp, "%s%d", (i > 1) ? "," : "", i);
+				fprintf(fp, "],\n");
+			}
+			fprintf(fp, "\t\"PostLabelingDelay\": [\n");
+			bool firstPLD = true;
+			for (int i = 0; i < nM0; i++) { // m0scan -> 0
+				fprintf(fp, "%s\t\t0", firstPLD ? "" : ",\n");
+				firstPLD = false;
+			}
+			for (int p = 0; p < 5; p++) {
+				double pldSec = csaAscii.alFree[p + 1] / 1000000.0; // usec -> sec
+				for (int r = 0; r < (nRep[p] * 2); r++) {			// each rep = one label + one control volume
+					fprintf(fp, "%s\t\t%g", firstPLD ? "" : ",\n", pldSec);
+					firstPLD = false;
+				}
+			}
+			fprintf(fp, "\t],\n");
+			} // nM0 >= 0
 		}
 		// ASL specific tags - 2D PASL Siemens Product
 		if (strstr(pulseSequenceDetails, "ep2d_pasl")) {

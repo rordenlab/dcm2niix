@@ -2147,6 +2147,108 @@ def _emit_events_tsv(session_dir: Path) -> None:
         events.write_text("onset\tduration\ttrial_type\n")
 
 
+def _nifti_drop_volumes(nii_path: Path, drop: set[int]) -> bool:
+    """Remove 0-based volume indices `drop` from a 4D NIfTI-1 (.nii/.nii.gz),
+    rewriting dim[4] in place. Header + any extension are preserved; only the
+    image bytes for the dropped volumes are removed. Returns True on success.
+
+    Pure-stdlib byte surgery (no nibabel): volumes are contiguous in raw storage
+    starting at vox_offset, each nx*ny*nz*(bitpix/8) bytes."""
+    gz = nii_path.name.endswith(".nii.gz")
+    try:
+        raw = gzip.decompress(nii_path.read_bytes()) if gz else nii_path.read_bytes()
+    except (OSError, EOFError):
+        return False
+    if len(raw) < 352:
+        return False
+    if struct.unpack("<i", raw[:4])[0] == 348:
+        bo = "<"
+    elif struct.unpack(">i", raw[:4])[0] == 348:
+        bo = ">"
+    else:
+        return False
+    dim = list(struct.unpack(bo + "8h", raw[40:56]))
+    bitpix = struct.unpack(bo + "h", raw[72:74])[0]
+    vox = int(struct.unpack(bo + "f", raw[108:112])[0])
+    nx, ny, nz, nt = dim[1], dim[2], dim[3], dim[4]
+    if nt <= 1 or bitpix % 8 or vox < 352:
+        return False
+    volsz = nx * ny * nz * (bitpix // 8)
+    body = raw[vox:]
+    if len(body) < nt * volsz:
+        return False
+    keep = [i for i in range(nt) if i not in drop]
+    new_body = b"".join(body[i * volsz:(i + 1) * volsz] for i in keep)
+    dim[4] = len(keep)
+    hdr = bytearray(raw[:vox])
+    struct.pack_into(bo + "8h", hdr, 40, *dim)
+    out = bytes(hdr) + new_body
+    data = gzip.compress(out, mtime=0) if gz else out  # mtime=0: reproducible, no GZIP_HEADER_MTIME warning
+    tmp = nii_path.with_name(nii_path.name + ".tmp")  # atomic replace: never leave a truncated image
+    tmp.write_bytes(data)
+    os.replace(tmp, nii_path)
+    return True
+
+
+def _emit_aslcontext(session_dir: Path) -> int:
+    """Write `_aslcontext.tsv` for each `perf/*_asl` file from its per-volume
+    `PostLabelingDelay` array (dcm2niix emits one PLD per volume, 0 for m0scan).
+
+    BIDS requires a `_aslcontext.tsv` beside every `_asl` image; the label of
+    each volume is derived from the PLD array: a 0 marks an `m0scan`, and the
+    remaining (control/label) volumes alternate label-first (the LOFT
+    tgse_pcasl_loft acquisition order, confirmed by the control>label perfusion
+    difference in gray matter). Returns the number of files written."""
+    perf_dir = session_dir / "perf"
+    if not perf_dir.is_dir():
+        return 0
+    written = 0
+    for asl in sorted(perf_dir.glob("*_asl.json")):
+        d = _load_json(asl)
+        if not isinstance(d, dict):
+            continue
+        pld = d.get("PostLabelingDelay")
+        if not isinstance(pld, list) or not pld:
+            continue  # single-PLD or non-ASL: no per-volume context to build
+        base = asl.name[: -len("_asl.json")]
+        # Drop dummy (T1-stabilization) volumes flagged by dcm2niix. BIDS has no
+        # dummy volume_type, so they must be removed from the image AND the PLD
+        # array before the aslcontext is built. Crash-safe: the image is trimmed
+        # ONLY while it still holds all len(pld) volumes; if an interrupted prior
+        # run already trimmed it (image at the post-drop count) we skip the trim
+        # and just finalize the sidecar — so a rerun can never re-drop real data.
+        drop = d.get("ReproinxDropVolumes")
+        if isinstance(drop, list) and drop:
+            drop_set = {int(i) for i in drop if isinstance(i, (int, float))}
+            n_drop = sum(1 for i in drop_set if 0 <= i < len(pld))
+            nii = next((perf_dir / f"{base}_asl{ext}" for ext in (".nii.gz", ".nii")
+                        if (perf_dir / f"{base}_asl{ext}").is_file()), None)
+            cur = _nifti_ndim(nii) if nii is not None else None
+            trimmed = False
+            if cur == len(pld):                    # image still holds the dummies
+                trimmed = _nifti_drop_volumes(nii, drop_set)
+            elif cur == len(pld) - n_drop:         # prior interrupted run already trimmed it
+                trimmed = True
+            if trimmed:                            # finalize sidecar to match the trimmed image
+                pld = [v for i, v in enumerate(pld) if i not in drop_set]
+                d["PostLabelingDelay"] = pld
+                d.pop("ReproinxDropVolumes", None)
+                _save_json(asl, d)
+        ctx = perf_dir / f"{base}_aslcontext.tsv"
+        if ctx.exists():
+            continue
+        rows, n_pair = [], 0
+        for v in pld:
+            if v == 0:
+                rows.append("m0scan")
+            else:
+                rows.append("label" if (n_pair % 2 == 0) else "control")
+                n_pair += 1
+        ctx.write_text("volume_type\n" + "\n".join(rows) + "\n")
+        written += 1
+    return written
+
+
 # Modality suffixes that dcm2niix `-f %H` inserts between the run entity
 # and `_recording-LABEL` for physio files routed to derivatives/scanner/.
 # Per the BIDS physiological-recordings spec the physio filename must inherit
@@ -2901,6 +3003,16 @@ def _bidsguess_cleanup(out_root: Path, strict: bool,
                       file=sys.stderr)
         except Exception as e:
             print(f"reproinx: part-entity resolution failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
+        try:
+            n = _emit_aslcontext(ses)
+            if n > 0:
+                print(f"  {ses}: wrote {n} _aslcontext.tsv file(s)",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: aslcontext emission failed for {ses}: {e}",
                   file=sys.stderr)
             if strict:
                 raise
