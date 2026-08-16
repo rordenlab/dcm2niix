@@ -728,7 +728,8 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 #define freeDiffusionMaxN 512
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
-	int lInvContrasts, lContrasts, lConc, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
+	int lInvContrasts, lContrasts, lConc, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, slicePartialFourier, echoSpacing,
+		turboFactor, reordering, reordering3D,
 		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D, freeDiffusionN;
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
@@ -737,6 +738,16 @@ typedef struct {
 	float sPostLabelingDelay, ulLabelingDuration, dAveragesDouble, dThickness, ulShape, sPositionDTra, sNormalDTra;
 	vec3 freeDiffusionVec[freeDiffusionMaxN];
 } TCsaAscii;
+
+// Siemens SeqDefines.h PartialFourierFactor: PF_HALF 0x01, PF_5_8 0x02, PF_6_8 0x04,
+// PF_7_8 0x08, PF_OFF 0x10. readKey() keeps only the digits of the value, so PF_OFF
+// arrives as 16 from XA (which writes the enum in decimal) and as 10 from VB/VE
+// (which writes "0x10"); 0 means the key was absent from the protocol. The four
+// pF-enabled values read the same either way, which is why the PartialFourier
+// emitter only tests 1/2/4/8.
+bool isPartialFourierOff(int pf) {
+	return ((pf == 0) || (pf == 10) || (pf == 16));
+} // isPartialFourierOff()
 
 void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, int csaLength, float *shimSetting, char *coilID, char *consistencyInfo, char *coilElements, char *pulseSequenceDetails, char *fmriExternalInfo, char *protocolName, char *wipMemBlock) {
 	// reads ASCII portion of CSASeriesHeaderInfo and returns lEchoTrainDuration or lEchoSpacing value
@@ -755,7 +766,11 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->baseResolution = 0;
 	csaAscii->interp = 0;
 	csaAscii->partialFourier = 0;
+	csaAscii->slicePartialFourier = 0;
 	csaAscii->echoSpacing = 0;
+	csaAscii->turboFactor = 0;
+	csaAscii->reordering = 0;
+	csaAscii->reordering3D = 0;
 	csaAscii->lInvContrasts = 0;
 	csaAscii->lContrasts = 0;
 	csaAscii->lConc = 0; // sSliceArray.lConc (concatenations); DZNE 3D-EPI encodes "multi-echo shots" here (issue 1024)
@@ -838,8 +853,21 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->interp = readKey(keyStrInterp, keyPos, csaLengthTrim);
 		char keyStrPF[] = "sKSpace.ucPhasePartialFourier";
 		csaAscii->partialFourier = readKey(keyStrPF, keyPos, csaLengthTrim);
+		char keyStrSPF[] = "sKSpace.ucSlicePartialFourier"; // partition-direction pF: shifts the k-space centre of a 3D turbo train (see NumberShots)
+		csaAscii->slicePartialFourier = readKey(keyStrSPF, keyPos, csaLengthTrim);
 		char keyStrES[] = "sFastImaging.lEchoSpacing";
 		csaAscii->echoSpacing = readKey(keyStrES, keyPos, csaLengthTrim);
+		// MP2RAGE/MPRAGE inversion-block timing: excitations per inversion ("turbo factor")
+		// and the order in which the train fills k-space. Both are needed to invert an
+		// MP2RAGE UNI image to quantitative T1; see BIDS NumberShots in nii_SaveBIDSX.
+		// n.b. "sFastImaging.lTurboFactor" is not a substring of the neighboring
+		// "sFastImaging.lSliceTurboFactor", so the memmem search does not cross-match.
+		char keyStrTF[] = "sFastImaging.lTurboFactor";
+		csaAscii->turboFactor = readKey(keyStrTF, keyPos, csaLengthTrim);
+		char keyStrReorder[] = "sKSpace.unReordering";
+		csaAscii->reordering = readKey(keyStrReorder, keyPos, csaLengthTrim);
+		char keyStrReorder3D[] = "sKSpace.Reordering3D";
+		csaAscii->reordering3D = readKey(keyStrReorder3D, keyPos, csaLengthTrim);
 		char keyStrNumInv[] = "lInvContrasts";
 		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
 		char keyStrNumEcho[] = "lContrasts";
@@ -3044,6 +3072,56 @@ tse3d: T2*/
 				pf = 0.875;
 			if (pf < 1.0)
 				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+		}
+		// MP2RAGE inversion-block timing. Reconstructing quantitative T1 from a UNI
+		// image needs the number of excitations per inversion block (Siemens "turbo
+		// factor") in addition to TR/TI/FlipAngle; without it the sidecar cannot be
+		// used to invert UNI -> T1. Gated on lInvContrasts == 2, the same MP2RAGE
+		// test setBidsSiemens uses (Siemens: 1 = MPRAGE, 2 = MP2RAGE) — deliberately
+		// narrow, since the turbo factor of an EPI is a different quantity and a
+		// NumberShots on an EPI sidecar would be a bug.
+		if ((csaAscii.lInvContrasts == 2) && (csaAscii.turboFactor > 1) && (d.modality == kMODALITY_MR)) {
+			// BIDS also allows NumberShots as [before, after]: excitations before and
+			// after the k-space centre. That is the form consumers need, because it
+			// fixes what InversionTime is referenced to — linear ordering puts the
+			// centre at n/2, centric puts it at 0, and the two differ by ~7% in T1.
+			// Siemens SeqDefines.h Reordering: REORDERING_LINEAR 0x01,
+			// REORDERING_CENTRIC 0x02, REORDERING_LINE_SEGM 0x04,
+			// REORDERING_PART_SEGM 0x08, REORDERING_FREE_0..3 0x10..0x80. The turbo
+			// train of a 3D sequence runs along the partition loop, so Reordering3D
+			// wins where it exists. Segmented/free schemes and partial Fourier both
+			// move the centre elsewhere, so fall back to the scalar rather than guess:
+			// a wrong array is worse than none, because it looks authoritative.
+			int reorder = csaAscii.reordering3D;
+			if (reorder == 0)
+				reorder = csaAscii.reordering; // 3D key absent: in-plane reordering is all we have
+			else if ((csaAscii.reordering > 0) && (csaAscii.reordering != reorder))
+				reorder = -1; // in-plane and 3D disagree: the order of the turbo train is ambiguous
+			bool isFullFourier = (isPartialFourierOff(csaAscii.partialFourier)) && (isPartialFourierOff(csaAscii.slicePartialFourier));
+			int nBefore = -1;
+			if (isFullFourier && (reorder == 1)) // linear: centre at n/2
+				nBefore = csaAscii.turboFactor / 2;
+			if (isFullFourier && (reorder == 2)) // centric: centre acquired first
+				nBefore = 0;
+			if (nBefore >= 0)
+				fprintf(fp, "\t\"NumberShots\": [\n\t\t%d,\n\t\t%d\t],\n", nBefore, csaAscii.turboFactor - nBefore);
+			else
+				fprintf(fp, "\t\"NumberShots\": %d,\n", csaAscii.turboFactor);
+			// (0018,0080) for MP2RAGE is the inversion-to-inversion time, not an
+			// excitation TR: also report it as BIDS RepetitionTimePreparation, in
+			// seconds as BIDS requires. n.b. the Siemens ASL branches above assign
+			// d.TR (milliseconds) to this same local: a pre-existing unit
+			// inconsistency, left alone here rather than silently changing ASL output.
+			if (d.TR > 0.0)
+				repetitionTimePreparation = d.TR / 1000.0;
+			// RepetitionTimeExcitation (the inner GRE echo spacing, TR_GRE) is
+			// deliberately NOT emitted: it is not exported anywhere for the product
+			// tfl on XA60 — sFastImaging.lEchoSpacing is absent from the protocol
+			// (for EPI too, in the same session), alTD[] and sWipMemBlock.alFree[]
+			// are empty, and every frame reports the same acquisition time. Do not
+			// substitute sFastImaging.lEchoTrainDuration: it reads a constant 700 for
+			// every sequence of a session (issue 127, see the commented-out key in
+			// siemensCsaAscii).
 		}
 		if (csaAscii.interp > 0) { // in-plane interpolation
 			interp = true;
