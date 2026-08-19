@@ -13,4 +13,5 @@ skip = .git,*.json,dcm_qa*
 #        e.g. _PULS.log); not a typo for PULSE/PLUS
 # varian - Varian Medical Systems (MRS vendor handled by spec2nii);
 #          not a typo for "variant"
-ignore-words-list = clen,hep,indx,nd,puls,ser,spoff,tage,te,varian
+# ttest - NIfTI statistical intent name (NIFTI_INTENT_TTEST); not a typo for "test"
+ignore-words-list = clen,hep,indx,nd,puls,ser,spoff,tage,te,ttest,varian
