@@ -2469,6 +2469,24 @@ def _bidsguess_singlevol_dwi_patterns(session_dir: Path,
     return patterns
 
 
+def _strip_sbref_gradients(session_dir: Path) -> int:
+    """Remove `.bval`/`.bvec` companions of any `*_sbref` file. A single-band
+    reference belongs to a diffusion acquisition, so dcm2niix writes gradient
+    files for it, but BIDS does not associate `.bval`/`.bvec` with the `_sbref`
+    suffix (the validator flags an extension mismatch). Returns the count
+    removed."""
+    n = 0
+    for nii in session_dir.rglob("*_sbref.nii*"):
+        stem = (nii.name[:-len(".nii.gz")] if nii.name.endswith(".nii.gz")
+                else nii.stem)
+        for ext in (".bval", ".bvec"):
+            grad = nii.with_name(stem + ext)
+            if grad.is_file():
+                grad.unlink()
+                n += 1
+    return n
+
+
 def _bidsguess_demote_3d_bold(session_dir: Path) -> int:
     """Rename 3D `*_bold` files to `*_sbref` (single-band reference). BIDS
     requires `_bold` scans to be 4D; dcm2niix's legacy %h heuristics can route
@@ -3447,6 +3465,16 @@ def _post_process(out_root: Path, strict: bool, keep_derivatives: bool = False,
             _run_shift_dates(out_root)
         return
     for ses in sessions:
+        try:
+            n = _strip_sbref_gradients(ses)
+            if n > 0:
+                print(f"  {ses}: stripped {n} .bval/.bvec from _sbref",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"reproinx: sbref gradient strip failed for {ses}: {e}",
+                  file=sys.stderr)
+            if strict:
+                raise
         try:
             _write_scans_tsv(ses)
             _emit_events_tsv(ses)

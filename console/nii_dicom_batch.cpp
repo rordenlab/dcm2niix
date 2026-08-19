@@ -1382,6 +1382,8 @@ int MRWeightingGuess(struct TDICOMdata *d, bool isSpinEcho, bool isVariableFlipA
 	if (isSpinEcho) {
 		if (te_sec >= 0.045)
 			return kMRWeightingT2;
+		if ((d->TR > 0.0f) && ((double)d->TR / 1000.0 <= 1.0)) // short TE + short TR = T1w
+			return kMRWeightingT1;
 		return kMRWeightingPD;
 	}
 	if ((d->TR <= 0.0f) || (d->fieldStrength <= 0.0f) || (d->flipAngle <= 0.0f))
@@ -2729,6 +2731,14 @@ tse3d: T2*/
 		// not confused with generic 2D slice-group concatenations.
 		if ((d.is3DAcq) && (d.bandwidthPerPixelPhaseEncode > 0.0) && (csaAscii.lConc > 1))
 			fprintf(fp, "\t\"MultiEchoShots\": %d,\n", csaAscii.lConc);
+		// MP2RAGE (lInvContrasts==2): (0018,0080) is the inversion-to-inversion time,
+		// reported as BIDS RepetitionTimePreparation in seconds (PR #1031). NumberShots
+		// (turbo factor) is deliberately NOT emitted: sFastImaging.lTurboFactor is a
+		// stuck constant on VB/VE (validated only on XA), so a [before,after] there
+		// would be wrong; TR_GRE (RepetitionTimeExcitation) is not exported to DICOM on
+		// any platform (echo spacing lives only in the raw twix/protocol).
+		if ((csaAscii.lInvContrasts == 2) && (d.modality == kMODALITY_MR) && (d.TR > 0.0))
+			repetitionTimePreparation = d.TR / 1000.0;
 		// if (d.phaseEncodingLines != csaAscii.phaseEncodingLines) //e.g. phaseOversampling
 		//	printWarning("PhaseEncodingLines reported in DICOM (%d) header does not match value CSA-ASCII (%d) %s\n", d.phaseEncodingLines, csaAscii.phaseEncodingLines, pathoutname);
 		delayTimeInTR = csaAscii.delayTimeInTR;
@@ -8990,6 +9000,18 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 				strcpy(modalityBIDS, "T2w");
 			else
 				strcpy(modalityBIDS, "PDw"); // PD or Unknown — preserves legacy TE=0 -> PDw default
+		}
+	} else if ((strstr(seqDetails, "\\se") != NULL) || (strstr(d->pulseSequenceName, "*se2d") != NULL)) { // conventional spin echo (not tse/epse/ep2d_se): T1w/T2w/PDw by physics
+		isReportEcho = false; // suppress _echo for PD/T2 pair
+		int w = MRWeightingGuess(d, true, false);
+		if (w != kMRWeightingUnknown) {
+			strcpy(dataTypeBIDS, "anat");
+			if (w == kMRWeightingT1)
+				strcpy(modalityBIDS, "T1w");
+			else if (w == kMRWeightingT2)
+				strcpy(modalityBIDS, "T2w");
+			else
+				strcpy(modalityBIDS, "PDw");
 		}
 	} else if ((strstr(seqDetails, "ep2d_ase") != NULL)) { // prog_ep2d_se
 		// oxygen extraction fraction(OEF) Asymmetric Spin Echo (ASE)
