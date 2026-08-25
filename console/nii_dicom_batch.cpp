@@ -15129,6 +15129,16 @@ int nii_loadDir(struct TDCMopts *opts) {
 		printError("Input folder invalid: %s\n", opts->indir);
 		return kEXIT_INPUT_FOLDER_INVALID;
 	}
+	// pigz advisory (issue #1027): pigz is probed in setDefaultOpts, before -v/verbose
+	// are parsed, so it must be reported here — once per run, only when actually
+	// gz-compressing without pigz (and, for zlib builds, only when verbose).
+#ifdef myDisableZLib
+	if ((opts->isGz) && (strlen(opts->pigzname) < 1))
+		printMessage("Compression requires 'pigz' installed\n");
+#else
+	if ((opts->isGz) && (strlen(opts->pigzname) < 1) && (opts->isVerbose > 0))
+		printMessage("Compression will be faster with 'pigz' installed\n");
+#endif
 #ifdef USING_R
 	// Full file paths are only used by R/divest when reorganising DICOM files
 	if (opts->isRenameNotConvert) {
@@ -15304,13 +15314,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	}
 	if (is_exe(opts->pigzname))
 		return;
-#ifdef myDisableZLib
-	printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
-#else // myUseZLib
-	if (opts->isVerbose > 0)
-		printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
-#endif
-	strcpy(opts->pigzname, "");
+	strcpy(opts->pigzname, ""); // not found: detection only; advisory emitted at conversion (nii_loadDir)
 	return;
 #else // if windows else linux
 	char str[PATH_MAX];
@@ -15356,22 +15360,8 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		if (is_exe(str))
 			goto pigzFound;
 	} // n
-	// Failure:
-#if defined(__APPLE__)
-#ifdef myDisableZLib
-	printMessage("Compression requires 'pigz' to be installed http://macappstore.org/pigz/\n");
-#else // myUseZLib
-	if (opts->isVerbose > 0)
-		printMessage("Compression will be faster with 'pigz' installed http://macappstore.org/pigz/\n");
-#endif
-#else // if APPLE else ...
-#ifdef myDisableZLib
-	printMessage("Compression requires 'pigz' to be installed\n");
-#else // myUseZLib
-	if (opts->isVerbose > 0)
-		printMessage("Compression will be faster with 'pigz' installed\n");
-#endif
-#endif
+	// Failure: pigz not found (pigzname stays ""). Detection only — advisory
+	// emitted at conversion time (nii_loadDir), where verbose/isGz are known.
 	return;
 pigzFound: // Success
 	strcpy(opts->pigzname, str);
