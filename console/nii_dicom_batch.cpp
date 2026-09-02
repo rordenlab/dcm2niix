@@ -5338,6 +5338,10 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 			}
 			if (f == 'Z')
 				strcat(outname, dcm.sequenceName);
+			if (f == '@') // StationName (0008,1010)
+				strcat(outname, dcm.stationName);
+			if (f == '=') // DeviceSerialNumber (0018,1000)
+				strcat(outname, dcm.deviceSerialNumber);
 			if ((f >= '0') && (f <= '9')) {
 				if ((pos < strlen(inname)) && (toupper(inname[pos + 1]) == 'S')) {
 					char zeroPad[128] = {""};
@@ -14463,8 +14467,41 @@ int convert_parRec(char *fnm, struct TDCMopts opts) {
 	return ret;
 } // convert_parRec()
 
-int copyFile(char *src_path, char *dst_path) {
 #define BUFFSIZE 32768
+
+static bool isSameFileContent(const char *a, const char *b) {
+	// Byte-compare two files (size first, then content). In rename mode this
+	// distinguishes a true duplicate (identical -> the same DICOM appears twice,
+	// harmless) from a naming collision (distinct files share one output name ->
+	// the -f template is not unique enough).
+	FILE *fa = fopen(a, "rb");
+	FILE *fb = fopen(b, "rb");
+	bool same = false;
+	if ((fa != NULL) && (fb != NULL)) {
+		fseek(fa, 0, SEEK_END);
+		fseek(fb, 0, SEEK_END);
+		if (ftell(fa) == ftell(fb)) { // identical size: compare bytes
+			rewind(fa);
+			rewind(fb);
+			same = true;
+			unsigned char ba[BUFFSIZE], bb[BUFFSIZE];
+			size_t na;
+			while ((na = fread(ba, 1, BUFFSIZE, fa)) > 0) {
+				if ((fread(bb, 1, BUFFSIZE, fb) != na) || (memcmp(ba, bb, na) != 0)) {
+					same = false;
+					break;
+				}
+			}
+		}
+	}
+	if (fa != NULL)
+		fclose(fa);
+	if (fb != NULL)
+		fclose(fb);
+	return same;
+}
+
+int copyFile(char *src_path, char *dst_path, struct TDCMopts *opts) {
 	unsigned char buffer[BUFFSIZE];
 	FILE *fin = fopen(src_path, "rb");
 	if (fin == NULL) {
@@ -14472,13 +14509,14 @@ int copyFile(char *src_path, char *dst_path) {
 		return EXIT_SUCCESS;
 	}
 	if (is_fileexists(dst_path)) {
-		if (true) {
-			printWarning("Naming conflict (duplicates?): '%s' '%s'\n", src_path, dst_path);
-			return EXIT_SUCCESS;
-		} else {
-			printError("File naming conflict. Existing file %s\n", dst_path);
-			return EXIT_FAILURE;
+		fclose(fin); // was leaked on every conflict
+		if (isSameFileContent(src_path, dst_path))
+			opts->numRenameSkip++; // byte-identical duplicate: summarized once at end (nii_loadDir)
+		else {
+			printWarning("Naming conflict: distinct input '%s' maps to existing '%s' — use a more specific -f template\n", src_path, dst_path);
+			opts->numRenameConflict++;
 		}
+		return EXIT_SUCCESS;
 	}
 	FILE *fou = fopen(dst_path, "wb");
 	if (fou == NULL) {
@@ -14563,7 +14601,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 					if (targetPath.compare(sourcePath) == 0) {
 						if (opts->isVerbose > 1)
 							printMessage("Skipping %s, which would be copied onto itself\n", sourcePathPtr);
-					} else if (copyFile(sourcePathPtr, const_cast<char *>(targetPath.c_str())) == EXIT_SUCCESS) {
+					} else if (copyFile(sourcePathPtr, const_cast<char *>(targetPath.c_str()), opts) == EXIT_SUCCESS) {
 						opts->sourcePaths.push_back(sourcePath);
 						opts->targetPaths.push_back(targetPath);
 						count++;
@@ -14631,7 +14669,7 @@ int searchDirRenameDICOM(char *path, int maxDepth, int depth, struct TDCMopts *o
 						dcm.isMultiEcho = true; // last resort: Siemens gives different echoes the same image number: avoid overwriting, e.g "-f %r.dcm" should generate "1.dcm", "1_e2.dcm" for multi-echo volumes
 					nii_createFilename(dcm, outname, *opts);
 					// if (isDcmExt) strcat (outname,".dcm");
-					int ret = copyFile(filename, outname);
+					int ret = copyFile(filename, outname, opts);
 					if (ret != EXIT_SUCCESS) {
 						printError("Unable to rename all DICOM images.\n");
 						return -1;
@@ -15206,6 +15244,8 @@ int nii_loadDir(struct TDCMopts *opts) {
 		return nii_loadDirCore(opts->indir, opts);
 	}
 	if (opts->isRenameNotConvert) {
+		opts->numRenameSkip = 0;
+		opts->numRenameConflict = 0;
 		int nConvert = searchDirRenameDICOM(opts->indir, opts->dirSearchDepth, 0, opts);
 		if (nConvert < 0)
 			return kEXIT_RENAME_ERROR;
@@ -15214,6 +15254,10 @@ int nii_loadDir(struct TDCMopts *opts) {
 #else
 		printMessage("Converted %d DICOMs\n", nConvert);
 #endif
+		if (opts->numRenameSkip > 0)
+			printMessage("%d duplicate(s) skipped (byte-identical to already-saved file)\n", opts->numRenameSkip);
+		if (opts->numRenameConflict > 0) // distinct inputs collided on one output name
+			return kEXIT_SOME_OK_SOME_BAD;
 		return EXIT_SUCCESS;
 	}
 	if ((isFile) && (opts->isOnlySingleFile))
@@ -15424,6 +15468,8 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	opts->onlySearchDirForDICOM = 0;
 	opts->isProgress = 0;
 	opts->nameConflictBehavior = kNAME_CONFLICT_ADD_SUFFIX;
+	opts->numRenameSkip = 0;
+	opts->numRenameConflict = 0;
 #ifdef myDisableZLib
 	opts->gzLevel = 6;
 #else

@@ -30,6 +30,8 @@ You request the output file name with the `-f` argument. For example, consider y
  - %x=study ID (from 0020,0010)
  - %y=youth in series: GE RawDataRunNumber ([0019,10A2](https://github.com/rordenlab/dcm2niix/issues/359)) else TemporalPosition ([0020,0100](https://github.com/rordenlab/dcm2niix/issues/357))*
  - %z=sequence name (from 0018,0024)
+ - %@=station name (from 0008,1010)
+ - %==device serial number (from 0018,1000)
  
 * Attributes listed above with an asterisk (*) are likely to vary within a series, and are typically not useful for DICOM to NIfTI conversion (where all images from a series are stacked together). These attributes can be useful for [renaming](RENAMING.md) DICOM images
 
