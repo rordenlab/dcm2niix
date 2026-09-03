@@ -13952,7 +13952,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
 				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i];
-				dcmList[indx].isHasMagnitude = false;
+				dcmList[indx].isHasMagnitude = !(dti4D->isPhase[i] || dti4D->isReal[i] || dti4D->isImaginary[i]); // issue1033: the non-phase/real/imag group IS magnitude — mark it so ImageType self-describes (reproinx pairs part-mag)
 				dcmList[indx].echoNum = echoNum[i];
 				break;
 			}

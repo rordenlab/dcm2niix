@@ -5508,6 +5508,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	vec3 sliceV; // cross-product of kOrientation 0020,0037
 	sliceV.v[0] = NAN;
 	float sliceMM[kMaxSlice2D];
+	unsigned char sliceComplex[kMaxSlice2D]; // issue1033: per-frame ComplexImageComponent 0=magnitude,1=phase,2=real,3=imaginary
+	float sliceIntenScale[kMaxSlice2D], sliceIntenIntercept[kMaxSlice2D]; // issue1033: per-frame RescaleSlope/Intercept (differs by component)
 	int nSliceMM = 0;
 	float minSliceMM = INFINITY;
 	float maxSliceMM = -INFINITY;
@@ -5536,6 +5538,19 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		dcmDim[i].diskPos = i;
 		for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++)
 			dcmDim[i].dimIdx[j] = 0;
+		// issue1033: safe defaults so the reorder path never reads uninitialized fields
+		dcmDim[i].TE = 0.0;
+		dcmDim[i].TR = 0.0;
+		dcmDim[i].triggerDelayTime = 0.0;
+		dcmDim[i].intenScale = 1.0;
+		dcmDim[i].intenIntercept = 0.0;
+		dcmDim[i].intenScalePhilips = 0.0;
+		dcmDim[i].RWVScale = 0.0;
+		dcmDim[i].RWVIntercept = 0.0;
+		dcmDim[i].isPhase = false;
+		dcmDim[i].isReal = false;
+		dcmDim[i].isImaginary = false;
+		dcmDim[i].V[0] = dcmDim[i].V[1] = dcmDim[i].V[2] = dcmDim[i].V[3] = 0.0;
 	}
 // http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
 // The array nestPos tracks explicit lengths for Data Element Tag of Value (FFFE,E000)
@@ -7024,6 +7039,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// dcmStr(lLength, &buffer[lPos], dx);
 			// printMessage("*%s*", dx);
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 3, &patientPosition[0]); // slice position
+			if ((patientPositionNum - 1) < kMaxSlice2D) // issue1033: per-frame ComplexImageComponent, one entry per frame
+				sliceComplex[patientPositionNum - 1] = isPhase ? 1 : (isReal ? 2 : (isImaginary ? 3 : 0));
 			if (isnan(d.patientPosition[1])) {
 				// dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
 				for (int k = 0; k < 4; k++)
@@ -7563,6 +7580,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		case kSlope:
 			d.intenScale = dcmStrFloat(lLength, &buffer[lPos]);
+			if ((patientPositionNum >= 1) && (patientPositionNum <= kMaxSlice2D)) { // issue1033: capture per-frame scaling (tag order 1052<1053, so intercept already read)
+				sliceIntenScale[patientPositionNum - 1] = d.intenScale;
+				sliceIntenIntercept[patientPositionNum - 1] = d.intenIntercept;
+			}
 			break;
 		// case kSpectroscopyDataPointColumns :
 		//	d.xyzDim[4] = dcmInt(4,&buffer[lPos],d.isLittleEndian);
@@ -9200,6 +9221,45 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		// printf("%g %g %g -> %g %g %g\n", d.patientPosition[1], d.patientPosition[2], d.patientPosition[3], 	d.patientPositionLast[1], d.patientPositionLast[2], d.patientPositionLast[3]);
 		free(objects);
 	} // issue 372
+	// issue1033: enhanced DICOM (e.g. Siemens XA) can pack multiple complex components
+	// (ComplexImageComponent MIXED) with identical DimensionIndexValues, so magnitude and
+	// phase frames differ only by (0008,9208). If nothing else separated the frames,
+	// promote the component to its own dimension so they split into distinct volumes.
+	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (d.xyzDim[3] == numberOfFrames) && (d.xyzDim[4] < 2)) {
+		int compCount[4] = {0, 0, 0, 0};
+		for (int i = 0; i < numberOfFrames; i++)
+			compCount[sliceComplex[i] & 3]++;
+		int nComponent = 0, perComponent = 0;
+		bool balanced = true;
+		for (int i = 0; i < 4; i++)
+			if (compCount[i] > 0) {
+				nComponent++;
+				if (perComponent == 0)
+					perComponent = compCount[i];
+				else if (compCount[i] != perComponent)
+					balanced = false; // uneven component counts: leave interleaved
+			}
+		if ((nComponent > 1) && (balanced)) {
+			int sliceIdx[4] = {0, 0, 0, 0};
+			for (int i = 0; i < numberOfFrames; i++) {
+				int c = sliceComplex[i] & 3;
+				dcmDim[i].dimIdx[MAX_NUMBER_OF_DIMENSIONS - 1] = c; // component in the highest slot -> slowest dimension (splits into volumes)
+				dcmDim[i].dimIdx[0] = sliceIdx[c]++; // slice order within component (frames are slice-ordered)
+				dcmDim[i].isPhase = (c == 1);
+				dcmDim[i].isReal = (c == 2);
+				dcmDim[i].isImaginary = (c == 3);
+				dcmDim[i].intenScale = sliceIntenScale[i]; // per-component RescaleSlope (magnitude/phase differ)
+				dcmDim[i].intenIntercept = sliceIntenIntercept[i];
+				dcmDim[i].TE = d.TE;
+				dcmDim[i].TR = d.TR;
+			}
+			numDimensionIndexValues = numberOfFrames;
+			d.xyzDim[4] = nComponent;
+			d.xyzDim[3] = perComponent;
+			if ((numberOfFramesICEdims > 0) && ((numberOfFramesICEdims % nComponent) == 0))
+				numberOfFramesICEdims /= nComponent; // ICE dims counts all components; per-volume slice count is now consistent (avoids issue-742 false "partial volume")
+		}
+	}
 	if ((d.echoTrainLength == 0) && (echoTrainLengthPhil))
 		d.echoTrainLength = echoTrainLengthPhil;																														   //+1 ?? to convert "EPI factor" to echo train length, see issue 377
 	if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (d.xyzDim[4] > 1) && (d.is3DAcq) && (d.echoTrainLength > 1) && (minDynamicScanBeginTime < maxDynamicScanBeginTime)) { // issue369
