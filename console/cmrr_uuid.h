@@ -105,12 +105,8 @@ static inline TCmrrUuidResolution cmrrResolveMeasurementUuid(const char *phoenix
 	return kCmrrUuidResolved;
 }
 
-// The measurement UUID can provide a persistent link to source DICOM data, so
-// the dedicated key is emitted only under `-ba n`. `-ba y` additionally redacts
-// it from WipMemBlock; `-ba o` keeps DICOM UIDs by design, so it keeps that copy.
-// `-ba y` strips SeriesInstanceUID/StudyInstanceUID as persistent source links,
-// and for CMRR sequences the same measurement UUID leads sWipMemBlock.tFree.
-// Drop it there too, or full anonymization leaves the link it set out to remove.
+// For CMRR sequences the measurement UUID leads sWipMemBlock.tFree, so suppressing
+// the JSON key alone would leave the source link `-ba y` set out to remove.
 static inline void cmrrRedactLeadingUuid(char *wipMemBlock) {
 	char uuid[kCMRRMeasurementUuidBufferLength];
 	if ((wipMemBlock == NULL) || !cmrrParseCanonicalUuid(wipMemBlock, uuid))
@@ -121,6 +117,8 @@ static inline void cmrrRedactLeadingUuid(char *wipMemBlock) {
 	memmove(wipMemBlock, wipMemBlock + skip, strlen(wipMemBlock + skip) + 1);
 }
 
+// A persistent link to the source DICOMs, so the key is emitted only under `-ba n`;
+// `-ba o` keeps DICOM UIDs by design but not this one.
 static inline const char *cmrrUuidForOutput(const char *uuid, bool isAnonymizeBIDS, bool isOmitPiiBIDS) {
 	if (isAnonymizeBIDS || isOmitPiiBIDS || (uuid == NULL) || (uuid[0] == '\0'))
 		return NULL;

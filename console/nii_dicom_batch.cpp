@@ -595,8 +595,7 @@ int readKeyN1(const char *key, char *buffer, int remLength) { // look for text k
 		return -1;
 	int ret = 0;
 	int i = (int)strlen(key);
-	// i indexes from keyPos, so it must be bounded by the bytes left after keyPos:
-	// remLength spans the whole buffer and ran off the end of the CSA allocation.
+	// remLength spans the whole buffer, but i indexes from keyPos
 	int remKey = remLength - (int)(keyPos - buffer);
 	while ((i < remKey) && (keyPos[i] != 0x0A)) {
 		if (keyPos[i] >= '0' && keyPos[i] <= '9')
@@ -630,7 +629,6 @@ float readKeyFloatNan(const char *key, char *buffer, int remLength) { // look fo
 	int i = (int)strlen(key);
 	int remKey = remLength - (int)(keyPos - buffer);
 	while ((i < remKey) && (keyPos[i] != 0x0A)) {
-		// the old strcat had no bound at all: a long digit run smashed str[]
 		if (((keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-')) && (nStr < (kDICOMStr - 1)))
 			str[nStr++] = keyPos[i];
 		i++;
@@ -650,7 +648,6 @@ float readKeyFloat(const char *key, char *buffer, int remLength) { // look for t
 	int i = (int)strlen(key);
 	int remKey = remLength - (int)(keyPos - buffer);
 	while ((i < remKey) && (keyPos[i] != 0x0A)) {
-		// the old strcat had no bound at all: a long digit run smashed str[]
 		if (((keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-')) && (nStr < (kDICOMStr - 1)))
 			str[nStr++] = keyPos[i];
 		i++;
@@ -1221,9 +1218,7 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
 	int len = (int)strlen(sVal);
 	if (len < 1)
 		return;
-	// Every input byte escapes to at most two output bytes. This was a 2 KB stack
-	// array, which a Siemens sWipMemBlock.tFree (up to kDICOMStrExtraLarge) could
-	// overrun; hoisting strlen also keeps a 64 KB value from rescanning per byte.
+	// every input byte escapes to at most two output bytes
 	unsigned char *sValEsc = (unsigned char *)malloc(((size_t)len * 2) + 1);
 	if (sValEsc == NULL)
 		return;
@@ -14554,8 +14549,7 @@ int copyFile(char *src_path, char *dst_path, struct TDCMopts *opts) {
 	unsigned char buffer[BUFFSIZE];
 	FILE *fin = fopen(src_path, "rb");
 	if (fin == NULL) {
-		// EXIT_SUCCESS here counted an unreadable source as renamed and, in the R
-		// wrapper, recorded a source->target mapping for a file never written.
+		// the R wrapper records a source->target mapping for every EXIT_SUCCESS
 		printError("Check file permissions: Unable to open input %s\n", src_path);
 		return EXIT_FAILURE;
 	}

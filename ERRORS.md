@@ -24,5 +24,5 @@ Below is a list of possible return values from running dcm2niix.
 | 5           | Input folder invalid                                        |
 | 6           | Output folder invalid                                       |
 | 7           | Unable to write to output folder (check file permissions)   |
-| 8           | Converted some but not all of the input DICOMs              |
+| 8           | Converted some but not all of the input DICOMs; also `-r y` when distinct inputs collided on one output name |
 | 9           | Unable to rename files (result of `dcm2niix -r y ~/in`)     |

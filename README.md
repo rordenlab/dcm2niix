@@ -52,6 +52,8 @@ Command line usage is described in the [NITRC wiki](https://www.nitrc.org/plugin
 
 [See the BATCH.md file for instructions on using the batch processing version](./BATCH.md).
 
+dcm2niix can also rename DICOMs instead of converting them (`-r y`): [see RENAMING.md](./RENAMING.md). [ERRORS.md lists the exit codes](./ERRORS.md) and [FILENAMING.md lists the `-f` format specifiers](./FILENAMING.md).
+
 ## Install
 
 There are a couple ways to install dcm2niix
