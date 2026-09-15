@@ -1,7 +1,6 @@
 #ifndef CMRR_UUID_H
 #define CMRR_UUID_H
 
-#include "cJSON.h"
 #include <ctype.h>
 #include <stdbool.h>
 #include <string.h>
@@ -66,7 +65,7 @@ static inline bool cmrrPulseSequenceDetails(const char *text) {
 			(tolower((unsigned char)p[2]) == 'r') &&
 			(tolower((unsigned char)p[3]) == 'r') &&
 			((p == text) || !isalnum((unsigned char)p[-1])) &&
-			((p[4] == '\0') || !isalnum((unsigned char)p[4])))
+			!isalnum((unsigned char)p[4]))
 			return true;
 	}
 	return false;
@@ -82,18 +81,6 @@ static inline bool cmrrUuidFromWipMemBlock(const char *wipMemBlock, const char *
 		return false;
 	}
 	return cmrrParseCanonicalUuid(wipMemBlock, out);
-}
-
-// CMRR PULS/RESP/Info logs identify the measurement with an exact
-// `UUID = <uuid>` header. The caller tokenizes the line and supplies the key,
-// separator, and value separately so similarly named headers are not accepted.
-static inline bool cmrrUuidFromPayloadHeader(const char *key, const char *separator, const char *value, char out[kCMRRMeasurementUuidBufferLength]) {
-	if ((key == NULL) || (separator == NULL) || (strcmp(key, "UUID") != 0) || (strcmp(separator, "=") != 0)) {
-		if (out != NULL)
-			out[0] = '\0';
-		return false;
-	}
-	return cmrrParseCanonicalUuid(value, out);
 }
 
 // Resolve the Phoenix and embedded-log identities. One source is sufficient;
@@ -129,18 +116,14 @@ static inline void cmrrMergePayloadUuid(const char *candidate, char payloadUuid[
 		*payloadConflict = true;
 }
 
-// The measurement UUID can provide a persistent link to source DICOM data.
-// Emit it only under `-ba n`; both `-ba y` and `-ba o` suppress it.
+// The measurement UUID can provide a persistent link to source DICOM data, so
+// the dedicated key is emitted only under `-ba n`. That gate hides the key, not
+// the value: for CMRR sequences the same UUID leads sWipMemBlock.tFree, which
+// `WipMemBlock` still reports verbatim in every `-ba` mode.
 static inline const char *cmrrUuidForOutput(const char *uuid, bool isAnonymizeBIDS, bool isOmitPiiBIDS) {
 	if (isAnonymizeBIDS || isOmitPiiBIDS || (uuid == NULL) || (uuid[0] == '\0'))
 		return NULL;
 	return uuid;
-}
-
-static inline bool cmrrAddMeasurementUuidToJson(cJSON *root, const char *uuid) {
-	if ((uuid == NULL) || (uuid[0] == '\0'))
-		return true;
-	return cJSON_AddStringToObject(root, kCMRRMeasurementUuidJsonKey, uuid) != NULL;
 }
 
 #endif

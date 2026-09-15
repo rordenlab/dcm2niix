@@ -667,15 +667,13 @@ void readKeyStrLen(const char *key, char *buffer, int remLength, char *outStr, i
 		return;
 	int i = (int)strlen(key);
 	int outLen = 0;
-	char tmpstr[2];
-	tmpstr[1] = 0;
 	bool isQuote = false;
 	while ((i < remLength) && (keyPos[i] != 0x0A)) {
-		if ((isQuote) && (keyPos[i] != '"') && (outLen < outStrLen)) {
-			tmpstr[0] = keyPos[i];
-			strcat(outStr, tmpstr);
-			outLen++;
-		}
+		// reserve the last byte for the terminator: the old bound wrote outStrLen
+		// characters plus a NUL into an outStrLen buffer. Appending by index also
+		// keeps a 64 KB sWipMemBlock.tFree linear instead of strcat rescanning it.
+		if ((isQuote) && (keyPos[i] != '"') && (outLen < (outStrLen - 1)))
+			outStr[outLen++] = keyPos[i];
 		if (keyPos[i] == '"') {
 			if (outLen > 0)
 				break;
@@ -683,6 +681,7 @@ void readKeyStrLen(const char *key, char *buffer, int remLength, char *outStr, i
 		}
 		i++;
 	}
+	outStr[outLen] = 0;
 } // readKeyStr()
 
 void readKeyStr(const char *key, char *buffer, int remLength, char *outStr) {
@@ -5339,10 +5338,6 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 			}
 			if (f == 'X')
 				strcat(outname, dcm.studyID);
-			if ((f == 'Y') && (dcm.rawDataRunNumber >= 0)) {
-				snprintf(newstr, PATH_MAX, "%d", dcm.rawDataRunNumber); // GE (0019,10A2) else (0020,0100)
-				strcat(outname, newstr);
-			}
 			if (f == 'Z')
 				strcat(outname, dcm.sequenceName);
 			if (f == '@') // StationName (0008,1010)
@@ -10613,11 +10608,8 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON_AddItemToObject(root, "Columns", cols);
 	cJSON_AddItemToObject(root, "SamplingFrequency", sampHz);
 	cJSON_AddItemToObject(root, "StartTime", startT);
-	if (!cmrrAddMeasurementUuidToJson(root, cmrrMeasurementUuid)) {
-		cJSON_Delete(root);
-		printWarning("Physio: JSON UUID allocation failed for %s — discarding stream\n", label);
-		return false;
-	}
+	if (cmrrMeasurementUuid != NULL)
+		cJSON_AddStringToObject(root, kCMRRMeasurementUuidJsonKey, cmrrMeasurementUuid);
 	// The bundled cJSON's public cJSON_AddItemTo{Array,Object} return void, but
 	// the private add_item_to_object can still fail (key strdup OOM) — silently
 	// dropping a BIDS-required key while cJSON_Print happily serializes the
@@ -11170,7 +11162,7 @@ static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 	if (strcmp(toks[1], "=") == 0) {
 		if (strcmp(toks[0], "UUID") == 0) {
 			char candidate[kCMRRMeasurementUuidBufferLength];
-			if (cmrrUuidFromPayloadHeader(toks[0], toks[1], toks[2], candidate))
+			if (cmrrParseCanonicalUuid(toks[2], candidate))
 				cmrrMergePayloadUuid(candidate, payloadUuid, payloadUuidConflict);
 		} else if (strcmp(toks[0], "LogDataType") == 0) {
 			snprintf(st->chan, sizeof(st->chan), "%s", toks[2]);
@@ -11364,11 +11356,18 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	char phoenixUuid[kCMRRMeasurementUuidBufferLength] = {""};
 #ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		float shimSetting[8];
-		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
-		TCsaAscii csaAscii;
-		siemensCsaAscii(infname, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
-		cmrrUuidFromWipMemBlock(wipMemBlock, pulseSequenceDetails, phoenixUuid);
+		// wipMemBlock is 64 KB and this function inlines into saveDcm2NiiCore, so a
+		// stack copy is charged to every conversion rather than just physio DICOMs;
+		// that pushed the deepest chain past the 8 MB default stack off macOS.
+		char *wipMemBlock = (char *)malloc(kDICOMStrExtraLarge);
+		if (wipMemBlock != NULL) {
+			float shimSetting[8];
+			char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge];
+			TCsaAscii csaAscii;
+			siemensCsaAscii(infname, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+			cmrrUuidFromWipMemBlock(wipMemBlock, pulseSequenceDetails, phoenixUuid);
+			free(wipMemBlock);
+		}
 	}
 #endif
 	char resolvedUuid[kCMRRMeasurementUuidBufferLength];
@@ -11413,11 +11412,11 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 			peakLabelPtr = peakLabel;
 		}
 		PhysioEmitStatus stStat = physioBidsEmitStream(baseName, st->label, st->ticArr,
-												   st->signal, st->n,
-												   dtMs, sampFreq,
-												   volTics, volN,
-												   st->triggerTics, st->triggerN, peakLabelPtr,
-												   opts.gzLevel, outputUuid);
+													   st->signal, st->n,
+													   dtMs, sampFreq,
+													   volTics, volN,
+													   st->triggerTics, st->triggerN, peakLabelPtr,
+													   opts.gzLevel, outputUuid);
 		if (stStat == kPhysioEmitOk)
 			wrote++;
 		else if (stStat == kPhysioEmitFailed)
@@ -13864,7 +13863,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		strcpy(mrifsStruct.pulseSequenceDetails, "");
 		if ((d->manufacturer == kMANUFACTURER_SIEMENS) && (d->CSA.SeriesHeader_offset > 0) && (d->CSA.SeriesHeader_length > 0)) {
 			float shimSetting[8];
-			char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrLarge];
+			char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
 			TCsaAscii csaAscii;
 			siemensCsaAscii(nameList->str[indx0], &csaAscii, d->CSA.SeriesHeader_offset, d->CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
 			if (strlen(pulseSequenceDetails) >= kDICOMStr)
@@ -14527,6 +14526,8 @@ static bool isSameFileContent(const char *a, const char *b) {
 					break;
 				}
 			}
+			if (ferror(fa) || ferror(fb)) // a read error ends the loop just like EOF: never call that identical
+				same = false;
 		}
 	}
 	if (fa != NULL)
@@ -14555,18 +14556,24 @@ int copyFile(char *src_path, char *dst_path, struct TDCMopts *opts) {
 	}
 	FILE *fou = fopen(dst_path, "wb");
 	if (fou == NULL) {
+		fclose(fin);
 		printError("Check file permission. Unable to open output %s\n", dst_path);
 		return EXIT_FAILURE;
 	}
 	size_t bytes;
-	while ((bytes = fread(buffer, 1, BUFFSIZE, fin)) != 0) {
-		if (fwrite(buffer, 1, bytes, fou) != bytes) {
-			printError("Unable to write %zu bytes to output %s\n", bytes, dst_path);
-			return EXIT_FAILURE;
-		}
-	}
+	bool isCopyOk = true;
+	while (isCopyOk && ((bytes = fread(buffer, 1, BUFFSIZE, fin)) != 0))
+		isCopyOk = (fwrite(buffer, 1, bytes, fou) == bytes);
+	if (ferror(fin))
+		isCopyOk = false;
 	fclose(fin);
-	fclose(fou);
+	if (fclose(fou) != 0) // a full disk surfaces here, not at fwrite: the stream buffers
+		isCopyOk = false;
+	if (!isCopyOk) { // a truncated DICOM left on disk reads as a naming conflict on the next run
+		remove(dst_path);
+		printError("Unable to write output %s\n", dst_path);
+		return EXIT_FAILURE;
+	}
 	return EXIT_SUCCESS;
 }
 

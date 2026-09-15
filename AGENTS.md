@@ -25,7 +25,8 @@ Domain hazards live in on-demand docs — read the relevant one before changing 
   export PATH="$PWD/build/bin:$PATH"
   for d in dcm_qa dcm_qa_nih dcm_qa_uih; do (cd "$d" && ./batch.sh) || { echo "FAIL: $d"; exit 1; }; done
   ```
-- Release validation uses sibling `dcm_validate`; pre-push minimum is `dcm_qa` plus `git ls-files | xargs codespell`.
+- Release validation uses sibling `dcm_validate`; edge cases, validation data, and regression tests belong there rather than in this root project. Pre-push minimum is `dcm_qa` plus `git ls-files | xargs codespell`.
+- CMRR physio + `CMRRMeasurementUUID` regression in sibling `dcm_qa_physio`: `./batch.sh`.
 - MRS regression in sibling `dcm_qa_mrs`: `python3 batch.py --corpus={local,spec2nii,both}`, `python3 compare_spec2nii.py --corpus={local,spec2nii,both}`; `$SPEC2NII_DATA` must point at spec2nii test data.
 - reproinx self-check: `python3 tools/test_reproinx_sbref.py`.
 - Format C/C++ when needed: `clang-format -i -style="{BasedOnStyle: LLVM, IndentWidth: 4, IndentCaseLabels: false, TabWidth: 4, UseTab: Always, ColumnLimit: 0}" *.cpp *.h`.
@@ -40,6 +41,7 @@ Domain hazards live in on-demand docs — read the relevant one before changing 
 - `nii_dicom_batch.cpp` groups series, assembles volumes, writes NIfTI/BIDS, physio, reproin, and MRS paths; treat it as load-bearing.
 - `nifti1_io_core.cpp` writes NIfTI/JSON/reorientation; `nii_foreign.cpp` handles PAR/REC; `nii_ortho.cpp` handles orientation/crop/resample.
 - `dicom_fragments.{h,cpp}` is the multi-fragment single-frame encapsulation helper for issue #1017.
+- `cmrr_uuid.h` is a header-only helper parsing the CMRR measurement UUID (Phoenix `sWipMemBlock.tFree` or physio payload header) for the `CMRRMeasurementUUID` sidecar key.
 - Adding a `.cpp` requires updating all source-list surfaces: `console/CMakeLists.txt` (3 blocks), `console/makefile`, `console/windows.bat`, `console/notarize.sh`, `COMPILE.md`.
 
 ## Project Conventions
@@ -47,7 +49,9 @@ Domain hazards live in on-demand docs — read the relevant one before changing 
 - `TDICOMdata` is passed by value through the save chain; growing it by about 4 KB can crash macOS stacks. New per-file payloads use lazy heap pointers plus idempotent `free_TDICOMdata_*` helpers at every `free(dcmList)` site.
 - `deID_CS` is owned only by the `dcmList[]` entry from `readDICOMx`; shallow retained copies must set `.deID_CS = NULL; .deID_CS_n = 0`; direct `readDICOM()` callers must free it.
 - Inline `TDICOMdata` additions must be tiny; `slabOrient[7] + slabOrientCount` (+32 B) is the accepted scale, not a precedent for arrays.
-- macOS CMake and makefile builds intentionally set 16 MB stack; keep the `AppleClang` gate.
+- macOS CMake and makefile builds intentionally set 16 MB stack; keep the `AppleClang` gate. Every other platform gets the default 8 MB, and the deepest chain (`nii_loadDir` -> `nii_loadDirCore` -> `saveDcm2Nii` -> `saveDcm2NiiCore` -> `nii_SaveBIDSX`) already runs within ~58 KB of it. A `static` helper is inlined into `saveDcm2NiiCore` and charged to *every* conversion, so a large stack buffer there (a `kDICOMStrExtraLarge` 64 KB `wipMemBlock` is the trap) is not local to its own code path: heap it. Verify with `clang++ -O3 -fstack-usage -c console/nii_dicom_batch.cpp`.
+- `readKeyStr`/`readKeyStrLen` write at most `outStrLen - 1` characters plus a terminator; the caller's buffer must be at least the length passed in. `siemensCsaAscii` fills `wipMemBlock` with a `kDICOMStrExtraLarge` bound regardless of what the caller allocated.
+- `-ba` levels are not interchangeable: `-ba y` strips dates, patient PII *and* `SeriesInstanceUID`/`StudyInstanceUID` as persistent source links; `-ba o` strips PII only and deliberately keeps those UIDs. Gate a new source-linking key on `isAnonymizeBIDS` alone unless there is a reason to be stricter. Note `WipMemBlock` is emitted verbatim in every mode and leads with the CMRR measurement UUID, so key-level suppression alone does not remove that value.
 - Output writers must fail closed: check short writes/close/compressor status, remove partial files, and never emit sidecars next to missing/truncated images.
 - `writeNiiGz`/`writeMghGz` return status and never free caller-owned buffers; `writeMghGz` must `Z_FINISH` on the footer, not the image.
 - `initTDTI4D()` is required for fresh sidecar-only/MRS locals, but must NOT be called in `saveDcm2NiiCore` where enhanced/PAR per-frame data is already live.
