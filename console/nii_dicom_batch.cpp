@@ -595,7 +595,10 @@ int readKeyN1(const char *key, char *buffer, int remLength) { // look for text k
 		return -1;
 	int ret = 0;
 	int i = (int)strlen(key);
-	while ((i < remLength) && (keyPos[i] != 0x0A)) {
+	// i indexes from keyPos, so it must be bounded by the bytes left after keyPos:
+	// remLength spans the whole buffer and ran off the end of the CSA allocation.
+	int remKey = remLength - (int)(keyPos - buffer);
+	while ((i < remKey) && (keyPos[i] != 0x0A)) {
 		if (keyPos[i] >= '0' && keyPos[i] <= '9')
 			ret = (10 * ret) + keyPos[i] - '0';
 		i++;
@@ -609,7 +612,8 @@ int readKey(const char *key, char *buffer, int remLength) { // look for text key
 	if (!keyPos)
 		return ret;
 	int i = (int)strlen(key);
-	while ((i < remLength) && (keyPos[i] != 0x0A)) {
+	int remKey = remLength - (int)(keyPos - buffer);
+	while ((i < remKey) && (keyPos[i] != 0x0A)) {
 		if (keyPos[i] >= '0' && keyPos[i] <= '9')
 			ret = (10 * ret) + keyPos[i] - '0';
 		i++;
@@ -622,18 +626,17 @@ float readKeyFloatNan(const char *key, char *buffer, int remLength) { // look fo
 	if (!keyPos)
 		return NAN;
 	char str[kDICOMStr];
-	strcpy(str, "");
-	char tmpstr[2];
-	tmpstr[1] = 0;
+	int nStr = 0;
 	int i = (int)strlen(key);
-	while ((i < remLength) && (keyPos[i] != 0x0A)) {
-		if ((keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-')) {
-			tmpstr[0] = keyPos[i];
-			strcat(str, tmpstr);
-		}
+	int remKey = remLength - (int)(keyPos - buffer);
+	while ((i < remKey) && (keyPos[i] != 0x0A)) {
+		// the old strcat had no bound at all: a long digit run smashed str[]
+		if (((keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-')) && (nStr < (kDICOMStr - 1)))
+			str[nStr++] = keyPos[i];
 		i++;
 	}
-	if (strlen(str) < 1)
+	str[nStr] = 0;
+	if (nStr < 1)
 		return NAN;
 	return atof(str);
 } // readKeyFloatNan()
@@ -643,18 +646,17 @@ float readKeyFloat(const char *key, char *buffer, int remLength) { // look for t
 	if (!keyPos)
 		return 0.0;
 	char str[kDICOMStr];
-	strcpy(str, "");
-	char tmpstr[2];
-	tmpstr[1] = 0;
+	int nStr = 0;
 	int i = (int)strlen(key);
-	while ((i < remLength) && (keyPos[i] != 0x0A)) {
-		if ((keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-')) {
-			tmpstr[0] = keyPos[i];
-			strcat(str, tmpstr);
-		}
+	int remKey = remLength - (int)(keyPos - buffer);
+	while ((i < remKey) && (keyPos[i] != 0x0A)) {
+		// the old strcat had no bound at all: a long digit run smashed str[]
+		if (((keyPos[i] >= '0' && keyPos[i] <= '9') || (keyPos[i] == '.') || (keyPos[i] == '-')) && (nStr < (kDICOMStr - 1)))
+			str[nStr++] = keyPos[i];
 		i++;
 	}
-	if (strlen(str) < 1)
+	str[nStr] = 0;
+	if (nStr < 1)
 		return 0.0;
 	return atof(str);
 } // readKeyFloat()
@@ -668,10 +670,8 @@ void readKeyStrLen(const char *key, char *buffer, int remLength, char *outStr, i
 	int i = (int)strlen(key);
 	int outLen = 0;
 	bool isQuote = false;
-	while ((i < remLength) && (keyPos[i] != 0x0A)) {
-		// reserve the last byte for the terminator: the old bound wrote outStrLen
-		// characters plus a NUL into an outStrLen buffer. Appending by index also
-		// keeps a 64 KB sWipMemBlock.tFree linear instead of strcat rescanning it.
+	int remKey = remLength - (int)(keyPos - buffer);
+	while ((i < remKey) && (keyPos[i] != 0x0A)) {
 		if ((isQuote) && (keyPos[i] != '"') && (outLen < (outStrLen - 1)))
 			outStr[outLen++] = keyPos[i];
 		if (keyPos[i] == '"') {
@@ -1156,7 +1156,7 @@ int geProtocolBlock(const char *filename, int geOffset, int geLength, int isVerb
 	char keyStrNS[] = "NOSLC";
 	*nSlices = readKey(keyStrNS, (char *)pUnCmp, unCmpSz);
 	char keyStrDELACQ[] = "DELACQ";
-	char DELACQ[100];
+	char DELACQ[kDICOMStrLarge]; // readKeyStr writes with a kDICOMStrLarge bound
 	readKeyStr(keyStrDELACQ, (char *)pUnCmp, unCmpSz, DELACQ);
 	char keyStrGD[] = "DELACQNOAV";
 	*groupDelay = readKeyFloat(keyStrGD, (char *)pUnCmp, unCmpSz);
@@ -1218,12 +1218,18 @@ void json_StrList(FILE *fp, const char *sLabel, char *sVal) {
 }
 
 void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
-	if (strlen(sVal) < 1)
+	int len = (int)strlen(sVal);
+	if (len < 1)
 		return;
-	unsigned char sValEsc[2048] = {""};
+	// Every input byte escapes to at most two output bytes. This was a 2 KB stack
+	// array, which a Siemens sWipMemBlock.tFree (up to kDICOMStrExtraLarge) could
+	// overrun; hoisting strlen also keeps a 64 KB value from rescanning per byte.
+	unsigned char *sValEsc = (unsigned char *)malloc(((size_t)len * 2) + 1);
+	if (sValEsc == NULL)
+		return;
 	unsigned char *iVal = (unsigned char *)sVal;
 	int o = 0;
-	for (int i = 0; i < (int)strlen(sVal); i++) {
+	for (int i = 0; i < len; i++) {
 		// escape double quote (") and Backslash
 		// if ((sVal[i] == '"') || (sVal[i] == '\\') || (sVal[i] == '/')) { //issue640: escape double quotes, back slash, or slash
 		if ((sVal[i] == '"') || (sVal[i] == '\\')) { // escape double quotes and back slash
@@ -1269,6 +1275,7 @@ void json_Str(FILE *fp, const char *sLabel, char *sVal) { // issue131,425
 	}
 	sValEsc[o] = '\0';
 	fprintf(fp, sLabel, sValEsc);
+	free(sValEsc);
 } // json_Str
 
 void json_FloatNotNan(FILE *fp, const char *sLabel, float sVal) {
@@ -3111,13 +3118,16 @@ tse3d: T2*/
 		strcpy(d.coilName, "");
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
 		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
-		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
 		char cmrrMeasurementUuid[kCMRRMeasurementUuidBufferLength];
+		const char *outputUuid = NULL;
 		if (cmrrUuidFromWipMemBlock(wipMemBlock, pulseSequenceDetails, cmrrMeasurementUuid)) {
-			const char *outputUuid = cmrrUuidForOutput(cmrrMeasurementUuid, opts.isAnonymizeBIDS, opts.isOmitPiiBIDS);
-			if (outputUuid != NULL)
-				fprintf(fp, "\t\"%s\": \"%s\",\n", kCMRRMeasurementUuidJsonKey, outputUuid);
+			outputUuid = cmrrUuidForOutput(cmrrMeasurementUuid, opts.isAnonymizeBIDS, opts.isOmitPiiBIDS);
+			if (opts.isAnonymizeBIDS)
+				cmrrRedactLeadingUuid(wipMemBlock);
 		}
+		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
+		if (outputUuid != NULL)
+			fprintf(fp, "\t\"%s\": \"%s\",\n", kCMRRMeasurementUuidJsonKey, outputUuid);
 		if (strlen(d.protocolName) < 1) // insert protocol name if it exists in CSA but not DICOM header: https://github.com/nipy/heudiconv/issues/80
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
 		if (csaAscii.refLinesPE > 0)
@@ -8844,7 +8854,7 @@ void reportProtocolBlockGE(struct TDICOMdata *d, const char *filename, int isVer
 	int nSlices = -1;
 	float groupDelay = 0.0;
 	char ioptGE[3000] = "";
-	char seqName[kDICOMStr] = "";
+	char seqName[kDICOMStrLarge] = "";
 	geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, isVerbose, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE, seqName);
 	size_t remaining_space = kDICOMStr - strlen(d->procedureStepDescription) - 1; // issue883
 	strncat(d->procedureStepDescription, seqName, remaining_space);				  // issue790
@@ -9688,7 +9698,7 @@ void sliceTimingGE(struct TDICOMdata *d, const char *filename, struct TDCMopts o
 	int mbAccel = -1;
 	int nSlices = -1;
 	float groupDelay = 0.0;
-	char seqStr[kDICOMStr] = "";
+	char seqStr[kDICOMStrLarge] = "";
 	char ioptGE[3000] = "";
 	// printWarning("Using GE Protocol Data Block for BIDS data (beware: new feature)\n");
 	int ok = geProtocolBlock(filename, d->protocolBlockStartGE, d->protocolBlockLengthGE, 0, &sliceOrderGE, &viewOrderGE, &mbAccel, &nSlices, &groupDelay, ioptGE, seqStr);
@@ -11162,8 +11172,12 @@ static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 	if (strcmp(toks[1], "=") == 0) {
 		if (strcmp(toks[0], "UUID") == 0) {
 			char candidate[kCMRRMeasurementUuidBufferLength];
-			if (cmrrParseCanonicalUuid(toks[2], candidate))
-				cmrrMergePayloadUuid(candidate, payloadUuid, payloadUuidConflict);
+			if (cmrrParseCanonicalUuid(toks[2], candidate)) {
+				if (payloadUuid[0] == '\0')
+					strcpy(payloadUuid, candidate);
+				else if (strcmp(payloadUuid, candidate) != 0)
+					*payloadUuidConflict = true;
+			}
 		} else if (strcmp(toks[0], "LogDataType") == 0) {
 			snprintf(st->chan, sizeof(st->chan), "%s", toks[2]);
 			st->label = xaPhysioBidsLabel(toks[2]);
@@ -11356,9 +11370,8 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	char phoenixUuid[kCMRRMeasurementUuidBufferLength] = {""};
 #ifdef myReadAsciiCsa
 	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
-		// wipMemBlock is 64 KB and this function inlines into saveDcm2NiiCore, so a
-		// stack copy is charged to every conversion rather than just physio DICOMs;
-		// that pushed the deepest chain past the 8 MB default stack off macOS.
+		// wipMemBlock is 64 KB and this static inlines into saveDcm2NiiCore, so a
+		// stack array here is charged to every conversion, not just physio DICOMs.
 		char *wipMemBlock = (char *)malloc(kDICOMStrExtraLarge);
 		if (wipMemBlock != NULL) {
 			float shimSetting[8];
@@ -14541,8 +14554,10 @@ int copyFile(char *src_path, char *dst_path, struct TDCMopts *opts) {
 	unsigned char buffer[BUFFSIZE];
 	FILE *fin = fopen(src_path, "rb");
 	if (fin == NULL) {
+		// EXIT_SUCCESS here counted an unreadable source as renamed and, in the R
+		// wrapper, recorded a source->target mapping for a file never written.
 		printError("Check file permissions: Unable to open input %s\n", src_path);
-		return EXIT_SUCCESS;
+		return EXIT_FAILURE;
 	}
 	if (is_fileexists(dst_path)) {
 		fclose(fin); // was leaked on every conflict
