@@ -40,6 +40,7 @@
 #include "nii_ortho.h"
 #include "reproin.h"
 #include "cJSON.h" // physio/MRS JSON sidecars use cJSON regardless of JNIFTI
+#include "cmrr_uuid.h"
 #ifdef myEnableJNIFTI
 #include "base64.h"
 #endif
@@ -3112,6 +3113,12 @@ tse3d: T2*/
 		json_Str(fp, "\t\"PulseSequenceDetails\": \"%s\",\n", pulseSequenceDetails);
 		json_Str(fp, "\t\"FmriExternalInfo\": \"%s\",\n", fmriExternalInfo);
 		json_Str(fp, "\t\"WipMemBlock\": \"%s\",\n", wipMemBlock);
+		char cmrrMeasurementUuid[kCMRRMeasurementUuidBufferLength];
+		if (cmrrUuidFromWipMemBlock(wipMemBlock, pulseSequenceDetails, cmrrMeasurementUuid)) {
+			const char *outputUuid = cmrrUuidForOutput(cmrrMeasurementUuid, opts.isAnonymizeBIDS, opts.isOmitPiiBIDS);
+			if (outputUuid != NULL)
+				fprintf(fp, "\t\"%s\": \"%s\",\n", kCMRRMeasurementUuidJsonKey, outputUuid);
+		}
 		if (strlen(d.protocolName) < 1) // insert protocol name if it exists in CSA but not DICOM header: https://github.com/nipy/heudiconv/issues/80
 			json_Str(fp, "\t\"ProtocolName\": \"%s\",\n", protocolName);
 		if (csaAscii.refLinesPE > 0)
@@ -10439,7 +10446,7 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
 									 const char *peakLabel, const uint8_t *peakTrigger,
 									 int nSamples, double sampFreq,
-									 double startTimeSec, int gzLevel);
+									 double startTimeSec, int gzLevel, const char *cmrrMeasurementUuid);
 
 // One-shot emit of a single physio stream as a BIDS sidecar pair, given
 // per-stream sample arrays and the volume timeline. Encapsulates the steps
@@ -10486,7 +10493,7 @@ static PhysioEmitStatus physioBidsEmitStream(const char *baseName, const char *l
 											 const long *volTics, int volN,
 											 const long *peakTics, int peakN,
 											 const char *peakLabel,
-											 int gzLevel) {
+											 int gzLevel, const char *cmrrMeasurementUuid) {
 	double *uSignal = NULL;
 	uint8_t *uTrig = NULL;
 	uint8_t *uPeak = NULL;
@@ -10532,7 +10539,7 @@ static PhysioEmitStatus physioBidsEmitStream(const char *baseName, const char *l
 	bool wroteOk = xaPhysioWriteStreamFiles(baseName, label, uSignal,
 											(volN > 0) ? uTrig : NULL,
 											(uPeak != NULL) ? peakLabel : NULL, uPeak,
-											uN, sampFreq, startTimeSec, gzLevel);
+											uN, sampFreq, startTimeSec, gzLevel, cmrrMeasurementUuid);
 	free(uSignal);
 	free(uTrig);
 	free(uPeak);
@@ -10556,7 +10563,7 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 									 const double *signal, const uint8_t *trigger,
 									 const char *peakLabel, const uint8_t *peakTrigger,
 									 int nSamples, double sampFreq,
-									 double startTimeSec, int gzLevel) {
+									 double startTimeSec, int gzLevel, const char *cmrrMeasurementUuid) {
 	char outBase[PATH_MAX];
 	snprintf(outBase, sizeof(outBase), "%s_recording-%s_physio", baseName, label);
 	char jsonPath[PATH_MAX];
@@ -10606,6 +10613,11 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON_AddItemToObject(root, "Columns", cols);
 	cJSON_AddItemToObject(root, "SamplingFrequency", sampHz);
 	cJSON_AddItemToObject(root, "StartTime", startT);
+	if (!cmrrAddMeasurementUuidToJson(root, cmrrMeasurementUuid)) {
+		cJSON_Delete(root);
+		printWarning("Physio: JSON UUID allocation failed for %s — discarding stream\n", label);
+		return false;
+	}
 	// The bundled cJSON's public cJSON_AddItemTo{Array,Object} return void, but
 	// the private add_item_to_object can still fail (key strdup OOM) — silently
 	// dropping a BIDS-required key while cJSON_Print happily serializes the
@@ -10620,7 +10632,8 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 		(cJSON_GetObjectItem(root, "PhysioType") == NULL) ||
 		(cJSON_GetObjectItem(root, "Columns") == NULL) ||
 		(cJSON_GetObjectItem(root, "SamplingFrequency") == NULL) ||
-		(cJSON_GetObjectItem(root, "StartTime") == NULL)) {
+		(cJSON_GetObjectItem(root, "StartTime") == NULL) ||
+		((cmrrMeasurementUuid != NULL) && (cJSON_GetObjectItem(root, kCMRRMeasurementUuidJsonKey) == NULL))) {
 		cJSON_Delete(root);
 		printWarning("Physio: JSON key attachment failed for %s — discarding stream\n", label);
 		return false;
@@ -10989,7 +11002,7 @@ static int xaPhysioConvert(struct TDICOMdata d, const char *infname,
 		// Pass NULL for the peak channel so we emit a 2-column TSV.
 		PhysioEmitStatus st = physioBidsEmitStream(baseName, label, ticArr, signal, n, dtMs,
 												   sampFreq, volTics, volN,
-												   NULL, 0, NULL, opts.gzLevel);
+												   NULL, 0, NULL, opts.gzLevel, NULL);
 		if (st == kPhysioEmitOk)
 			wrote++;
 		else if (st == kPhysioEmitFailed)
@@ -11123,7 +11136,8 @@ static bool cmrrTriggerAppend(TCmrrStream *st, long tic) {
 // not data, and must be skipped exactly once.
 static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 								long **volTicsP, int *volNP, int *volCapP,
-								char *prevVol, bool *streamHeaderRead) {
+								char *prevVol, bool *streamHeaderRead,
+								char payloadUuid[kCMRRMeasurementUuidBufferLength], bool *payloadUuidConflict) {
 	// Trim trailing CR / whitespace introduced by the source file's CRLF.
 	size_t L = strlen(line);
 	while ((L > 0) && ((line[L - 1] == '\r') || (line[L - 1] == '\n') || (line[L - 1] == ' ') || (line[L - 1] == '\t'))) {
@@ -11154,7 +11168,11 @@ static void cmrrPhysioParseLine(char *line, TCmrrStream *st,
 		return;
 	// "<key> = <value>" — match on the second token being "=".
 	if (strcmp(toks[1], "=") == 0) {
-		if (strcmp(toks[0], "LogDataType") == 0) {
+		if (strcmp(toks[0], "UUID") == 0) {
+			char candidate[kCMRRMeasurementUuidBufferLength];
+			if (cmrrUuidFromPayloadHeader(toks[0], toks[1], toks[2], candidate))
+				cmrrMergePayloadUuid(candidate, payloadUuid, payloadUuidConflict);
+		} else if (strcmp(toks[0], "LogDataType") == 0) {
 			snprintf(st->chan, sizeof(st->chan), "%s", toks[2]);
 			st->label = xaPhysioBidsLabel(toks[2]);
 		} else if (strcmp(toks[0], "SampleTime") == 0) {
@@ -11279,6 +11297,8 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	int nStreams = 0;
 	long *volTics = NULL;
 	int volN = 0, volCap = 0;
+	char payloadUuid[kCMRRMeasurementUuidBufferLength] = {""};
+	bool payloadUuidConflict = false;
 	for (int w = 0; (w < nWaves) && (nStreams < kCMRRMaxStreams); w++) {
 		uint8_t *wave = blob + (size_t)w * (size_t)waveLen;
 		uint32_t dataLen = ((uint32_t)wave[0]) +
@@ -11309,7 +11329,7 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 		for (uint32_t i = 0; i <= dataLen; i++) {
 			if ((i == dataLen) || (body[i] == '\n')) {
 				body[i] = '\0';
-				cmrrPhysioParseLine(lineStart, st, &volTics, &volN, &volCap, prevVol, &streamHeaderRead);
+				cmrrPhysioParseLine(lineStart, st, &volTics, &volN, &volCap, prevVol, &streamHeaderRead, payloadUuid, &payloadUuidConflict);
 				lineStart = body + i + 1;
 			}
 		}
@@ -11341,6 +11361,21 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	}
 	int wrote = 0;
 	int writeFails = 0; // M1: tally attempts that hit a write/alloc failure
+	char phoenixUuid[kCMRRMeasurementUuidBufferLength] = {""};
+#ifdef myReadAsciiCsa
+	if ((d.manufacturer == kMANUFACTURER_SIEMENS) && (d.CSA.SeriesHeader_offset > 0) && (d.CSA.SeriesHeader_length > 0)) {
+		float shimSetting[8];
+		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], pulseSequenceDetails[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
+		TCsaAscii csaAscii;
+		siemensCsaAscii(infname, &csaAscii, d.CSA.SeriesHeader_offset, d.CSA.SeriesHeader_length, shimSetting, coilID, consistencyInfo, coilElements, pulseSequenceDetails, fmriExternalInfo, protocolName, wipMemBlock);
+		cmrrUuidFromWipMemBlock(wipMemBlock, pulseSequenceDetails, phoenixUuid);
+	}
+#endif
+	char resolvedUuid[kCMRRMeasurementUuidBufferLength];
+	TCmrrUuidResolution uuidResolution = cmrrResolveMeasurementUuid(phoenixUuid, payloadUuid, payloadUuidConflict, resolvedUuid);
+	if (uuidResolution == kCmrrUuidConflict)
+		printWarning("CMRR PMU contains conflicting measurement UUIDs; omitting CMRRMeasurementUUID.\n");
+	const char *outputUuid = (uuidResolution == kCmrrUuidResolved) ? cmrrUuidForOutput(resolvedUuid, opts.isAnonymizeBIDS, opts.isOmitPiiBIDS) : NULL;
 	for (int s = 0; s < nStreams; s++) {
 		TCmrrStream *st = &streams[s];
 		physioBidsSortByTic(st->ticArr, st->signal, st->n);
@@ -11378,11 +11413,11 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 			peakLabelPtr = peakLabel;
 		}
 		PhysioEmitStatus stStat = physioBidsEmitStream(baseName, st->label, st->ticArr,
-													   st->signal, st->n,
-													   dtMs, sampFreq,
-													   volTics, volN,
-													   st->triggerTics, st->triggerN, peakLabelPtr,
-													   opts.gzLevel);
+												   st->signal, st->n,
+												   dtMs, sampFreq,
+												   volTics, volN,
+												   st->triggerTics, st->triggerN, peakLabelPtr,
+												   opts.gzLevel, outputUuid);
 		if (stStat == kPhysioEmitOk)
 			wrote++;
 		else if (stStat == kPhysioEmitFailed)
