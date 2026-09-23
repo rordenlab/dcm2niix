@@ -2922,6 +2922,8 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isReal[vol] = isReal;
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
+			dti4D->dixonType[vol] = kDIXON_NONE; // dti4D is malloc'd, saveDcm2Nii indexes tables with this
+			dti4D->isRealIsPhaseMapHz[vol] = false;
 			if ((maxNumberOfGradientOrients > 1) && (parVers > 40)) {
 				dti4D->S[vol].V[0] = cols[kbval];
 				dti4D->S[vol].V[1] = cols[kv1];
@@ -2984,6 +2986,8 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isReal[maxVol] = dti4D->isReal[i];
 			dti4D->isImaginary[maxVol] = dti4D->isImaginary[i];
 			dti4D->isPhase[maxVol] = dti4D->isPhase[i];
+			dti4D->dixonType[maxVol] = dti4D->dixonType[i];
+			dti4D->isRealIsPhaseMapHz[maxVol] = dti4D->isRealIsPhaseMapHz[i];
 			dti4D->S[maxVol].V[0] = dti4D->S[i].V[0];
 			dti4D->S[maxVol].V[1] = dti4D->S[i].V[1];
 			dti4D->S[maxVol].V[2] = dti4D->S[i].V[2];
@@ -3267,8 +3271,8 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 		d.CSA.numDti = 0;
 	};
 	// check if dimensions vary
-	if (maxVol > 0) { // maxVol indexed from 0
-		for (int i = 1; i <= maxVol; i++) {
+	if (maxVol > 0) { // maxVol is the volume count after sparse-volume compaction
+		for (int i = 1; i < maxVol; i++) {
 			// if (dti4D->gradDynVol[i] > d.maxGradDynVol) d.maxGradDynVol = dti4D->gradDynVol[i];
 			// issue363 slope/intercept can vary for each 2D slice, not only between 3D volumes in a 4D time series
 			// if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleOrTEVaries = true;

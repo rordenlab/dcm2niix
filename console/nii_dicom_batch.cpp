@@ -2229,7 +2229,7 @@ tse3d: T2*/
 		if ((isHz) && ((strstr(d.imageType, "_FIELDMAPHZ_") == NULL)))
 			fprintf(fp, "\", \"FIELDMAPHZ");
 		if (d.dixonType != kDIXON_NONE) {
-			const char *dixonTag[] = {"", "WATER", "FAT", "IN_PHASE", "OUT_OF_PHASE"};
+			const char *dixonTag[] = {"", "WATER", "FAT", "IN_PHASE", "OUT_OF_PHASE"}; // kDIXON_* order
 			char token[20];
 			snprintf(token, sizeof(token), "_%s_", dixonTag[d.dixonType]);
 			if (strstr(d.imageType, token) == NULL)
@@ -5470,7 +5470,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 #endif
 	}
 	if ((isAddNamePostFixes) && (dcm.dixonType != kDIXON_NONE)) {
-		const char *dixonPostFix[] = {"", "_water", "_fat", "_inphase", "_outphase"};
+		const char *dixonPostFix[] = {"", "_water", "_fat", "_inphase", "_outphase"}; // kDIXON_* order
 		strcat(outname, dixonPostFix[dcm.dixonType]);
 #ifdef USING_DCM2NIIXFSWRAPPER
 		strcat(mrifsStruct.namePostFixes, dixonPostFix[dcm.dixonType]);

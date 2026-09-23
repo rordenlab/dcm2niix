@@ -73,11 +73,11 @@ all:
 	fi
 
 sanitize:
-	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer $(LFLAGS) $(UFILES)
+	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I. $(JSFLAGS) $(LFLAGS) $(UFILES)
   #  -fstack-usage
 
 debug:
-	g++ -O0 $(LFLAGS) $(UFILES)
+	g++ -O0 -I. $(JSFLAGS) $(LFLAGS) $(UFILES)
 
 turbo:
 	g++ -O0 $(LFLAGS) $(UFILES) -DmyTurboJPEG -I/opt/homebrew/include -L/opt/homebrew/lib -lturbojpeg
