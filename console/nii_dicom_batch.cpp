@@ -2228,6 +2228,13 @@ tse3d: T2*/
 			fprintf(fp, "\", \"IMAGINARY");
 		if ((isHz) && ((strstr(d.imageType, "_FIELDMAPHZ_") == NULL)))
 			fprintf(fp, "\", \"FIELDMAPHZ");
+		if (d.dixonType != kDIXON_NONE) {
+			const char *dixonTag[] = {"", "WATER", "FAT", "IN_PHASE", "OUT_OF_PHASE"};
+			char token[20];
+			snprintf(token, sizeof(token), "_%s_", dixonTag[d.dixonType]);
+			if (strstr(d.imageType, token) == NULL)
+				fprintf(fp, "\", \"%s", dixonTag[d.dixonType]);
+		}
 		fprintf(fp, "\"],\n");
 	}
 	if (strlen(d.imageTypeText) > 0) {
@@ -5460,6 +5467,13 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 			strcat(outname, "Mag"); // Philips enhanced with BOTH phase and Magnitude in single file
 #ifdef USING_DCM2NIIXFSWRAPPER
 		sprintf(mrifsStruct.namePostFixes, "%s_ph", mrifsStruct.namePostFixes);
+#endif
+	}
+	if ((isAddNamePostFixes) && (dcm.dixonType != kDIXON_NONE)) {
+		const char *dixonPostFix[] = {"", "_water", "_fat", "_inphase", "_outphase"};
+		strcat(outname, dixonPostFix[dcm.dixonType]);
+#ifdef USING_DCM2NIIXFSWRAPPER
+		strcat(mrifsStruct.namePostFixes, dixonPostFix[dcm.dixonType]);
 #endif
 	}
 	if ((isAddNamePostFixes) && (dcm.aslFlags == kASL_FLAG_NONE) && (dcm.triggerDelayTime >= 1) && (dcm.manufacturer != kMANUFACTURER_GE)) { // issue 336 GE uses this for slice timing
@@ -13942,7 +13956,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		int iv = (i * dim3); // intenIntercept and intenScale can vary within a volume
 		for (int j = 0; j < i; j++) {
 			int jv = (j * dim3);
-			if (((dcmList[indx].aslFlags != kASL_FLAG_NONE) || isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j])) && (dti4D->intenIntercept[iv] == dti4D->intenIntercept[jv]) && (dti4D->intenScale[iv] == dti4D->intenScale[jv]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->TE[i] == dti4D->TE[j]))
+			if (((dcmList[indx].aslFlags != kASL_FLAG_NONE) || isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j])) && (dti4D->intenIntercept[iv] == dti4D->intenIntercept[jv]) && (dti4D->intenScale[iv] == dti4D->intenScale[jv]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->dixonType[i] == dti4D->dixonType[j]) && (dti4D->isRealIsPhaseMapHz[i] == dti4D->isRealIsPhaseMapHz[j]) && (dti4D->TE[i] == dti4D->TE[j]))
 				dti4D->gradDynVol[i] = dti4D->gradDynVol[j];
 		}
 		if (dti4D->gradDynVol[i] == 0) {
@@ -13985,6 +13999,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	float intenScalePhilips = dcmList[indx].intenScalePhilips;
 	float RWVIntercept = dcmList[indx].RWVIntercept;
 	float RWVScale = dcmList[indx].RWVScale;
+	bool isRealIsPhaseMapHz = dcmList[indx].isRealIsPhaseMapHz; // file-level: BidsGuess files a B0 map's magnitude under fmap
 	for (int s = 1; s <= series; s++) {
 		// Reassign these values as saveDcm2NiiCore modifies them
 		dcmList[indx].intenScale = intenScale;
@@ -14000,6 +14015,8 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 				dcmList[indx].isHasPhase = dti4D->isPhase[i];
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
+				dcmList[indx].dixonType = dti4D->dixonType[i];
+				dcmList[indx].isRealIsPhaseMapHz = dti4D->isReal[i] ? dti4D->isRealIsPhaseMapHz[i] : isRealIsPhaseMapHz; // issue 1038: only the B0 frame is Hz, not other Real echoes
 				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i];
 				dcmList[indx].isHasMagnitude = false;
 				dcmList[indx].echoNum = echoNum[i];
@@ -14261,6 +14278,12 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || (d1.isHasReal != d2.isHasReal)) {
 		if (!warnings->phaseVaries)
 			printMessage("Slices not stacked: some are phase/real/imaginary/phase maps, others are not. Instances %d %d\n", d1.imageNum, d2.imageNum);
+		warnings->phaseVaries = true;
+		return false;
+	}
+	if (d1.dixonType != d2.dixonType) { // Dixon water/fat/in/out-phase all report MAGNITUDE
+		if (!warnings->phaseVaries)
+			printMessage("Slices not stacked: Dixon water/fat/in-phase/out-of-phase types differ. Instances %d %d\n", d1.imageNum, d2.imageNum);
 		warnings->phaseVaries = true;
 		return false;
 	}

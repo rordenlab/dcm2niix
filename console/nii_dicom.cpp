@@ -849,6 +849,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isHasReal = false;
 	d.isHasImaginary = false;
 	d.isHasMagnitude = false;
+	d.dixonType = kDIXON_NONE;
 	// d.maxGradDynVol = -1; //PAR/REC only
 	d.sliceOrient = kSliceOrientUnknown;
 	d.dateTime = (double)19770703150928.0;
@@ -4846,6 +4847,8 @@ struct TDCMdim { // DimensionIndexValues
 	bool isPhase;
 	bool isReal;
 	bool isImaginary;
+	bool isRealIsPhaseMapHz;
+	unsigned char dixonType;
 };
 
 void getFileNameX(char *pathParent, const char *path, int maxLen) { // if path is c:\d1\d2 then filename is 'd2'
@@ -5503,6 +5506,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isReal = false;
 	bool isImaginary = false;
 	bool isMagnitude = false;
+	int dixonType = kDIXON_NONE;
+	bool isRealIsPhaseMapHz = false; // per-frame: d.isRealIsPhaseMapHz is sticky across frames
 	d.seriesNum = -1;
 	// start issue 372:
 	vec3 sliceV; // cross-product of kOrientation 0020,0037
@@ -5628,13 +5633,19 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 						imageType = 2;
 					if (isPhase)
 						imageType = 3;
+					if (dixonType != kDIXON_NONE)
+						imageType = 3 + dixonType;
 					int bvalNum = philMRImageDiffBValueNumber > 0 ? philMRImageDiffBValueNumber : 0;
 					int gradNum = gradientOrientationNumberPhilips > 0 ? gradientOrientationNumberPhilips : 0;
 					int volume = volumeNumber > 0 ? volumeNumber : 0;
-					int d2 = d.dimensionIndexValues[2];
-					int d3 = d.dimensionIndexValues[3];
+					// slots >= nDimIndxVal still hold the previous frame's rewrite below (issue 1038)
+					int d2 = (nDimIndxVal > 2) ? d.dimensionIndexValues[2] : 0;
+					int d3 = (nDimIndxVal > 3) ? d.dimensionIndexValues[3] : 0;
 					if (d.aslFlags == kASL_FLAG_NONE) {
 						aslFlag = d2;
+						// issue 1038: R12 leaves the Effective Echo Time index 0 for every echo; key on TE (us) so unstable qsort cannot scramble echoes
+						if ((d2 == 0) && (!isSameFloatGE(d.TE, 0.0)))
+							aslFlag = (int)roundf(d.TE * 1000.0f);
 					}
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
@@ -5720,6 +5731,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dcmDim[numDimensionIndexValues].isPhase = isPhase;
 				dcmDim[numDimensionIndexValues].isReal = isReal;
 				dcmDim[numDimensionIndexValues].isImaginary = isImaginary;
+				dcmDim[numDimensionIndexValues].isRealIsPhaseMapHz = isRealIsPhaseMapHz;
+				dcmDim[numDimensionIndexValues].dixonType = dixonType;
 				dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
 				dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 				dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
@@ -6221,8 +6234,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				// d.isDerived = true; //this would have 'i- y' skip MoCo images
 				isMoCo = true;
 			}
-			if ((slen > 5) && strstr(d.imageType, "B0") && strstr(d.imageType, "MAP"))
+			if ((slen > 5) && strstr(d.imageType, "B0") && strstr(d.imageType, "MAP")) {
 				d.isRealIsPhaseMapHz = true;
+				isRealIsPhaseMapHz = true;
+			}
 			if ((slen > 5) && strstr(d.imageType, "_ADC_"))
 				d.isDerived = true;
 			if ((slen > 5) && strstr(d.imageType, "_TRACEW_"))
@@ -6264,6 +6279,17 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isHasPhase = true;
 				isPhase = true;
 			}
+			// issue 1038: Philips Dixon tokens from classic or legacy (2005,140F) ImageType, stable 5.1-12.3; ungated as Manufacturer is not yet read
+			if ((slen > 3) && (strstr(d.imageType, "_W_") != NULL))
+				dixonType = kDIXON_WATER;
+			if ((slen > 3) && (strstr(d.imageType, "_F_") != NULL))
+				dixonType = kDIXON_FAT;
+			if ((slen > 4) && (strstr(d.imageType, "_IP_") != NULL))
+				dixonType = kDIXON_IN_PHASE;
+			if ((slen > 4) && (strstr(d.imageType, "_OP_") != NULL))
+				dixonType = kDIXON_OUT_PHASE;
+			if (dixonType != kDIXON_NONE)
+				d.dixonType = dixonType;
 			if ((slen > 6) && (strstr(d.imageType, "_REAL_") != NULL)) {
 				d.isHasReal = true;
 				isReal = true;
@@ -6373,6 +6399,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			isReal = false;
 			isImaginary = false;
 			isMagnitude = false;
+			dixonType = kDIXON_NONE;
+			isRealIsPhaseMapHz = false;
 			// see Table C.8-85 http://dicom.nema.org/medical/Dicom/2017c/output/chtml/part03/sect_C.8.13.3.html
 			if ((buffer[lPos] == 'R') && (toupper(buffer[lPos + 1]) == 'E'))
 				isReal = true;
@@ -9367,6 +9395,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dti4D->isPhase[i] = dcmDim[slice].isPhase;
 				dti4D->isReal[i] = dcmDim[slice].isReal;
 				dti4D->isImaginary[i] = dcmDim[slice].isImaginary;
+				dti4D->isRealIsPhaseMapHz[i] = dcmDim[slice].isRealIsPhaseMapHz;
+				dti4D->dixonType[i] = dcmDim[slice].dixonType;
 				dti4D->triggerDelayTime[i] = dcmDim[slice].triggerDelayTime;
 				dti4D->S[i].V[0] = dcmDim[slice].V[0];
 				dti4D->S[i].V[1] = dcmDim[slice].V[1];
@@ -9382,6 +9412,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				if (dti4D->isReal[i] != isReal)
 					d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary)
+					d.isScaleOrTEVaries = true;
+				if (dti4D->dixonType[i] != dixonType) // TSE Dixon: all types share one TE
 					d.isScaleOrTEVaries = true;
 				/*Philips can vary intensity scalings for separate slices within a volume!
 				dti4D->intenScale[i] = dcmDim[slice].intenScale;
