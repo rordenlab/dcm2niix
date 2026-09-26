@@ -53,6 +53,14 @@ elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     if(NOT (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 4.8.0))
         add_definitions(-fno-diagnostics-show-caret)    # available since GCC 4.8.0
     endif()
+    if(WIN32)
+        # MinGW needs the reserve set too. Windows fixes the stack at link
+        # time whichever compiler produced the binary, and MinGW defaults to
+        # 2 MiB, so a GCC-built dcm2niix.exe overflows on the spectroscopy
+        # series above well before the MSVC one does. Measured: 2097152
+        # overflows, 16777216 converts.
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--stack,16777216")
+    endif()
 elseif(MSVC)
     # using Visual Studio C++
     add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
@@ -67,7 +75,22 @@ elseif(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4800")   # 'uint32_t' : forcing value to bool 'true' or 'false'
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4819")   # The file contains a character that cannot be represented in the current code page
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4996")   # 'access': The POSIX name for this item is deprecated
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:16388608")  # set "Stack Reserve Size" to 16MB (default value is 1MB)
+    # 16 MiB, matching the -stack_size given to the Apple linker above. The
+    # previous value, 16388608, was 388608 bytes short of the 16MB its own
+    # comment claimed.
+    #
+    # That shortfall is fatal for MSVC builds on MR spectroscopy. A Siemens
+    # svs_se series (65 files, 1x1x1x1024x64) exhausts the stack and Windows
+    # kills the process with 0xC00000FD and an EMPTY stderr, so a caller sees
+    # "no output produced" rather than an error and reads it as "not DICOM".
+    #
+    # Measured on that series: the released MSVC binary overflows at 16388608
+    # and converts once its PE reserve is patched to 16777216. A GCC build of
+    # the same source converts at EITHER value, so the cause is the larger
+    # frames MSVC emits rather than the constant being wrong on its own.
+    # Windows fixes the reserve at link time and cannot grow it, which is why
+    # macOS and Linux never hit this.
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:0x1000000")
 endif()
 
 # Compiler dependent flags
