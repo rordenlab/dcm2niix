@@ -15,7 +15,7 @@ export PATH="$PWD/build/bin:$PATH"
 for d in dcm_qa dcm_qa_nih dcm_qa_uih; do (cd "$d" && ./batch.sh) || { echo "FAIL: $d"; exit 1; }; done
 ```
 
-MRS regression is in sibling `dcm_qa_mrs`: `python3 batch.py --corpus={local,spec2nii,both}` and `python3 compare_spec2nii.py --corpus={local,spec2nii,both}`; `$SPEC2NII_DATA` points to the spec2nii test data clone. reproinx offline self-check: `python3 tools/test_reproinx_sbref.py`.
+MRS regression is in sibling `dcm_qa_mrs`: `python3 batch.py --corpus={local,spec2nii,both}` and `python3 compare_spec2nii.py --corpus={local,spec2nii,both}`; `$SPEC2NII_DATA` points to the spec2nii test data clone. Philips Dixon (issue 1038) regression is in sibling `dcm_validate/dcm_qa_dixon`: `./batch.sh`. reproinx offline self-check: `python3 tools/test_reproinx_sbref.py`.
 
 ## Lint / Style
 
@@ -23,4 +23,4 @@ Pre-push minimum includes `dcm_qa` plus `git ls-files | xargs codespell`. C/C++ 
 
 ## Packaging Gotchas
 
-Repo-controlled release channels are PyPI `pyproject.toml`, GitHub release `.appveyor.yml`, CI `.github/workflows/build.yml`, and `Dockerfile`. conda-forge and NeuroDebian are external feedstocks. zlib-ng is pinned at `2.3.3` with `ZLIB_COMPAT=ON`; OpenJPEG is pinned at `2.5.3`.
+Repo-controlled release channels are PyPI `pyproject.toml`, GitHub release `.appveyor.yml`, CI `.github/workflows/build.yml`, and `Dockerfile`. conda-forge and NeuroDebian are external feedstocks. zlib-ng is pinned at `2.3.3` with `ZLIB_COMPAT=ON`; OpenJPEG is pinned at `2.5.3`. Windows stack overflow (0xC00000FD) is silent: no stderr, no output. The reserve is fixed at link time, so every Windows build path (CMake MSVC/MinGW, `windows.bat`, COMPILE.md `cl`) must carry the 32 MB `/STACK`/`--stack` (issue 1040).

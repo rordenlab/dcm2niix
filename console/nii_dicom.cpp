@@ -2923,7 +2923,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
 			dti4D->dixonType[vol] = kDIXON_NONE; // dti4D is malloc'd, saveDcm2Nii indexes tables with this
-			dti4D->isRealIsPhaseMapHz[vol] = false;
+			dti4D->isRealIsPhaseMapHz[vol] = isRealIsPhaseMapHz;
 			if ((maxNumberOfGradientOrients > 1) && (parVers > 40)) {
 				dti4D->S[vol].V[0] = cols[kbval];
 				dti4D->S[vol].V[1] = cols[kv1];
@@ -6803,7 +6803,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.dataPointColumns = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kMRSpectroscopyAcquisitionType: { // (0018,9200) CS — MRS acquisition type enum
-			char acqType[kDICOMStr];
+			char acqType[kDICOMStr] = ""; // dcmStr leaves it untouched if lLength < 1 (Philips enhanced)
 			dcmStr(lLength, &buffer[lPos], acqType);
 			if (strstr(acqType, "SINGLE_VOXEL") != NULL)
 				d.mrsAcqType = kMRSAcqSingleVoxel;

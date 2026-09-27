@@ -65,7 +65,7 @@ git clone --branch development https://github.com/rordenlab/dcm2niix.git
 
 The text below generally describes how to build dcm2niix using the [GCC](https://gcc.gnu.org) compiler using the `g++` command. However, the code is portable and you can use different compilers. For [clang/llvm](https://clang.llvm.org) compile using `clang++`.  If you have the [Intel C compiler](https://software.intel.com/en-us/c-compilers), you can substitute the `icc` command. The code is compatible with Microsoft's VS 2015 or later. For [Microsoft's C compiler](http://landinghub.visualstudio.com/visual-cpp-build-tools) you would use the `cl` command. In theory, the code should support other compilers, but this has not been tested. Be aware that if you do not have gcc installed the `g++` command may use a default to a compiler (e.g. clang). To check what compiler was used, run the dcm2niix software: it always reports the version and the compiler used for the build.
 
-Note that in the commands below we increase the [stack size](https://stackoverflow.com/questions/18909395/how-do-i-increase-the-stack-size-when-compiling-with-clang-on-os-x)zgit to 16mb, which is larger than the Unix (8mb) and Windows (1mb) defaults.
+Note that CMake builds (plus the makefile on macOS and `windows.bat`) increase the [stack size](https://stackoverflow.com/questions/18909395/how-do-i-increase-the-stack-size-when-compiling-with-clang-on-os-x) to 16mb on macOS and 32mb on Windows, which is larger than the Unix (8mb) and Windows (1mb) defaults (the manual macOS commands below use `-stack_size 3f00000`, 63mb). Linux ignores the linker stack flag; use `ulimit -s` if needed.
 
 ## Trouble Shooting
 
@@ -157,7 +157,7 @@ This software can be compiled with [Microsoft's Visual Studio C compiler](http:/
 Crucially, you will want to [set a large stack allocation](https://learn.microsoft.com/en-us/cpp/build/reference/stack-stack-allocations?view=msvc-170). This allows dcm2niix to convert a huge number of DICOM images in a single pass (which requires a large amount of memory).
 
 ```
-cl /wd4018 /wd4068 /wd4101 /wd4244 /wd4267 /wd4305 /wd4308 /wd4334 /wd4800 /wd4819 /wd4996  base64.cpp cJSON.cpp  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp /Fe:dcm2niix.exe -DmyDisableOpenJPEG /link /STACK:8388608
+cl /wd4018 /wd4068 /wd4101 /wd4244 /wd4267 /wd4305 /wd4308 /wd4334 /wd4800 /wd4819 /wd4996  base64.cpp cJSON.cpp  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp /Fe:dcm2niix.exe -DmyDisableOpenJPEG /link /STACK:33554432
 ```
 
 ##### MacOS BUILD UNIVERSAl BINARIES SUPPORT

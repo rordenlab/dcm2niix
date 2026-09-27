@@ -67,7 +67,17 @@ elseif(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4800")   # 'uint32_t' : forcing value to bool 'true' or 'false'
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4819")   # The file contains a character that cannot be represented in the current code page
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4996")   # 'access': The POSIX name for this item is deprecated
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:16388608")  # set "Stack Reserve Size" to 16MB (default value is 1MB)
+endif()
+
+# issue1040: Windows stack reserve is fixed at link time; 16 MB overflowed on Siemens MRS (0xC00000FD). Reserve is address space only.
+if(WIN32)
+    if(MSVC)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:33554432")
+    elseif(CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC") # GNU-style clang++ targeting MSVC links with lld-link
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,/STACK:33554432")
+    else()
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--stack,33554432")
+    endif()
 endif()
 
 # Compiler dependent flags
