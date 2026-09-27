@@ -9829,20 +9829,28 @@ int sliceTimingSiemens2D(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, s
 	if (hdr->dim[3] > (kMaxEPI3D - 1))
 		return 0;
 	int nZero = 0; // infer multiband: E11C may not populate kPATModeText
-	double minAcqTime = dcmList[indx0].acquisitionTime;
+	uint64_t indxFirst = indx0; // earliest (AcquisitionDate, AcquisitionTime); missing dates are 0 so time alone decides
 	for (int v = 0; v < hdr->dim[3]; v++) {
 		dcmList[indx0].CSA.sliceTiming[v] = dcmList[dcmSort[v].indx].acquisitionTime; // nb format is HHMMSS we need to handle midnight-crossing and convert to ms, see checkSliceTiming()
 		if (dcmList[indx0].CSA.sliceTiming[v] == dcmList[indx0].CSA.sliceTiming[0])
 			nZero++;
-		minAcqTime = min(minAcqTime, dcmList[dcmSort[v].indx].acquisitionTime);
+		struct TDICOMdata *dv = &dcmList[dcmSort[v].indx];
+		struct TDICOMdata *df = &dcmList[indxFirst];
+		if ((dv->acquisitionDate < df->acquisitionDate) || ((dv->acquisitionDate == df->acquisitionDate) && (dv->acquisitionTime < df->acquisitionTime)))
+			indxFirst = dcmSort[v].indx;
 	}
 	if ((dcmList[indx0].CSA.multiBandFactor < 2) && (nZero > 1))
 		dcmList[indx0].CSA.multiBandFactor = nZero;
 	// issue 1039: interleaved slices mean instance 1 need not be acquired first; report the
-	// earliest slice so AcquisitionTime is the origin of SliceTiming. Skip if volume spans midnight.
-	double secAdvance = dicomTimeToSec(dcmList[indx0].acquisitionTime) - dicomTimeToSec(minAcqTime);
-	if ((minAcqTime > 0.0) && (secAdvance > 0.0) && (secAdvance < 43200.0))
-		dcmList[indx0].acquisitionTime = minAcqTime;
+	// earliest slice (and its date) so AcquisitionTime is the origin of SliceTiming. A date change
+	// within the 12h sanity bound can only be midnight, so no calendar math; corrupt values are ignored.
+	double secAdvance = dicomTimeToSec(dcmList[indx0].acquisitionTime) - dicomTimeToSec(dcmList[indxFirst].acquisitionTime);
+	if (dcmList[indxFirst].acquisitionDate != dcmList[indx0].acquisitionDate)
+		secAdvance += 86400.0;
+	if ((dcmList[indxFirst].acquisitionTime > 0.0) && (secAdvance > 0.0) && (secAdvance < 43200.0)) {
+		dcmList[indx0].acquisitionDate = dcmList[indxFirst].acquisitionDate;
+		dcmList[indx0].acquisitionTime = dcmList[indxFirst].acquisitionTime;
+	}
 	return 1;
 }
 
