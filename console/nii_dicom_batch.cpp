@@ -2786,6 +2786,13 @@ tse3d: T2*/
 			json_FloatNotNan(fp, "\t\"LabelingDuration\": %g,\n", csaAscii.ulLabelingDuration * (1.0 / 1000000.0));	 // usec->sec
 			json_FloatNotNan(fp, "\t\"PostLabelingDelay\": %g,\n", csaAscii.sPostLabelingDelay * (1.0 / 1000000.0)); // usec -> sec
 		}
+		// DZNE 3D-EPI: alFree[22] read polarity; Siemens omits zero-valued keys, so absent = Regular RO
+		if (strstr(pulseSequenceDetails, "dzne_ep3d")) {
+			const char *readPolarity[] = {"Regular RO", "Inverted RO", "Dual Polarity", "DP Calibration"};
+			int rp = (int)csaAscii.alFree[22];
+			if ((rp >= 0) && (rp <= 3))
+				fprintf(fp, "\t\"ReadPolarity\": \"%s\",\n", readPolarity[rp]);
+		}
 		// ASL specific tags - 2D pCASL Danny J.J. Wang http://www.loft-lab.org
 		if ((strstr(pulseSequenceDetails, "ep2d_pcasl")) || (strstr(pulseSequenceDetails, "ep2d_pcasl_UI_PHC"))) {
 			isPCASL = true;
