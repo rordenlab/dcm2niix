@@ -154,6 +154,7 @@ ExternalProject_Add(console
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
         # Install directories
