@@ -1,6 +1,7 @@
 set(YAML-CPP_TAG yaml-cpp-0.5.3) # version yaml-cpp-0.5.3
 
 ExternalProject_Add(yaml-cpp
+    LIST_SEPARATOR "|"
     GIT_REPOSITORY "https://github.com/ningfei/yaml-cpp.git"
     GIT_TAG "${YAML-CPP_TAG}"
     SOURCE_DIR yaml-cpp
@@ -9,7 +10,7 @@ ExternalProject_Add(yaml-cpp
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
+        "-DCMAKE_OSX_ARCHITECTURES:STRING=${OSX_ARCHITECTURES}"
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
 	    # Compiler settings
         -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}

@@ -1,6 +1,7 @@
 set(CLOUDFLARE_BRANCH gcc.amd64) # Cloudflare zlib branch
 
 ExternalProject_Add(zlib
+    LIST_SEPARATOR "|"
     GIT_REPOSITORY "https://github.com/ningfei/zlib.git"
     GIT_TAG "${CLOUDFLARE_BRANCH}"
     SOURCE_DIR cloudflare-zlib
@@ -8,7 +9,7 @@ ExternalProject_Add(zlib
     CMAKE_ARGS
         -Wno-dev
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
+        "-DCMAKE_OSX_ARCHITECTURES:STRING=${OSX_ARCHITECTURES}"
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
         # Compiler settings
         -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
