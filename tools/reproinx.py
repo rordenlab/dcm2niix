@@ -386,6 +386,20 @@ def _b0_identifier(group_prefix: str) -> str:
     return stripped or group_prefix
 
 
+def _is_same_polarity_epi_group(group: list[Path]) -> bool:
+    """True for >=2 `_epi` fmaps that all share one known PhaseEncodingDirection.
+    Such a "pair" (e.g. a FOV rotated 180 deg instead of a reversed PE) has
+    identical distortion, so TOPUP/SDCFlows cannot estimate a field from it."""
+    epis = [p for p in group if p.stem.endswith("_epi")]
+    if len(epis) < 2:
+        return False
+    try:
+        dirs = {_load_json(p).get("PhaseEncodingDirection") for p in epis}
+    except (OSError, ValueError, AttributeError):  # unreadable sidecar: keep group (TS parity)
+        return False
+    return len(dirs) == 1 and isinstance(next(iter(dirs)), str)
+
+
 def _populate_b0_fields(session_dir: Path) -> int:
     """Populate B0FieldIdentifier / B0FieldSource across one session.
 
@@ -396,6 +410,35 @@ def _populate_b0_fields(session_dir: Path) -> int:
     if not fmap_dir.is_dir():
         return 0
     fmap_groups = _find_fmap_groups(fmap_dir)
+    stale: set = set()
+    for prefix in [k for k, g in fmap_groups.items() if _is_same_polarity_epi_group(g)]:
+        print(f"reproinx: {prefix}: all _epi share one PhaseEncodingDirection; "
+              "not usable as a fieldmap, left unlinked", file=sys.stderr)
+        stale.add(_b0_identifier(prefix))
+        for fm_json in fmap_groups.pop(prefix):  # drop links written by an earlier pass
+            data = _load_json(fm_json)
+            old = data.pop("B0FieldIdentifier", None)
+            if old is not None:
+                stale.update(old if isinstance(old, list) else [old])
+                _save_json(fm_json, data)
+    stale -= {_b0_identifier(k) for k in fmap_groups}
+    if stale:
+        for jp in session_dir.glob("*/*.json"):
+            if jp.parent.name == "fmap":
+                continue
+            data = _load_json(jp)
+            src = data.get("B0FieldSource")
+            if isinstance(src, list) and set(src) & stale:
+                keep = [v for v in src if v not in stale]
+                if keep:
+                    data["B0FieldSource"] = keep
+                else:
+                    del data["B0FieldSource"]
+            elif isinstance(src, str) and src in stale:
+                del data["B0FieldSource"]
+            else:
+                continue
+            _save_json(jp, data)
     if not fmap_groups:
         return 0
 
@@ -980,7 +1023,7 @@ def _heudiconv_subject_token(patient_id: str) -> str:
     '-'/'_', then keep alphanumerics only. Empty input → ""."""
     s = (patient_id or "").lower()
     s = "".join(c for c in s if c not in "-_")
-    s = "".join(c for c in s if c.isalnum())
+    s = "".join(c for c in s if c.isascii() and c.isalnum())  # match C isalnum
     return s
 
 
@@ -1648,6 +1691,11 @@ def _move_stem_files(src_stem: Path, dst_stem: Path) -> int:
     return len(pairs)
 
 
+def _task_of(stem: str) -> str:
+    """TaskName from a task-X[_acq-Y] stem."""
+    return stem.split("_acq-")[0][len("task-"):]
+
+
 def _walk_sessions(out_root: Path) -> list[Path]:
     """Find every session-equivalent dir under out_root, skipping derivatives/."""
     sessions: list[Path] = []
@@ -1657,11 +1705,13 @@ def _walk_sessions(out_root: Path) -> list[Path]:
         # Skip subjects that live under a derivatives/ branch.
         if any(part == "derivatives" for part in sub.parts):
             continue
-        ses_dirs = [d for d in sub.iterdir()
-                    if d.is_dir() and d.name.startswith("ses-")]
-        if ses_dirs:
-            sessions.extend(ses_dirs)
-        else:
+        # Hidden dirs (.ipynb_checkpoints, ...) are not datatype dirs.
+        child_dirs = [d for d in sub.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        ses_dirs = [d for d in child_dirs if d.name.startswith("ses-")]
+        sessions.extend(ses_dirs)
+        # Session-less datatype dirs beside ses-* (e.g. a rescued Unknown/ series
+        # got ses-<date> before Pass 1 backfill) are still a session.
+        if len(ses_dirs) < len(child_dirs):
             sessions.append(sub)
     return sessions
 
@@ -2049,6 +2099,9 @@ def _ensure_sbref_tasknames(out_root: Path) -> int:
     return _backfill_tasknames(out_root, "*_sbref.json")
 
 
+_TASK_STUB_NAME_RE = re.compile(r"^task-[A-Za-z0-9]+(_acq-[A-Za-z0-9]+)?_bold\.json$")
+
+
 def _emit_task_bold_jsons(out_root: Path) -> None:
     """For every distinct `task-X[_acq-Y]_*_bold.nii.gz`, ensure a top-level
     `task-X[_acq-Y]_bold.json` exists. dcm2niix's default boilerplate emits
@@ -2062,32 +2115,39 @@ def _emit_task_bold_jsons(out_root: Path) -> None:
         if m:
             stem = m.group(1)
             stems.add(stem)
-            task_name = stem.split("_acq-")[0][len("task-"):]
+            task_name = _task_of(stem)
             if "_acq-" in stem:
                 tasks_with_acq.add(task_name)
             sidecar = _json_sidecar_for_nii(nii)
             if sidecar is not None:
                 _ensure_taskname(sidecar, task_name)
     for stem in sorted(stems):
-        task_name = stem.split("_acq-")[0][len("task-"):]
+        task_name = _task_of(stem)
         if "_acq-" not in stem and task_name in tasks_with_acq:
             continue
         path = out_root / f"{stem}_bold.json"
         if path.exists():
             continue
         _save_json(path, {"TaskName": task_name})
-    for task_name in sorted(tasks_with_acq):
-        default = out_root / f"task-{task_name}_bold.json"
-        if not default.exists():
+    # Drop generated stubs with no bold data: the bare task-X once _acq- variants
+    # exist, and any stub dcm2niix wrote for a func series that yields no _bold
+    # image (PhysioLog, SBRef_PMU) -- the validator's SIDECAR_WITHOUT_DATAFILE.
+    for path in sorted(out_root.glob("task-*_bold.json")):
+        if not _TASK_STUB_NAME_RE.match(path.name):
+            continue  # only task-X[_acq-Y] stems are tracked; leave other entities alone
+        stem = path.name[: -len("_bold.json")]
+        task_name = _task_of(stem)
+        bare_with_acq = "_acq-" not in stem and task_name in tasks_with_acq
+        if stem in stems and not bare_with_acq:
             continue
-        if _is_generated_task_stub(default, task_name):
+        if _is_generated_task_stub(path, task_name):
             try:
-                default.unlink()
+                path.unlink()
             except OSError:
                 pass
         else:
-            print(f"reproinx: {default} conflicts with _acq- task sidecars; "
-                  "preserving curated file", file=sys.stderr)
+            reason = "conflicts with _acq- task sidecars" if bare_with_acq else "has no matching bold data"
+            print(f"reproinx: {path} {reason}; preserving curated file", file=sys.stderr)
     # dcm2niix writes README.md; heudiconv writes README. Only remove the
     # .md variant when its content matches dcm2niix's stub — a hand-written
     # README.md must be preserved even if our plain README is also present.
@@ -2572,19 +2632,66 @@ def _part_of(data: dict) -> Optional[str]:
     return _part_from_imagetype(data)
 
 
+# func suffixes that take a `part` entity. noRF: Siemens RF-off noise volumes
+# split from a magnitude+phase BOLD collide just like the BOLD (`_noRF`/`_noRFa`).
+_PART_FUNC_SUFFIXES = ("bold", "sbref", "noRF")
+
+
 def _func_suffix(data: dict, token: str) -> Optional[str]:
-    """`bold`/`sbref`, preferring BidsGuess (a phase SBRef can collide into a
-    `_bold`-named file), else the filename token minus its collision letter."""
+    """`bold`/`sbref`/`noRF`, preferring BidsGuess (a phase SBRef can collide
+    into a `_bold`-named file), else the filename token minus its collision
+    letter."""
     g = data.get("BidsGuess")
     if isinstance(g, list) and len(g) == 2 and isinstance(g[1], str):
         last = g[1].rsplit("_", 1)[-1]
-        if last in ("bold", "sbref"):
+        if last in _PART_FUNC_SUFFIXES:
             return last
-    if token.startswith("sbref"):
-        return "sbref"
-    if token.startswith("bold"):
-        return "bold"
-    return None
+    return next((s for s in _PART_FUNC_SUFFIXES if token.startswith(s)), None)
+
+
+def _siemens_phase_units(session_dir: Path) -> int:
+    """BIDS requires Units on part-phase data; Siemens phase is scanner-scaled.
+    Covers part-phase outside func (e.g. a rescued anat T2starw for QSM).
+    Never overwrites an existing Units. Returns sidecars written."""
+    n = 0
+    for jp in sorted(session_dir.glob("*/*_part-phase_*.json")):
+        try:
+            d = _load_json(jp)
+        except (OSError, ValueError):  # malformed sidecar: skip (TS parity)
+            continue
+        if (isinstance(d, dict) and "Units" not in d and
+                str(d.get("Manufacturer", "")).lower().startswith("siemens")):
+            d["Units"] = "arbitrary"
+            _save_json(jp, d)
+            n += 1
+    return n
+
+
+def _part_runs(prefix: str, members: list, bold_times: list = ()) -> Optional[dict]:
+    """Stem -> run token ("" when none is needed). A protocol repeated as several
+    mag/phase acquisitions gets run-01.. in AcquisitionTime order (magnitude and
+    phase of one acquisition share it). A non-bold sibling (sbref/noRF) of a
+    multi-run bold takes the run of its nearest-in-time bold acquisition, so a
+    missing SBRef cannot shift later runs. None when the members cannot be paired."""
+    if len(bold_times) < 2 and len({p for _s, p, _t in members}) == len(members):
+        return {s: "" for s, _p, _t in members}
+    times = sorted({t for _s, _p, t in members})
+    if "" in times or "_run-" in prefix:
+        return None
+    for t in times:
+        parts = [p for _s, p, tt in members if tt == t]
+        if len(parts) != len(set(parts)):
+            return None
+    if len(bold_times) < 2:
+        return {s: f"run-{times.index(t) + 1:02d}" for s, _p, t in members}
+    ref = [_hms_seconds(t) for t in bold_times]
+    secs = {t: _hms_seconds(t) for t in times}
+    if None in ref or None in secs.values():
+        return None
+    run = {t: min(range(len(ref)), key=lambda i: abs(ref[i] - secs[t])) for t in times}
+    if len(set(run.values())) != len(run):
+        return None  # two acquisitions claim one bold run
+    return {s: f"run-{run[t] + 1:02d}" for s, _p, t in members}
 
 
 def _resolve_part_entities(session_dir: Path) -> int:
@@ -2594,7 +2701,7 @@ def _resolve_part_entities(session_dir: Path) -> int:
     `a`/`b` letters (and can mislabel a phase SBRef as `_bold`), which are then
     unusable BIDS. `part` comes from BidsGuess's explicit `_part-` (fallback
     ImageType), the true `bold`/`sbref` suffix from BidsGuess; the family is
-    renamed to `..._part-<mag|phase>_<bold|sbref>`. Only fires for a (prefix,
+    renamed to `..._part-<mag|phase>_<bold|sbref|noRF>`. Only fires for a (prefix,
     suffix) group containing a non-magnitude member. Group renames are
     all-or-nothing: a mid-group failure rolls back and re-raises rather than
     leave mixed collision/part names. Returns stems renamed."""
@@ -2606,7 +2713,7 @@ def _resolve_part_entities(session_dir: Path) -> int:
     for jp in sorted(func_dir.glob("*.json")):
         stem = jp.stem
         entities, token = (stem.rsplit("_", 1) + [""])[:2]
-        if not (token.startswith("bold") or token.startswith("sbref")):
+        if not token.startswith(_PART_FUNC_SUFFIXES):
             continue
         prefix = re.sub(r"_part-[A-Za-z0-9]+$", "", entities)
         data = _load_json(jp)
@@ -2615,21 +2722,26 @@ def _resolve_part_entities(session_dir: Path) -> int:
         if part is None or suffix is None:
             unresolved_prefixes.add(prefix)  # unclassifiable sibling taints its whole family
             continue
-        groups.setdefault((prefix, suffix), []).append((stem, part))
+        groups.setdefault((prefix, suffix), []).append(
+            (stem, part, str(data.get("AcquisitionTime") or "")))
     renamed = 0
-    resolved_phase: list[Path] = []
     for (prefix, suffix), members in groups.items():
         if prefix in unresolved_prefixes:
             print(f"reproinx: skipping part-entity resolution for {prefix} — unclassifiable sibling in family", file=sys.stderr)
             continue
-        if {p for _s, p in members} <= {"mag"}:
+        if {p for _s, p, _t in members} <= {"mag"}:
             continue  # no phase/real/imag sibling: part entity not needed
+        bold = [] if suffix == "bold" else groups.get((prefix, "bold"), [])
+        run_of = _part_runs(prefix, members, sorted({t for _s, _p, t in bold}))
+        targets = [] if run_of is None else [
+            (stem, _insert_run_entity(f"_{prefix}_part-{part}_{suffix}", run_of[stem])[1:]
+             if run_of[stem] else f"{prefix}_part-{part}_{suffix}", part)
+            for stem, part, _t in members]
         # Preflight the whole group against the full BIDS family before any move.
         plan: list[tuple[str, str, str]] = []
         dsts: set[str] = set()
-        conflict = False
-        for stem, part in members:
-            dst = f"{prefix}_part-{part}_{suffix}"
+        conflict = run_of is None
+        for stem, dst, part in targets:
             if dst == stem:
                 continue
             if dst in dsts or any((func_dir / f"{dst}{ext}").exists()
@@ -2655,22 +2767,7 @@ def _resolve_part_entities(session_dir: Path) -> int:
                     pass
             raise
         renamed += len(done)
-        # Collect the phase sidecar of EVERY fired group (not only moved
-        # members) so an already-canonical phase file — or a rerun after a
-        # move-then-Units-write failure — still gets its required Units.
-        if any(part == "phase" for _s, part in members):
-            resolved_phase.append(func_dir / f"{prefix}_part-phase_{suffix}.json")
-    # BIDS requires Units for phase data. Restrict to the phase files just
-    # resolved and to Siemens (scanner-scaled phase -> "arbitrary"; other
-    # vendors / rad scaling are out of scope). Never overwrite existing Units.
-    for jp in resolved_phase:
-        if not jp.is_file():
-            continue
-        d = _load_json(jp)
-        if (isinstance(d, dict) and "Units" not in d and
-                str(d.get("Manufacturer", "")).lower().startswith("siemens")):
-            d["Units"] = "arbitrary"
-            _save_json(jp, d)
+    # Units for the resolved phase files: _siemens_phase_units runs next.
     return renamed
 
 
@@ -2682,7 +2779,7 @@ _BIDSGUESS_COLLISION_RE = re.compile(
     # the .bidsignore sweep would miss it.
     r"_(magnitude\d|phasediff|phase\d|fieldmap|bold|sbref|T1w|T2w|FLAIR|"
     r"PDw|T2starw|UNIT1|inplaneT[12]|MEGRE|MESE|VFA|IRT1|MP2RAGE|MPM|MTS|MTR|"
-    r"dwi|epi|m0scan|asl|aslcontext|cbv|defacemask|"
+    r"dwi|epi|m0scan|asl|aslcontext|cbv|noRF|defacemask|"
     r"FA|ADC|colFA|expADC|trace|S0map|TENSOR|svs|mrsi|unloc|mrsref)[a-z]"
     r"(\.json|\.nii(\.gz)?|\.bvec|\.bval|\.tsv)$"
 )
@@ -3022,6 +3119,12 @@ def _bidsguess_cleanup(out_root: Path, strict: bool,
         except Exception as e:
             print(f"reproinx: part-entity resolution failed for {ses}: {e}",
                   file=sys.stderr)
+            if strict:
+                raise
+        try:
+            _siemens_phase_units(ses)
+        except Exception as e:
+            print(f"reproinx: phase Units failed for {ses}: {e}", file=sys.stderr)
             if strict:
                 raise
         try:

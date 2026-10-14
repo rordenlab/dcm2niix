@@ -4,6 +4,7 @@
 
 #include "reproin.h"
 
+#include <ctype.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -34,28 +35,6 @@ static bool reproinKnownDatatype(const char *s) {
 		   (strcmp(s, "beh") == 0);
 }
 
-// _delete_chars(value, "#!@$%^&.,:;_-") — sanitises task/acq/etc.
-// Extended beyond heudiconv's set with path-traversal-relevant characters
-// (slashes, backslashes, whitespace, control chars) so that DICOM/CLI values
-// cannot inject directory structure into a BIDS filename.
-static void reproinSanitize(char *s) {
-	static const char kIllegal[] = "#!@$%^&.,:;_-/\\ \t\r\n";
-	int j = 0;
-	for (int i = 0; s[i] != '\0'; i++) {
-		unsigned char c = (unsigned char)s[i];
-		bool drop = (c < 0x20); // control characters
-		for (int k = 0; !drop && kIllegal[k] != '\0'; k++) {
-			if ((char)c == kIllegal[k]) {
-				drop = true;
-				break;
-			}
-		}
-		if (!drop)
-			s[j++] = (char)c;
-	}
-	s[j] = '\0';
-}
-
 // Strip raw path separators and control characters from a study-path source.
 // Called before reproinPathify expands underscores/spaces into the *intended*
 // path separators, so any '/' or '\\' surviving into the output came from us.
@@ -70,22 +49,15 @@ static void reproinDropRawPathChars(char *s) {
 	s[j] = '\0';
 }
 
-// Public path-safety scrub for any BIDS label arriving from outside the
-// reproin parser (e.g. -bi/-bv values from the command line). Strips path
-// separators, whitespace, control chars, and any '.' segments by collapsing
-// dots that would form a traversal. Preserves case and digits.
+// Scrub a BIDS sub/ses label: the spec allows only [a-zA-Z0-9], so drop
+// everything else (also blocks path traversal). Used for PatientID, -bi, -bv.
 void reproinSanitizeLabel(char *s) {
 	if (s == NULL)
 		return;
 	int j = 0;
-	for (int i = 0; s[i] != '\0'; i++) {
-		unsigned char c = (unsigned char)s[i];
-		if (c == '/' || c == '\\' || c == '.' ||
-			c == ' ' || c == '\t' || c == '\r' || c == '\n' ||
-			c < 0x20)
-			continue;
-		s[j++] = (char)c;
-	}
+	for (int i = 0; s[i] != '\0'; i++)
+		if (isalnum((unsigned char)s[i]))
+			s[j++] = s[i];
 	s[j] = '\0';
 }
 
@@ -201,54 +173,53 @@ static char *reproinSplit2(char *s) {
 	return dash + 1;
 }
 
+static void reproinAppendToken(char *buf, size_t cap, const char *tok) {
+	if (buf[0] != '\0')
+		strncat(buf, "_", cap - strlen(buf) - 1);
+	strncat(buf, tok, cap - strlen(buf) - 1);
+}
+
 // Slot known entities, accumulate everything else into bids leftovers.
+// Barewords can never be BIDS entities, so they go to bareBuf (the caller
+// takes the last as suffix if none was given and folds the rest into acq).
 static void reproinAssignToken(struct TReproinSpec *spec, const char *raw,
-							   char *bidsBuf, size_t bidsCap) {
+							   char *bidsBuf, size_t bidsCap, char *bareBuf, size_t bareCap) {
 	char tok[kReproinStr];
 	snprintf(tok, sizeof(tok), "%s", raw);
 	char *value = reproinSplit2(tok);
 	if (value == NULL) {
-		// Unknown bareword: append to bids leftovers.
-		if (strlen(bidsBuf) > 0) {
-			if (strlen(bidsBuf) + 1 < bidsCap)
-				strcat(bidsBuf, "_");
-		}
-		if (strlen(bidsBuf) + strlen(raw) < bidsCap)
-			strcat(bidsBuf, raw);
+		size_t rawLen = strlen(raw);
+		if (raw[rawLen - 1] == '+' || raw[rawLen - 1] == '=') // strtok_r never yields empty tokens
+			reproinAppendToken(bidsBuf, bidsCap, raw); // heudiconv "run+" / "run="
+		else if (strcmp(raw, "SBRef") != 0 && strcmp(raw, "Pha") != 0) // SeriesDescription fallback; sbref set elsewhere
+			reproinAppendToken(bareBuf, bareCap, raw);
 		return;
 	}
-	char clean[kReproinStr];
-	snprintf(clean, sizeof(clean), "%s", value);
-	if (strcmp(tok, "ses") == 0) {
-		reproinSanitize(clean);
-		snprintf(spec->ses, sizeof(spec->ses), "%s", clean);
-	} else if (strcmp(tok, "run") == 0) {
-		// Don't sanitise digits; preserve literal value (we zero-pad later).
-		// But still scrub path separators/control chars in case of garbage.
-		snprintf(spec->run, sizeof(spec->run), "%s", value);
-		reproinDropRawPathChars(spec->run);
-	} else if (strcmp(tok, "task") == 0) {
-		reproinSanitize(clean);
-		snprintf(spec->task, sizeof(spec->task), "%s", clean);
-	} else if (strcmp(tok, "acq") == 0) {
-		reproinSanitize(clean);
-		snprintf(spec->acq, sizeof(spec->acq), "%s", clean);
-	} else if (strcmp(tok, "rec") == 0) {
-		reproinSanitize(clean);
-		snprintf(spec->rec, sizeof(spec->rec), "%s", clean);
-	} else if (strcmp(tok, "dir") == 0) {
-		reproinSanitize(clean);
-		snprintf(spec->dir, sizeof(spec->dir), "%s", clean);
-	} else {
+	// BIDS labels are alphanumeric only (also blocks path traversal);
+	// ses-{date} stays verbatim for reproinResolveSession.
+	if (strcmp(tok, "ses") != 0 || strcmp(value, "{date}") != 0)
+		reproinSanitizeLabel(value);
+	if (strcmp(tok, "ses") == 0)
+		snprintf(spec->ses, sizeof(spec->ses), "%s", value);
+	else if (strcmp(tok, "run") == 0)
+		snprintf(spec->run, sizeof(spec->run), "%s", value); // zero-padded later
+	else if (strcmp(tok, "task") == 0)
+		snprintf(spec->task, sizeof(spec->task), "%s", value);
+	else if (strcmp(tok, "acq") == 0)
+		snprintf(spec->acq, sizeof(spec->acq), "%s", value);
+	else if (strcmp(tok, "rec") == 0)
+		snprintf(spec->rec, sizeof(spec->rec), "%s", value);
+	else if (strcmp(tok, "dir") == 0)
+		snprintf(spec->dir, sizeof(spec->dir), "%s", value);
+	else if (strcmp(tok, "inv") == 0)
+		snprintf(spec->inv, sizeof(spec->inv), "%s", value);
+	else {
 		// Unknown key-value: keep verbatim in bids leftovers, but scrub path
 		// separators/control chars to keep the segment safe.
 		char safe[kReproinStr];
 		snprintf(safe, sizeof(safe), "%s", raw);
 		reproinDropRawPathChars(safe);
-		if (strlen(bidsBuf) > 0 && strlen(bidsBuf) + 1 < bidsCap)
-			strcat(bidsBuf, "_");
-		if (strlen(bidsBuf) + strlen(safe) < bidsCap)
-			strcat(bidsBuf, safe);
+		reproinAppendToken(bidsBuf, bidsCap, safe);
 	}
 }
 
@@ -270,22 +241,54 @@ static bool reproinParseString(const char *text, struct TReproinSpec *spec) {
 	char *tok = strtok_r(buf, "_", &saveptr);
 	if (tok == NULL)
 		return false;
-	// First token: <datatype>[-<suffix>]
-	char *suffix = strchr(tok, '-');
-	if (suffix != NULL) {
-		*suffix = '\0';
-		suffix++;
+	// First token: <datatype>[-<suffix>]. Also tolerate text before an
+	// explicit "<datatype>-<suffix>" token (e.g. "PA_func-bold_..."), which
+	// heudiconv rejects; a bare datatype must still lead. Skipped key-value
+	// tokens are kept as entities; skipped barewords are dropped (hasPrefix).
+	const int kMaxPrefix = 8;
+	char *prefix[kMaxPrefix];
+	int nPrefix = 0;
+	char *suffix = NULL;
+	for (bool isFirst = true; tok != NULL; isFirst = false, tok = strtok_r(NULL, "_", &saveptr)) {
+		suffix = strchr(tok, '-');
+		if (suffix != NULL)
+			*suffix++ = '\0';
+		if (reproinKnownDatatype(tok) && (isFirst || suffix != NULL))
+			break;
+		if (suffix != NULL)
+			suffix[-1] = '-';
+		if (nPrefix < kMaxPrefix)
+			prefix[nPrefix++] = tok;
+		else
+			spec->hasPrefix = true; // overflow: warn rather than drop silently
 	}
-	if (!reproinKnownDatatype(tok))
+	if (tok == NULL)
 		return false;
 	snprintf(spec->datatype, sizeof(spec->datatype), "%s", tok);
-	if (suffix != NULL && suffix[0] != '\0')
+	if (suffix != NULL && suffix[0] != '\0') {
 		snprintf(spec->suffix, sizeof(spec->suffix), "%s", suffix);
-	char bidsBuf[kReproinStr] = {""};
-	while ((tok = strtok_r(NULL, "_", &saveptr)) != NULL) {
-		reproinAssignToken(spec, tok, bidsBuf, sizeof(bidsBuf));
 	}
+	char bidsBuf[kReproinStr] = {""};
+	char bareBuf[kReproinStr] = {""};
+	for (int i = 0; i < nPrefix; i++) {
+		if (strchr(prefix[i], '-') != NULL)
+			reproinAssignToken(spec, prefix[i], bidsBuf, sizeof(bidsBuf), bareBuf, sizeof(bareBuf));
+		else if (strcmp(prefix[i], "bids") != 0) // heudiconv's explicit "bids_" marker
+			spec->hasPrefix = true;
+	}
+	while ((tok = strtok_r(NULL, "_", &saveptr)) != NULL)
+		reproinAssignToken(spec, tok, bidsBuf, sizeof(bidsBuf), bareBuf, sizeof(bareBuf));
 	snprintf(spec->bids, sizeof(spec->bids), "%s", bidsBuf);
+	// heudiconv: a trailing bareword is the suffix when none was given (anat_T2w).
+	char *lastBare = strrchr(bareBuf, '_');
+	lastBare = (lastBare != NULL) ? lastBare + 1 : bareBuf;
+	if (spec->suffix[0] == '\0' && lastBare[0] != '\0') {
+		snprintf(spec->suffix, sizeof(spec->suffix), "%s", lastBare);
+		*lastBare = '\0';
+	}
+	reproinSanitizeLabel(spec->suffix); // no "/" or ".." into the output path
+	reproinSanitizeLabel(bareBuf);
+	strncat(spec->acq, bareBuf, sizeof(spec->acq) - strlen(spec->acq) - 1);
 	spec->valid = true;
 	return true;
 }
@@ -323,10 +326,11 @@ bool reproinParseSpec(const struct TDICOMdata *dcm, struct TReproinSpec *spec) {
 		ok = reproinParseString(dcm->seriesDescription, spec);
 	if (!ok)
 		return false;
-	// SBRef override (matches heuristic: series_description.endswith("_SBRef")).
-	const char *sd = dcm->seriesDescription;
-	size_t sdLen = sd ? strlen(sd) : 0;
-	if (sdLen >= 6 && strcmp(sd + sdLen - 6, "_SBRef") == 0) {
+	// SBRef override. heudiconv's reproin uses endswith("_SBRef"); Siemens XA
+	// appends "_Pha" to phase series ("..._SBRef_Pha"), which would otherwise
+	// be named _bold and collide with the 4D magnitude/phase BOLD.
+	const char *sbref = strstr(dcm->seriesDescription, "_SBRef");
+	if (sbref && (sbref[6] == '\0' || strcmp(sbref + 6, "_Pha") == 0)) {
 		snprintf(spec->suffix, sizeof(spec->suffix), "sbref");
 		spec->isSbref = true;
 	}
@@ -369,8 +373,86 @@ bool reproinParseSpec(const struct TDICOMdata *dcm, struct TReproinSpec *spec) {
 	// matching setBidsSiemens (BIDS lists noRF under func/perf).
 	if (dcm->isNoRF && strcmp(spec->datatype, "func") == 0)
 		snprintf(spec->suffix, sizeof(spec->suffix), "noRF");
-	spec->isDerived = reproinIsDerived(dcm, spec);
+	// MP2RAGE: Siemens exports INV1/INV2/UNI/UNI-DEN from one protocol, each
+	// also as _ND (no distortion correction), so all share one %H name. Split
+	// by content: inv-N and UNIT1 from BidsGuess; UNI-DEN (identical ImageType,
+	// only SeriesDescription differs) -> rec-denoised (desc- is derivatives-only);
+	// _ND -> "ND" appended to acq. UNIT1 stays raw despite DERIVED ImageType:
+	// it is the image analysed and BIDS lists it under raw anat.
+	bool isUnit1 = false;
+	if (strcmp(spec->datatype, "anat") == 0 && strcmp(spec->suffix, "MP2RAGE") == 0) {
+		const char *guess = dcm->CSA.bidsEntitySuffix;
+		size_t gLen = strlen(guess);
+		const char *inv = strstr(guess, "_inv-");
+		isUnit1 = (gLen >= 6) && (strcmp(guess + gLen - 6, "_UNIT1") == 0);
+		if (isUnit1) {
+			snprintf(spec->suffix, sizeof(spec->suffix), "UNIT1");
+			if (strstr(dcm->seriesDescription, "UNI-DEN") && spec->rec[0] == '\0')
+				snprintf(spec->rec, sizeof(spec->rec), "denoised");
+			spec->inv[0] = '\0'; // UNIT1 takes no inv-
+		} else if (inv) // one protocol yields INV1 and INV2: content beats an explicit inv-
+			snprintf(spec->inv, sizeof(spec->inv), "%.1s", inv + 5);
+		if (strstr(dcm->imageTypeText, "_ND"))
+			strncat(spec->acq, "ND", sizeof(spec->acq) - strlen(spec->acq) - 1);
+	}
+	// OpenRecon FRISGO appends its own ImageTypeText token (its raw passthrough
+	// has FRISGO only at index 3). The filtered copy shares the raw series' name
+	// and shifts timing, so keep one raw copy: derivatives/scanner, rec-frisgo.
+	bool isFrisgo = false;
+	char tok[kReproinStr];
+	for (int i = 4; !isFrisgo; i++) {
+		reproinImageTypeSlot(dcm->imageTypeText, i, tok, sizeof(tok));
+		if (tok[0] == '\0')
+			break;
+		isFrisgo = strcmp(tok, "FRISGO") == 0;
+	}
+	if (isFrisgo && spec->rec[0] == '\0')
+		snprintf(spec->rec, sizeof(spec->rec), "frisgo");
+	// OpenRecon SynthSeg names each output "<SeriesDescription>_<app>_OR" (app is
+	// the trailing lowercase tokens, e.g. glasser_approx) with one shared
+	// ImageTypeText; "original" is the input passthrough, the others are
+	// segmentations -> derivatives/scanner, desc-<app>.
+	bool isSynthseg = false;
+	reproinImageTypeSlot(dcm->imageTypeText, 3, tok, sizeof(tok));
+	const char *sd = dcm->seriesDescription;
+	size_t end = strlen(sd);
+	if (strcmp(tok, "SYNTHSEG") == 0 && end > 3 && strcmp(sd + end - 3, "_OR") == 0) {
+		end -= 3;
+		// App tokens never reach into ProtocolName or a ReproIn entity (acq-x).
+		size_t pnLen = strlen(dcm->protocolName);
+		size_t floor = (pnLen > 0 && pnLen < end && strncmp(sd, dcm->protocolName, pnLen) == 0 && sd[pnLen] == '_') ? pnLen + 1 : 1;
+		size_t appStart = end;
+		for (size_t pos = end;;) {
+			size_t t = pos;
+			while (t > 0 && sd[t - 1] != '_')
+				t--;
+			if (t < floor || !islower((unsigned char)sd[t]) || memchr(sd + t, '-', pos - t))
+				break;
+			appStart = t;
+			pos = t - 1;
+		}
+		char app[kReproinStr];
+		snprintf(app, sizeof(app), "%.*s", (int)(end - appStart), sd + appStart);
+		reproinSanitizeLabel(app);
+		bool isOriginal = end >= 9 && strncmp(sd + end - 9, "_original", 9) == 0;
+		isSynthseg = app[0] != '\0' && !isOriginal;
+		if (isSynthseg) {
+			char desc[kReproinStr + 8];
+			snprintf(desc, sizeof(desc), "desc-%s", app);
+			reproinAppendToken(spec->bids, sizeof(spec->bids), desc);
+		}
+	}
+	spec->isDerived = isFrisgo || isSynthseg || (!isUnit1 && reproinIsDerived(dcm, spec));
 	return true;
+}
+
+// Marker must end at a token boundary: "_FA" is an FA map, "_FATSAT" is not.
+static bool reproinHasMarker(const char *s, const char *marker) {
+	size_t n = strlen(marker);
+	for (const char *p = strstr(s, marker); p != NULL; p = strstr(p + 1, marker))
+		if (!isalnum((unsigned char)p[n]))
+			return true;
+	return false;
 }
 
 bool reproinIsDerived(const struct TDICOMdata *dcm, const struct TReproinSpec *spec) {
@@ -387,9 +469,9 @@ bool reproinIsDerived(const struct TDICOMdata *dcm, const struct TReproinSpec *s
 	for (int i = 0; i < 2; i++) {
 		const char *s = sources[i];
 		if (s != NULL && s[0] != '\0') {
-			if (strstr(s, "-scout") || strstr(s, "_ADC") ||
-				strstr(s, "_TRACEW") || strstr(s, "_TRACE") ||
-				strstr(s, "_FA") || strstr(s, "AAHead_Scout"))
+			if (strstr(s, "-scout") || reproinHasMarker(s, "_ADC") ||
+				reproinHasMarker(s, "_TRACEW") || reproinHasMarker(s, "_TRACE") ||
+				reproinHasMarker(s, "_FA") || strstr(s, "AAHead_Scout"))
 				return true;
 		}
 	}
@@ -454,7 +536,7 @@ void reproinFixupSubjectId(const char *in, char *out, size_t cap) {
 		}
 	}
 	// Otherwise strip '-' and '_' (heudiconv); reproinSanitizeLabel below
-	// also drops path separators, dots, whitespace, controls.
+	// drops all remaining non-alphanumerics (e.g. ':' '.' in Siemens XA IDs).
 	size_t j = 0;
 	for (size_t i = 0; buf[i] != '\0' && j + 1 < cap; i++) {
 		if (buf[i] != '-' && buf[i] != '_')
@@ -483,18 +565,10 @@ void reproinResolveSession(const struct TReproinSpec *spec,
 	// Resolve heudiconv literal date markers: "{date}" (Python-friendly) or
 	// "DATE" (Siemens X60 doesn't allow {} in protocol names). Either resolves
 	// to the study date (YYYYMMDD), matching heuristic.py:800-802.
-	if (dcm != NULL && (strcmp(src, "{date}") == 0 || strcmp(src, "DATE") == 0)) {
-		if (dcm->studyDate[0] != '\0') {
-			snprintf(out, cap, "%s", dcm->studyDate);
-			return;
-		}
-		// Fall through: no date available, treat as no session.
-		return;
-	}
+	if (dcm != NULL && (strcmp(src, "{date}") == 0 || strcmp(src, "DATE") == 0))
+		src = dcm->studyDate; // empty: no session
 	snprintf(out, cap, "%s", src);
-	// Sanitise: -bv from CLI bypasses reproinAssignToken's reproinSanitize.
-	// Use the public Label scrub (drops path separators, dots, whitespace,
-	// controls) so '.' segments cannot reach the filename composer.
+	// Sanitise: -bv from CLI bypasses reproinAssignToken.
 	reproinSanitizeLabel(out);
 }
 
@@ -632,6 +706,11 @@ bool reproinBuildFilename(const struct TReproinSpec *spec,
 	if (isMultiEcho && echoNum >= 1 && !foldEchoIntoSuffix) {
 		char buf[16];
 		snprintf(buf, sizeof(buf), "_echo-%d", echoNum);
+		strncat(tail, buf, sizeof(tail) - strlen(tail) - 1);
+	}
+	if (spec->inv[0] != '\0') {
+		char buf[16];
+		snprintf(buf, sizeof(buf), "_inv-%s", spec->inv);
 		strncat(tail, buf, sizeof(tail) - strlen(tail) - 1);
 	}
 	// Resolve the suffix (handles fmap magnitude/magnitudeN selection).

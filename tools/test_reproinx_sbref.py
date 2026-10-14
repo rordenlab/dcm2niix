@@ -24,6 +24,10 @@
      families skipped whole), phase gets Units, _events.tsv is one-per-run
      (echo/part stripped), and the resolver -> __dup recovery leaves no
      base-less or temporary duplicate family after failure.
+ 10. Repeated mag/phase acquisitions with a missing middle SBRef keep SBRef runs
+     aligned to their BOLD runs (nearest-in-time), not renumbered.
+ 11. A rejected same-polarity _epi group loses previously written
+     B0FieldIdentifier and matching B0FieldSource; unrelated sources survive.
 This list is representative, not exhaustive; see the test functions below.
 Run: python3 test_reproinx_sbref.py   (no pytest, no DICOM needed)."""
 import gzip, json, struct, tempfile
@@ -418,6 +422,7 @@ def test_resolve_part_entities():
         mk(f"{base}_sbref", "MAGNITUDE", "sbref")
 
         n1 = reproinx._resolve_part_entities(ses)
+        reproinx._siemens_phase_units(ses)
         names = {p.name for p in func.glob("*.nii.gz")}
         for want in ("part-mag_bold", "part-phase_bold",
                      "part-mag_sbref", "part-phase_sbref"):
@@ -429,6 +434,60 @@ def test_resolve_part_entities():
         n2 = reproinx._resolve_part_entities(ses)
         assert n2 == 0, n2
         assert {p.name for p in func.glob("*.nii.gz")} == names
+
+
+def test_resolve_part_missing_middle_sbref():
+    # Three mag/phase BOLD acquisitions, SBRefs only for 1 and 3: the SBRef runs
+    # must follow their BOLD (run-01/run-03), not renumber to run-01/run-02.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"; func = ses / "func"; func.mkdir(parents=True)
+        base = "sub-01_task-rest"
+
+        def mk(stem, imgtype, suffix, t):
+            _write_nii_gz(func / f"{stem}.nii.gz", 5)
+            (func / f"{stem}.json").write_text(json.dumps({
+                "Manufacturer": "Siemens", "AcquisitionTime": t,
+                "BidsGuess": ["func", f"_{suffix}"],
+                "ImageType": ["ORIGINAL", "PRIMARY", "M", "NONE", imgtype]}))
+        for i, t in enumerate(("10:00:00", "11:00:00", "12:00:00")):
+            mk(f"{base}_bold{'abcdef'[2 * i - 1] if i else ''}", "MAGNITUDE", "bold", t)
+            mk(f"{base}_bold{'abcdef'[2 * i]}", "PHASE", "bold", t)
+        for i, t in enumerate(("09:59:50", "11:59:50")):
+            mk(f"{base}_sbref{'abc'[2 * i - 1] if i else ''}", "MAGNITUDE", "sbref", t)
+            mk(f"{base}_sbref{'abc'[2 * i]}", "PHASE", "sbref", t)
+        assert reproinx._resolve_part_entities(ses) == 10
+        names = {p.name for p in func.glob("*.nii.gz")}
+        want = {f"{base}_run-{r}_part-{p}_bold.nii.gz" for r in ("01", "02", "03")
+                for p in ("mag", "phase")}
+        want |= {f"{base}_run-{r}_part-{p}_sbref.nii.gz" for r in ("01", "03")
+                 for p in ("mag", "phase")}
+        assert names == want, sorted(names ^ want)
+
+
+def test_same_polarity_clears_stale_links():
+    # A rerun over a tree linked before the same-polarity rule existed: the
+    # rejected group's identifier and the sources naming it are removed;
+    # unrelated sources survive.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-x" / "ses-1"
+        fmap = ses / "fmap"; func = ses / "func"
+        fmap.mkdir(parents=True); func.mkdir(parents=True)
+        for pe in ("AP", "PA"):
+            _mk_compat(fmap, f"sub-x_ses-1_dir-{pe}_epi", "10:00:00")
+            jp = fmap / f"sub-x_ses-1_dir-{pe}_epi.json"
+            jp.write_text(json.dumps({**_read(jp), "B0FieldIdentifier": "epi"}))
+        _mk_compat(func, "sub-x_ses-1_task-t_bold", "10:01:00", nvols=20)
+        jp = func / "sub-x_ses-1_task-t_bold.json"
+        jp.write_text(json.dumps({**_read(jp), "B0FieldSource": "epi"}))
+        _mk_compat(func, "sub-x_ses-1_task-u_bold", "10:02:00", nvols=20)
+        ju = func / "sub-x_ses-1_task-u_bold.json"
+        ju.write_text(json.dumps({**_read(ju), "B0FieldSource": "other"}))
+
+        assert reproinx._populate_b0_fields(ses) == 0
+        for pe in ("AP", "PA"):
+            assert "B0FieldIdentifier" not in _read(fmap / f"sub-x_ses-1_dir-{pe}_epi.json")
+        assert "B0FieldSource" not in _read(jp)
+        assert _read(ju)["B0FieldSource"] == "other"
 
 
 def test_emit_events_tsv_one_per_run():
@@ -462,7 +521,63 @@ def test_resolve_part_units_canonical():
         mk(f"{base}_part-mag_bold", "MAGNITUDE")
         mk(f"{base}_part-phase_bold", "PHASE")            # canonical, no Units
         assert reproinx._resolve_part_entities(ses) == 0  # nothing to move
+        reproinx._siemens_phase_units(ses)
         assert _read(func / f"{base}_part-phase_bold.json").get("Units") == "arbitrary"
+
+
+def test_task_stub_without_bold():
+    # dcm2niix writes a root task stub for physio-only func series: drop it,
+    # keep the stub with bold data and any curated file.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); func = root / "sub-01" / "func"; func.mkdir(parents=True)
+        _write_nii_gz(func / "sub-01_task-motor_acq-a_bold.nii.gz", 5)
+        for acq, data in (("a", {"TaskName": "motor"}), ("b", {"TaskName": "motor"}),
+                          ("c", {"TaskName": "motor", "RepetitionTime": 2})):
+            (root / f"task-motor_acq-{acq}_bold.json").write_text(json.dumps(data))
+        # Other entities are not tracked as stems: never treated as orphans.
+        (root / "task-motor_acq-a_run-01_bold.json").write_text(json.dumps({"TaskName": "motor"}))
+        reproinx._emit_task_bold_jsons(root)
+        left = sorted(p.name for p in root.glob("task-*_bold.json"))
+        assert left == ["task-motor_acq-a_bold.json", "task-motor_acq-a_run-01_bold.json",
+                        "task-motor_acq-c_bold.json"], left
+
+
+def test_resolve_part_repeated_runs():
+    # One protocol acquired twice as mag+phase (4 series, one %H stem): pair by
+    # AcquisitionTime into run-01/run-02 (series order 15,16,23,24 written out
+    # of order as bold/bolda/boldb/boldc), Units on every phase, idempotent.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"; func = ses / "func"; func.mkdir(parents=True)
+        base = "sub-01_task-rest_acq-fs"
+
+        def mk(stem, imgtype, t):
+            _write_nii_gz(func / f"{stem}.nii.gz", 5)
+            (func / f"{stem}.json").write_text(json.dumps({
+                "Manufacturer": "Siemens", "AcquisitionTime": t,
+                "ImageType": ["ORIGINAL", "PRIMARY", "M", "NONE", imgtype]}))
+        mk(f"{base}_bold", "MAGNITUDE", "17:17:50")
+        mk(f"{base}_bolda", "PHASE", "17:07:19")
+        mk(f"{base}_boldb", "PHASE", "17:17:50")
+        mk(f"{base}_boldc", "MAGNITUDE", "17:07:19")
+        assert reproinx._resolve_part_entities(ses) == 4
+        reproinx._siemens_phase_units(ses)
+        for run, t in (("01", "17:07:19"), ("02", "17:17:50")):
+            for part in ("mag", "phase"):
+                j = _read(func / f"{base}_run-{run}_part-{part}_bold.json")
+                assert j["AcquisitionTime"] == t
+            assert j.get("Units") == "arbitrary"
+        assert reproinx._resolve_part_entities(ses) == 0
+
+
+def test_siemens_phase_units_anat():
+    # A rescued anat T2starw phase (QSM input) needs Units like func phase.
+    with tempfile.TemporaryDirectory() as d:
+        ses = Path(d) / "sub-01"; anat = ses / "anat"; anat.mkdir(parents=True)
+        jp = anat / "sub-01_part-phase_T2starw.json"
+        jp.write_text(json.dumps({"Manufacturer": "Siemens"}))
+        assert reproinx._siemens_phase_units(ses) == 1
+        assert _read(jp)["Units"] == "arbitrary"
+        assert reproinx._siemens_phase_units(ses) == 0
 
 
 def test_resolve_part_ambiguous_skipped():
@@ -580,8 +695,13 @@ if __name__ == "__main__":
     test_resolve_part_entities()
     test_emit_events_tsv_one_per_run()
     test_resolve_part_units_canonical()
+    test_resolve_part_repeated_runs()
+    test_resolve_part_missing_middle_sbref()
+    test_same_polarity_clears_stale_links()
+    test_task_stub_without_bold()
+    test_siemens_phase_units_anat()
     test_resolve_part_ambiguous_skipped()
     test_resolve_part_unclassifiable_sibling_skips_family()
     test_apply_dup_naming_missing_base()
     test_apply_dup_naming_rolls_back()
-    print("OK: reproinx fixes pass (fmap-target, TaskName, multiecho-R1, part-entities, b0-mirror x3, shift-dates x9)")
+    print("OK: reproinx fixes pass (fmap-target, TaskName, multiecho-R1, part-entities, b0-mirror x3, shift-dates x9, sbref-runs, stale-b0)")

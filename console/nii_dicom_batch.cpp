@@ -725,7 +725,7 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 #define freeDiffusionMaxN 512
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
-	int lInvContrasts, lContrasts, lConc, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
+	int lInvContrasts, lContrasts, lConc, turboFactor, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
 		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D, freeDiffusionN;
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
@@ -754,6 +754,7 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->partialFourier = 0;
 	csaAscii->echoSpacing = 0;
 	csaAscii->lInvContrasts = 0;
+	csaAscii->turboFactor = 0;
 	csaAscii->lContrasts = 0;
 	csaAscii->lConc = 0; // sSliceArray.lConc (concatenations); DZNE 3D-EPI encodes "multi-echo shots" here (issue 1024)
 	csaAscii->difBipolar = 0; // 0=not assigned,1=bipolar,2=monopolar
@@ -839,6 +840,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->echoSpacing = readKey(keyStrES, keyPos, csaLengthTrim);
 		char keyStrNumInv[] = "lInvContrasts";
 		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
+		char keyStrTurbo[] = "sFastImaging.lTurboFactor";
+		csaAscii->turboFactor = readKey(keyStrTurbo, keyPos, csaLengthTrim);
 		char keyStrNumEcho[] = "lContrasts";
 		csaAscii->lContrasts = readKey(keyStrNumEcho, keyPos, csaLengthTrim);
 		// issue 1024: number of concatenations. On the DZNE 3D-EPI (vx_ep3d) this
@@ -2742,12 +2745,14 @@ tse3d: T2*/
 			fprintf(fp, "\t\"MultiEchoShots\": %d,\n", csaAscii.lConc);
 		// MP2RAGE (lInvContrasts==2): (0018,0080) is the inversion-to-inversion time,
 		// reported as BIDS RepetitionTimePreparation in seconds (PR #1031). NumberShots
-		// (turbo factor) is deliberately NOT emitted: sFastImaging.lTurboFactor is a
-		// stuck constant on VB/VE (validated only on XA), so a [before,after] there
-		// would be wrong; TR_GRE (RepetitionTimeExcitation) is not exported to DICOM on
-		// any platform (echo spacing lives only in the raw twix/protocol).
+		// (turbo factor) is emitted on XA only: sFastImaging.lTurboFactor is a stuck
+		// constant on VB/VE; TR_GRE (RepetitionTimeExcitation) is not exported to DICOM
+		// on any platform (echo spacing lives only in the raw twix/protocol).
 		if ((csaAscii.lInvContrasts == 2) && (d.modality == kMODALITY_MR) && (d.TR > 0.0))
 			repetitionTimePreparation = d.TR / 1000.0;
+		// 215 on a VA60A MP2RAGE matches the protocol printout.
+		if ((csaAscii.lInvContrasts == 2) && (d.isXA) && (csaAscii.turboFactor > 0))
+			fprintf(fp, "\t\"NumberShots\": %d,\n", csaAscii.turboFactor);
 		// if (d.phaseEncodingLines != csaAscii.phaseEncodingLines) //e.g. phaseOversampling
 		//	printWarning("PhaseEncodingLines reported in DICOM (%d) header does not match value CSA-ASCII (%d) %s\n", d.phaseEncodingLines, csaAscii.phaseEncodingLines, pathoutname);
 		delayTimeInTR = csaAscii.delayTimeInTR;
@@ -5103,8 +5108,15 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					}
 					createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0),
 											   specOk ? spec.task : NULL, specOk ? spec.acq : NULL);
+					// Report once per converted series: not per file in rename mode, nor
+					// for the -h example name (no SeriesInstanceUID).
+					bool isReport = !opts.isRenameNotConvert && dcm.seriesInstanceUID[0] != '\0';
+					// -ba y strips SeriesInstanceUID as a source link; keep it out of logs too.
+					const char *reportUID = opts.isAnonymizeBIDS ? "(anonymized)" : dcm.seriesInstanceUID;
 					if (specOk) {
 						isAddNamePostFixes = false;
+						if (isReport && spec.hasPrefix)
+							printWarning("ReproIn: ignored text before datatype: SeriesNumber=%ld ProtocolName=\"%s\"\n", dcm.seriesNum, dcm.protocolName);
 						bool isMultiEcho = dcm.isMultiEcho;
 						// Subject: -bi when set (scrubbed below); else heudiconv-style fixup
 						// of PatientID. reproinFixupSubjectId scrubs internally.
@@ -5135,8 +5147,13 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 							strcat(outname, repName);
 						} else {
 							specOk = false;
+							if (isReport && subjectVal[0] == '\0')
+								printWarning("ReproIn: PatientID has no alphanumerics (use -bi), saved to Unknown/: SeriesNumber=%ld SeriesInstanceUID=%s\n",
+											 dcm.seriesNum, reportUID);
 						}
-					}
+					} else if (isReport) // Name the series so the user can fix the protocol (or the DICOMs).
+						printWarning("ReproIn: invalid ProtocolName, saved to Unknown/: SeriesNumber=%ld SeriesInstanceUID=%s ProtocolName=\"%s\"\n",
+									 dcm.seriesNum, reportUID, dcm.protocolName);
 					if (!specOk) {
 						// Fallback: legacy "Unknown/<series>_<protocol>" basename.
 						strcat(outname, "Unknown");
@@ -8965,6 +8982,21 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(preAcqStr, "famp");
 		else
 			strcpy(preAcqStr, "anat");
+	} else if ((strstr(seqDetails, "ep3d") != NULL) && (d->is3DAcq) && (d->CSA.numDti == 0) && (strstr(seqDetails, "asl") == NULL)) { // 3D-EPI DWI/ASL fall through to their branches
+		// 3D EPI research sequences (dzne_ep3d, vx_ep3d) report ScanningSequence "RM",
+		// so the GR/EP tests below miss them. d->TR is still the per-shot TR here, but
+		// AcquisitionDuration (s) separates fMRI volumes (seconds) from a
+		// high-resolution T2*-weighted volume for SWI/QSM (minutes). A missing
+		// AcquisitionDuration (0) falls back to func: only a BidsGuess.
+		if (d->acquisitionDuration > 10.0) {
+			strcpy(dataTypeBIDS, "anat");
+			strcpy(modalityBIDS, "T2starw");
+			isPart = true;
+		} else {
+			strcpy(dataTypeBIDS, "func");
+			strcpy(modalityBIDS, "bold");
+			isDirLabel = true;
+		}
 	} else if ((strstr(seqDetails, "tfl") != NULL) || (strstr(seqDetails, "mp2rage") != NULL) || (strstr(seqDetails, "wip925") != NULL)) { // prog_mprage
 		strcpy(dataTypeBIDS, "anat");
 		if (isDualTI)

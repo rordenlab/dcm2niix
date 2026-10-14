@@ -40,7 +40,7 @@ writes:
 **Other relevant flags.** `-z y` (gzip output), `-i y` (skip derived/2D), `-b y|n|o` (BIDS sidecar), `-w 0|1|2` (overwrite policy) all interact with `-f %H` exactly as they do with any other format specifier — see `dcm2niix -h`.
 
 **Defaults when neither `-bi` nor `-bv` is supplied.** Match heudiconv:
-- Subject is derived from `(0010,0020) PatientID` via the same `fixup_subjectid` rule heudiconv uses (lowercase; if it matches `sid0*(\d+)$`, reformat as `sid%06d`; otherwise strip `-` and `_`). So a DICOM with `PatientID = "crlab"` becomes `sub-crlab/...`.
+- Subject is derived from `(0010,0020) PatientID` via the same `fixup_subjectid` rule heudiconv uses (lowercase; if it matches `sid0*(\d+)$`, reformat as `sid%06d`; otherwise strip `-` and `_`), then drop any remaining non-alphanumeric (BIDS labels allow only `[a-zA-Z0-9]`; `-bi`/`-bv` get the same scrub, also in the legacy `%h` path, so `-bi sub_01` -> `sub01`). So a DICOM with `PatientID = "crlab"` becomes `sub-crlab/...`.
 - Session is omitted entirely unless a series carries `_ses-<X>` in its ProtocolName. So a single-session study without `_ses-` markers writes `sub-XX/<datatype>/sub-XX_<entities>_<suffix>.nii.gz` — no `ses-` segment in the path or filename.
 
 ## Privacy considerations
@@ -86,12 +86,7 @@ post-pass entirely).
 [PREFIX:][WIP ]<datatype[-<suffix>]>[_ses-<SESID>][_task-<TASKID>][_acq-<ACQLABEL>][_run-<RUNID>][_dir-<DIR>][<more BIDS>][__<custom>]
 ```
 
-Datatype must be one of `anat`, `func`, `fmap`, `dwi`, `beh`. The leading `[A-Z]+:`
-prefix and `WIP ` prefix are stripped (Philips). Anything after `__` is dropped.
-Recognised entities (`ses`, `run`, `task`, `acq`, `rec`, `dir`) are pulled out;
-unknown `key-value` tokens flow through into a `bids` leftover string.
-Special remaps applied first: `anat_T1w → anat-T1w`, `hardi_64 → dwi_acq-hardi64`,
-`AAHead_Scout → anat-scout`, leading `scout → anat-scout`.
+Datatype must be one of `anat`, `func`, `fmap`, `dwi`, `beh` (`perf` is not yet accepted). The leading `[A-Z]+:` prefix and `WIP ` prefix are stripped (Philips). Anything after `__` is dropped. Recognised entities (`ses`, `run`, `task`, `acq`, `rec`, `dir`, `inv`) are pulled out and reduced to alphanumerics (so `run-+` is dropped); unknown `key-value` tokens flow through into a `bids` leftover string. Barewords (no `-`, which can never be BIDS entities) are stripped to alphanumerics and appended to `acq-`, so `func-bold_acq-3d_4.2.1_long` -> `acq-3d421long` (heudiconv passes them through, giving invalid names). The explicit suffix is also reduced to alphanumerics (it lands in the output path). Text before an explicit `<datatype>-<suffix>` token is ignored with a warning (`PA_func-bold_...` -> `func-bold_...`); heudiconv rejects these. A bare datatype (no `-suffix`) must still lead, so names like `ep2d_diff_dwi` are not captured. Special remaps applied first: `anat_T1w → anat-T1w`, `hardi_64 → dwi_acq-hardi64`, `AAHead_Scout → anat-scout`, leading `scout → anat-scout`.
 
 ## DICOM-tag precedence
 
@@ -121,12 +116,15 @@ Resolution rules:
 
 **Subject** — `-bi` if supplied; else `(0010,0020) PatientID` after
 `fixup_subjectid` (lowercase, `sid0*(\d+)$ → sid%06d`, otherwise strip `-_`).
+Either way only alphanumerics are kept.
 
 **Session** — `_ses-<X>` parsed from ProtocolName if present; else `-bv` if
 supplied; else omit the `ses-` segment entirely. Two literal markers in
 ProtocolName resolve at conversion time:
 - `_ses-{date}` (Python-friendly) and `_ses-DATE` (Siemens X60 doesn't allow
   `{}` in protocol names) both expand to `(0008,0020) StudyDate` in `YYYYMMDD`.
+  With no StudyDate the `ses-` segment is omitted. Legacy `-f %h` does not
+  expand `{date}`.
 
 ## Suffix inference (when ProtocolName omits it)
 
@@ -137,7 +135,7 @@ ProtocolName resolve at conversion time:
 | `dwi` | `dwi` |
 | `anat` | spec must already provide suffix (e.g. `anat-T1w`) |
 
-`SeriesDescription` ending in `_SBRef` overrides any inferred suffix to `sbref`.
+`SeriesDescription` ending in `_SBRef` (or Siemens XA phase `_SBRef_Pha`) overrides any inferred suffix to `sbref`.
 
 ## Multi-echo
 
@@ -149,103 +147,34 @@ ProtocolName resolve at conversion time:
 
 `reproinIsDerived()` returns true for any of:
 - `dcm.isDerived` (DICOM `ImageType[0] == DERIVED`)
-- SeriesDescription/ProtocolName contains `-scout`, `_ADC`, `_TRACEW`/`_TRACE`, `_FA`
+- SeriesDescription/ProtocolName contains `-scout`, or `_ADC`, `_TRACEW`/`_TRACE`, `_FA` ending at a non-alphanumeric (so `_FATSAT` is not an FA map)
 - Parsed datatype-suffix is `anat-scout`
+- OpenRecon FRISGO filtered copies and non-`original` SynthSeg outputs (see the OpenRecon items below)
 
-When `opts.isIgnoreDerivedAnd2D` is true, derived data is suppressed by the existing
-skip path. Otherwise, derived outputs are routed under
-`derivatives/scanner/sub-XX/ses-YY/<datatype>/...` per the heudiconv heuristic's
-commented-out branch.
+When `opts.isIgnoreDerivedAnd2D` is true, derived data is suppressed by the existing skip path. Otherwise, derived outputs are routed under `derivatives/scanner/sub-XX/ses-YY/<datatype>/...` per the heudiconv heuristic's commented-out branch.
 
 ---
 
 ## Known one-pass limitations (handled by `tools/reproinx.py`)
 
-The companion script [`tools/reproinx.py`](tools/reproinx.py) wraps dcm2niix
-and walks the resulting BIDS tree to address cross-series concerns. It runs
-`dcm2niix -f %H -ba o` (strips patient PII but keeps `AcquisitionDateTime`
-in the JSON sidecar), then per-subject and per-session:
+The companion script [`tools/reproinx.py`](tools/reproinx.py) wraps dcm2niix and walks the resulting BIDS tree to address cross-series concerns. It runs `dcm2niix -f %H -ba o` (strips patient PII but keeps `AcquisitionDateTime` in the JSON sidecar), then per-subject and per-session:
 
-- **Session backfill.** Heudiconv lets a single series (typically the
-  scout) carry `_ses-<X>` and propagates it across every other series in
-  the same `StudyInstanceUID`. dcm2niix's one-pass parser emits `_ses-X`
-  only on series that name it explicitly. The post-pass consults the
-  C-side `.reproin_provenance.tsv` (which records the original
-  ProtocolName/SeriesDescription even when the carrying series was
-  dropped by `-i y`), falling back to scanning filenames under the
-  subject tree and the parallel `derivatives/scanner/<sub>/...`
-  branch. When a single unambiguous label is found it renames and moves
-  every non-derivative file under `sub-X/<datatype>/` into
-  `sub-X/ses-X/<datatype>/`.
-- **`__dup-NN` collision renaming.** dcm2niix's default name-conflict
-  mode appends `a`/`b`/`c`/… to colliding series in write order; the
-  post-pass reads the provenance TSV and renumbers them as heudiconv-style
-  `__dup-NN`, with the lowest `SeriesNumber` owning the unsuffixed base.
-- **Per-session `_scans.tsv`** with columns `filename, acq_time,
-  operator, randstr` — matches heudiconv's reproin layout. `operator`
-  is always `n/a` (PerformingPhysicianName/OperatorsName carry human
-  names and are intentionally not threaded through the provenance TSV);
-  `randstr` is an 8-hex md5 of the sorted `*UID` fields available in the
-  sidecar. CRLF line endings to match Python's `csv.writer`
-  `excel-tab` default, which is what heudiconv emits.
-- **Per-task `task-<X>[_acq-<Y>]_bold.json`** at the BIDS root for every
-  task/acq tuple seen under any subject. When a task has both bare
-  `task-X` and `task-X_acq-Y` runs, the post-pass writes `TaskName` into
-  each per-series BOLD sidecar and removes only generated root-level
-  `task-X_bold.json` stubs, avoiding BIDS validator
-  `MULTIPLE_INHERITABLE_FILES` while preserving root files with curated
-  extra metadata.
+- **Session backfill.** Heudiconv lets a single series (typically the scout) carry `_ses-<X>` and propagates it across every other series in the same `StudyInstanceUID`. dcm2niix's one-pass parser emits `_ses-X` only on series that name it explicitly. The post-pass consults the C-side `.reproin_provenance.tsv` (which records the original ProtocolName/SeriesDescription even when the carrying series was dropped by `-i y`), falling back to scanning filenames under the subject tree and the parallel `derivatives/scanner/<sub>/...` branch. When a single unambiguous label is found it renames and moves every non-derivative file under `sub-X/<datatype>/` into `sub-X/ses-X/<datatype>/`.
+- **`__dup-NN` collision renaming.** dcm2niix's default name-conflict mode appends `a`/`b`/`c`/… to colliding series in write order; the post-pass reads the provenance TSV and renumbers them as heudiconv-style `__dup-NN`, with the lowest `SeriesNumber` owning the unsuffixed base.
+- **Per-session `_scans.tsv`** with columns `filename, acq_time, operator, randstr` — matches heudiconv's reproin layout. `operator` is always `n/a` (PerformingPhysicianName/OperatorsName carry human names and are intentionally not threaded through the provenance TSV); `randstr` is an 8-hex md5 of the sorted `*UID` fields available in the sidecar. CRLF line endings to match Python's `csv.writer` `excel-tab` default, which is what heudiconv emits.
+- **Per-task `task-<X>[_acq-<Y>]_bold.json`** at the BIDS root for every task/acq tuple seen under any subject. When a task has both bare `task-X` and `task-X_acq-Y` runs, the post-pass writes `TaskName` into each per-series BOLD sidecar and removes only generated root-level `task-X_bold.json` stubs, avoiding BIDS validator `MULTIPLE_INHERITABLE_FILES` while preserving root files with curated extra metadata. Generated root stubs with no matching bold data (dcm2niix writes one for a func series that yields no `_bold` image, e.g. PhysioLog or `SBRef_PMU`) are also deleted, avoiding `SIDECAR_WITHOUT_DATAFILE`.
 - **Per-task empty `_events.tsv`** placeholders next to each `_bold.nii*`.
-- **BIDS root scaffolding**: `CHANGES`, `README` (no `.md`),
-  `participants.tsv` (one row per `sub-*`, columns
-  `participant_id, age, sex, group` with `age`/`sex` pulled from the
-  provenance TSV and `group` defaulting to `control`; rows ordered
-  chronologically by StudyDate then alphabetical),
-  `participants.json`, `scans.json`, and upgrade of dcm2niix's stub
-  `dataset_description.json` to the heudiconv reproin template.
-  Written at the BIDS root, which is the common parent of every
-  `sub-*` directory — *not* necessarily the user's `-o` directory,
-  since dcm2niix may append a `<StudyDescription>` hierarchy below it.
-- **fmap pairing.** Every non-fmap scan (including `sbref`) is paired with
-  the fmap group whose `ShimSetting` (exact) and NIfTI affine
-  (`np.allclose(rtol=0.05)`) match — the same algorithm heudiconv runs
-  via `POPULATE_INTENDED_FOR_OPTS`. Modern BIDS B0 mapping fields are
-  written: `B0FieldIdentifier` on every fmap JSON in the group, and
-  `B0FieldSource` on each compatible target. (Heudiconv emits the legacy
-  `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.) An `sbref`
-  shares its `bold` sibling's readout, so it is forced to the same
-  `B0FieldSource` as that sibling rather than re-paired independently —
-  a closest-in-time tie between two compatible fmaps can never split the
-  pair (the shared choice is taken from whichever sibling has a usable
-  `AcquisitionTime`).
-- **Unknown-rescue of non-leading-datatype protocols.** Protocols that put
-  entities first and the suffix last with no leading `<datatype>` token
-  (e.g. `ses-pre_task-bernd_bold`, `acq-space_T2w`) are not canonical
-  reproin — heudiconv's `parse_series_spec` returns `{}` when `token[0]`
-  isn't a known datatype, so the one-pass parser drops them to `Unknown/`.
-  `_rescue_unknown_dir` recovers the reproin entities second-hand from the
-  `ProtocolName`: a study-scoped `ses-<X>` (one label per
-  `StudyInstanceUID`, conflicts fall back to the `StudyDate`/`StudyTime`
-  timestamp session), and a numeric `run-<N>` placed in canonical BIDS
-  order. The BidsGuess `_run-<SeriesNumber>` (a raw acquisition counter,
-  not a BIDS run index) is stripped; a non-disambiguating collision run
-  left after reclassification is dropped unless the protocol states it.
-- **Stranded physio rescue.** When a BOLD's ProtocolName fails to parse it
-  lands in `Unknown/` and dcm2niix writes its `_recording-*_physio` files
-  there too (not under `derivatives/scanner/`), so the normal physio pass
-  never sees them. `_rescue_unknown_physio` pairs each by
-  `(session, task, run)` to its rescued BOLD (unique match required),
-  adopting the bold's full stem with `_echo-N` dropped.
-- **Cross-series reclassification** (`_reclassify_session`, mirrors
-  reproin-namer; gated by `--min-volumes`/`-N`, default 5). dcm2niix
-  classifies each series in isolation; the post-pass uses the whole
-  session to resolve intent: a short reverse-PE EPI (`< N` volumes) beside
-  a long-EPI sibling becomes a PEPOLAR distortion map `fmap/…_dir-<L>_epi`
-  (existing anatomical `dir-AP`/`dir-PA` preserved, else the voxel-axis
-  label), and an `anat/…_T2w` co-planar with a session `_bold` becomes
-  `_inplaneT2`. A half-sessioned subject (a sessionless ReproIn-parsed
-  series beside a single existing `ses-*/`) is consolidated into that
-  session.
+- **BIDS root scaffolding**: `CHANGES`, `README` (no `.md`), `participants.tsv` (one row per `sub-*`, columns `participant_id, age, sex, group` with `age`/`sex` pulled from the provenance TSV and `group` defaulting to `control`; rows ordered chronologically by StudyDate then alphabetical), `participants.json`, `scans.json`, and upgrade of dcm2niix's stub `dataset_description.json` to the heudiconv reproin template. Written at the BIDS root, which is the common parent of every `sub-*` directory — *not* necessarily the user's `-o` directory, since dcm2niix may append a `<StudyDescription>` hierarchy below it.
+- **fmap pairing.** Every non-fmap scan (including `sbref`) is paired with the fmap group whose `ShimSetting` (exact) and NIfTI affine (`np.allclose(rtol=0.05)`) match — the same algorithm heudiconv runs via `POPULATE_INTENDED_FOR_OPTS`. Modern BIDS B0 mapping fields are written: `B0FieldIdentifier` on every fmap JSON in the group, and `B0FieldSource` on each compatible target. (Heudiconv emits the legacy `IntendedFor` list instead; we emit the BIDS ≥ 1.7 keys.) An `sbref` shares its `bold` sibling's readout, so it is forced to the same `B0FieldSource` as that sibling rather than re-paired independently — a closest-in-time tie between two compatible fmaps can never split the pair (the shared choice is taken from whichever sibling has a usable `AcquisitionTime`). Unlike heudiconv, an EPI group whose `_epi` files all share one `PhaseEncodingDirection` is dropped (a warning is printed): it has no reversed-PE partner, so no field can be estimated from it. Typical cause: a "PA" protocol made by rotating the FOV 180° rather than flipping the PE. A rerun also removes links an earlier pass wrote for such a group.
+- **Magnitude/phase pairs.** Magnitude and phase series of one protocol collide onto one stem; reproinx renames them to `_part-<mag|phase>_bold` and adds `Units: arbitrary` to Siemens `part-phase` sidecars (any datatype). A protocol repeated as several mag/phase acquisitions gets `run-01`, `run-02`, ... in `AcquisitionTime` order; its SBRef (or noRF) takes the run of the nearest-in-time BOLD.
+- **3D EPI research sequences (`ep3d`, BidsGuess).** ScanningSequence is `RM`, so the guess uses `AcquisitionDuration`: over 10 s is a T2*-weighted SWI/QSM volume (`anat/..._part-<mag|phase>_T2starw`), otherwise `func` bold.
+- **MP2RAGE family (one-pass, in dcm2niix).** A Siemens `anat-MP2RAGE` protocol exports INV1, INV2, UNI and UNI-DEN, each also as `_ND` (no distortion correction); heudiconv names them all `_MP2RAGE` and they collide. dcm2niix splits them by content: `inv-1`/`inv-2` (from BidsGuess, overriding any `inv-` in the protocol), UNI -> `_UNIT1` kept as raw data despite its DERIVED ImageType, UNI-DEN -> `_rec-denoised_UNIT1` (`desc-` is not allowed in raw BIDS), and `_ND` -> `ND` appended to the `acq-` label (e.g. `acq-063mmND`). On XA, `NumberShots` comes from `sFastImaging.lTurboFactor`; `RepetitionTimeExcitation` (echo spacing) is not in the DICOM, so the validator's required-key error must be fixed by hand from the protocol printout.
+- **OpenRecon FRISGO output.** OpenRecon's FRISGO option writes a filtered copy of a dual-polarity 3D EPI series that would collide with the raw series (ImageTypeText `…\M\FRISGO\FRISGO`, while the raw passthrough carries FRISGO only at index 3). The copy goes to `derivatives/scanner` as `_rec-frisgo_`, so the raw tree keeps one copy per acquisition and its mag/phase pair resolves to `part-`. Its temporal filter shifts timing by -TR/2, and the copy loses the `DIS2D`/`DIS3D` tokens even though it is gradient-unwarped.
+- **OpenRecon SynthSeg output.** The SynthSeg app writes each output as `<SeriesDescription>_<app>_OR` with one shared ImageTypeText (`…\M\SYNTHSEG\…`). `original` is the input passthrough and stays raw (the app name stops at an entity token such as `acq-x` and never includes the ProtocolName); the other apps (`synthseg`, `desikan`, `glasser_approx`) are segmentations and go to `derivatives/scanner` as `desc-<app>` (alphanumeric, e.g. `desc-glasserapprox`).
+- **Unparsable protocols are reported.** A series whose ProtocolName is not valid ReproIn (no `<datatype>` token) still goes to `Unknown/`, but dcm2niix now prints one line per series: `Warning: ReproIn: invalid ProtocolName, saved to Unknown/: SeriesNumber=N SeriesInstanceUID=... ProtocolName="..."` (the UID reads `(anonymized)` under `-ba y`). Fix the protocol name at the scanner; the UID identifies the series to rename.
+- **Unknown-rescue of non-leading-datatype protocols.** Protocols that put entities first and the suffix last with no leading `<datatype>` token (e.g. `ses-pre_task-bernd_bold`, `acq-space_T2w`) are not canonical reproin — heudiconv's `parse_series_spec` returns `{}` when `token[0]` isn't a known datatype, so the one-pass parser drops them to `Unknown/`. `_rescue_unknown_dir` recovers the reproin entities second-hand from the `ProtocolName`: a study-scoped `ses-<X>` (one label per `StudyInstanceUID`, conflicts fall back to the `StudyDate`/`StudyTime` timestamp session), and a numeric `run-<N>` placed in canonical BIDS order. The BidsGuess `_run-<SeriesNumber>` (a raw acquisition counter, not a BIDS run index) is stripped; a non-disambiguating collision run left after reclassification is dropped unless the protocol states it. A rescued series can land in `ses-<date>/` before session backfill runs, leaving session-less datatype dirs beside `ses-*`; the post-pass treats the subject dir as a session too, so those dirs still get every per-session pass.
+- **Stranded physio rescue.** When a BOLD's ProtocolName fails to parse it lands in `Unknown/` and dcm2niix writes its `_recording-*_physio` files there too (not under `derivatives/scanner/`), so the normal physio pass never sees them. `_rescue_unknown_physio` pairs each by `(session, task, run)` to its rescued BOLD (unique match required), adopting the bold's full stem with `_echo-N` dropped.
+- **Cross-series reclassification** (`_reclassify_session`, mirrors reproin-namer; gated by `--min-volumes`/`-N`, default 5). dcm2niix classifies each series in isolation; the post-pass uses the whole session to resolve intent: a short reverse-PE EPI (`< N` volumes) beside a long-EPI sibling becomes a PEPOLAR distortion map `fmap/…_dir-<L>_epi` (existing anatomical `dir-AP`/`dir-PA` preserved, else the voxel-axis label), and an `anat/…_T2w` co-planar with a session `_bold` becomes `_inplaneT2`. A half-sessioned subject (a sessionless ReproIn-parsed series beside a single existing `ses-*/`) is consolidated into that session.
 
 Usage:
 
@@ -371,7 +300,7 @@ ReproIn currently emits `phasediff` for any `P` image in a fmap. The BIDS
 - **Run zero-padding**: `_run-1` in ProtocolName becomes `run-01` in the output
   filename. heudiconv's `"run-%02d"` formatting.
 - **Custom `__suffix` is dropped**: matches `series_spec.split("__", 1)[0]`.
-- **Sanitisation**: task/acq values strip `#!@$%^&.,:;_-`.
+- **Sanitisation**: sub/ses labels and entity values keep only `[A-Za-z0-9]` (stricter than heudiconv's `#!@$%^&.,:;_-` strip; `ses-{date}` is resolved first).
 - **Fall-through**: when ProtocolName **and** SeriesDescription both fail to
   parse, dcm2niix falls back to its legacy `Unknown/<series>_<protocol>`
   filename rather than dropping the data. Conversion never silently loses a
