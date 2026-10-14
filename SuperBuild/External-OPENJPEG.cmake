@@ -26,6 +26,7 @@ ExternalProject_Add(openjpeg
         -DOPJ_USE_THREAD=OFF
         "-DCMAKE_OSX_ARCHITECTURES:STRING=${OSX_ARCHITECTURES}"
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+        "-DCMAKE_OSX_SYSROOT:STRING=${CMAKE_OSX_SYSROOT}"
         -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
         -DBUILD_SHARED_LIBS=OFF
         # disable optional dependencies not needed for dcm2niix
