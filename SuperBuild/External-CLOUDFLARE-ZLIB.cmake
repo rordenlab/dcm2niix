@@ -1,8 +1,8 @@
-set(CLOUDFLARE_BRANCH gcc.amd64) # Cloudflare zlib branch
+set(CLOUDFLARE_TAG 7d9d0b20249fd459c69e4b98bc569b7157f3018c) # gcc.amd64 snapshot
 
 ExternalProject_Add(zlib
     GIT_REPOSITORY "https://github.com/ningfei/zlib.git"
-    GIT_TAG "${CLOUDFLARE_BRANCH}"
+    GIT_TAG "${CLOUDFLARE_TAG}"
     SOURCE_DIR cloudflare-zlib
     BINARY_DIR cloudflare-zlib-build
     CMAKE_ARGS
