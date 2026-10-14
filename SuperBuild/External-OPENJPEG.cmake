@@ -19,6 +19,7 @@ ExternalProject_Add(openjpeg
         -Wno-dev
         --no-warn-unused-cli
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
         -DCMAKE_POLICY_DEFAULT_CMP0091=NEW
         -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>
         -DCMAKE_C_FLAGS_RELEASE=${OPENJPEG_C_FLAGS_RELEASE}
