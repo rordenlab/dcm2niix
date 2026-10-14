@@ -28,10 +28,10 @@ endif()
 # optionally enable Link Time Optimization (LTO) if supported
 include(CheckIPOSupported)
 check_ipo_supported(RESULT lto_supported OUTPUT lto_output)
-if(lto_supported)
+if(lto_supported AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
     message(STATUS "LTO (Link Time Optimization) is supported and will be enabled.")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-else()
+elseif(NOT lto_supported)
     message(WARNING "LTO not supported: ${lto_output}")
 endif()
 
