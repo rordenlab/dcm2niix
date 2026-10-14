@@ -12812,6 +12812,22 @@ static void mrsReportConvert(int nConvert, const char *pathoutname, struct nifti
 #endif
 }
 
+// JSON sidecar pass for the MRS/MRSI writers. TDTI4D is several MB, so it is
+// heap-allocated. `initTDTI4D` sets the "unset" sentinels so the PET-flavored
+// BEP009 emission gates in nii_SaveBIDSX don't fire on MRS; without it,
+// dim[4]-long zero arrays of `DecayCorrectionFactor` / `FrameTimesStart` leak
+// in (commit 33da307).
+static void mrsSaveBIDS(char pathoutname[], const struct TDICOMdata *d, const struct TDCMopts *opts, struct nifti_1_header *h, const char *filename) {
+	struct TDTI4D *dti4D = (struct TDTI4D *)malloc(sizeof(struct TDTI4D));
+	if (dti4D == NULL) {
+		printWarning("MRS: malloc failed for sidecar buffer; skipping JSON sidecar\n");
+		return;
+	}
+	initTDTI4D(dti4D);
+	nii_SaveBIDSX(pathoutname, *d, *opts, h, filename, dti4D);
+	free(dti4D);
+}
+
 static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 						  struct TDICOMdata dcmList[],
 						  struct TSearchList *nameList,
@@ -13439,17 +13455,8 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 	// emissions (SpectralWidth, DwellTime, TransmitterFrequency,
 	// ResonantNucleus, DataPointColumns) are gated on d.isMRS inside
 	// nii_SaveBIDSX.
-	if (ret == EXIT_SUCCESS) {
-		// Stack-local TDTI4D for the MRS sidecar pass. `initTDTI4D` sets the
-		// full set of "unset" sentinels so the PET-flavored BEP009 emission
-		// gates at ~L2390-2457 don't fire on MRS — without this, dim[4]-long
-		// zero arrays of `DecayCorrectionFactor` / `FrameTimesStart` leak in
-		// (commit 33da307; helper consolidates the pattern with nii_SaveBIDS).
-		struct TDTI4D dti4D_local;
-		initTDTI4D(&dti4D_local);
-		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
-					  nameList->str[dcmSort[0].indx], &dti4D_local);
-	}
+	if (ret == EXIT_SUCCESS)
+		mrsSaveBIDS(pathoutname, d0, &opts, &hdr, nameList->str[dcmSort[0].indx]);
 	// _mrsref companion writer (P2.c / P4.4): emits the trailing water-
 	// reference FID as <stem>_mrsref.nii(.gz) + <stem>_mrsref.json. Derived
 	// from the main pathoutname by substituting the _svs suffix; falls back
@@ -13506,10 +13513,7 @@ static int saveDcm2NiiMRS(int nConvert, struct TDCMsort dcmSort[],
 			int retRef = nii_saveNII(refPath, hdr, (unsigned char *)fidRef, opts, dRef, mrsExtRef);
 			free(mrsExtRef);
 			if (retRef == EXIT_SUCCESS) {
-				struct TDTI4D dti4D_ref;
-				initTDTI4D(&dti4D_ref); // see main-writer comment (audit 33da307)
-				nii_SaveBIDSX(refPath, dRef, opts, &hdr,
-							  nameList->str[dcmSort[0].indx], &dti4D_ref);
+				mrsSaveBIDS(refPath, &dRef, &opts, &hdr, nameList->str[dcmSort[0].indx]);
 			} else {
 				printWarning("MRS: _mrsref companion NIfTI write failed (path %s)\n", refPath);
 			}
@@ -13899,12 +13903,8 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	// otherwise have no associated NIfTI).
 	if (ret == EXIT_SUCCESS)
 		mrsReportConvert(nConvert, pathoutname, hdr);
-	if (ret == EXIT_SUCCESS) {
-		struct TDTI4D dti4D_local;
-		initTDTI4D(&dti4D_local);
-		nii_SaveBIDSX(pathoutname, *d0, opts, &hdr,
-					  nameList->str[dcmSort[0].indx], &dti4D_local);
-	}
+	if (ret == EXIT_SUCCESS)
+		mrsSaveBIDS(pathoutname, d0, &opts, &hdr, nameList->str[dcmSort[0].indx]);
 	free(fid);
 	return ret;
 }
