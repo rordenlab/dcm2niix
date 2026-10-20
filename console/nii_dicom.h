@@ -66,6 +66,7 @@ static const int kMaxSlice2D = 65535; // issue460 maximum number of 2D slices in
 #else
 static const int kMaxSlice2D = 98303; // issue922 maximum number of 2D slices in 4D (Philips) images
 #endif
+static const int kMaxPMChannel = 16; // issue 1041: Parametric Map channels (index 0 = none)
 static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI directions for 4D (Philips) images, also maximum number of 2D slices for Enhanced DICOM and PAR/REC
 
 #define kDICOMStr 66 // 64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
@@ -233,6 +234,8 @@ struct TDTI4D {
 	bool isPhase[kMaxDTI4D];
 	bool isRealIsPhaseMapHz[kMaxDTI4D];
 	unsigned char dixonType[kMaxDTI4D]; // kDIXON_*
+	unsigned char pmChannel[kMaxDTI4D]; // index into pmLabel, 0 = none
+	char pmLabel[kMaxPMChannel][17];	// LUTLabel (SH)
 	float repetitionTimeExcitation, repetitionTimeInversion;
 	// deID_CS[] moved to TDICOMdata (per-file, not per-pass) — see comment there.
 };
@@ -317,6 +320,7 @@ struct TDICOMdata {
 	float pixelPaddingValue; // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
 	double imagingFrequency, acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, seriesTime, radiopharmaceuticalStartTime, radiopharmaceuticalSpecificActivity, acquisitionDate, bandwidthPerPixelPhaseEncode; // (0018,1077) -> BIDS MolarActivity; double for DS precision
 	char parallelAcquisitionTechnique[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], tracerRadionuclide[kDICOMStr], radiopharmaceutical[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr], randomsCorrectionMethod[kDICOMStr], scatterCorrectionMethod[kDICOMStr], reconstructionMethod[kDICOMStr], transferSyntax[kDICOMStr];
+	char pmLabel[17]; // issue 1041: Parametric Map LUTLabel of this channel
 	char deidentificationMethod[kDICOMStr], prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], transmitCoilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], studyDescription[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStrLarge], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr], sequenceVariant[kDICOMStr], scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr], studyDate[kDICOMStr], studyTime[kDICOMStr];
 	char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];

@@ -51,6 +51,7 @@ In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 
  - _real real component of complex image
  - _t  If the trigger delay time (0020,9153) or trigger time (0018,1060) is non-zero, it will be recorded in the file name. For example, the files "T1_t178.nii" and "T1_t511" suggests that the T1 scan was acquired with two cardiac trigger delays (178 and 511ms after the last R-peak).
  - _Tilt is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with a gantry tilt that causes a skew that can not be stored in a NIfTI qForm. Therefore, the slices are resampled to remove the effect of tilt.
+ - _\<LUTLabel\> channel of a multi-channel DICOM Parametric Map, named by its LUT Label (0040,9210), e.g. `_T2STAR`, `_S0`.
 
 Some post-fixes are specific to Philips DICOMs
  - _ADC Philips specific case. A DWI image where derived isotropic, ADC or trace volume was appended to the series. Since this image will disrupt subsequent processing, and because subsequent processing (dwidenoise, topup, eddy) will yield better derived images, dcm2niix will also create an additional image without this volume. Therefore, the _ADC file should typically be discarded. If you want dcm2niix to discard these useless derived images, use the ignore feature ('-i y').

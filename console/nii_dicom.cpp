@@ -850,6 +850,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isHasImaginary = false;
 	d.isHasMagnitude = false;
 	d.dixonType = kDIXON_NONE;
+	d.pmLabel[0] = 0;
 	// d.maxGradDynVol = -1; //PAR/REC only
 	d.sliceOrient = kSliceOrientUnknown;
 	d.dateTime = (double)19770703150928.0;
@@ -2923,6 +2924,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
 			dti4D->dixonType[vol] = kDIXON_NONE; // dti4D is malloc'd, saveDcm2Nii indexes tables with this
+			dti4D->pmChannel[vol] = 0;
 			dti4D->isRealIsPhaseMapHz[vol] = isRealIsPhaseMapHz;
 			if ((maxNumberOfGradientOrients > 1) && (parVers > 40)) {
 				dti4D->S[vol].V[0] = cols[kbval];
@@ -2987,6 +2989,7 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isImaginary[maxVol] = dti4D->isImaginary[i];
 			dti4D->isPhase[maxVol] = dti4D->isPhase[i];
 			dti4D->dixonType[maxVol] = dti4D->dixonType[i];
+			dti4D->pmChannel[maxVol] = dti4D->pmChannel[i];
 			dti4D->isRealIsPhaseMapHz[maxVol] = dti4D->isRealIsPhaseMapHz[i];
 			dti4D->S[maxVol].V[0] = dti4D->S[i].V[0];
 			dti4D->S[maxVol].V[1] = dti4D->S[i].V[1];
@@ -4853,6 +4856,8 @@ struct TDCMdim { // DimensionIndexValues
 	bool isImaginary;
 	bool isRealIsPhaseMapHz;
 	unsigned char dixonType;
+	unsigned char pmChannel; // issue 1041
+	uint16_t pmTime; // ponytail: TemporalPositionIndex truncated to 16 bits
 };
 
 void getFileNameX(char *pathParent, const char *path, int maxLen) { // if path is c:\d1\d2 then filename is 'd2'
@@ -5259,6 +5264,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kStudyComments 0x0032 + (0x4000 << 16) // LT StudyComments
 // #define kObjectGraphics 0x0029+(0x1210 << 16 ) //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
 #define kProcedureStepDescription 0x0040 + (0x0254 << 16)
+#define kLUTLabel 0x0040 + uint32_t(0x9210 << 16)			 // SH
+#define kRealWorldValueMappingSequence 0x0040 + uint32_t(0x9096 << 16) // SQ
 #define kRealWorldIntercept 0x0040 + uint32_t(0x9224 << 16)	 // IS dicm2nii's SlopInt_6_9
 #define kRealWorldSlope 0x0040 + uint32_t(0x9225 << 16)		 // IS dicm2nii's SlopInt_6_9
 #define kShimGradientX 0x0043 + (0x1002 << 16)				 // SS
@@ -5416,6 +5423,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// float sliceLocation = INFINITY; //useless since this tag is optional
 	// int numFirstPatientPosition = 0;
 	int nDimIndxVal = -1; // tracks Philips kDimensionIndexValues
+	bool isParametricMap = false;
+	int nPMChannel = 0; // -1: unusable
+	int pmFrame = 0;
 	int locationsInAcquisitionGE = 0;
 	int PETImageIndex = 0;
 	int inStackPositionNumber = 0;
@@ -5540,12 +5550,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int numDimensionIndexValues = 0;
 	bool isSiemensXA = false;
 	// don't use stack! TDCMdim dcmDim[kMaxSlice2D];
-	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
-	for (int i = 0; i < kMaxSlice2D; i++) {
+	// calloc: the issue 372 fallback never fills TE/scale/etc., later read per volume (issue 1041)
+	TDCMdim *dcmDim = (TDCMdim *)calloc(kMaxSlice2D, sizeof(TDCMdim));
+	for (int i = 0; i < kMaxSlice2D; i++)
 		dcmDim[i].diskPos = i;
-		for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++)
-			dcmDim[i].dimIdx[j] = 0;
-	}
 // http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
 // The array nestPos tracks explicit lengths for Data Element Tag of Value (FFFE,E000)
 // a delimiter (fffe,e000) can have an explicit length, in which case there is no delimiter (fffe,e00d)
@@ -5884,6 +5892,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				vr[1] = 'Q';
 				lLength = 0; // Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
+			if ((isParametricMap) && (groupElement == kRealWorldValueMappingSequence)) { // issue 1041: holds LUTLabel; PM only, Philips RWV parsing stays as before
+				vr[0] = 'S';
+				vr[1] = 'Q';
+				lLength = 0;
+			}
 			if (groupElement == kDiffusionGradientDirectionSQ) { // https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
 				vr[1] = 'Q';
@@ -6082,6 +6095,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isDerived = true;										  // Segmentation IOD, issue 572
 			else if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL)
 				d.isRawDataStorage = true; // e.g. Raw Data IOD, https://dicom.nema.org/dicom/2013/output/chtml/part04/sect_i.4.html
+			if (strcmp(mediaUID, "1.2.840.10008.5.1.4.1.1.30") == 0)
+				isParametricMap = true;
 			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.77.1.6") != NULL)
 				d.isMicroscopy = true;
 			if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.1") != NULL)
@@ -7138,6 +7153,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos], d.isLittleEndian);
 			break;
 		case kFrameContentSequence:
+			pmFrame++;
 			// if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //see https://github.com/rordenlab/dcm2niix/issues/241
 			if (sqDepth == 0)
 				sqDepth = 1; // should not happen, in case faulty anonymization
@@ -8407,6 +8423,31 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// hits the few tags spec2nii's process_siemens_svs_vx reads.
 			readCSAforMRS(&buffer[lPos], lLength, &d);
 			break;
+		case kLUTLabel: { // issue 1041: channel = first per-frame LUTLabel of frame pmFrame-1 (FrameContentSequence precedes it; 0 in shared group)
+			if ((!isParametricMap) || (nPMChannel < 0) || (pmFrame < 1) || (pmFrame > kMaxSlice2D) || (dcmDim[pmFrame - 1].pmChannel > 0))
+				break;
+			char label[kDICOMStr];
+			label[0] = 0;
+			dcmStr(lLength, &buffer[lPos], label);
+			label[16] = 0; // SH
+			if (!label[0])
+				break; // unlabeled frame: validated before splitting
+			int ch = 1;
+			while ((ch <= nPMChannel) && (strcmp(label, dti4D->pmLabel[ch]) != 0))
+				ch++;
+			if (ch >= kMaxPMChannel) {
+				printWarning("Parametric Map has more than %d channels (issue 1041)\n", kMaxPMChannel - 1);
+				nPMChannel = -1;
+				break;
+			}
+			if (ch > nPMChannel) {
+				nPMChannel = ch;
+				strcpy(dti4D->pmLabel[ch], label);
+			}
+			dcmDim[pmFrame - 1].pmChannel = ch;
+			dcmDim[pmFrame - 1].pmTime = temporalPositionIndex; // FrameContentSequence precedes this
+			break;
+		}
 		case kRealWorldIntercept:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
@@ -9295,6 +9336,36 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.xyzDim[4] = 1;
 		d.xyzDim[3] = numDimensionIndexValues;
 	} // issue839
+	if (nPMChannel > 1) { // issue 1041: one volume per channel and time point
+		// isKludgeIssue809 owns dimIdx[6..7]; compressed frames are assembled in disk order, ignoring sliceOrder
+		// shape from counts, not xyzDim: temporal/stack/segment heuristics above may already have split it
+		int nTime = (maxTemporalPositionIndex > minTemporalPositionIndex) ? (maxTemporalPositionIndex - minTemporalPositionIndex + 1) : 1;
+		int nVol = nPMChannel * nTime;
+		bool isSplit = (!isKludgeIssue809) && (d.compressionScheme == kCompressNone) && (pmFrame == numberOfFrames) && (numDimensionIndexValues == numberOfFrames) && (nTime <= numberOfFrames) && ((numberOfFrames % nVol) == 0);
+		int nSlice = isSplit ? (numberOfFrames / nVol) : 0;
+		if ((maxInStackPositionNumber > 1) && (nSlice != maxInStackPositionNumber))
+			isSplit = false; // e.g. several stacks
+		if (isSplit) { // every (channel, time) cell must hold nSlice frames: catches unlabeled frames, TPI gaps, uneven channels/times
+			int *nCell = (int *)calloc(nVol, sizeof(int));
+			for (int i = 0; isSplit && (i < numberOfFrames); i++) {
+				int c = dcmDim[i].pmChannel - 1;
+				int t = (nTime > 1) ? ((int)dcmDim[i].pmTime - minTemporalPositionIndex) : 0;
+				isSplit = (c >= 0) && (t >= 0) && (t < nTime) && (++nCell[c * nTime + t] <= nSlice);
+			}
+			free(nCell);
+		}
+		if (isSplit) {
+			// ponytail: top two slots assumed unused, a PM with 7+ index dimensions would lose its last ones
+			for (int i = 0; i < numberOfFrames; i++) {
+				dcmDim[i].dimIdx[MAX_NUMBER_OF_DIMENSIONS - 1] = dcmDim[i].pmChannel; // sort by channel, then time
+				dcmDim[i].dimIdx[MAX_NUMBER_OF_DIMENSIONS - 2] = dcmDim[i].pmTime;
+			}
+			d.xyzDim[3] = nSlice;
+			d.xyzDim[4] = nVol;
+		} else // unsplit: no volume is labeled
+			for (int i = 0; (i < pmFrame) && (i < kMaxSlice2D); i++)
+				dcmDim[i].pmChannel = 0;
+	}
 	if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
 		// Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
 		int maxVariableItem = 0;
@@ -9401,6 +9472,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dti4D->isImaginary[i] = dcmDim[slice].isImaginary;
 				dti4D->isRealIsPhaseMapHz[i] = dcmDim[slice].isRealIsPhaseMapHz;
 				dti4D->dixonType[i] = dcmDim[slice].dixonType;
+				dti4D->pmChannel[i] = dcmDim[slice].pmChannel; // 0 unless a Parametric Map was split
+				if (dti4D->pmChannel[i] != dti4D->pmChannel[0])
+					d.isScaleOrTEVaries = true;
 				dti4D->triggerDelayTime[i] = dcmDim[slice].triggerDelayTime;
 				dti4D->S[i].V[0] = dcmDim[slice].V[0];
 				dti4D->S[i].V[1] = dcmDim[slice].V[1];

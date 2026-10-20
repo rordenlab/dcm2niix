@@ -5500,6 +5500,14 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 		strcat(mrifsStruct.namePostFixes, dixonPostFix[dcm.dixonType]);
 #endif
 	}
+	if ((isAddNamePostFixes) && (dcm.pmLabel[0])) { // issue 1041
+		strcat(outname, "_");
+		strcat(outname, dcm.pmLabel);
+#ifdef USING_DCM2NIIXFSWRAPPER
+		strcat(mrifsStruct.namePostFixes, "_");
+		strcat(mrifsStruct.namePostFixes, dcm.pmLabel);
+#endif
+	}
 	if ((isAddNamePostFixes) && (dcm.aslFlags == kASL_FLAG_NONE) && (dcm.triggerDelayTime >= 1) && (dcm.manufacturer != kMANUFACTURER_GE)) { // issue 336 GE uses this for slice timing
 		snprintf(newstr, PATH_MAX, "_t%d", (int)roundf(dcm.triggerDelayTime));
 		strcat(outname, newstr);
@@ -14003,7 +14011,7 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 		int iv = (i * dim3); // intenIntercept and intenScale can vary within a volume
 		for (int j = 0; j < i; j++) {
 			int jv = (j * dim3);
-			if (((dcmList[indx].aslFlags != kASL_FLAG_NONE) || isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j])) && (dti4D->intenIntercept[iv] == dti4D->intenIntercept[jv]) && (dti4D->intenScale[iv] == dti4D->intenScale[jv]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->dixonType[i] == dti4D->dixonType[j]) && (dti4D->isRealIsPhaseMapHz[i] == dti4D->isRealIsPhaseMapHz[j]) && (dti4D->TE[i] == dti4D->TE[j]))
+			if (((dcmList[indx].aslFlags != kASL_FLAG_NONE) || isSameFloatGE(dti4D->triggerDelayTime[i], dti4D->triggerDelayTime[j])) && (dti4D->intenIntercept[iv] == dti4D->intenIntercept[jv]) && (dti4D->intenScale[iv] == dti4D->intenScale[jv]) && (dti4D->isReal[i] == dti4D->isReal[j]) && (dti4D->isImaginary[i] == dti4D->isImaginary[j]) && (dti4D->isPhase[i] == dti4D->isPhase[j]) && (dti4D->dixonType[i] == dti4D->dixonType[j]) && (dti4D->pmChannel[i] == dti4D->pmChannel[j]) && (dti4D->isRealIsPhaseMapHz[i] == dti4D->isRealIsPhaseMapHz[j]) && (dti4D->TE[i] == dti4D->TE[j]))
 				dti4D->gradDynVol[i] = dti4D->gradDynVol[j];
 		}
 		if (dti4D->gradDynVol[i] == 0) {
@@ -14063,6 +14071,10 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 				dcmList[indx].isHasReal = dti4D->isReal[i];
 				dcmList[indx].isHasImaginary = dti4D->isImaginary[i];
 				dcmList[indx].dixonType = dti4D->dixonType[i];
+				if (dti4D->pmChannel[i])
+					strcpy(dcmList[indx].pmLabel, dti4D->pmLabel[dti4D->pmChannel[i]]);
+				else
+					dcmList[indx].pmLabel[0] = 0;
 				dcmList[indx].isRealIsPhaseMapHz = dti4D->isReal[i] ? dti4D->isRealIsPhaseMapHz[i] : isRealIsPhaseMapHz; // issue 1038: only the B0 frame is Hz, not other Real echoes
 				dcmList[indx].triggerDelayTime = dti4D->triggerDelayTime[i];
 				dcmList[indx].isHasMagnitude = false;
