@@ -37,7 +37,7 @@ function show({ series, files, exitCode, log }) {
 | `onProgress(fraction)` | 0..1; add `'--progress', 'y'` to `args` |
 | `createWorker` | advanced: supply your own `Worker` |
 
-Privacy: dcm2niix defaults to `-ba y`, which omits names, dates, source UIDs and free-text ImageComments from sidecars. Filenames follow `-f` (default `%f_%p_%t_%s`, which includes the acquisition time).
+Privacy: dcm2niix defaults to `-ba y`, which omits names, dates and source UIDs from sidecars; free-text ImageComments is kept. Filenames follow `-f` (default `%f_%p_%t_%s`, which includes the acquisition time).
 
 ## Pick series before converting
 

@@ -2323,8 +2323,7 @@ tse3d: T2*/
 		fprintf(fp, "\t\"AcquisitionNumber\": %d,\n", d.acquNum);
 	bool maskComments = (strlen(opts.imageComments) == 1) && (opts.imageComments[0] == '\t');
 	if (!maskComments) {
-		if (!opts.isAnonymizeBIDS) // -ba y: ImageComments is free text
-			json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
+		json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
 		json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
 	}
 	// if conditionals: the following values are required for DICOM MRI, but not available for CT
@@ -10088,11 +10087,8 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 		checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
 		rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
 	}
-	if (hdr->dim[3] > 1) {
+	if (hdr->dim[3] > 1)
 		sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1], hdr, true);
-		if (opts.isAnonymizeBIDS && (strlen(opts.imageComments) == 0))
-			memset(hdr->aux_file, 0, sizeof(hdr->aux_file)); // headerDcm2Nii2 refills an empty aux_file from ImageComments
-	}
 	// UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
 		printWarning("Weird CSA 'ProtocolSliceNumber' (System/Miscellaneous/ImageNumbering reversed): VALIDATE SLICETIMING AND BVECS\n");
@@ -11807,8 +11803,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		for (int i = 0; i < 24; i++)
 			hdr0.aux_file[i] = 0; // remove dcm.imageComments
 		snprintf(hdr0.aux_file, 24, "%s", opts.imageComments);
-	} else if (opts.isAnonymizeBIDS)
-		memset(hdr0.aux_file, 0, sizeof(hdr0.aux_file)); // -ba y: ImageComments is free text (sliceTimingCore repeats this)
+	}
 	if (opts.isVerbose)
 		printMessage("Converting %s\n", nameList->str[indx]);
 	if (img == NULL)
