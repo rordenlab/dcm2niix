@@ -3390,7 +3390,7 @@ tse3d: T2*/
 	// we do not currently emit. See issue #991 and the PR that introduced this gate for full context.
 	if (d.manufacturer != kMANUFACTURER_UIH)
 		json_Float(fp, "\t\"AcquisitionDuration\": %g,\n", d.acquisitionDuration);
-	if (d.numberOfKSpaceTrajectories > 0)
+	if (d.isMRS && (d.numberOfKSpaceTrajectories > 0)) // BIDS-MRS key; for imaging (0018,9093) is a shot count
 		fprintf(fp, "\t\"NumberOfKSpaceTrajectories\": %d,\n", d.numberOfKSpaceTrajectories);
 	if (d.isMRS) {
 		// MR Spectroscopy-specific fields, matched to BIDS-MRS:
@@ -4979,6 +4979,7 @@ void createDummyBidsBoilerplate(char *pth, bool isFunc, const char *taskName, co
 }
 
 int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts opts) {
+	bool isListOnly = (opts.numSeries < 0) && !opts.isRenameNotConvert; // -n -1 reports this name: never create or delete files (rename mode ignores -n)
 	char pth[PATH_MAX] = {""};
 	if (strlen(opts.outdir) > 0) {
 		strcpy(pth, opts.outdir);
@@ -5104,10 +5105,12 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 							return EXIT_FAILURE;
 						}
 						strcat(pth, studyPth);
-						mkDirs(pth);
+						if (!isListOnly)
+							mkDirs(pth);
 					}
-					createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0),
-											   specOk ? spec.task : NULL, specOk ? spec.acq : NULL);
+					if (!isListOnly)
+						createDummyBidsBoilerplate(pth, (specOk && strcmp(spec.datatype, "func") == 0),
+												   specOk ? spec.task : NULL, specOk ? spec.acq : NULL);
 					// Report once per converted series: not per file in rename mode, nor
 					// for the -h example name (no SeriesInstanceUID).
 					bool isReport = !opts.isRenameNotConvert && dcm.seriesInstanceUID[0] != '\0';
@@ -5220,7 +5223,8 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					} else {
 						strcat(bidsSession, "1");
 					}
-					createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL), NULL, NULL);
+					if (!isListOnly)
+						createDummyBidsBoilerplate(pth, (strstr(dcm.CSA.bidsDataType, "func") != NULL), NULL, NULL);
 					if (strlen(dcm.CSA.bidsDataType) < 1) {
 						strcat(outname, "Unknown");
 						snprintf(newstr, PATH_MAX, "%c", kTempPathSeparator);
@@ -5589,7 +5593,7 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 		for (size_t pos = 0; pos < strlen(outname); pos++) {
 			if (outname[pos] == kPathSeparator) {
 				// if (stat(newdir, &st) == -1)
-				if (!is_dir(newdir, true))
+				if (!isListOnly && !is_dir(newdir, true))
 #if defined(_WIN64) || defined(_WIN32)
 					mkdir(newdir);
 #else
@@ -5606,6 +5610,10 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 	strcat(baseoutname, outname);
 	char pathoutname[2048] = {""};
 	strcat(pathoutname, baseoutname);
+	if (isListOnly && (opts.nameConflictBehavior != kNAME_CONFLICT_ADD_SUFFIX)) { // -w 0/1: the name a conversion would use or skip
+		strcpy(niiFilename, pathoutname);
+		return EXIT_SUCCESS;
+	}
 	if ((niiExists(pathoutname)) && (opts.nameConflictBehavior == kNAME_CONFLICT_SKIP)) {
 		printWarning("Skipping existing file named %s\n", pathoutname);
 		return EXIT_FAILURE;
@@ -9043,7 +9051,7 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			strcpy(modalityBIDS, "m0scan");
 	} else if (strstr(d->pulseSequenceName, "spcR") != NULL) {
 		strcpy(dataTypeBIDS, "anat");
-		strcpy(modalityBIDS, "T2w");
+		strcpy(modalityBIDS, (MRWeightingGuess(d, true, false) == kMRWeightingT1) ? "T1w" : "T2w"); // T1 SPACE, as in the \space branch
 	} else if ((strstr(seqDetails, "tse_vfl") != NULL) || (strstr(seqDetails, "\\space") != NULL)) { // prog_tse_vfl / Siemens SPACE
 		// SPACE = Sampling Perfection with Application-optimized Contrasts —
 		// same variable-flip-angle TSE family as tse_vfl, marketing name on
@@ -9057,6 +9065,8 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			(strstr(d->sequenceName, "spcir") != NULL) ||
 			(strstr(d->pulseSequenceName, "spcir") != NULL))
 			strcpy(modalityBIDS, "FLAIR");
+		else if (MRWeightingGuess(d, true, false) == kMRWeightingT1) // T1 SPACE: short TE + short TR (e.g. TR 700, TE 11 ms); PD stays T2w as before
+			strcpy(modalityBIDS, "T1w");
 		else
 			strcpy(modalityBIDS, "T2w");
 	} else if (strstr(seqDetails, "tse") != NULL) { // prog_tse

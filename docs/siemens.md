@@ -33,8 +33,8 @@ Evaluated top-to-bottom as an `if / else if` chain; the **first** matching row s
 | 5 | `tfl` \| `mp2rage` \| `wip925` | `anat` | `MP2RAGE` if `isDualTI` else `T1w` | ImageType `T1 MAP`→`T1map`; `_UNI`→`UNIT1` (+`_rec-denoise` if "DENOISED IMAGE") |
 | 6 | CSA `numDti>0` \| `_diff` \| `resolve` \| `PtkSms…` \| `ep2d_stejskal_386` | `dwi` | `dwi` (or `sbref` if SeriesDescription `_SBRef`) | `_dir-` label added |
 | 7 | `fairest` \| `_asl` \| `_pasl` \| `pcasl`/`PCASL` | `perf` | `asl` (or `m0scan` if `_m0`) | bare `AC=PERFUSION` is **not** enough → Unknown |
-| 8 | `pulseSequenceName` has `spcR` | `anat` | `T2w` | |
-| 9 | `tse_vfl` \| `\space` (SPACE) | `anat` | `FLAIR` if `spcir` (in any of seq/pulse/details) else `T2w` | `\space` backslash-anchored (avoids "spaceship") |
+| 8 | `pulseSequenceName` has `spcR` | `anat` | `T1w` if `MRWeightingGuess` (spin echo) returns T1, else `T2w` | |
+| 9 | `tse_vfl` \| `\space` (SPACE) | `anat` | `FLAIR` if `spcir` (in any of seq/pulse/details), `T1w` if `MRWeightingGuess` (spin echo) returns T1, else `T2w` | `\space` backslash-anchored (avoids "spaceship") |
 | 10 | `tse` | `anat` | `tir`→`FLAIR`; then **independently** `tse2d`→**`MRWeightingGuess`(SE)** overwrites: `T2`→`T2w` else `PDw` | The two sub-checks are sequential, not exclusive: a `tse2d` that also matched `tir` ends as `T2w`/`PDw` (the `tse2d` block runs last and overwrites `FLAIR`). `_echo` suppressed (PD/T2 pair) |
 | 11 | `ep2d_ase` | *(none)* | `oef_ase` | ASE OEF; BIDS suffix not yet standardized |
 | 12 | `ep2d_se` | `fmap` | `epi` | `_dir-` label |
