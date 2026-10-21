@@ -408,6 +408,9 @@ bool reproinParseSpec(const struct TDICOMdata *dcm, struct TReproinSpec *spec) {
 	}
 	if (isFrisgo && spec->rec[0] == '\0')
 		snprintf(spec->rec, sizeof(spec->rec), "frisgo");
+	// Dixon water/fat/in/out-phase share one protocol (issue 1038): rec- keeps them apart, as setBids does for %h.
+	if (spec->rec[0] == '\0')
+		snprintf(spec->rec, sizeof(spec->rec), "%s", kDixonRec[dcm->dixonType]);
 	// OpenRecon SynthSeg names each output "<SeriesDescription>_<app>_OR" (app is
 	// the trailing lowercase tokens, e.g. glasser_approx) with one shared
 	// ImageTypeText; "original" is the input passthrough, the others are

@@ -9709,6 +9709,8 @@ bool setBids(struct TDICOMdata *d, const char *filename, int nConvert, int isVer
 	// the empty-classification case so existing vendor decisions are honoured).
 	if (d->CSA.bidsDataType[0] == '\0')
 		setBidsFromAcquisitionContrast(d);
+	// %h/%H drop name postfixes, so Dixon outputs need their own entity (issue 1038); no-op for "" or an existing rec-
+	bidsInsertEntity(d->CSA.bidsEntitySuffix, "rec", kDixonRec[d->dixonType], sizeof(d->CSA.bidsEntitySuffix));
 	return ((!strstr(d->CSA.bidsDataType, "discard")) && (!strstr(d->CSA.bidsDataType, "derived")));
 	// printf("%s\\%s\n", d->CSA.bidsDataType, d->CSA.bidsEntitySuffix);
 }

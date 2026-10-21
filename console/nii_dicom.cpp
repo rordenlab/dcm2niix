@@ -3930,9 +3930,14 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, 
 	return NULL;
 	TJPEG *lOffsetRA = (TJPEG *)malloc(frames * sizeof(TJPEG));
 	FILE *reader = fopen(fn, "rb");
+	if (reader == NULL) {
+		printError("Unable to open %s\n", fn);
+		abortGoto();
+	}
 	fseek(reader, 0, SEEK_END);
 	long lRawSz = ftell(reader) - skipBytes;
 	if (lRawSz <= 8) {
+		fclose(reader);
 		printError("Unable to open %s\n", fn);
 		abortGoto(); // read failure
 	}
@@ -3941,6 +3946,7 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, 
 	size_t lSz = fread(lRawRA, 1, lRawSz, reader);
 	fclose(reader);
 	if (lSz < (size_t)lRawSz) {
+		free(lRawRA);
 		printError("Unable to read %s\n", fn);
 		abortGoto(); // read failure
 	}
@@ -4004,24 +4010,26 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	}
 	if (dataType == DT_RGB24)
 		frames = frames / 3;
-	if (hdr.dim[3] != frames) { // multi-slice image saved as multiple image fragments rather than a single image
+	int nFrames = (int)(nii_ImgBytes(hdr) / nii_SliceBytes(hdr)); // all frames (dims 3-7): 4D enhanced has one fragment per frame
+	if (nFrames != frames) { // multi-slice image saved as multiple image fragments rather than a single image
 		// printMessage("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
 		if (ret != NULL)
 			free(ret);
-		TJPEG *offsetRA = decode_JPEG_SOF_0XC3_stack(imgname, dcm.imageStart - 8, isVerbose, hdr.dim[3], dcm.isLittleEndian);
+		TJPEG *offsetRA = decode_JPEG_SOF_0XC3_stack(imgname, dcm.imageStart - 8, isVerbose, nFrames, dcm.isLittleEndian);
 		if (offsetRA == NULL)
 			return NULL;
 		size_t slicesz = nii_SliceBytes(hdr);
-		size_t imgsz = slicesz * hdr.dim[3];
+		size_t imgsz = slicesz * nFrames;
 		size_t pos = 0;
 		unsigned char *bImg = (unsigned char *)malloc(imgsz);
-		for (int frame = 0; frame < hdr.dim[3]; frame++) {
+		for (int frame = 0; frame < nFrames; frame++) {
 			if (isVerbose)
 				printMessage("JPEG frame %d has %ld bytes @ %ld\n", frame, offsetRA[frame].size, offsetRA[frame].offset);
 			unsigned char *ret = decode_JPEG_SOF_0XC3(imgname, (int)offsetRA[frame].offset, false, &dimX, &dimY, &bits, &frames, (int)offsetRA[frame].size);
 			if (ret == NULL) {
 				printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
 				free(bImg);
+				free(offsetRA);
 				return NULL;
 			}
 			memcpy(&bImg[pos], ret, slicesz); // dest, src, size
@@ -4384,6 +4392,24 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 }
 #endif
 
+// Whole-image steps; run once after per-frame decode (per frame, reorder is a no-op and scaling changes frame size).
+static unsigned char *nii_loadImgXLFinish(unsigned char *img, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, struct TDTI4D *dti4D) {
+	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do after
+		img = nii_iVaries(img, hdr, NULL);
+	int nAcq = dcm.locationsInAcquisition;
+	if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3] % nAcq) == 0) && (hdr->dim[3] > nAcq)) {
+		hdr->dim[4] = hdr->dim[3] / nAcq;
+		hdr->dim[3] = nAcq;
+		hdr->dim[0] = 4;
+	}
+	if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
+		img = nii_reorderSlicesX(img, hdr, dti4D);
+	if ((dti4D != NULL) && (!dcm.isFloat) && (iVaries))
+		img = nii_iVaries(img, hdr, dti4D);
+	headerDcm2NiiSForm(dcm, dcm, hdr, false);
+	return img;
+} // nii_loadImgXLFinish()
+
 unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
 	// provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
 	// n.b. must ALWAYS be called from nii_loadImgXLCore()
@@ -4415,8 +4441,8 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		img = nii_loadImgPMSCT_RLE1(imgname, *hdr, dcm);
 	} else if (dcm.compressionScheme == kCompressRLE) {
 		img = nii_loadImgRLE(imgname, *hdr, dcm);
-		if (hdr->datatype == DT_RGB24)						 // convert to planar
-			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
+		if (hdr->datatype == DT_RGB24)			 // convert to planar
+			img = nii_rgb2planar(img, hdr, false); // RLE decode always interleaves samples, whatever PlanarConfiguration says
 	} else if (dcm.compressionScheme == kCompressC3) {
 		img = nii_loadImgJPEGC3(imgname, *hdr, dcm, isVerbose, hdr->datatype);
 		if (dcm.isYBRfull)
@@ -4454,20 +4480,7 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 	if (dcm.CSA.mosaicSlices > 1) {
 		img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, (dcm.manufacturer == kMANUFACTURER_UIH)); //, dcm.CSA.protocolSliceNumber1);
 	}
-	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do after
-		img = nii_iVaries(img, hdr, NULL);
-	int nAcq = dcm.locationsInAcquisition;
-	if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3] % nAcq) == 0) && (hdr->dim[3] > nAcq)) {
-		hdr->dim[4] = hdr->dim[3] / nAcq;
-		hdr->dim[3] = nAcq;
-		hdr->dim[0] = 4;
-	}
-	if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
-		img = nii_reorderSlicesX(img, hdr, dti4D);
-	if ((dti4D != NULL) && (!dcm.isFloat) && (iVaries))
-		img = nii_iVaries(img, hdr, dti4D);
-	headerDcm2NiiSForm(dcm, dcm, hdr, false);
-	return img;
+	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXLCore()
 
 unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
@@ -4518,18 +4531,19 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		dcm.imageBytes = lastimageBytes;
 		if (i < (frames - 1))
 			dcm.imageBytes = dti4D->offsetTable[i + 1] - dcm.imageStart;
-		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, iVaries, compressFlag, isVerbose, dti4D);
+		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, false, compressFlag, isVerbose, NULL); // raw frame; whole-image steps below
 		if (!img2D) {
 			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i + 1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
 			free(img);
-			free(img2D);
+			free(hdr2D);
 			return NULL;
 		}
 		// Copy the 2D slice into the correct position in the 3D/4D image buffer
 		memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
 		free(img2D);
 	}
-	return img;
+	free(hdr2D);
+	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXL()
 
 int isSQ(uint32_t groupElement, bool isPhilips) { // Detect sequence VR ("SQ") for implicit tags

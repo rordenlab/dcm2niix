@@ -56,7 +56,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20261011"
+#define kDCMdate "v1.0.20261021"
 #define kDCMvers kDCMdate " " kJP2suf kTurbosuf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -154,6 +154,7 @@ static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI dir
 #define kDIXON_FAT 2
 #define kDIXON_IN_PHASE 3
 #define kDIXON_OUT_PHASE 4
+static const char *const kDixonRec[] = {"", "water", "fat", "inphase", "outphase"}; // BIDS rec- value per kDIXON_*
 
 // 0043,10A3  ---: PSEUDOCONTINUOUS
 // 0043,10A4  ---: 3D pulsed continuous ASL technique
