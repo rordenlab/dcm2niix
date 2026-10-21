@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>dcm2niix browser tests</title>
+<script type="module">
+  import * as plain from '/js/dist/index.js';
+  import * as jpeg from '/js/dist/index.jpeg.js';
+  // Fetch a fixture folder as Files, tagged like a webkitdirectory selection of that folder.
+  async function load(dir) {
+    const names = await (await fetch(`/${dir}/?list`)).json();
+    const leaf = dir.split('/').pop();
+    return Promise.all(names.map(async (name) => {
+      const file = new File([await (await fetch(`/${dir}/${name}`)).blob()], name.split('/').pop());
+      file._webkitRelativePath = `${leaf}/${name}`;
+      return file;
+    }));
+  }
+  Object.assign(window, { plain, jpeg, load });
+  window.ready = true;
+</script>

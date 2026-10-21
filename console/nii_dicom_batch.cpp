@@ -2323,7 +2323,8 @@ tse3d: T2*/
 		fprintf(fp, "\t\"AcquisitionNumber\": %d,\n", d.acquNum);
 	bool maskComments = (strlen(opts.imageComments) == 1) && (opts.imageComments[0] == '\t');
 	if (!maskComments) {
-		json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
+		if (!opts.isAnonymizeBIDS) // -ba y: ImageComments is free text
+			json_Str(fp, "\t\"ImageComments\": \"%s\",\n", d.imageComments);
 		json_Str(fp, "\t\"ConversionComments\": \"%s\",\n", opts.imageComments);
 	}
 	// if conditionals: the following values are required for DICOM MRI, but not available for CT
@@ -10087,8 +10088,11 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 		checkSliceTiming(d0, d1, verbose, isSliceTimeHHMMSS, hdr, nConvert);
 		rescueSliceTimingSiemens(d0, verbose, hdr->dim[3], filename); // desperate attempts if conventional methods fail
 	}
-	if (hdr->dim[3] > 1)
+	if (hdr->dim[3] > 1) {
 		sliceDir = headerDcm2Nii2(dcmList[dcmSort[0].indx], dcmList[indx1], hdr, true);
+		if (opts.isAnonymizeBIDS && (strlen(opts.imageComments) == 0))
+			memset(hdr->aux_file, 0, sizeof(hdr->aux_file)); // headerDcm2Nii2 refills an empty aux_file from ImageComments
+	}
 	// UNCOMMENT NEXT TWO LINES TO RE-ORDER MOSAIC WHERE CSA's protocolSliceNumber does not start with 1
 	if (dcmList[dcmSort[0].indx].CSA.protocolSliceNumber1 > 1) {
 		printWarning("Weird CSA 'ProtocolSliceNumber' (System/Miscellaneous/ImageNumbering reversed): VALIDATE SLICETIMING AND BVECS\n");
@@ -11535,7 +11539,92 @@ static int cmrrPhysioConvert(struct TDICOMdata d, const char *infname,
 	return EXIT_SUCCESS;
 }
 
+static const char *mrsManufacturerStr(int m);
+
+// -n -2: series listing for front ends (pick series, refuse mixed exams) without decoding pixels.
+// The file is a JSON array that stays valid after every append: "[]" -> "[{..}]" -> "[{..},\n{..}]".
+static void seriesListJSONPath(char *fn, size_t n, const char *outdir) {
+	snprintf(fn, n, "%s%cdcm2niix_series.json", outdir, kPathSeparator);
+}
+
+// The value -n compares, as in saveDcm2NiiCore: CRC + (sub-series or echo - 1) / 10.
+static double seriesSelectValue(const struct TDICOMdata *d, int segVol) {
+	int segVolEcho = segVol;
+	if ((d->echoNum > 1) && (segVolEcho <= 0))
+		segVolEcho = d->echoNum + 1;
+	double v = (double)d->seriesUidCrc;
+	if (segVolEcho > 0)
+		v += ((double)segVolEcho - 1.0) / 10.0;
+	return v;
+}
+
+static bool isSeriesSelected(const struct TDICOMdata *d, int segVol, const struct TDCMopts &opts) {
+	for (int i = 0; i < opts.numSeries; i++)
+		if (isSameDouble(opts.seriesNumber[i], seriesSelectValue(d, segVol)))
+			return true;
+	return false;
+}
+
+static int seriesListJSONAppend(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, int segVol) {
+	struct TDICOMdata *d = &dcmList[dcmSort[0].indx];
+	if (strlen(d->protocolName) < 1)
+		rescueProtocolName(d, nameList->str[dcmSort[0].indx]);
+	setBids(d, nameList->str[dcmSort[0].indx], nConvert, 0);
+	char crc[64]; // the exact value -n accepts; differs from the -n -1 text "CRC.N" once N >= 10
+	double crcValue = seriesSelectValue(d, segVol);
+	if (crcValue == (double)d->seriesUidCrc)
+		snprintf(crc, sizeof(crc), "%u", d->seriesUidCrc);
+	else
+		snprintf(crc, sizeof(crc), "%.1f", crcValue);
+	const char *modality[] = {"", "CR", "CT", "MR", "PT", "US", "SEG"}; // kMODALITY_* order
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddStringToObject(o, "CRC", crc);
+	cJSON_AddNumberToObject(o, "SeriesNumber", (double)d->seriesNum);
+	cJSON_AddStringToObject(o, "SeriesDescription", d->seriesDescription);
+	cJSON_AddStringToObject(o, "ProtocolName", d->protocolName);
+	if ((d->modality > 0) && (d->modality <= kMODALITY_SEG))
+		cJSON_AddStringToObject(o, "Modality", modality[d->modality]);
+	cJSON_AddStringToObject(o, "Manufacturer", mrsManufacturerStr(d->manufacturer));
+	cJSON_AddStringToObject(o, "ImageType", d->imageType);
+	cJSON_AddNumberToObject(o, "Files", nConvert);
+	cJSON_AddNumberToObject(o, "Rows", d->xyzDim[2]);
+	cJSON_AddNumberToObject(o, "Columns", d->xyzDim[1]);
+	if (!opts.isAnonymizeBIDS) { // persistent source links, as in the sidecar
+		cJSON_AddStringToObject(o, "StudyInstanceUID", d->studyInstanceUID);
+		cJSON_AddStringToObject(o, "SeriesInstanceUID", d->seriesInstanceUID);
+	}
+	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS)
+		cJSON_AddStringToObject(o, "PatientID", d->patientID);
+	if (strlen(d->CSA.bidsDataType) > 0) {
+		const char *bg[] = {d->CSA.bidsDataType, d->CSA.bidsEntitySuffix};
+		cJSON_AddItemToObject(o, "BidsGuess", cJSON_CreateStringArray(bg, 2));
+	}
+	char *txt = cJSON_PrintUnformatted(o);
+	cJSON_Delete(o);
+	if (txt == NULL)
+		return EXIT_FAILURE;
+	char fn[2048];
+	seriesListJSONPath(fn, sizeof(fn), opts.outdir);
+	FILE *fp = fopen(fn, "r+b");
+	int ok = (fp != NULL) && (fseek(fp, 0, SEEK_END) == 0);
+	long len = ok ? ftell(fp) : -1;
+	ok = ok && (len >= 3) && (fseek(fp, len - 2, SEEK_SET) == 0); // overwrite the trailing "]\n"
+	ok = ok && (fprintf(fp, "%s%s]\n", (len > 3) ? ",\n" : "", txt) > 0);
+	if (fp)
+		ok = (fclose(fp) == 0) && ok;
+	cJSON_free(txt);
+	for (int i = 0; i < nConvert; ++i)
+		dcmList[dcmSort[i].indx].converted2NII = 1;
+	if (!ok) { // fail closed: never leave a listing that silently omits series
+		remove(fn);
+		printError("Unable to append series listing %s\n", fn);
+	}
+	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D, int segVol) {
+	if (opts.numSeries == kSeriesListJSON)
+		return seriesListJSONAppend(nConvert, dcmSort, dcmList, nameList, opts, segVol);
 #if 0
 #ifdef USING_DCM2NIIXFSWRAPPER
 	double seriesNum = (double) dcmList[dcmSort[0].indx].seriesUidCrc;
@@ -11560,6 +11649,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	{
 		uint64_t pIdx = dcmSort[0].indx;
 		if (dcmList[pIdx].isXAPhysio || dcmList[pIdx].isCMRRPhysio) {
+			// this writer runs before the -n filter below: -n -1 converts nothing, -n CRC only the listed series
+			if ((opts.numSeries < 0) || ((opts.numSeries > 0) && !isSeriesSelected(&dcmList[pIdx], segVol, opts)))
+				return EXIT_SUCCESS;
 			// Discard SBRef physio. The SBRef (single-band reference) is a
 			// single-volume calibration acquisition; its paired physio
 			// recording is useless for time-series physio modelling
@@ -11715,7 +11807,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		for (int i = 0; i < 24; i++)
 			hdr0.aux_file[i] = 0; // remove dcm.imageComments
 		snprintf(hdr0.aux_file, 24, "%s", opts.imageComments);
-	}
+	} else if (opts.isAnonymizeBIDS)
+		memset(hdr0.aux_file, 0, sizeof(hdr0.aux_file)); // -ba y: ImageComments is free text (sliceTimingCore repeats this)
 	if (opts.isVerbose)
 		printMessage("Converting %s\n", nameList->str[indx]);
 	if (img == NULL)
@@ -13921,8 +14014,13 @@ int saveDcm2Nii(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmLi
 	// MRS dispatch: a series of MR Spectroscopy DICOMs uses its own pipeline
 	// (FID extraction + complex-valued 5D output). The image-data branch
 	// below assumes scalar pixel data and would mangle the FID.
-	if ((nConvert > 0) && dcmList[dcmSort[0].indx].isMRS)
+	if ((nConvert > 0) && dcmList[dcmSort[0].indx].isMRS) {
+		if (opts.numSeries == kSeriesListJSON)
+			return seriesListJSONAppend(nConvert, dcmSort, dcmList, nameList, opts, -1);
+		if ((opts.numSeries < 0) || ((opts.numSeries > 0) && !isSeriesSelected(&dcmList[dcmSort[0].indx], -1, opts))) // the MRS writer ignores -n
+			return EXIT_SUCCESS;
 		return saveDcm2NiiMRS(nConvert, dcmSort, dcmList, nameList, opts);
+	}
 #ifdef USING_DCM2NIIXFSWRAPPER
 	memset(&mrifsStruct, 0, sizeof(mrifsStruct));
 
@@ -15358,6 +15456,19 @@ int nii_loadDir(struct TDCMopts *opts) {
 	}
 #endif
 	getFileNameX(opts->indirParent, opts->indir, 512);
+	if (opts->numSeries == kSeriesListJSON) { // start an empty array; each series appends
+		char fn[2048];
+		seriesListJSONPath(fn, sizeof(fn), opts->outdir);
+		FILE *fp = fopen(fn, "wb");
+		bool ok = (fp != NULL) && (fputs("[]\n", fp) >= 0);
+		if (fp)
+			ok = (fclose(fp) == 0) && ok;
+		if (!ok) {
+			remove(fn);
+			printError("Unable to write series listing %s\n", fn);
+			return kEXIT_OUTPUT_FOLDER_READ_ONLY;
+		}
+	}
 #ifndef USING_R
 	if (isFile && ((isExt(indir, ".v"))))
 		return convert_foreign(indir, *opts);

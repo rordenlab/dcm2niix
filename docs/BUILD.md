@@ -1,6 +1,6 @@
 # Build And Test Reference
 
-Use this before touching CMake, release channels, Docker, PyPI, source-list fanout, test runners, or formatting.
+Use this before touching CMake, release channels, Docker, PyPI, npm/WASM, source-list fanout, test runners, or formatting.
 
 ## Commands
 
@@ -16,6 +16,8 @@ for d in dcm_qa dcm_qa_nih dcm_qa_uih; do (cd "$d" && ./batch.sh) || { echo "FAI
 ```
 
 MRS regression is in sibling `dcm_qa_mrs`: `python3 batch.py --corpus={local,spec2nii,both}` and `python3 compare_spec2nii.py --corpus={local,spec2nii,both}`; `$SPEC2NII_DATA` points to the spec2nii test data clone. Philips Dixon (issue 1038) regression is in sibling `dcm_validate/dcm_qa_dixon`: `./batch.sh`. reproinx offline self-check: `python3 tools/test_reproinx_sbref.py`.
+
+Browser package (`js/`, `@niivue/dcm2niix`): `pixi run wasm` builds OpenJPEG, both WASM variants (`console/makefile` `wasm`/`wasm-jpeg`) and `js/dist` with the pinned emcc. Plain `npm run build` reruns that WASM compile via `prebuild`, so use it only inside `pixi shell`; Homebrew emcc is the wrong version. `cd js && npm test` runs Node grouping tests then Playwright browser tests against the built `dist` using the `dcm_qa`/`dcm_qa_nih`/`dcm_qa_uih` submodules; it needs `git submodule update --init` and `npx playwright install chromium`.
 
 ## Lint / Style
 

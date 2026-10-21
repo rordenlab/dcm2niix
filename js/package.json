@@ -5,12 +5,21 @@
   "module": "dist/index.js",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.jpeg.js"
+    },
+    "./jpeg": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.jpeg.js"
+    },
+    "./plain": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node esbuild.config.js && node esbuild.config.jpeg.js",
+    "test": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON test/unit.mjs && node test/browser.mjs",
+    "build": "node esbuild.config.js",
     "makeWasm": "make wasm -C ../console",
     "makeWasmJpeg": "JPEGLS=1 make wasm-jpeg -C ../console",
     "fixWasmJs": "node scripts/pre-build.js -i src/dcm2niix.js -o src/dcm2niix.js",
@@ -37,6 +46,8 @@
     "dist/"
   ],
   "devDependencies": {
-    "esbuild": "^0.25.0"
-  }
+    "esbuild": "^0.25.0",
+    "playwright": "^1.61.1"
+  },
+  "types": "dist/index.d.ts"
 }

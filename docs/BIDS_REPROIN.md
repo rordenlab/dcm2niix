@@ -41,3 +41,4 @@ Multi-delay pCASL (Siemens XA `tgse_pcasl_loft`, LOFT/Danny Wang) → BIDS ASL. 
 - Text before `<datatype>-<suffix>` (e.g. `PA_func-bold…`) now parses, with a warning.
 - `run-+` (with dash) is silently dropped; heudiconv `run+`/`run=` (no dash) still pass through.
 - Under `-ba y` ReproIn warnings print `(anonymized)` instead of SeriesInstanceUID.
+- Under `-ba y` the sidecar omits `ImageComments` and NIfTI `aux_file` is blank (free text); `-c` (ConversionComments / `aux_file`) still applies. Times are kept, consistent with `AcquisitionTime`.
