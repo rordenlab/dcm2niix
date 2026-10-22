@@ -3315,12 +3315,16 @@ tse3d: T2*/
 	//  Siemens bandwidthPerPixelPhaseEncode already accounts for the effects of parallel imaging,
 	//  interpolation, phaseOversampling, and phaseResolution, in the context of the size of the
 	//  *reconstructed* data in the PE dimension
+	// issue1035: UIH (0019,1028) is per *acquired* pixel, so interpolation must not shrink EES
+	int bwpeMatrixPE = reconMatrixPE;
+	if ((d.manufacturer == kMANUFACTURER_UIH) && (d.phaseEncodingLines > 0))
+		bwpeMatrixPE = d.phaseEncodingLines;
 	double effectiveEchoSpacing = 0.0;
 	// next: dicm2nii's method for determining effectiveEchoSpacing if bandwidthPerPixelPhaseEncode is unknown, see issue 315
 	// if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode <= 0.0) && (d.CSA.sliceMeasurementDuration >= 0))
 	//	effectiveEchoSpacing = d.CSA.sliceMeasurementDuration / (reconMatrixPE * 1000.0);
-	if ((reconMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
-		effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * reconMatrixPE);
+	if ((bwpeMatrixPE > 0) && (bandwidthPerPixelPhaseEncode > 0.0))
+		effectiveEchoSpacing = 1.0 / (bandwidthPerPixelPhaseEncode * bwpeMatrixPE);
 	json_Float(fp, "\t\"WaterFatShift\": %g,\n", d.waterFatShift);
 	if ((effectiveEchoSpacing == 0.0) && (d.imagingFrequency > 0.0) && (d.waterFatShift != 0.0) && (d.echoTrainLength > 0) && (reconMatrixPE > 1)) {
 		// in theory we could use either fieldStrength or imagingFrequency, but the former is typically provided with low precision
@@ -3370,7 +3374,7 @@ tse3d: T2*/
 	if (phaseOversampling > 0.0)
 		trueESfactor *= (1.0 + phaseOversampling);
 	float derivedEchoSpacing = 0.0;
-	derivedEchoSpacing = bandwidthPerPixelPhaseEncode * trueESfactor * reconMatrixPE;
+	derivedEchoSpacing = bandwidthPerPixelPhaseEncode * trueESfactor * bwpeMatrixPE;
 	if (derivedEchoSpacing != 0)
 		derivedEchoSpacing = 1 / derivedEchoSpacing;
 	json_Float(fp, "\t\"DerivedVendorReportedEchoSpacing\": %g,\n", derivedEchoSpacing);

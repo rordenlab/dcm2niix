@@ -7527,6 +7527,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.radiopharmaceuticalSpecificActivity = dcmStrDouble(lLength, &buffer[lPos]);
 			break;
 		case kEffectiveTE: {
+			if (d.manufacturer == kMANUFACTURER_UIH)
+				break; // issue1035: UIH stores EffectiveEchoSpacing (ms) here, not TE
 			TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			// handle multi-echo packed into single enhanced DICOM PR 988
 			// if (d.TE <= 0.0)
