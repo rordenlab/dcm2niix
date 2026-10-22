@@ -9,6 +9,65 @@ const mimeType = (name) => {
   return 'application/octet-stream'; // no registered NIfTI/NRRD/MGH type
 };
 
+// WORKERFS reads through FileReaderSync, which costs milliseconds a call however few bytes it returns, and dcm2niix
+// opens each file three times: twice in order for headers, then in slice order for pixels. Whole files are read in
+// batches while dcm2niix walks them in order, and the most recent are kept up to CACHE_BYTES.
+const MAX_CACHED_FILE = 64 * 1024 * 1024;
+const READAHEAD_BYTES = 16 * 1024 * 1024;
+const CACHE_BYTES = 256 * 1024 * 1024;
+
+const cachingReads = (FS) => {
+  const cache = new Map();
+  let cached = 0;
+  let nextInOrder = null;
+  const contents = (node) => {
+    const hit = cache.get(node);
+    if (hit) {
+      cache.delete(node); // re-insert: Map order is the LRU order
+      cache.set(node, hit);
+      return hit;
+    }
+    const batch = [node];
+    let size = node.size;
+    if (node === nextInOrder)
+      for (let n = node.nextFile; n && !cache.has(n) && n.size <= MAX_CACHED_FILE && size + n.size <= READAHEAD_BYTES; n = n.nextFile) {
+        batch.push(n);
+        size += n.size;
+      }
+    const data = new Uint8Array(new FileReaderSync().readAsArrayBuffer(new Blob(batch.map((n) => n.contents))));
+    let offset = 0;
+    for (const n of batch) {
+      cache.set(n, data.slice(offset, offset + n.size));
+      offset += n.size;
+      cached += n.size;
+    }
+    for (const [n, bytes] of cache) {
+      if (cached <= CACHE_BYTES || n === node) break;
+      cache.delete(n);
+      cached -= bytes.byteLength;
+    }
+    nextInOrder = batch[batch.length - 1].nextFile;
+    return cache.get(node);
+  };
+  const ops = FS.filesystems.WORKERFS.stream_ops;
+  const uncached = ops.read;
+  ops.read = (stream, buffer, offset, length, position) => {
+    const node = stream.node;
+    if (node.size > MAX_CACHED_FILE) return uncached(stream, buffer, offset, length, position);
+    if (position >= node.size) return 0;
+    const end = Math.min(node.size, position + length);
+    buffer.set(contents(node).subarray(position, end), offset);
+    return end - position;
+  };
+  // Links the files in the order they were given, which is the order dcm2niix first reads them.
+  return (nodes) => {
+    cache.clear();
+    cached = 0;
+    nextInOrder = null;
+    nodes.forEach((node, i) => (node.nextFile = nodes[i + 1] || null));
+  };
+};
+
 // Keep folder structure (dcm2niix %f uses it) without letting a name escape the input folder.
 const safeRelativePath = (path, fallback) => {
   const parts = String(path || '').split('/').filter((p) => p && p !== '.' && p !== '..');
@@ -24,9 +83,11 @@ export function serve(Module) {
   };
   const fail = (message) => self.postMessage({ type: 'error', message });
 
+  let resetCache = null;
   Module({ print: emit('stdout'), printErr: emit('stderr') }).then(
     (m) => {
       mod = m;
+      resetCache = cachingReads(m.FS);
       self.postMessage({ type: 'ready' });
     },
     (err) => fail(`dcm2niix WASM failed to load: ${(err && err.message) || err}`)
@@ -62,6 +123,7 @@ export function serve(Module) {
     });
     FS.mkdir(IN_DIR);
     FS.mount(FS.filesystems.WORKERFS, { blobs }, IN_DIR); // reads lazily from the File, no copy; needs -lworkerfs.js
+    resetCache(blobs.map((b) => FS.lookupPath(`${IN_DIR}/${b.name}`).node));
   };
 
   const collectOutput = (dir, rel, out) => {
