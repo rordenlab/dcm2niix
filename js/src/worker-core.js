@@ -72,7 +72,6 @@ export function serve(Module) {
       const relPath = rel ? `${rel}/${name}` : name;
       if (FS.isDir(FS.stat(path).mode)) collectOutput(path, relPath, out);
       else {
-        // The File copies the node's bytes, which are freed at once rather than after every output is collected
         const node = FS.lookupPath(path).node;
         const bytes = node.contents ? node.contents.subarray(0, node.usedBytes) : new Uint8Array(0);
         out.push({ path: relPath, file: new File([bytes], name, { type: mimeType(name) }) });
