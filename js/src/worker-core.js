@@ -9,7 +9,7 @@ const mimeType = (name) => {
   return 'application/octet-stream'; // no registered NIfTI/NRRD/MGH type
 };
 
-const MAX_CACHED_FILE = 64 * 1024 * 1024;
+const MAX_CACHED_FILE = 8 * 1024 * 1024; // bigger files gain little from batching; caps memory overshoot
 const READAHEAD_BYTES = 16 * 1024 * 1024;
 const CACHE_BYTES = 256 * 1024 * 1024;
 
@@ -22,6 +22,7 @@ const cachingReads = (FS) => {
     if (hit) {
       cache.delete(node); // re-insert: Map order is the LRU order
       cache.set(node, hit);
+      nextInOrder = node.nextFile; // a hit mid-walk must not stall read-ahead for the next miss
       return hit;
     }
     const batch = [node];
@@ -31,10 +32,18 @@ const cachingReads = (FS) => {
         batch.push(n);
         size += n.size;
       }
-    const data = new Uint8Array(new FileReaderSync().readAsArrayBuffer(new Blob(batch.map((n) => n.contents))));
+    const read = () => new Uint8Array(new FileReaderSync().readAsArrayBuffer(new Blob(batch.map((n) => n.contents))));
+    let data;
+    try {
+      data = read();
+    } catch (err) {
+      if (batch.length === 1) throw err;
+      batch.length = 1; // an unreadable neighbour must not fail this file
+      data = read();
+    }
     let offset = 0;
     for (const n of batch) {
-      cache.set(n, data.slice(offset, offset + n.size));
+      cache.set(n, batch.length === 1 ? data : data.slice(offset, offset + n.size));
       offset += n.size;
       cached += n.size;
     }
@@ -52,9 +61,9 @@ const cachingReads = (FS) => {
     const node = stream.node;
     if (node.size > MAX_CACHED_FILE) return uncached(stream, buffer, offset, length, position);
     if (position >= node.size) return 0;
-    const end = Math.min(node.size, position + length);
-    buffer.set(contents(node).subarray(position, end), offset);
-    return end - position;
+    const bytes = contents(node).subarray(position, position + length);
+    buffer.set(bytes, offset);
+    return bytes.length;
   };
   return (nodes) => {
     cache.clear();
@@ -100,7 +109,19 @@ export function serve(Module) {
     } else FS.unlink(path);
   };
 
+  // dcm2niix walks inputs in FS.readdir order (Object.keys: integer-like names first), not drop order
+  const filesInWalkOrder = (dir, out = []) => {
+    for (const name of mod.FS.readdir(dir)) {
+      if (name === '.' || name === '..') continue;
+      const { node } = mod.FS.lookupPath(`${dir}/${name}`);
+      if (mod.FS.isDir(node.mode)) filesInWalkOrder(`${dir}/${name}`, out);
+      else out.push(node);
+    }
+    return out;
+  };
+
   const unmountInput = () => {
+    resetCache([]); // release cached input between runs
     const node = mod.FS.analyzePath(IN_DIR);
     if (node.exists && node.object.mount && node.object.mount.mountpoint === IN_DIR) mod.FS.unmount(IN_DIR);
     remove(IN_DIR);
@@ -119,7 +140,7 @@ export function serve(Module) {
     });
     FS.mkdir(IN_DIR);
     FS.mount(FS.filesystems.WORKERFS, { blobs }, IN_DIR); // reads lazily from the File, no copy; needs -lworkerfs.js
-    resetCache(blobs.map((b) => FS.lookupPath(`${IN_DIR}/${b.name}`).node));
+    resetCache(filesInWalkOrder(IN_DIR));
   };
 
   const collectOutput = (dir, rel, out) => {
