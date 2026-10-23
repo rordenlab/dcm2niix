@@ -9,9 +9,6 @@ const mimeType = (name) => {
   return 'application/octet-stream'; // no registered NIfTI/NRRD/MGH type
 };
 
-// WORKERFS reads through FileReaderSync, which costs milliseconds a call however few bytes it returns, and dcm2niix
-// opens each file three times: twice in order for headers, then in slice order for pixels. Whole files are read in
-// batches while dcm2niix walks them in order, and the most recent are kept up to CACHE_BYTES.
 const MAX_CACHED_FILE = 64 * 1024 * 1024;
 const READAHEAD_BYTES = 16 * 1024 * 1024;
 const CACHE_BYTES = 256 * 1024 * 1024;
@@ -59,7 +56,6 @@ const cachingReads = (FS) => {
     buffer.set(contents(node).subarray(position, end), offset);
     return end - position;
   };
-  // Links the files in the order they were given, which is the order dcm2niix first reads them.
   return (nodes) => {
     cache.clear();
     cached = 0;
