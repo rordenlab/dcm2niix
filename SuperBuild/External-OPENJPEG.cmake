@@ -5,8 +5,8 @@ if(WIN32 AND MSVC)
     set(OPENJPEG_C_FLAGS_RELEASE /MT)
     set(OPENJPEG_C_FLAGS_DEBUG /MTd)
 else()
-    set(OPENJPEG_C_FLAGS_RELEASE "")
-    set(OPENJPEG_C_FLAGS_DEBUG "")
+    set(OPENJPEG_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+    set(OPENJPEG_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 endif()
 
 ExternalProject_Add(openjpeg
