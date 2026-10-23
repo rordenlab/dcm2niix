@@ -70,10 +70,10 @@ export function serve(Module) {
       if (name.startsWith('.')) continue;
       const path = `${dir}/${name}`;
       const relPath = rel ? `${rel}/${name}` : name;
-      if (FS.isDir(FS.stat(path).mode)) collectOutput(path, relPath, out);
+      const { node } = FS.lookupPath(path);
+      if (FS.isDir(node.mode)) collectOutput(path, relPath, out);
       else {
-        const node = FS.lookupPath(path).node;
-        const bytes = node.contents ? node.contents.subarray(0, node.usedBytes) : new Uint8Array(0);
+        const bytes = FS.filesystems.MEMFS.getFileDataAsTypedArray(node); // view, no copy; File copies it
         out.push({ path: relPath, file: new File([bytes], name, { type: mimeType(name) }) });
         FS.unlink(path);
       }
@@ -104,7 +104,7 @@ export function serve(Module) {
     } finally {
       if (mod) {
         unmountInput();
-        remove(OUT_DIR); // release MEMFS copies; posted Files own their bytes
+        remove(OUT_DIR); // outputs are unlinked as collected; this clears folders and leftovers after an error
       }
     }
   });
