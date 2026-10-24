@@ -2639,7 +2639,7 @@ tse3d: T2*/
 	// an identical sequence can create different SAR and TablePosition depending on participant
 	json_Float(fp, "\t\"SAR\": %g,\n", d.SAR);
 	if (d.CSA.tablePos[0] > 0.0)
-		fprintf(fp, "\t\"TablePosition\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.CSA.tablePos[1], d.CSA.tablePos[2], d.CSA.tablePos[3]);
+		fprintf(fp, "\t\"TablePosition\": [\n\t\t%g,\n\t\t%g,\n\t\t%g\t],\n", d.CSA.tablePos[1] + 0.0f, d.CSA.tablePos[2] + 0.0f, d.CSA.tablePos[3] + 0.0f); // +0 turns -0 into 0
 
 	if (d.numberOfAverages > 1.0)
 		json_Float(fp, "\t\"NumberOfAverages\": %g,\n", d.numberOfAverages);
@@ -3073,8 +3073,12 @@ tse3d: T2*/
 				pf = 0.75;
 			if (csaAscii.partialFourier == 8)
 				pf = 0.875;
-			if (pf < 1.0)
+			if (pf < 1.0) {
 				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+				// ucPhasePartialFourier is phase-only; BIDS recommends a direction whenever PartialFourier is set
+				if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_UNKNOWN)
+					d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_PHASE;
+			}
 		}
 		if (csaAscii.interp > 0) { // in-plane interpolation
 			interp = true;
@@ -3187,8 +3191,11 @@ tse3d: T2*/
 			if (d.accelFactPE > 1)
 				pf = (float)pf / (float)d.accelFactPE; // estimate: not sure if we round up or down
 			pf = (float)d.echoTrainLength / (float)pf;
-			if (pf < 1.0) // e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
+			if (pf < 1.0) { // e.g. if difference between lines and echo length not all explained by iPAT (SENSE/GRAPPA)
 				fprintf(fp, "\t\"PartialFourier\": %g,\n", pf);
+				if (d.partialFourierDirection == kPARTIAL_FOURIER_DIRECTION_UNKNOWN) // estimated from phase lines
+					d.partialFourierDirection = kPARTIAL_FOURIER_DIRECTION_PHASE;
+			}
 		} // compute partial Fourier: not reported in XA10, so infer
 		// printf("PhaseLines=%d EchoTrainLength=%d SENSE=%g\n", d.phaseEncodingLines, d.echoTrainLength, d.accelFactPE); //n.b. we can not distinguish pF from SENSE/GRAPPA for UIH
 	}
