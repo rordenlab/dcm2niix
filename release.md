@@ -1,22 +1,30 @@
-# dcm2niix v1.0.20260813 (13-August-2026)
+# dcm2niix v1.0.20261024 (24-October-2026)
 
-## Breaking changes
+Changes since v1.0.20260724.
 
-- **3D sequence `RepetitionTime` (issue #1024).** For Siemens 3D-EPI (and related 3D) acquisitions, `RepetitionTime` now reports the true volume TR rather than the per-shot interval; the per-excitation value is emitted separately as `RepetitionTimeExcitation`. ASL (perfusion) series are excluded — their per-shot TR is retained and per-volume timing is carried by `PostLabelingDelay`. Pipelines that relied on the previous `RepetitionTime` for these sequences will see a different value.
+## Behaviour changes
+
+- **`-ba y` redacts the CMRR measurement UUID from `WipMemBlock`.** `-ba y` is the default; use `-ba o` or `-ba n` to keep it.
+- **Siemens 2D `AcquisitionTime`.** Reports the [earliest slice](https://github.com/rordenlab/dcm2niix/issues/1039) of the first volume (the origin of `SliceTiming`), not instance 1; date-aware across midnight.
+- **Philips Dixon.** Water/fat/in-phase/out-phase are [separate series](https://github.com/rordenlab/dcm2niix/issues/1038) with `_water`/`_fat`/`_inphase`/`_outphase` postfixes and `rec-` entities in `BidsGuess` and `%h`/`%H` names.
+- **Parametric Maps.** Multi-channel maps are [split by LUTLabel](https://github.com/rordenlab/dcm2niix/issues/1041) into one file per channel. [Validation Dataset](https://github.com/neurolabusc/dcm_qa_parametermap).
+- **ASL `RepetitionTime`.** ASL keeps the per-shot TR; the issue 1024 volume-TR override no longer applies to perfusion series.
+- **BIDS sidecars.** Siemens partial Fourier emits `PartialFourierDirection` `PHASE`; `TablePosition` prints `0` not `-0`; `NumberOfKSpaceTrajectories` is MRS-only; UIH `(0018,9082)` is read as EffectiveEchoSpacing, not echo time, and BWPE as per acquired pixel ([issue 1035](https://github.com/rordenlab/dcm2niix/issues/1035)).
 
 ## New features
 
-- **MR Spectroscopy (MRS).** DICOM MR spectroscopy is now converted to the [NIfTI-MRS](https://github.com/wtclarke/mrs_nifti_standard) standard (header extension ecode 44), covering single-voxel (SVS) and CSI/MRSI for Siemens (classic and enhanced), Philips, and UIH, with BIDS-MRS sidecars. Includes `tools/mrs_post.py` for vendor-state post-processing.
-- **ReproIn BIDS naming and `reproinx.py`.** New one-pass ReproIn filename output (`-f %H`) plus `tools/reproinx.py`, a cross-series post-processor that turns dcm2niix output into a validator-clean BIDS dataset — fieldmap `B0Field` linkage, multi-echo phase `part-` entities, session/run disambiguation, dataset scaffolding, and optional date shifting. The `-br` flag overrides the ReproIn project subfolder.
-- **Physiological logging.** Siemens XA-line PhysioLogging and legacy CMRR PMU signals are decoded and written as BIDS physio sidecars (cardiac, respiratory, and trigger channels).
-- **RF-off (noise) volumes (issue #1025).** Siemens RF-off calibration volumes are split from their imaging series and named with the BIDS `_noRF` suffix.
-- **Multi-delay pCASL (Siemens XA `tgse_pcasl_loft`).** The LOFT multi-PLD pCASL research sequence is decoded to BIDS ASL (per-volume `PostLabelingDelay`, `_aslcontext.tsv`, dummy-volume removal via reproinx).
-- **Multi-fragment encapsulated pixel data (issue #1017).** Single-frame codestreams split across multiple encapsulation fragments are now reassembled for JPEG 2000 / JPEG-LS decoding.
-- **Expanded BIDS sidecars.** Additional fields including `MatrixCoilMode`, `PulseSequenceType`, and (for PET) `MolarActivity` and `AcquisitionTime`.
+- **Multi-delay pCASL.** Siemens XA `tgse_pcasl_loft` is decoded to BIDS ASL (per-volume `PostLabelingDelay`, `_aslcontext.tsv`, dummy-volume removal via reproinx).
+- **`CMRRMeasurementUUID`** in CMRR imaging and physio sidecars (`-ba n` only), pairing physio with image series.
+- **Series listing.** `-n -2` writes `dcm2niix_series.json` without converting; `-n -1` no longer touches files (previously `-n -1 -w 1` deleted existing outputs).
+- **Browser package** (`@niivue/dcm2niix`): `convert()`, `listSeries()`, `groupOutputs()`; WASM heap may grow to 4 GB and outputs are freed as collected.
+- **Filename specifiers** `%@` (station name) and `%=` (device serial number).
+- **BIDS classification.** Siemens T1w spin echo and T1 SPACE; MP2RAGE `RepetitionTimePreparation`; dzne_ep3d `ReadPolarity`.
+- **ReproIn.** Stricter entity/bareword parsing, `ses-{date}`, `inv` entity; reproinx run correspondence and stale `B0Field` link cleanup.
 
-## Vendor / data fixes
+## Fixes
 
-- Refined BIDS classification: unified MR weighting heuristic and improved SWI, VIBE, SPACE/FLAIR, and ASL detection, with `AcquisitionContrast` as a vendor-agnostic fallback.
-- Fixed orientation for volumes with more than 1024 slices (issue #1015).
-- Hardened foreign-format writers (MGZ / NRRD): corrected `.mgz` output and fail-closed handling of truncated or partial files.
-- `dcm2niix` now returns a non-zero exit code for invalid command-line options (issue #1020).
+- Compressed (JPEG-LS, JPEG 2000, RLE) enhanced DICOM keeps Dimension Index frame order and per-frame scaling; 4D JPEG lossless decodes all frames; RLE RGB planar configuration 1.
+- Rename mode (`-r y`) fails closed on read/write errors; byte-identical inputs are skipped, true conflicts return exit 8.
+- Stack overflows: macOS MRSI segfault (PR #1042) and Windows 32 MB stack reserve ([issue 1040](https://github.com/rordenlab/dcm2niix/issues/1040)).
+- CMake superbuild forwards toolchain, macOS SDK and architectures; Cloudflare zlib pinned; OpenJPEG flags preserved on non-MSVC; Windows wheel build.
+- pigz hint shown only in verbose mode ([issue 1027](https://github.com/rordenlab/dcm2niix/issues/1027)).

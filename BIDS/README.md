@@ -160,13 +160,13 @@ Fields specific to MRI scans.
 | PartialFourierDirection            |      | DICOM tag 0018,9036; Siemens partial Fourier implies `PHASE`                            | B          |
 | PercentPhaseFOV                    |      | DICOM tag 0018,0094                                                                     | D          |
 | PercentSampling                    |      | DICOM tag 0018,0093                                                                     | D          |
-| PulseSequenceType                  |      | Derived from ScanningSequence/SequenceVariant (+ multiband factor), e.g. `Gradient Echo EPI`, `MPRAGE` | B          |
 | PhaseEncodingAxis                  |      | When polarity unknown                                                                   | B          |
 | PhaseEncodingDirection             |      | When polarity known                                                                     | B          |
 | FrequencyEncodingSteps             |      | DICOM tag 0018,9058                                                        | D          |
 | PhaseEncodingSteps                 |      | DICOM tag 0018,0089 or 0018,9231 aka PhaseEncodingStepsInPlane                          | D          |
 | PhaseEncodingStepsOutOfPlane       |      | DICOM tag 0018,9232                                                        | D          |
 | PixelBandwidth                     | Hz   | DICOM tag 0018,0095                                                                     | D          |
+| PulseSequenceType                  |      | Derived from ScanningSequence/SequenceVariant (+ multiband factor), e.g. `Gradient Echo EPI`, `MPRAGE` | B          |
 | ReceiveCoilName                    |      | DICOM tag 0018,1250                                                                     | B          |
 | RepetitionTime                     | s    | DICOM tag 0018,0080. For 3D EPI (e.g. Siemens `vx_ep3d`) this is the volume-to-volume time, not the per-shot 0018,0080 (see `RepetitionTimeExcitation`, `MultiEchoShots`) | B          |
 | RepetitionTimeExcitation           | s    | DICOM tag 0018,0080 for some manufacturers. For 3D EPI, the per-shot (excitation) TR; `RepetitionTime` then holds the volume TR                              | B          |
