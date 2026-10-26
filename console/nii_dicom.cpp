@@ -4122,9 +4122,16 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	njInit();
 	if (njDecode(buf, size)) {
 		printError("Unable to decode baseline JPEG image offset %d bytes %d (hint compile dcm2niix with turboJPEG).\n", dcm.imageStart, dcm.imageBytes);
+		free(buf);
+		njDone();
 		return NULL;
 	}
 	free(buf);
+	if (njGetImageSize() != dcm.xyzDim[1] * dcm.xyzDim[2] * dcm.samplesPerPixel * (dcm.bitsAllocated / 8)) {
+		printError("JPEG %dx%d %d-byte image does not match DICOM header '%s'\n", njGetWidth(), njGetHeight(), njGetImageSize(), imgname);
+		njDone();
+		return NULL;
+	}
 	unsigned char *bImg = (unsigned char *)malloc(njGetImageSize());
 	memcpy(bImg, njGetImage(), njGetImageSize()); // dest, src, size
 	njDone();
@@ -9181,8 +9188,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if ((isHasBMatrix) && (!isHasBVec))
 		printWarning("Underspecified BMatrix without BVector (issue 265)\n");
+#ifdef myTurboJPEG
 	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8)) {
-		// dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
+#else // nanojpeg also decodes 12-bit grayscale (.51)
+	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) && ((d.bitsAllocated != 16) || (d.bitsStored > 12) || (d.samplesPerPixel != 1))) {
+#endif
+		// dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit
 		printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
 		d.isValid = false;
 	}

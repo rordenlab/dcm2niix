@@ -316,9 +316,10 @@ typedef struct _nj_ctx {
 	int mbwidth, mbheight;
 	int mbsizex, mbsizey;
 	int ncomp, isRGB;
+	int precision; // 8, or 12 (grayscale only, pixels stored as unsigned short)
 	nj_component_t comp[3];
 	int qtused, qtavail;
-	unsigned char qtab[4][64];
+	unsigned short qtab[4][64];
 	nj_vlc_code_t vlctab[4][65536];
 	int buf, bufbits;
 	int block[64];
@@ -393,6 +394,46 @@ NJ_INLINE void njRowIDCT(int *blk) {
 	blk[7] = (x7 - x1) >> 8;
 }
 
+// njRowIDCT for 12-bit samples: 16x larger coefficients overflow 32-bit math
+NJ_INLINE void njRowIDCT12(int *blk) {
+	long long x0, x1, x2, x3, x4, x5, x6, x7, x8;
+	if (!((x1 = (long long)blk[4] * 2048) | (x2 = blk[6]) | (x3 = blk[2]) | (x4 = blk[1]) | (x5 = blk[7]) | (x6 = blk[5]) | (x7 = blk[3]))) {
+		blk[0] = blk[1] = blk[2] = blk[3] = blk[4] = blk[5] = blk[6] = blk[7] = blk[0] * 8;
+		return;
+	}
+	x0 = (long long)blk[0] * 2048;
+	x0 += 128;
+	x8 = W7 * (x4 + x5);
+	x4 = x8 + (W1 - W7) * x4;
+	x5 = x8 - (W1 + W7) * x5;
+	x8 = W3 * (x6 + x7);
+	x6 = x8 - (W3 - W5) * x6;
+	x7 = x8 - (W3 + W5) * x7;
+	x8 = x0 + x1;
+	x0 -= x1;
+	x1 = W6 * (x3 + x2);
+	x2 = x1 - (W2 + W6) * x2;
+	x3 = x1 + (W2 - W6) * x3;
+	x1 = x4 + x6;
+	x4 -= x6;
+	x6 = x5 + x7;
+	x5 -= x7;
+	x7 = x8 + x3;
+	x8 -= x3;
+	x3 = x0 + x2;
+	x0 -= x2;
+	x2 = (181 * (x4 + x5) + 128) >> 8;
+	x4 = (181 * (x4 - x5) + 128) >> 8;
+	blk[0] = (int)((x7 + x1) >> 8);
+	blk[1] = (int)((x3 + x2) >> 8);
+	blk[2] = (int)((x0 + x4) >> 8);
+	blk[3] = (int)((x8 + x6) >> 8);
+	blk[4] = (int)((x8 - x6) >> 8);
+	blk[5] = (int)((x0 - x4) >> 8);
+	blk[6] = (int)((x3 - x2) >> 8);
+	blk[7] = (int)((x7 - x1) >> 8);
+}
+
 NJ_INLINE void njColIDCT(const int *blk, unsigned char *out, int stride) {
 	int x0, x1, x2, x3, x4, x5, x6, x7, x8;
 	if (!((x1 = shiftLeft(blk[8 * 4], 8)) | (x2 = blk[8 * 6]) | (x3 = blk[8 * 2]) | (x4 = blk[8 * 1]) | (x5 = blk[8 * 7]) | (x6 = blk[8 * 5]) | (x7 = blk[8 * 3]))) {
@@ -441,6 +482,50 @@ NJ_INLINE void njColIDCT(const int *blk, unsigned char *out, int stride) {
 	*out = njClip(((x3 - x2) >> 14) + 128);
 	out += stride;
 	*out = njClip(((x7 - x1) >> 14) + 128);
+}
+
+NJ_INLINE unsigned short njClip12(const long long x) {
+	return (x < 0) ? 0 : ((x > 4095) ? 4095 : (unsigned short)x);
+}
+
+// njColIDCT for 12-bit samples (DICOM .51): 64-bit math, level shift 2048
+NJ_INLINE void njColIDCT12(const int *blk, unsigned short *out, int stride) {
+	long long x0, x1, x2, x3, x4, x5, x6, x7, x8;
+	if (!((x1 = (long long)blk[8 * 4] * 256) | (x2 = blk[8 * 6]) | (x3 = blk[8 * 2]) | (x4 = blk[8 * 1]) | (x5 = blk[8 * 7]) | (x6 = blk[8 * 5]) | (x7 = blk[8 * 3]))) {
+		unsigned short v = njClip12(((blk[0] + 32) >> 6) + 2048);
+		for (x0 = 8; x0; --x0) {
+			*out = v;
+			out += stride;
+		}
+		return;
+	}
+	x0 = (long long)blk[0] * 256 + 8192;
+	x8 = W7 * (x4 + x5) + 4;
+	x4 = (x8 + (W1 - W7) * x4) >> 3;
+	x5 = (x8 - (W1 + W7) * x5) >> 3;
+	x8 = W3 * (x6 + x7) + 4;
+	x6 = (x8 - (W3 - W5) * x6) >> 3;
+	x7 = (x8 - (W3 + W5) * x7) >> 3;
+	x8 = x0 + x1;
+	x0 -= x1;
+	x1 = W6 * (x3 + x2) + 4;
+	x2 = (x1 - (W2 + W6) * x2) >> 3;
+	x3 = (x1 + (W2 - W6) * x3) >> 3;
+	x1 = x4 + x6;
+	x4 -= x6;
+	x6 = x5 + x7;
+	x5 -= x7;
+	x7 = x8 + x3;
+	x8 -= x3;
+	x3 = x0 + x2;
+	x0 -= x2;
+	x2 = (181 * (x4 + x5) + 128) >> 8;
+	x4 = (181 * (x4 - x5) + 128) >> 8;
+	const long long v[8] = {x7 + x1, x3 + x2, x0 + x4, x8 + x6, x8 - x6, x0 - x4, x3 - x2, x7 - x1};
+	for (int i = 0; i < 8; i++) {
+		*out = njClip12((v[i] >> 14) + 2048);
+		out += stride;
+	}
 }
 
 #define njThrow(e)    \
@@ -543,7 +628,8 @@ NJ_INLINE void njDecodeSOF(void) {
 	njCheckError();
 	if (nj.length < 9)
 		njThrow(NJ_SYNTAX_ERROR);
-	if (nj.pos[0] != 8)
+	nj.precision = nj.pos[0];
+	if ((nj.precision != 8) && ((nj.precision != 12) || (nj.pos[5] != 1)))
 		njThrow(NJ_UNSUPPORTED);
 	nj.height = njDecode16(nj.pos + 1);
 	nj.width = njDecode16(nj.pos + 3);
@@ -610,7 +696,7 @@ NJ_INLINE void njDecodeSOF(void) {
 		c->stride = nj.mbwidth * shiftLeft(c->ssx, 3);
 		if (((c->width < 3) && (c->ssx != ssxmax)) || ((c->height < 3) && (c->ssy != ssymax)))
 			njThrow(NJ_UNSUPPORTED);
-		if (!(c->pixels = (unsigned char *)njAllocMem(c->stride * nj.mbheight * shiftLeft(c->ssy, 3))))
+		if (!(c->pixels = (unsigned char *)njAllocMem(c->stride * nj.mbheight * shiftLeft(c->ssy, 3) * ((nj.precision == 12) ? 2 : 1))))
 			njThrow(NJ_OUT_OF_MEM);
 	}
 	if (nj.ncomp == 3) {
@@ -670,18 +756,20 @@ NJ_INLINE void njDecodeDHT(void) {
 
 NJ_INLINE void njDecodeDQT(void) {
 	int i;
-	unsigned char *t;
+	unsigned short *t;
 	njDecodeLength();
 	njCheckError();
 	while (nj.length >= 65) {
-		i = nj.pos[0];
-		if (i & 0xFC)
+		int pq = nj.pos[0] >> 4;
+		int n = pq ? 129 : 65;
+		i = nj.pos[0] & 15;
+		if ((pq > 1) || (i > 3) || (nj.length < n))
 			njThrow(NJ_SYNTAX_ERROR);
 		nj.qtavail |= 1 << i;
 		t = &nj.qtab[i][0];
 		for (i = 0; i < 64; ++i)
-			t[i] = nj.pos[i + 1];
-		njSkip(65);
+			t[i] = pq ? njDecode16(nj.pos + 1 + 2 * i) : nj.pos[i + 1];
+		njSkip(n);
 	}
 	if (nj.length)
 		njThrow(NJ_SYNTAX_ERROR);
@@ -716,7 +804,7 @@ static int njGetVLC(nj_vlc_code_t *vlc, unsigned char *code) {
 	return value;
 }
 
-NJ_INLINE void njDecodeBlock(nj_component_t *c, unsigned char *out) {
+NJ_INLINE void njDecodeBlock(nj_component_t *c, int idx) {
 	unsigned char code = 0;
 	int value, coef = 0;
 	njFillMem(nj.block, 0, sizeof(nj.block));
@@ -734,9 +822,15 @@ NJ_INLINE void njDecodeBlock(nj_component_t *c, unsigned char *out) {
 		nj.block[(int)njZZ[coef]] = value * nj.qtab[c->qtsel][coef];
 	} while (coef < 63);
 	for (coef = 0; coef < 64; coef += 8)
-		njRowIDCT(&nj.block[coef]);
+		if (nj.precision == 12)
+			njRowIDCT12(&nj.block[coef]);
+		else
+			njRowIDCT(&nj.block[coef]);
 	for (coef = 0; coef < 8; ++coef)
-		njColIDCT(&nj.block[coef], &out[coef], c->stride);
+		if (nj.precision == 12)
+			njColIDCT12(&nj.block[coef], (unsigned short *)c->pixels + idx + coef, c->stride);
+		else
+			njColIDCT(&nj.block[coef], &c->pixels[idx + coef], c->stride);
 }
 
 NJ_INLINE void njDecodeScan(void) {
@@ -766,7 +860,7 @@ NJ_INLINE void njDecodeScan(void) {
 		for (i = 0, c = nj.comp; i < nj.ncomp; ++i, ++c)
 			for (sby = 0; sby < c->ssy; ++sby)
 				for (sbx = 0; sbx < c->ssx; ++sbx) {
-					njDecodeBlock(c, &c->pixels[shiftLeft((mby * c->ssy + sby) * c->stride + mbx * c->ssx + sbx, 3)]);
+					njDecodeBlock(c, shiftLeft((mby * c->ssy + sby) * c->stride + mbx * c->ssx + sbx, 3));
 					njCheckError();
 				}
 		if (++mbx >= nj.mbwidth) {
@@ -956,13 +1050,14 @@ NJ_INLINE void njConvert(void) {
 		}
 	} else if (nj.comp[0].width != nj.comp[0].stride) {
 		// grayscale -> only remove stride
-		unsigned char *pin = &nj.comp[0].pixels[nj.comp[0].stride];
-		unsigned char *pout = &nj.comp[0].pixels[nj.comp[0].width];
+		const int bps = (nj.precision == 12) ? 2 : 1;
+		unsigned char *pin = &nj.comp[0].pixels[nj.comp[0].stride * bps];
+		unsigned char *pout = &nj.comp[0].pixels[nj.comp[0].width * bps];
 		int y;
 		for (y = nj.comp[0].height - 1; y; --y) {
-			njCopyMem(pout, pin, nj.comp[0].width);
-			pin += nj.comp[0].stride;
-			pout += nj.comp[0].width;
+			njCopyMem(pout, pin, nj.comp[0].width * bps);
+			pin += nj.comp[0].stride * bps;
+			pout += nj.comp[0].width * bps;
 		}
 		nj.comp[0].stride = nj.comp[0].width;
 	}
@@ -997,6 +1092,7 @@ nj_result_t njDecode(const void *jpeg, const int size) {
 		njSkip(2);
 		switch (nj.pos[-1]) {
 		case 0xC0:
+		case 0xC1: // Extended sequential Huffman (DICOM .51)
 			njDecodeSOF();
 			break;
 		case 0xC4:
@@ -1043,6 +1139,6 @@ int njGetWidth(void) { return nj.width; }
 int njGetHeight(void) { return nj.height; }
 int njIsColor(void) { return (nj.ncomp != 1); }
 unsigned char *njGetImage(void) { return (nj.ncomp == 1) ? nj.comp[0].pixels : nj.rgb; }
-int njGetImageSize(void) { return nj.width * nj.height * nj.ncomp; }
+int njGetImageSize(void) { return nj.width * nj.height * nj.ncomp * ((nj.precision == 12) ? 2 : 1); }
 
 #endif // _NJ_INCLUDE_HEADER_ONLY
