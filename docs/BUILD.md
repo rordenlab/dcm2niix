@@ -21,6 +21,8 @@ BIDS validation: `uvx bids-validator-deno@3.0.2 <dir>`; Homebrew `bids-validator
 
 `dcm_validate` Ref refresh: gzipped-Ref suites (`batch.sh` runs `gzip -d` in place) leave unpacked copies, and stale untracked plain files shadow restored `.gz`, failing later runs with `Only in Ref: *.gz`; delete them. Zip-input suites (`dcm_qa_cs_dl`, `dcm_qa_mprage`) stall on the unzip overwrite prompt if `In/` was already unpacked; `git clean -fd In` first. Push order: `dcm_validate` submodule repos -> `dcm_validate` -> dcm2niix `development` (CI fetches submodule commits).
 
+To run a suite with a specific build: `exenam=/path/dcm2niix ./batch.sh`. Most sibling `batch.sh` read `${examnam:-dcm2niix}` (typo), silently ignoring the override and using `dcm2niix` on PATH; fixed only in `dcm_qa_jpg`.
+
 Browser package (`js/`, `@niivue/dcm2niix`): `pixi run wasm` builds OpenJPEG, both WASM variants (`console/makefile` `wasm`/`wasm-jpeg`) and `js/dist` with the pinned emcc. Plain `npm run build` reruns that WASM compile via `prebuild`, so use it only inside `pixi shell`; Homebrew emcc is the wrong version. `cd js && npm test` runs Node grouping tests then Playwright browser tests against the built `dist` using the `dcm_qa`/`dcm_qa_nih`/`dcm_qa_uih` submodules; it needs `git submodule update --init` and `npx playwright install chromium`. `js/src/worker-core.js` `collectOutput` reads each output via MEMFS internals (`FS.filesystems.MEMFS.getFileDataAsTypedArray`, a zero-copy view) and unlinks it once wrapped in a `File`, so peak memory holds each output once; emcc flag changes (e.g. `--closure`, dropping `FS` from `EXPORTED_RUNTIME_METHODS`, or moving `OUT_DIR` off MEMFS) must keep that path working.
 
 ## Lint / Style
