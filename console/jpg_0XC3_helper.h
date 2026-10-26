@@ -74,6 +74,7 @@ typedef struct {
 } HuffTable;
 
 typedef struct {
+	int id; // Ci: any 0..255 (T.81 B.2.2), matched by scan Cs
 	int hSamp;
 	int quantTableSel;
 	int vSamp;
@@ -527,11 +528,11 @@ static int read_frame_header(DataStream *ds, FrameHeader *f) {
 	if (!f->components)
 		return -1;
 	for (int i = 1; i <= f->numComp; ++i) {
-		int cid = ds_get8(ds);
+		f->components[i].id = ds_get8(ds); // store by position: Ci is a label, not an index (issue 1054)
 		int tmp = ds_get8(ds);
-		f->components[cid].hSamp = (tmp >> 4) & 0xF;
-		f->components[cid].vSamp = tmp & 0xF;
-		f->components[cid].quantTableSel = ds_get8(ds);
+		f->components[i].hSamp = (tmp >> 4) & 0xF;
+		f->components[i].vSamp = tmp & 0xF;
+		f->components[i].quantTableSel = ds_get8(ds);
 	}
 	return 0;
 }
@@ -686,7 +687,7 @@ static inline int decode_unit(Decoder *d, int *pred) {
 	return 0;
 }
 
-/* helper: find scan component index that matches component id (1-based), or -1 */
+/* helper: find scan component index that matches frame component id Ci, or -1 */
 static inline int find_scan_comp_idx_for_component(Decoder *d, int comp_id) {
 	for (int s = 0; s < d->scan.numComp; ++s) {
 		if (d->scan.components[s].scanCompSel == comp_id)
