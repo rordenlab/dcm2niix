@@ -3998,6 +3998,32 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	size_t fragBufLen = 0;
 	unsigned char *fragBuf = reassembleEncapsulatedFragments(imgname, dcm.imageStart, &fragBufLen);
 	unsigned char *ret = NULL;
+	int nFrames = (int)(nii_ImgBytes(hdr) / nii_SliceBytes(hdr)); // all frames (dims 3-7): 4D enhanced has one fragment per frame
+	if ((fragBuf != NULL) && (nFrames > 1) && (dcm.offsetTableItems > nFrames)) {
+		// Multi-frame with several fragments per frame (e.g. dcmcjpeg +fs): frames start at SOI, which cannot occur inside entropy-coded data
+		size_t slicesz = nii_SliceBytes(hdr);
+		unsigned char *bImg = (unsigned char *)malloc(slicesz * nFrames);
+		int frame = 0;
+		for (size_t i = 0; (i + 1 < fragBufLen) && bImg; i++) {
+			if ((fragBuf[i] != 0xFF) || (fragBuf[i + 1] != 0xD8))
+				continue;
+			if (frame >= nFrames)
+				break;
+			ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, (int)i, false, &dimX, &dimY, &bits, &frames, 0);
+			if (ret == NULL)
+				break;
+			memcpy(&bImg[slicesz * frame], ret, slicesz);
+			free(ret);
+			frame++;
+		}
+		free(fragBuf);
+		if ((frame != nFrames) || (bImg == NULL)) {
+			printError("Unable to decode JPEG frames split across fragments (%d/%d)\n", frame, nFrames);
+			free(bImg);
+			return NULL;
+		}
+		return bImg;
+	}
 	if (fragBuf != NULL) {
 		ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, 0, isVerbose, &dimX, &dimY, &bits, &frames, 0);
 		free(fragBuf);
@@ -4010,7 +4036,6 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	}
 	if (dataType == DT_RGB24)
 		frames = frames / 3;
-	int nFrames = (int)(nii_ImgBytes(hdr) / nii_SliceBytes(hdr)); // all frames (dims 3-7): 4D enhanced has one fragment per frame
 	if (nFrames != frames) { // multi-slice image saved as multiple image fragments rather than a single image
 		// printMessage("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
 		if (ret != NULL)
@@ -9032,7 +9057,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.imageStart = encapsulatedDataFragmentStart;
 		} else if (encapsulatedDataFragments > 1) {
 			// issue 1017: a single frame split across multiple fragments. Reassembly happens at decode time (see dicom_fragments.cpp). Limited to numberOfFrames <= 1: multi-frame with fragments-per-frame > 1 would need real frame-to-fragment boundary parsing, which the reassembly helper does not provide (it concatenates ALL following fragments).
-			if ((numberOfFrames <= 1) && (d.compressionScheme == kCompressC3 || d.compressionScheme == kCompressJP2K)) {
+			if ((d.compressionScheme == kCompressC3) || ((numberOfFrames <= 1) && (d.compressionScheme == kCompressJP2K))) { // C3 multi-frame: split at SOI in nii_loadImgJPEGC3
 				d.imageStart = encapsulatedDataFragmentStart;
 			} else {
 				printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);
