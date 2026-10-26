@@ -17,6 +17,12 @@ for d in dcm_qa dcm_qa_nih dcm_qa_uih; do (cd "$d" && ./batch.sh) || { echo "FAI
 
 MRS regression is in sibling `dcm_qa_mrs`: `python3 batch.py --corpus={local,spec2nii,both}` and `python3 compare_spec2nii.py --corpus={local,spec2nii,both}`; `$SPEC2NII_DATA` points to the spec2nii test data clone. Philips Dixon (issue 1038) regression is in sibling `dcm_validate/dcm_qa_dixon`: `./batch.sh`. reproinx offline self-check: `python3 tools/test_reproinx_sbref.py`.
 
+BIDS validation: `uvx bids-validator-deno@3.0.2 <dir>`; Homebrew `bids-validator` 1.15.0 on PATH is the legacy validator.
+
+`dcm_validate` Ref refresh: gzipped-Ref suites (`batch.sh` runs `gzip -d` in place) leave unpacked copies, and stale untracked plain files shadow restored `.gz`, failing later runs with `Only in Ref: *.gz`; delete them. Zip-input suites (`dcm_qa_cs_dl`, `dcm_qa_mprage`) stall on the unzip overwrite prompt if `In/` was already unpacked; `git clean -fd In` first. Push order: `dcm_validate` submodule repos -> `dcm_validate` -> dcm2niix `development` (CI fetches submodule commits).
+
+To run a suite with a specific build: `exenam=/path/dcm2niix ./batch.sh`. Most sibling `batch.sh` read `${examnam:-dcm2niix}` (typo), silently ignoring the override and using `dcm2niix` on PATH; fixed only in `dcm_qa_jpg`.
+
 Browser package (`js/`, `@niivue/dcm2niix`): `pixi run wasm` builds OpenJPEG, both WASM variants (`console/makefile` `wasm`/`wasm-jpeg`) and `js/dist` with the pinned emcc. Plain `npm run build` reruns that WASM compile via `prebuild`, so use it only inside `pixi shell`; Homebrew emcc is the wrong version. `cd js && npm test` runs Node grouping tests then Playwright browser tests against the built `dist` using the `dcm_qa`/`dcm_qa_nih`/`dcm_qa_uih` submodules; it needs `git submodule update --init` and `npx playwright install chromium`. `js/src/worker-core.js` patches WORKERFS `read` to serve files ≤8 MB from batched whole-file `FileReaderSync` reads (each call costs milliseconds; dcm2niix opens every file three times) with a 256 MB LRU, read-ahead in `FS.readdir` walk order, cleared after each run (issue 1052). `js/src/worker-core.js` `collectOutput` reads each output via MEMFS internals (`FS.filesystems.MEMFS.getFileDataAsTypedArray`, a zero-copy view) and unlinks it once wrapped in a `File`, so peak memory holds each output once; emcc flag changes (e.g. `--closure`, dropping `FS` from `EXPORTED_RUNTIME_METHODS`, or moving `OUT_DIR` off MEMFS) must keep that path working.
 
 ## Lint / Style

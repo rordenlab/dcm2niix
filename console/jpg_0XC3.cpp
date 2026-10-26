@@ -263,7 +263,7 @@ static unsigned char *decode_JPEG_SOF_0XC3_core(uint8_t *buf, size_t flen, int s
 		/* map plane -> scan index (use 0 for fallback if not found) */
 		int scan_idx_for_plane[3] = {0, 0, 0};
 		for (int p = 0; p < d.numComp; ++p) {
-			int comp_id = p + 1;
+			int comp_id = d.frame.components[p + 1].id;
 			int sidx = find_scan_comp_idx_for_component(&d, comp_id);
 			if (sidx < 0)
 				sidx = 0;
@@ -300,7 +300,7 @@ static unsigned char *decode_JPEG_SOF_0XC3_core(uint8_t *buf, size_t flen, int s
 	} else {
 		/* per-plane decode */
 		for (int plane = 0; plane < d.numComp; ++plane) {
-			int comp_id = plane + 1;
+			int comp_id = d.frame.components[plane + 1].id;
 			int scan_idx = find_scan_comp_idx_for_component(&d, comp_id);
 			bool used_temporary_component0 = false;
 			ScanComponent saved0;

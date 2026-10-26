@@ -3998,6 +3998,32 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	size_t fragBufLen = 0;
 	unsigned char *fragBuf = reassembleEncapsulatedFragments(imgname, dcm.imageStart, &fragBufLen);
 	unsigned char *ret = NULL;
+	int nFrames = (int)(nii_ImgBytes(hdr) / nii_SliceBytes(hdr)); // all frames (dims 3-7): 4D enhanced has one fragment per frame
+	if ((fragBuf != NULL) && (nFrames > 1) && (dcm.offsetTableItems > nFrames)) {
+		// Multi-frame with several fragments per frame (e.g. dcmcjpeg +fs): frames start at SOI, which cannot occur inside entropy-coded data
+		size_t slicesz = nii_SliceBytes(hdr);
+		unsigned char *bImg = (unsigned char *)malloc(slicesz * nFrames);
+		int frame = 0;
+		for (size_t i = 0; (i + 1 < fragBufLen) && bImg; i++) {
+			if ((fragBuf[i] != 0xFF) || (fragBuf[i + 1] != 0xD8))
+				continue;
+			if (frame >= nFrames)
+				break;
+			ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, (int)i, false, &dimX, &dimY, &bits, &frames, 0);
+			if (ret == NULL)
+				break;
+			memcpy(&bImg[slicesz * frame], ret, slicesz);
+			free(ret);
+			frame++;
+		}
+		free(fragBuf);
+		if ((frame != nFrames) || (bImg == NULL)) {
+			printError("Unable to decode JPEG frames split across fragments (%d/%d)\n", frame, nFrames);
+			free(bImg);
+			return NULL;
+		}
+		return bImg;
+	}
 	if (fragBuf != NULL) {
 		ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, 0, isVerbose, &dimX, &dimY, &bits, &frames, 0);
 		free(fragBuf);
@@ -4010,7 +4036,6 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	}
 	if (dataType == DT_RGB24)
 		frames = frames / 3;
-	int nFrames = (int)(nii_ImgBytes(hdr) / nii_SliceBytes(hdr)); // all frames (dims 3-7): 4D enhanced has one fragment per frame
 	if (nFrames != frames) { // multi-slice image saved as multiple image fragments rather than a single image
 		// printMessage("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
 		if (ret != NULL)
@@ -4122,9 +4147,16 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	njInit();
 	if (njDecode(buf, size)) {
 		printError("Unable to decode baseline JPEG image offset %d bytes %d (hint compile dcm2niix with turboJPEG).\n", dcm.imageStart, dcm.imageBytes);
+		free(buf);
+		njDone();
 		return NULL;
 	}
 	free(buf);
+	if (njGetImageSize() != dcm.xyzDim[1] * dcm.xyzDim[2] * dcm.samplesPerPixel * (dcm.bitsAllocated / 8)) {
+		printError("JPEG %dx%d %d-byte image does not match DICOM header '%s'\n", njGetWidth(), njGetHeight(), njGetImageSize(), imgname);
+		njDone();
+		return NULL;
+	}
 	unsigned char *bImg = (unsigned char *)malloc(njGetImageSize());
 	memcpy(bImg, njGetImage(), njGetImageSize()); // dest, src, size
 	njDone();
@@ -4492,11 +4524,8 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	// issue1013 regression: kCompressC3 (JPEG Lossless 1.2.840.10008.1.2.4.7x) has
 	// its own working multi-fragment path inside nii_loadImgJPEGC3 →
 	// decode_JPEG_SOF_0XC3_stack, which walks the file directly for SOI markers.
-	// The per-frame loop below relies on dti4D->offsetTable[] values that can be
-	// stale (the dti4D pointer reaching the decode site is not always the one
-	// the parser filled — e.g. saveDcm2Nii allocates `dti4Ds` via `*dti4Ds =
-	// *dti4D` from a stage-1 dti4D). Bypass the new wrapper for kCompressC3 so
-	// the legacy stack walker handles multi-fragment as it did pre-regression.
+	// Bypass the per-frame loop below for kCompressC3 so the legacy stack walker
+	// handles multi-fragment as it did pre-regression.
 	if (dcm.compressionScheme == kCompressC3)
 		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
 	int frames = dcm.xyzDim[3];
@@ -4525,15 +4554,22 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
 	for (int i = 3; i < 8; i++)
 		hdr2D->dim[i] = 1;
-	int lastimageBytes = dcm.imageBytes;
+	// Walk this file's own (FFFE,E000) items: dti4D->offsetTable holds the last file parsed, so a multi-file series would decode earlier files at wrong offsets. Encapsulated data is always little endian.
+	FILE *fp = fopen(imgname, "rb");
+	long itemPos = (long)dcm.imageStart - 8;
 	for (int i = 0; i < frames; i++) {
-		dcm.imageStart = dti4D->offsetTable[i];
-		dcm.imageBytes = lastimageBytes;
-		if (i < (frames - 1))
-			dcm.imageBytes = dti4D->offsetTable[i + 1] - dcm.imageStart;
-		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, false, compressFlag, isVerbose, NULL); // raw frame; whole-image steps below
+		unsigned char item[8];
+		unsigned char *img2D = NULL;
+		if (fp && (fseek(fp, itemPos, SEEK_SET) == 0) && (fread(item, 1, 8, fp) == 8) && (item[0] == 0xFE) && (item[1] == 0xFF) && (item[2] == 0x00) && (item[3] == 0xE0)) {
+			dcm.imageStart = (int)itemPos + 8;
+			dcm.imageBytes = (int)((uint32_t)item[4] | ((uint32_t)item[5] << 8) | ((uint32_t)item[6] << 16) | ((uint32_t)item[7] << 24));
+			itemPos += 8 + (long)(uint32_t)dcm.imageBytes;
+			img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, false, compressFlag, isVerbose, NULL); // raw frame; whole-image steps below
+		}
 		if (!img2D) {
 			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i + 1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
+			if (fp)
+				fclose(fp);
 			free(img);
 			free(hdr2D);
 			return NULL;
@@ -4542,6 +4578,7 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
 		free(img2D);
 	}
+	fclose(fp);
 	free(hdr2D);
 	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXL()
@@ -9020,7 +9057,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.imageStart = encapsulatedDataFragmentStart;
 		} else if (encapsulatedDataFragments > 1) {
 			// issue 1017: a single frame split across multiple fragments. Reassembly happens at decode time (see dicom_fragments.cpp). Limited to numberOfFrames <= 1: multi-frame with fragments-per-frame > 1 would need real frame-to-fragment boundary parsing, which the reassembly helper does not provide (it concatenates ALL following fragments).
-			if ((numberOfFrames <= 1) && (d.compressionScheme == kCompressC3 || d.compressionScheme == kCompressJP2K)) {
+			if ((d.compressionScheme == kCompressC3) || ((numberOfFrames <= 1) && (d.compressionScheme == kCompressJP2K))) { // C3 multi-frame: split at SOI in nii_loadImgJPEGC3
 				d.imageStart = encapsulatedDataFragmentStart;
 			} else {
 				printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);
@@ -9176,8 +9213,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if ((isHasBMatrix) && (!isHasBVec))
 		printWarning("Underspecified BMatrix without BVector (issue 265)\n");
+#ifdef myTurboJPEG
 	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8)) {
-		// dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
+#else // nanojpeg also decodes 12-bit grayscale (.51)
+	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) && ((d.bitsAllocated != 16) || (d.bitsStored > 12) || (d.samplesPerPixel != 1))) {
+#endif
+		// dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit
 		printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
 		d.isValid = false;
 	}
