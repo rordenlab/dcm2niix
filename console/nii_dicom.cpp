@@ -4492,11 +4492,8 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	// issue1013 regression: kCompressC3 (JPEG Lossless 1.2.840.10008.1.2.4.7x) has
 	// its own working multi-fragment path inside nii_loadImgJPEGC3 →
 	// decode_JPEG_SOF_0XC3_stack, which walks the file directly for SOI markers.
-	// The per-frame loop below relies on dti4D->offsetTable[] values that can be
-	// stale (the dti4D pointer reaching the decode site is not always the one
-	// the parser filled — e.g. saveDcm2Nii allocates `dti4Ds` via `*dti4Ds =
-	// *dti4D` from a stage-1 dti4D). Bypass the new wrapper for kCompressC3 so
-	// the legacy stack walker handles multi-fragment as it did pre-regression.
+	// Bypass the per-frame loop below for kCompressC3 so the legacy stack walker
+	// handles multi-fragment as it did pre-regression.
 	if (dcm.compressionScheme == kCompressC3)
 		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
 	int frames = dcm.xyzDim[3];
@@ -4525,15 +4522,22 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
 	for (int i = 3; i < 8; i++)
 		hdr2D->dim[i] = 1;
-	int lastimageBytes = dcm.imageBytes;
+	// Walk this file's own (FFFE,E000) items: dti4D->offsetTable holds the last file parsed, so a multi-file series would decode earlier files at wrong offsets. Encapsulated data is always little endian.
+	FILE *fp = fopen(imgname, "rb");
+	long itemPos = (long)dcm.imageStart - 8;
 	for (int i = 0; i < frames; i++) {
-		dcm.imageStart = dti4D->offsetTable[i];
-		dcm.imageBytes = lastimageBytes;
-		if (i < (frames - 1))
-			dcm.imageBytes = dti4D->offsetTable[i + 1] - dcm.imageStart;
-		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, false, compressFlag, isVerbose, NULL); // raw frame; whole-image steps below
+		unsigned char item[8];
+		unsigned char *img2D = NULL;
+		if (fp && (fseek(fp, itemPos, SEEK_SET) == 0) && (fread(item, 1, 8, fp) == 8) && (item[0] == 0xFE) && (item[1] == 0xFF) && (item[2] == 0x00) && (item[3] == 0xE0)) {
+			dcm.imageStart = (int)itemPos + 8;
+			dcm.imageBytes = (int)((uint32_t)item[4] | ((uint32_t)item[5] << 8) | ((uint32_t)item[6] << 16) | ((uint32_t)item[7] << 24));
+			itemPos += 8 + (long)(uint32_t)dcm.imageBytes;
+			img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, false, compressFlag, isVerbose, NULL); // raw frame; whole-image steps below
+		}
 		if (!img2D) {
 			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i + 1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
+			if (fp)
+				fclose(fp);
 			free(img);
 			free(hdr2D);
 			return NULL;
@@ -4542,6 +4546,7 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
 		free(img2D);
 	}
+	fclose(fp);
 	free(hdr2D);
 	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXL()
