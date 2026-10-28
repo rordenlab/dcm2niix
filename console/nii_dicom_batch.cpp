@@ -11888,7 +11888,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				if ((nConvert % dcmList[indx0].locationsInAcquisition) == 0)
 					nAcq = nConvert / dcmList[indx0].locationsInAcquisition;
 				else
-					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d slices.\n", dcmList[indx0].locationsInAcquisition, nConvert);
+					printMessage("There appear to be missing DICOM images, expected %d slices but found %d.\n", dcmList[indx0].locationsInAcquisition, nConvert);
 			}
 			// end validate number of spatial volumes: check that number of times a spatial position is repeated matches number of 3D volumes in 4D dataset
 			int nSamePos = 0;
