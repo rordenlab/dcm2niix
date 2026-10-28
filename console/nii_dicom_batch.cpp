@@ -3967,6 +3967,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	if ((numDti < 2) && (nConvert < 2))
 		return NULL;
 	TDTI *vx = NULL;
+	bool *isGEADCvol = NULL; // per volume: GE non-DTI image (e.g. flag 15 trace), NULL if unknown
 	if (numDti > 1) {
 		vx = (TDTI *)malloc(numDti * sizeof(TDTI));
 		for (int i = 0; i < numDti; i++) { // for each direction
@@ -3975,10 +3976,14 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		}
 	} else { // if (numDti == 1) {//extract DTI from different slices
 		vx = (TDTI *)malloc(nConvert * sizeof(TDTI));
+		isGEADCvol = (bool *)malloc(nConvert * sizeof(bool));
 		numDti = 0;
 		for (int i = 0; i < nConvert; i++) { // for each image
 			if ((dcmList[indx0].CSA.mosaicSlices > 1) || (isSamePosition(dcmList[indx0], dcmList[dcmSort[i].indx]))) {
 				int idx = dcmSort[i].indx;
+				if (dcmList[idx].isBVecWorldCoordinates) // GE flag 3/4/5 synthesized vectors
+					dcmList[indx0].isBVecWorldCoordinates = true;
+				isGEADCvol[numDti] = (dcmList[idx].numberOfDiffusionDirectionGE == 0);
 				for (int v = 0; v < 4; v++)									// for each vector+B-value
 					vx[numDti].V[v] = dcmList[dcmSort[i].indx].CSA.dtiV[v]; // dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
 				numDti++;
@@ -4013,6 +4018,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		}
 		if (!bVecVaries) {
 			free(vx);
+			free(isGEADCvol);
 			return NULL;
 		}
 		if (opts.isVerbose) {
@@ -4033,6 +4039,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		else {
 			printWarning("No bvec/bval files created. Only one B-value reported for all volumes: %g\n", vx[0].V[0]);
 			free(vx);
+			free(isGEADCvol);
 			return NULL;
 		}
 	}
@@ -4061,8 +4068,10 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	*numADC = 0;
 	bvals = (float *)malloc(numDti * sizeof(float));
 	int numGEwarn = 0;
-	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0); // GE non-DTI
+	bool isGEADCseries = (dcmList[indx0].numberOfDiffusionDirectionGE == 0); // GE non-DTI
 	for (int i = 0; i < numDti; i++) {
+		// per volume: first image may be T2 (flag 14) not trace (flag 15); older GE T2 has bval>0, bvec=0
+		bool isGEADC = isGEADCvol ? isGEADCvol[i] : isGEADCseries;
 		bvals[i] = vx[i].V[0];
 		// printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
 		// Philips includes derived isotropic images
@@ -4083,6 +4092,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		}
 		bvals[i] = bvals[i] + (0.5 * i / numDti); // add a small bias so ties are kept in sequential order
 	}
+	free(isGEADCvol);
 	// See issue 777: removed the warning because GE DTI b=0 with bval>0 but bvec=0 (prior to version 29.1) will be handled by geCorrectBvecs()
 	// if (numGEwarn > 0)
 	//	printWarning("Some images had bval>0 but bvec=0 (either Trace or b=0, see issue 245)\n");
@@ -11903,7 +11913,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				hdr0.dim[3] = nConvert / nAcq;
 				hdr0.dim[4] = nAcq;
 				hdr0.dim[0] = 4;
-				if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]))
+				// GE MR30+ without (0021,104F): ImagesInAcquisition (0020,1002) counts every image, so equals nConvert
+				if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]) && (!dcmList[indx0].isImagesInAcqGE || (dcmList[indx0].locationsInAcquisition != nConvert)))
 					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d.\n", dcmList[indx0].locationsInAcquisition, hdr0.dim[3]);
 			} else if ((dcmList[indx0].isXA10A) && (nConvert > nAcq) && (nAcq > 1)) {
 				nAcq -= 1;
