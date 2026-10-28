@@ -946,6 +946,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isNoRF = false;				  // 0021,1175 Siemens NOISE: RF-off volume, BIDS _noRF
 	d.isSegamiOasis = false;		  // these images do not store spatial coordinates
 	d.isBVecWorldCoordinates = false; // bvecs can be in image space (GE) or world coordinates (Siemens)
+	d.isImagesInAcqGE = false; // locationsInAcquisition from (0020,1002) without (0021,104F)
 	d.isGrayscaleSoftcopyPresentationState = false;
 	d.isRawDataStorage = false;
 	// Siemens physio logs at private tag (7FE1,1010); see kSiemensXAPhysio
@@ -9141,6 +9142,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
 		d.locationsInAcquisition = locationsInAcquisitionGE;
+	if ((d.manufacturer == kMANUFACTURER_GE) && (swVers >= 30) && (imagesInAcquisition > 0) && (locationsInAcquisitionGE == 0))
+		d.isImagesInAcqGE = true; // MR30+ (0020,1002) counts every image; older GE counts slices
 	if (d.zSpacing > 0.0)
 		d.xyzMM[3] = d.zSpacing; // use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
 	// Single-volume Enhanced-DICOM slice-spacing fallback. When (0018,0088)
@@ -9816,9 +9819,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	if ((d.manufacturer == kMANUFACTURER_GE) && (seriesdiffusionDirectionTypeGE > 0) && (seriesdiffusionDirectionTypeGE != 16))
 		d.numberOfDiffusionDirectionGE = 0;
 	// GE DFAX "ALL" DWI stores zero vectors: flags 3/4/5 are R/L, A/P, S/I (patient axes, so world LPS); oblique 9/10/11 left as is
-	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE >= 3) && (diffusionDirectionTypeGE <= 5) && (d.CSA.dtiV[0] > 0.0f) && isSameFloat(d.CSA.dtiV[1], 0.0f) && isSameFloat(d.CSA.dtiV[2], 0.0f) && isSameFloat(d.CSA.dtiV[3], 0.0f)) {
-		d.CSA.dtiV[diffusionDirectionTypeGE - 2] = 1.0f;
-		d.isBVecWorldCoordinates = true;
+	// flag 14 is T2 (b=0 reference): older GE reports bval>0 with zero vector, which would be mistaken for trace
+	if ((d.manufacturer == kMANUFACTURER_GE) && isSameFloat(d.CSA.dtiV[1], 0.0f) && isSameFloat(d.CSA.dtiV[2], 0.0f) && isSameFloat(d.CSA.dtiV[3], 0.0f)) {
+		if ((d.isEPI) && (diffusionDirectionTypeGE >= 3) && (diffusionDirectionTypeGE <= 5) && (d.CSA.dtiV[0] > 0.0f)) { // EPI: PC-MRA may reuse 3/4/5 for flow
+			d.CSA.dtiV[diffusionDirectionTypeGE - 2] = 1.0f;
+			d.isBVecWorldCoordinates = true;
+		} else if (diffusionDirectionTypeGE == 14)
+			d.CSA.dtiV[0] = 0.0f;
 	}
 	// issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f))))

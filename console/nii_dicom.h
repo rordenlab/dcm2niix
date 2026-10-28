@@ -56,7 +56,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20261024"
+#define kDCMdate "v1.0.20261028"
 #define kDCMvers kDCMdate " " kJP2suf kTurbosuf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -338,7 +338,7 @@ struct TDICOMdata {
 	// would reflect whichever file was parsed last. Issue #877.
 	struct TDeIDCodeSequence *deID_CS;
 	struct TCSAdata CSA;
-	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer, isXAPhysio, isCMRRPhysio, isMRS, isMrsRef, isNoRF;
+	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isImagesInAcqGE, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer, isXAPhysio, isCMRRPhysio, isMRS, isMrsRef, isNoRF;
 	int xaPhysioOffset, xaPhysioBytes; // file offset and length of the (7FE1,1010) physio payload (gzip-XML when isXAPhysio, raw VE11C blob when isCMRRPhysio)
 	int dataPointColumns;			   // MRS only: (0028,9002) SpectroscopyAcquisitionDataColumns (complex points per FID)
 	double spectralWidth;			   // MRS only: (0018,9052) SpectralWidth in Hz; dwell time = 1/spectralWidth (s). TransmitterFrequency (0018,9098 MHz) reuses imagingFrequency.
