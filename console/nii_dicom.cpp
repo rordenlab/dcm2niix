@@ -9815,6 +9815,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.numberOfDiffusionDirectionGE = 0;
 	if ((d.manufacturer == kMANUFACTURER_GE) && (seriesdiffusionDirectionTypeGE > 0) && (seriesdiffusionDirectionTypeGE != 16))
 		d.numberOfDiffusionDirectionGE = 0;
+	// GE DFAX "ALL" DWI stores zero vectors: flags 3/4/5 are R/L, A/P, S/I (patient axes, so world LPS); oblique 9/10/11 left as is
+	if ((d.manufacturer == kMANUFACTURER_GE) && (diffusionDirectionTypeGE >= 3) && (diffusionDirectionTypeGE <= 5) && (d.CSA.dtiV[0] > 0.0f) && isSameFloat(d.CSA.dtiV[1], 0.0f) && isSameFloat(d.CSA.dtiV[2], 0.0f) && isSameFloat(d.CSA.dtiV[3], 0.0f)) {
+		d.CSA.dtiV[diffusionDirectionTypeGE - 2] = 1.0f;
+		d.isBVecWorldCoordinates = true;
+	}
 	// issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f))))
 		printWarning("GE DWI vectors may have been removed by Neologica DICOM Anonymizer Pro (Issue 542)\n");

@@ -3979,6 +3979,8 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		for (int i = 0; i < nConvert; i++) { // for each image
 			if ((dcmList[indx0].CSA.mosaicSlices > 1) || (isSamePosition(dcmList[indx0], dcmList[dcmSort[i].indx]))) {
 				int idx = dcmSort[i].indx;
+				if (dcmList[idx].isBVecWorldCoordinates) // GE flag 3/4/5 synthesized vectors
+					dcmList[indx0].isBVecWorldCoordinates = true;
 				for (int v = 0; v < 4; v++)									// for each vector+B-value
 					vx[numDti].V[v] = dcmList[dcmSort[i].indx].CSA.dtiV[v]; // dcmList[indx0].CSA.dtiV[numDti][v] = dcmList[dcmSort[i].indx].CSA.dtiV[0][v];
 				numDti++;
@@ -4062,6 +4064,9 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 	bvals = (float *)malloc(numDti * sizeof(float));
 	int numGEwarn = 0;
 	bool isGEADC = (dcmList[indx0].numberOfDiffusionDirectionGE == 0); // GE non-DTI
+	for (int i = 0; i < nConvert; i++) // series-wide: first image may be T2 (flag 14) rather than trace (flag 15)
+		if (dcmList[dcmSort[i].indx].numberOfDiffusionDirectionGE == 0)
+			isGEADC = true;
 	for (int i = 0; i < numDti; i++) {
 		bvals[i] = vx[i].V[0];
 		// printMessage("---bxyz %g %g %g %g\n",vx[i].V[0],vx[i].V[1],vx[i].V[2],vx[i].V[3]);
@@ -11903,7 +11908,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				hdr0.dim[3] = nConvert / nAcq;
 				hdr0.dim[4] = nAcq;
 				hdr0.dim[0] = 4;
-				if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]))
+				// GE MR30+ without (0021,104F): ImagesInAcquisition (0020,1002) counts every image, so equals nConvert
+				if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]) && (dcmList[indx0].locationsInAcquisition != nConvert))
 					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d.\n", dcmList[indx0].locationsInAcquisition, hdr0.dim[3]);
 			} else if ((dcmList[indx0].isXA10A) && (nConvert > nAcq) && (nAcq > 1)) {
 				nAcq -= 1;
