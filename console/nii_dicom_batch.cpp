@@ -11887,8 +11887,12 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			if ((nConvert > 1) && (nAcq == 1) && (dcmList[indx0].locationsInAcquisition > 0)) {
 				if ((nConvert % dcmList[indx0].locationsInAcquisition) == 0)
 					nAcq = nConvert / dcmList[indx0].locationsInAcquisition;
+				else if (dcmList[indx0].imagesInAcquisitionGE > 0)
+					printMessage("There appear to be missing DICOM images, expected %d slices with %d spatial positions but found %d.\n", dcmList[indx0].imagesInAcquisitionGE, dcmList[indx0].locationsInAcquisition, nConvert);
+				else if (dcmList[indx0].isImagesInAcqGE)
+					printMessage("There appear to be missing DICOM images, expected %d slices but found %d.\n", dcmList[indx0].locationsInAcquisition, nConvert);
 				else
-					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d slices.\n", dcmList[indx0].locationsInAcquisition, nConvert);
+					printMessage("There appear to be missing DICOM images, expected %d spatial positions per volume but found %d slices.\n", dcmList[indx0].locationsInAcquisition, nConvert);
 			}
 			// end validate number of spatial volumes: check that number of times a spatial position is repeated matches number of 3D volumes in 4D dataset
 			int nSamePos = 0;
@@ -11913,9 +11917,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				hdr0.dim[3] = nConvert / nAcq;
 				hdr0.dim[4] = nAcq;
 				hdr0.dim[0] = 4;
-				// GE MR30+ without (0021,104F): ImagesInAcquisition (0020,1002) counts every image, so equals nConvert
-				if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]) && (!dcmList[indx0].isImagesInAcqGE || (dcmList[indx0].locationsInAcquisition != nConvert)))
-					printMessage("DICOM images may be missing, expected %d spatial locations per volume, but found %d.\n", dcmList[indx0].locationsInAcquisition, hdr0.dim[3]);
+				// GE MR30+ without (0021,104F): ImagesInAcquisition (0020,1002) is the image total, not a per-volume count; the check above reports it
+				if ((dcmList[indx0].locationsInAcquisition > 0) && (dcmList[indx0].locationsInAcquisition != hdr0.dim[3]) && (!dcmList[indx0].isImagesInAcqGE))
+					printMessage("There appear to be missing DICOM images, expected %d spatial positions per volume but found %d.\n", dcmList[indx0].locationsInAcquisition, hdr0.dim[3]);
 			} else if ((dcmList[indx0].isXA10A) && (nConvert > nAcq) && (nAcq > 1)) {
 				nAcq -= 1;
 				hdr0.dim[3] = nConvert / nAcq;
