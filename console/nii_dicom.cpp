@@ -754,6 +754,7 @@ struct TDICOMdata clear_dicom_data() {
 	struct TDICOMdata d;
 	// d.dti4D = NULL;
 	d.locationsInAcquisition = 0;
+	d.imagesInAcquisitionGE = 0;
 	d.locationsInAcquisitionConflict = 0; // for GE discrepancy between tags 0020,1002; 0021,104F; 0054,0081
 	d.modality = kMODALITY_UNKNOWN;
 	d.effectiveEchoSpacingGE = 0;
@@ -9144,6 +9145,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.locationsInAcquisition = locationsInAcquisitionGE;
 	if ((d.manufacturer == kMANUFACTURER_GE) && (swVers >= 30) && (imagesInAcquisition > 0) && (locationsInAcquisitionGE == 0))
 		d.isImagesInAcqGE = true; // MR30+ (0020,1002) counts every image; older GE counts slices
+	// Retain a total only when it describes whole volumes beyond the explicit GE spatial count.
+	if ((d.manufacturer == kMANUFACTURER_GE) && (locationsInAcquisitionGE > 0) && (imagesInAcquisition > locationsInAcquisitionGE) && ((imagesInAcquisition % locationsInAcquisitionGE) == 0))
+		d.imagesInAcquisitionGE = imagesInAcquisition;
 	if (d.zSpacing > 0.0)
 		d.xyzMM[3] = d.zSpacing; // use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
 	// Single-volume Enhanced-DICOM slice-spacing fallback. When (0018,0088)
