@@ -56,7 +56,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20260724"
+#define kDCMdate "v1.0.20261029"
 #define kDCMvers kDCMdate " " kJP2suf kTurbosuf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -66,6 +66,7 @@ static const int kMaxSlice2D = 65535; // issue460 maximum number of 2D slices in
 #else
 static const int kMaxSlice2D = 98303; // issue922 maximum number of 2D slices in 4D (Philips) images
 #endif
+static const int kMaxPMChannel = 16; // issue 1041: Parametric Map channels (index 0 = none)
 static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI directions for 4D (Philips) images, also maximum number of 2D slices for Enhanced DICOM and PAR/REC
 
 #define kDICOMStr 66 // 64 characters plus NULL https://github.com/rordenlab/dcm2niix/issues/268
@@ -147,6 +148,14 @@ static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI dir
 #define kEXIT_NOMINAL 11				  // did not expect to convert files
 #define kEXIT_INVALID_PARAM 12			  // issue 1020: bad CLI option or missing value
 
+// issue 1038: Philips Dixon recon type (ImageType W/F/IP/OP); order fixes the Enhanced sort key 4..7
+#define kDIXON_NONE 0
+#define kDIXON_WATER 1
+#define kDIXON_FAT 2
+#define kDIXON_IN_PHASE 3
+#define kDIXON_OUT_PHASE 4
+static const char *const kDixonRec[] = {"", "water", "fat", "inphase", "outphase"}; // BIDS rec- value per kDIXON_*
+
 // 0043,10A3  ---: PSEUDOCONTINUOUS
 // 0043,10A4  ---: 3D pulsed continuous ASL technique
 #define kASL_FLAG_NONE 0
@@ -224,6 +233,10 @@ struct TDTI4D {
 	bool isReal[kMaxDTI4D];
 	bool isImaginary[kMaxDTI4D];
 	bool isPhase[kMaxDTI4D];
+	bool isRealIsPhaseMapHz[kMaxDTI4D];
+	unsigned char dixonType[kMaxDTI4D]; // kDIXON_*
+	unsigned char pmChannel[kMaxDTI4D]; // index into pmLabel, 0 = none
+	char pmLabel[kMaxPMChannel][17];	// LUTLabel (SH)
 	float repetitionTimeExcitation, repetitionTimeInversion;
 	// deID_CS[] moved to TDICOMdata (per-file, not per-pass) — see comment there.
 };
@@ -269,7 +282,7 @@ struct TDICOMdata {
 	int xyzDim[5];
 	uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
 	int overlayStart[kMaxOverlay];
-	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, numberOfConcatenations, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, offsetTableItems, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme,
+	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, dixonType, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, numberOfConcatenations, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, offsetTableItems, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, imagesInAcquisitionGE, compressionScheme,
 		mrsAcqType, numberOfKSpaceTrajectories; // MRS only: (0018,9200) kMRSAcq* enum + (0018,9093) k-space trajectory count
 	float compressedSensingFactor, xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, scatterFraction, percentSampling, waterFatShift, numberOfAverages, patientSize, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
 	float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
@@ -308,6 +321,7 @@ struct TDICOMdata {
 	float pixelPaddingValue; // used for both FloatPixelPaddingValue (0028, 0122) and PixelPaddingValue (0028, 0120); NaN if not present.
 	double imagingFrequency, acquisitionDuration, triggerDelayTime, RWVScale, RWVIntercept, dateTime, acquisitionTime, seriesTime, radiopharmaceuticalStartTime, radiopharmaceuticalSpecificActivity, acquisitionDate, bandwidthPerPixelPhaseEncode; // (0018,1077) -> BIDS MolarActivity; double for DS precision
 	char parallelAcquisitionTechnique[kDICOMStr], convolutionKernel[kDICOMStr], unitsPT[kDICOMStr], tracerRadionuclide[kDICOMStr], radiopharmaceutical[kDICOMStr], decayCorrection[kDICOMStr], attenuationCorrectionMethod[kDICOMStr], randomsCorrectionMethod[kDICOMStr], scatterCorrectionMethod[kDICOMStr], reconstructionMethod[kDICOMStr], transferSyntax[kDICOMStr];
+	char pmLabel[17]; // issue 1041: Parametric Map LUTLabel of this channel
 	char deidentificationMethod[kDICOMStr], prescanReuseString[kDICOMStr], imageOrientationText[kDICOMStr], pulseSequenceName[kDICOMStr], coilElements[kDICOMStr], coilName[kDICOMStr], transmitCoilName[kDICOMStr], phaseEncodingDirectionDisplayedUIH[kDICOMStr], imageBaseName[kDICOMStr], stationName[kDICOMStr], studyDescription[kDICOMStr], softwareVersions[kDICOMStr], deviceSerialNumber[kDICOMStr], institutionName[kDICOMStr], referringPhysicianName[kDICOMStr], instanceUID[kDICOMStr], seriesInstanceUID[kDICOMStr], studyInstanceUID[kDICOMStr], bodyPartExamined[kDICOMStr], procedureStepDescription[kDICOMStrLarge], imageTypeText[kDICOMStr], imageType[kDICOMStr], institutionalDepartmentName[kDICOMStr], manufacturersModelName[kDICOMStr], patientID[kDICOMStr], patientOrient[kDICOMStr], patientName[kDICOMStr], accessionNumber[kDICOMStr], seriesDescription[kDICOMStr], studyID[kDICOMStr], sequenceName[kDICOMStr], protocolName[kDICOMStr], sequenceVariant[kDICOMStr], scanningSequence[kDICOMStr], patientBirthDate[kDICOMStr], patientAge[kDICOMStr], studyDate[kDICOMStr], studyTime[kDICOMStr];
 	char deepLearningText[kDICOMStrLarge], scanOptions[kDICOMStrLarge], institutionAddress[kDICOMStrLarge], imageComments[kDICOMStrLarge];
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
@@ -324,7 +338,7 @@ struct TDICOMdata {
 	// would reflect whichever file was parsed last. Issue #877.
 	struct TDeIDCodeSequence *deID_CS;
 	struct TCSAdata CSA;
-	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer, isXAPhysio, isCMRRPhysio, isMRS, isMrsRef, isNoRF;
+	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isImagesInAcqGE, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer, isXAPhysio, isCMRRPhysio, isMRS, isMrsRef, isNoRF;
 	int xaPhysioOffset, xaPhysioBytes; // file offset and length of the (7FE1,1010) physio payload (gzip-XML when isXAPhysio, raw VE11C blob when isCMRRPhysio)
 	int dataPointColumns;			   // MRS only: (0028,9002) SpectroscopyAcquisitionDataColumns (complex points per FID)
 	double spectralWidth;			   // MRS only: (0018,9052) SpectralWidth in Hz; dwell time = 1/spectralWidth (s). TransmitterFrequency (0018,9098 MHz) reuses imagingFrequency.

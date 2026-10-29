@@ -18,7 +18,7 @@ Fresh MRS locals must call `initTDTI4D()` so PET/BIDS sentinel arrays do not emi
 
 ## NIfTI-MRS Extension
 
-The ecode 44 extension goes through the shared `nii_saveNII()` hdrExt path; non-MRS output must remain byte-identical, and R in-memory output intentionally lacks the extension. `mrsHdrExtJson()` returns NULL rather than fabricating missing required frequency/nucleus, strips patient and `OriginalFile` under both `-ba y` and `-ba o`, and omits volatile `ConversionTime`. Embedded extension intentionally emits `dim_5: DIM_DYN` for SVS and MRSI, unlike strict BIDS sidecar MRSI suppression. Extension `TxCoil` uses `transmitCoilName`, not `coilName`; `SequenceName` falls back to pulse/CSA only on the MRS gate; `VOI` uses the shared matrix helper.
+The ecode 44 extension goes through the shared `nii_saveNII()` hdrExt path; non-MRS output must remain byte-identical, and R in-memory output intentionally lacks the extension. `mrsHdrExtJson()` returns NULL rather than fabricating missing required frequency/nucleus, strips patient and `OriginalFile` under both `-ba y` and `-ba o`, and omits volatile `ConversionTime`; `ConversionMethod` carries `kDCMdate`, so every version bump changes the binary `.nii` in `dcm_qa_spec/Ref` (refresh it; `diff -I` cannot skip binary files). Embedded extension intentionally emits `dim_5: DIM_DYN` for SVS and MRSI, unlike strict BIDS sidecar MRSI suppression. Extension `TxCoil` uses `transmitCoilName`, not `coilName`; `SequenceName` falls back to pulse/CSA only on the MRS gate; `VOI` uses the shared matrix helper.
 
 ## MRSI / Post
 

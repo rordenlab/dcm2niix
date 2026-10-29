@@ -280,6 +280,12 @@ unsigned char *nii_loadImgCoreOpenJPEG(char *imgname, struct nifti_1_header hdr,
 		goto cleanup1;
 	}
 	ret = imagetoimg(jpx);
+	// imagetoimg sizes its output from the codestream; callers copy header-sized slices
+	if ((ret != NULL) && (((int)jpx->comps[0].w != hdr.dim[1]) || ((int)jpx->comps[0].h != hdr.dim[2]) || ((int)(((jpx->comps[0].prec + 7) >> 3) * 8 * jpx->numcomps) != hdr.bitpix) || ((size_t)jpx->comps[0].w * jpx->comps[0].h * ((jpx->comps[0].prec + 7) >> 3) * jpx->numcomps != nii_ImgBytes(hdr)))) { // last term: one codestream for a multi-frame header
+		printError("JPEG2000 frame %dx%d %d-bit %d-component does not match DICOM %dx%dx%d %d-bit %s\n", jpx->comps[0].w, jpx->comps[0].h, jpx->comps[0].prec, jpx->numcomps, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.bitpix, imgname);
+		free(ret);
+		ret = NULL;
+	}
 cleanup1:
 	opj_image_destroy(jpx);
 cleanup2:
@@ -754,6 +760,7 @@ struct TDICOMdata clear_dicom_data() {
 	struct TDICOMdata d;
 	// d.dti4D = NULL;
 	d.locationsInAcquisition = 0;
+	d.imagesInAcquisitionGE = 0;
 	d.locationsInAcquisitionConflict = 0; // for GE discrepancy between tags 0020,1002; 0021,104F; 0054,0081
 	d.modality = kMODALITY_UNKNOWN;
 	d.effectiveEchoSpacingGE = 0;
@@ -849,6 +856,8 @@ struct TDICOMdata clear_dicom_data() {
 	d.isHasReal = false;
 	d.isHasImaginary = false;
 	d.isHasMagnitude = false;
+	d.dixonType = kDIXON_NONE;
+	d.pmLabel[0] = 0;
 	// d.maxGradDynVol = -1; //PAR/REC only
 	d.sliceOrient = kSliceOrientUnknown;
 	d.dateTime = (double)19770703150928.0;
@@ -944,6 +953,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isNoRF = false;				  // 0021,1175 Siemens NOISE: RF-off volume, BIDS _noRF
 	d.isSegamiOasis = false;		  // these images do not store spatial coordinates
 	d.isBVecWorldCoordinates = false; // bvecs can be in image space (GE) or world coordinates (Siemens)
+	d.isImagesInAcqGE = false; // locationsInAcquisition from (0020,1002) without (0021,104F)
 	d.isGrayscaleSoftcopyPresentationState = false;
 	d.isRawDataStorage = false;
 	// Siemens physio logs at private tag (7FE1,1010); see kSiemensXAPhysio
@@ -2095,7 +2105,7 @@ void dcmMultiShorts(int lByteLength, unsigned char lBuffer[], int lnShorts, uint
 	// read array of unsigned shorts US http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
 	if ((lnShorts < 1) || (lByteLength != (lnShorts * 2)))
 		return;
-	memcpy(&lShorts[0], (uint16_t *)&lBuffer[0], lByteLength);
+	memcpy(&lShorts[0], &lBuffer[0], lByteLength); // no typed cast: lBuffer may be unaligned
 	bool swap = (littleEndian != littleEndianPlatform());
 	if (swap)
 		nifti_swap_2bytes(lnShorts, &lShorts[0]);
@@ -2105,7 +2115,7 @@ void dcmMultiLongs(int lByteLength, unsigned char lBuffer[], int lnLongs, uint32
 	// read array of unsigned longs UL http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
 	if ((lnLongs < 1) || (lByteLength != (lnLongs * 4)))
 		return;
-	memcpy(&lLongs[0], (uint32_t *)&lBuffer[0], lByteLength);
+	memcpy(&lLongs[0], &lBuffer[0], lByteLength); // no typed cast: lBuffer may be unaligned
 	bool swap = (littleEndian != littleEndianPlatform());
 	if (swap)
 		nifti_swap_4bytes(lnLongs, &lLongs[0]);
@@ -2921,6 +2931,9 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isReal[vol] = isReal;
 			dti4D->isImaginary[vol] = isImaginary;
 			dti4D->isPhase[vol] = isPhase;
+			dti4D->dixonType[vol] = kDIXON_NONE; // dti4D is malloc'd, saveDcm2Nii indexes tables with this
+			dti4D->pmChannel[vol] = 0;
+			dti4D->isRealIsPhaseMapHz[vol] = isRealIsPhaseMapHz;
 			if ((maxNumberOfGradientOrients > 1) && (parVers > 40)) {
 				dti4D->S[vol].V[0] = cols[kbval];
 				dti4D->S[vol].V[1] = cols[kv1];
@@ -2983,6 +2996,9 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 			dti4D->isReal[maxVol] = dti4D->isReal[i];
 			dti4D->isImaginary[maxVol] = dti4D->isImaginary[i];
 			dti4D->isPhase[maxVol] = dti4D->isPhase[i];
+			dti4D->dixonType[maxVol] = dti4D->dixonType[i];
+			dti4D->pmChannel[maxVol] = dti4D->pmChannel[i];
+			dti4D->isRealIsPhaseMapHz[maxVol] = dti4D->isRealIsPhaseMapHz[i];
 			dti4D->S[maxVol].V[0] = dti4D->S[i].V[0];
 			dti4D->S[maxVol].V[1] = dti4D->S[i].V[1];
 			dti4D->S[maxVol].V[2] = dti4D->S[i].V[2];
@@ -3266,8 +3282,8 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 		d.CSA.numDti = 0;
 	};
 	// check if dimensions vary
-	if (maxVol > 0) { // maxVol indexed from 0
-		for (int i = 1; i <= maxVol; i++) {
+	if (maxVol > 0) { // maxVol is the volume count after sparse-volume compaction
+		for (int i = 1; i < maxVol; i++) {
 			// if (dti4D->gradDynVol[i] > d.maxGradDynVol) d.maxGradDynVol = dti4D->gradDynVol[i];
 			// issue363 slope/intercept can vary for each 2D slice, not only between 3D volumes in a 4D time series
 			// if (dti4D->intenIntercept[i] != dti4D->intenIntercept[0]) d.isScaleOrTEVaries = true;
@@ -3922,9 +3938,14 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, 
 	return NULL;
 	TJPEG *lOffsetRA = (TJPEG *)malloc(frames * sizeof(TJPEG));
 	FILE *reader = fopen(fn, "rb");
+	if (reader == NULL) {
+		printError("Unable to open %s\n", fn);
+		abortGoto();
+	}
 	fseek(reader, 0, SEEK_END);
 	long lRawSz = ftell(reader) - skipBytes;
 	if (lRawSz <= 8) {
+		fclose(reader);
 		printError("Unable to open %s\n", fn);
 		abortGoto(); // read failure
 	}
@@ -3933,6 +3954,7 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, 
 	size_t lSz = fread(lRawRA, 1, lRawSz, reader);
 	fclose(reader);
 	if (lSz < (size_t)lRawSz) {
+		free(lRawRA);
 		printError("Unable to read %s\n", fn);
 		abortGoto(); // read failure
 	}
@@ -3964,6 +3986,14 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, 
 	return lOffsetRA;
 }
 
+// Decoder output is sized from the SOF (comps may hold several slices); callers copy nSlices header-sized slices.
+static bool isJPEGC3SliceOK(int dimX, int dimY, int bits, int comps, int nSlices, struct nifti_1_header hdr) {
+	if ((dimX == hdr.dim[1]) && (dimY == hdr.dim[2]) && (((bits <= 8) ? 8 : 16) * comps == hdr.bitpix * nSlices))
+		return true;
+	printError("JPEG lossless frame %dx%d %d-bit %d-component does not match DICOM %dx%d %d-bit\n", dimX, dimY, bits, comps, hdr.dim[1], hdr.dim[2], hdr.bitpix);
+	return false;
+}
+
 unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int isVerbose, int dataType) {
 	// arcane and inefficient lossless compression method popularized by dcmcjpeg, examples at http://www.osirix-viewer.com/resources/dicom-image-library/
 	int dimX, dimY, bits, frames;
@@ -3984,6 +4014,36 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 	size_t fragBufLen = 0;
 	unsigned char *fragBuf = reassembleEncapsulatedFragments(imgname, dcm.imageStart, &fragBufLen);
 	unsigned char *ret = NULL;
+	int nFrames = (int)(nii_ImgBytes(hdr) / nii_SliceBytes(hdr)); // all frames (dims 3-7): 4D enhanced has one fragment per frame
+	if ((fragBuf != NULL) && (nFrames > 1) && (dcm.offsetTableItems > nFrames)) {
+		// Multi-frame with several fragments per frame (e.g. dcmcjpeg +fs): frames start at SOI, which cannot occur inside entropy-coded data
+		size_t slicesz = nii_SliceBytes(hdr);
+		unsigned char *bImg = (unsigned char *)malloc(slicesz * nFrames);
+		int frame = 0;
+		for (size_t i = 0; (i + 1 < fragBufLen) && bImg; i++) {
+			if ((fragBuf[i] != 0xFF) || (fragBuf[i + 1] != 0xD8))
+				continue;
+			if (frame >= nFrames)
+				break;
+			ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, (int)i, false, &dimX, &dimY, &bits, &frames, 0);
+			if (ret == NULL)
+				break;
+			if (!isJPEGC3SliceOK(dimX, dimY, bits, frames, 1, hdr)) {
+				free(ret);
+				break;
+			}
+			memcpy(&bImg[slicesz * frame], ret, slicesz);
+			free(ret);
+			frame++;
+		}
+		free(fragBuf);
+		if ((frame != nFrames) || (bImg == NULL)) {
+			printError("Unable to decode JPEG frames split across fragments (%d/%d)\n", frame, nFrames);
+			free(bImg);
+			return NULL;
+		}
+		return bImg;
+	}
 	if (fragBuf != NULL) {
 		ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, 0, isVerbose, &dimX, &dimY, &bits, &frames, 0);
 		free(fragBuf);
@@ -3994,26 +4054,34 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 		printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
 		return NULL;
 	}
+	int comps = frames;
 	if (dataType == DT_RGB24)
 		frames = frames / 3;
-	if (hdr.dim[3] != frames) { // multi-slice image saved as multiple image fragments rather than a single image
+	if (nFrames != frames) { // multi-slice image saved as multiple image fragments rather than a single image
 		// printMessage("Unable to decode all slices (%d/%d). Please use dcmdjpeg to uncompress data.\n", frames, hdr.dim[3]);
 		if (ret != NULL)
 			free(ret);
-		TJPEG *offsetRA = decode_JPEG_SOF_0XC3_stack(imgname, dcm.imageStart - 8, isVerbose, hdr.dim[3], dcm.isLittleEndian);
+		TJPEG *offsetRA = decode_JPEG_SOF_0XC3_stack(imgname, dcm.imageStart - 8, isVerbose, nFrames, dcm.isLittleEndian);
 		if (offsetRA == NULL)
 			return NULL;
 		size_t slicesz = nii_SliceBytes(hdr);
-		size_t imgsz = slicesz * hdr.dim[3];
+		size_t imgsz = slicesz * nFrames;
 		size_t pos = 0;
 		unsigned char *bImg = (unsigned char *)malloc(imgsz);
-		for (int frame = 0; frame < hdr.dim[3]; frame++) {
+		for (int frame = 0; frame < nFrames; frame++) {
 			if (isVerbose)
 				printMessage("JPEG frame %d has %ld bytes @ %ld\n", frame, offsetRA[frame].size, offsetRA[frame].offset);
 			unsigned char *ret = decode_JPEG_SOF_0XC3(imgname, (int)offsetRA[frame].offset, false, &dimX, &dimY, &bits, &frames, (int)offsetRA[frame].size);
 			if (ret == NULL) {
 				printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
 				free(bImg);
+				free(offsetRA);
+				return NULL;
+			}
+			if (!isJPEGC3SliceOK(dimX, dimY, bits, frames, 1, hdr)) {
+				free(ret);
+				free(bImg);
+				free(offsetRA);
 				return NULL;
 			}
 			memcpy(&bImg[pos], ret, slicesz); // dest, src, size
@@ -4022,6 +4090,10 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 		}
 		free(offsetRA);
 		return bImg;
+	}
+	if (!isJPEGC3SliceOK(dimX, dimY, bits, comps, nFrames, hdr)) {
+		free(ret);
+		return NULL;
 	}
 	return ret;
 }
@@ -4058,11 +4130,18 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	fseek(f, dcm.imageStart, SEEK_SET);
 	_jpegSize = (long unsigned int)fread(_compressedImage, 1, _jpegSize, f);
 	fclose(f);
-	int jpegSubsamp, width, height;
+	int jpegSubsamp = 0, width = 0, height = 0;
 	// printMessage("Decoding with turboJPEG\n");
 	tjhandle _jpegDecompressor = tjInitDecompress();
-	tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp);
+	if (tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp) != 0)
+		width = 0; // fails the size check below
 	int COLOR_COMPONENTS = dcm.samplesPerPixel;
+	if ((width != dcm.xyzDim[1]) || (height != dcm.xyzDim[2]) || (dcm.bitsAllocated != 8)) { // output is sized from the JPEG; callers copy header-sized slices
+		printError("JPEG %dx%d 8-bit image does not match DICOM %dx%d %d-bit '%s'\n", width, height, dcm.xyzDim[1], dcm.xyzDim[2], dcm.bitsAllocated, imgname);
+		tjDestroy(_jpegDecompressor);
+		free(_compressedImage);
+		return NULL;
+	}
 	// printMessage("turboJPEG h*w %d*%d sampling %d components %d\n", width, height, jpegSubsamp, COLOR_COMPONENTS);
 	if ((jpegSubsamp == TJSAMP_GRAY) && (COLOR_COMPONENTS != 1)) {
 		printError("Grayscale jpegs should not have %d components '%s'\n", COLOR_COMPONENTS, imgname);
@@ -4078,6 +4157,7 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 		tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, bImg, width, 0 /*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
 	// printMessage("turboJPEG h*w %d*%d (sampling %d)\n", width, height, jpegSubsamp);
 	tjDestroy(_jpegDecompressor);
+	free(_compressedImage);
 	return bImg;
 }
 
@@ -4106,9 +4186,16 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	njInit();
 	if (njDecode(buf, size)) {
 		printError("Unable to decode baseline JPEG image offset %d bytes %d (hint compile dcm2niix with turboJPEG).\n", dcm.imageStart, dcm.imageBytes);
+		free(buf);
+		njDone();
 		return NULL;
 	}
 	free(buf);
+	if (njGetImageSize() != dcm.xyzDim[1] * dcm.xyzDim[2] * dcm.samplesPerPixel * (dcm.bitsAllocated / 8)) {
+		printError("JPEG %dx%d %d-byte image does not match DICOM header '%s'\n", njGetWidth(), njGetHeight(), njGetImageSize(), imgname);
+		njDone();
+		return NULL;
+	}
 	unsigned char *bImg = (unsigned char *)malloc(njGetImageSize());
 	memcpy(bImg, njGetImage(), njGetImageSize()); // dest, src, size
 	njDone();
@@ -4361,6 +4448,21 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 	if (JpegLsReadHeader(cImg, dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
 #endif
 		printMessage("CharLS failed to read header.\n");
+		free(cImg);
+		free(bImg);
+		return NULL;
+	}
+#ifdef myEnableJPEGLS1
+	int jlsBits = params.bitspersample;
+#else
+	int jlsBits = params.bitsPerSample;
+#endif
+	// CharLS accepts a larger destination and leaves the excess uninitialized, so the codestream must fill exactly the header-sized image
+	size_t jlsBytes = (size_t)params.width * params.height * params.components * ((jlsBits <= 8) ? 1 : 2);
+	if ((params.width != hdr.dim[1]) || ((((jlsBits <= 8) ? 8 : 16) * params.components) != hdr.bitpix) || (jlsBytes != imgsz)) {
+		printError("JPEG-LS frame %dx%d %d-bit %d-component (%zu bytes) does not match DICOM %dx%d %d-bit (%zu bytes) %s\n", params.width, params.height, jlsBits, params.components, jlsBytes, hdr.dim[1], hdr.dim[2], hdr.bitpix, imgsz, imgname);
+		free(cImg);
+		free(bImg);
 		return NULL;
 	}
 #ifdef myEnableJPEGLS1
@@ -4369,12 +4471,32 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
 #endif
 		free(bImg);
+		free(cImg);
 		printMessage("CharLS failed to read image.\n");
 		return NULL;
 	}
+	free(cImg);
 	return (bImg);
 }
 #endif
+
+// Whole-image steps; run once after per-frame decode (per frame, reorder is a no-op and scaling changes frame size).
+static unsigned char *nii_loadImgXLFinish(unsigned char *img, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, struct TDTI4D *dti4D) {
+	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do after
+		img = nii_iVaries(img, hdr, NULL);
+	int nAcq = dcm.locationsInAcquisition;
+	if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3] % nAcq) == 0) && (hdr->dim[3] > nAcq)) {
+		hdr->dim[4] = hdr->dim[3] / nAcq;
+		hdr->dim[3] = nAcq;
+		hdr->dim[0] = 4;
+	}
+	if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
+		img = nii_reorderSlicesX(img, hdr, dti4D);
+	if ((dti4D != NULL) && (!dcm.isFloat) && (iVaries))
+		img = nii_iVaries(img, hdr, dti4D);
+	headerDcm2NiiSForm(dcm, dcm, hdr, false);
+	return img;
+} // nii_loadImgXLFinish()
 
 unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
 	// provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
@@ -4386,6 +4508,11 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		return NULL;
 #else
 		img = nii_loadImgJPEG50(imgname, dcm);
+		if ((img != NULL) && ((size_t)dcm.xyzDim[1] * dcm.xyzDim[2] * dcm.samplesPerPixel * (dcm.bitsAllocated / 8) != nii_ImgBytes(*hdr))) { // decoders return one slice; a single codestream cannot fill a multi-frame header
+			printError("Baseline JPEG holds one frame but DICOM expects %d frames %s\n", hdr->dim[3] * ((hdr->dim[4] > 1) ? hdr->dim[4] : 1), imgname);
+			free(img);
+			return NULL;
+		}
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
 															 // n.b. turboJPEG and nanoJPEG should both automatically convert YBR to RGB
@@ -4407,8 +4534,8 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		img = nii_loadImgPMSCT_RLE1(imgname, *hdr, dcm);
 	} else if (dcm.compressionScheme == kCompressRLE) {
 		img = nii_loadImgRLE(imgname, *hdr, dcm);
-		if (hdr->datatype == DT_RGB24)						 // convert to planar
-			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
+		if (hdr->datatype == DT_RGB24)			 // convert to planar
+			img = nii_rgb2planar(img, hdr, false); // RLE decode always interleaves samples, whatever PlanarConfiguration says
 	} else if (dcm.compressionScheme == kCompressC3) {
 		img = nii_loadImgJPEGC3(imgname, *hdr, dcm, isVerbose, hdr->datatype);
 		if (dcm.isYBRfull)
@@ -4446,20 +4573,7 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 	if (dcm.CSA.mosaicSlices > 1) {
 		img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, (dcm.manufacturer == kMANUFACTURER_UIH)); //, dcm.CSA.protocolSliceNumber1);
 	}
-	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do after
-		img = nii_iVaries(img, hdr, NULL);
-	int nAcq = dcm.locationsInAcquisition;
-	if ((nAcq > 1) && (hdr->dim[0] < 4) && ((hdr->dim[3] % nAcq) == 0) && (hdr->dim[3] > nAcq)) {
-		hdr->dim[4] = hdr->dim[3] / nAcq;
-		hdr->dim[3] = nAcq;
-		hdr->dim[0] = 4;
-	}
-	if ((dti4D != NULL) && (dti4D->sliceOrder[0] >= 0))
-		img = nii_reorderSlicesX(img, hdr, dti4D);
-	if ((dti4D != NULL) && (!dcm.isFloat) && (iVaries))
-		img = nii_iVaries(img, hdr, dti4D);
-	headerDcm2NiiSForm(dcm, dcm, hdr, false);
-	return img;
+	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXLCore()
 
 unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
@@ -4471,11 +4585,8 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	// issue1013 regression: kCompressC3 (JPEG Lossless 1.2.840.10008.1.2.4.7x) has
 	// its own working multi-fragment path inside nii_loadImgJPEGC3 →
 	// decode_JPEG_SOF_0XC3_stack, which walks the file directly for SOI markers.
-	// The per-frame loop below relies on dti4D->offsetTable[] values that can be
-	// stale (the dti4D pointer reaching the decode site is not always the one
-	// the parser filled — e.g. saveDcm2Nii allocates `dti4Ds` via `*dti4Ds =
-	// *dti4D` from a stage-1 dti4D). Bypass the new wrapper for kCompressC3 so
-	// the legacy stack walker handles multi-fragment as it did pre-regression.
+	// Bypass the per-frame loop below for kCompressC3 so the legacy stack walker
+	// handles multi-fragment as it did pre-regression.
 	if (dcm.compressionScheme == kCompressC3)
 		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
 	int frames = dcm.xyzDim[3];
@@ -4504,24 +4615,43 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
 	for (int i = 3; i < 8; i++)
 		hdr2D->dim[i] = 1;
-	int lastimageBytes = dcm.imageBytes;
+	// Walk this file's own (FFFE,E000) items: dti4D->offsetTable holds the last file parsed, so a multi-file series would decode earlier files at wrong offsets. Encapsulated data is always little endian.
+	FILE *fp = fopen(imgname, "rb");
+	long itemPos = (long)dcm.imageStart - 8;
 	for (int i = 0; i < frames; i++) {
-		dcm.imageStart = dti4D->offsetTable[i];
-		dcm.imageBytes = lastimageBytes;
-		if (i < (frames - 1))
-			dcm.imageBytes = dti4D->offsetTable[i + 1] - dcm.imageStart;
-		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, iVaries, compressFlag, isVerbose, dti4D);
+		unsigned char item[8];
+		unsigned char *img2D = NULL;
+		if (fp && (fseek(fp, itemPos, SEEK_SET) == 0) && (fread(item, 1, 8, fp) == 8) && (item[0] == 0xFE) && (item[1] == 0xFF) && (item[2] == 0x00) && (item[3] == 0xE0)) {
+			dcm.imageStart = (int)itemPos + 8;
+			dcm.imageBytes = (int)((uint32_t)item[4] | ((uint32_t)item[5] << 8) | ((uint32_t)item[6] << 16) | ((uint32_t)item[7] << 24));
+			itemPos += 8 + (long)(uint32_t)dcm.imageBytes;
+			img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, false, compressFlag, isVerbose, NULL); // raw frame; whole-image steps below
+		}
 		if (!img2D) {
 			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i + 1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
+			if (fp)
+				fclose(fp);
 			free(img);
+			free(hdr2D);
+			return NULL;
+		}
+		if (nii_ImgBytes(*hdr2D) != sliceBytes2D) { // e.g. a mosaic frame was demosaiced: malformed multi-frame mosaic
+			printError("Frame %d/%d decodes to %zu bytes, expected %zu: %s\n", (i + 1), frames, (size_t)nii_ImgBytes(*hdr2D), sliceBytes2D, imgname);
+			if (fp)
+				fclose(fp);
 			free(img2D);
+			free(img);
+			free(hdr2D);
 			return NULL;
 		}
 		// Copy the 2D slice into the correct position in the 3D/4D image buffer
 		memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
 		free(img2D);
 	}
-	return img;
+	if (fp)
+		fclose(fp);
+	free(hdr2D);
+	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXL()
 
 int isSQ(uint32_t groupElement, bool isPhilips) { // Detect sequence VR ("SQ") for implicit tags
@@ -4846,7 +4976,21 @@ struct TDCMdim { // DimensionIndexValues
 	bool isPhase;
 	bool isReal;
 	bool isImaginary;
+	bool isRealIsPhaseMapHz;
+	unsigned char dixonType;
+	unsigned char pmChannel; // issue 1041
+	uint16_t pmTime; // ponytail: TemporalPositionIndex truncated to 16 bits
 };
+
+// Zero entries [*nInit, n) on demand: zeroing all kMaxSlice2D (~9 MB) per file dominated WASM conversion time.
+static void initTDCMdim(struct TDCMdim *dcmDim, int *nInit, int n) {
+	if (n > kMaxSlice2D)
+		n = kMaxSlice2D;
+	for (; *nInit < n; (*nInit)++) {
+		memset(&dcmDim[*nInit], 0, sizeof(struct TDCMdim));
+		dcmDim[*nInit].diskPos = *nInit;
+	}
+}
 
 void getFileNameX(char *pathParent, const char *path, int maxLen) { // if path is c:\d1\d2 then filename is 'd2'
 	const char *filename = strrchr(path, '/');						// UNIX
@@ -5252,6 +5396,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kStudyComments 0x0032 + (0x4000 << 16) // LT StudyComments
 // #define kObjectGraphics 0x0029+(0x1210 << 16 ) //0029,1210 syngoPlatformOOGInfo Object Oriented Graphics
 #define kProcedureStepDescription 0x0040 + (0x0254 << 16)
+#define kLUTLabel 0x0040 + uint32_t(0x9210 << 16)			 // SH
+#define kRealWorldValueMappingSequence 0x0040 + uint32_t(0x9096 << 16) // SQ
 #define kRealWorldIntercept 0x0040 + uint32_t(0x9224 << 16)	 // IS dicm2nii's SlopInt_6_9
 #define kRealWorldSlope 0x0040 + uint32_t(0x9225 << 16)		 // IS dicm2nii's SlopInt_6_9
 #define kShimGradientX 0x0043 + (0x1002 << 16)				 // SS
@@ -5409,6 +5555,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// float sliceLocation = INFINITY; //useless since this tag is optional
 	// int numFirstPatientPosition = 0;
 	int nDimIndxVal = -1; // tracks Philips kDimensionIndexValues
+	bool isParametricMap = false;
+	int nPMChannel = 0; // -1: unusable
+	int pmFrame = 0;
 	int locationsInAcquisitionGE = 0;
 	int PETImageIndex = 0;
 	int inStackPositionNumber = 0;
@@ -5503,6 +5652,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isReal = false;
 	bool isImaginary = false;
 	bool isMagnitude = false;
+	int dixonType = kDIXON_NONE;
+	bool isRealIsPhaseMapHz = false; // per-frame: d.isRealIsPhaseMapHz is sticky across frames
 	d.seriesNum = -1;
 	// start issue 372:
 	vec3 sliceV; // cross-product of kOrientation 0020,0037
@@ -5531,12 +5682,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int numDimensionIndexValues = 0;
 	bool isSiemensXA = false;
 	// don't use stack! TDCMdim dcmDim[kMaxSlice2D];
+	// zeroed on use (initTDCMdim): the issue 372 fallback never fills TE/scale/etc., later read per volume (issue 1041)
 	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
-	for (int i = 0; i < kMaxSlice2D; i++) {
-		dcmDim[i].diskPos = i;
-		for (int j = 0; j < MAX_NUMBER_OF_DIMENSIONS; j++)
-			dcmDim[i].dimIdx[j] = 0;
-	}
+	int nDcmDimInit = 0;
 // http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
 // The array nestPos tracks explicit lengths for Data Element Tag of Value (FFFE,E000)
 // a delimiter (fffe,e000) can have an explicit length, in which case there is no delimiter (fffe,e00d)
@@ -5628,13 +5776,19 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 						imageType = 2;
 					if (isPhase)
 						imageType = 3;
+					if (dixonType != kDIXON_NONE)
+						imageType = 3 + dixonType;
 					int bvalNum = philMRImageDiffBValueNumber > 0 ? philMRImageDiffBValueNumber : 0;
 					int gradNum = gradientOrientationNumberPhilips > 0 ? gradientOrientationNumberPhilips : 0;
 					int volume = volumeNumber > 0 ? volumeNumber : 0;
-					int d2 = d.dimensionIndexValues[2];
-					int d3 = d.dimensionIndexValues[3];
+					// slots >= nDimIndxVal still hold the previous frame's rewrite below (issue 1038)
+					int d2 = (nDimIndxVal > 2) ? d.dimensionIndexValues[2] : 0;
+					int d3 = (nDimIndxVal > 3) ? d.dimensionIndexValues[3] : 0;
 					if (d.aslFlags == kASL_FLAG_NONE) {
 						aslFlag = d2;
+						// issue 1038: R12 leaves the Effective Echo Time index 0 for every echo; key on TE (us) so unstable qsort cannot scramble echoes
+						if ((d2 == 0) && (!isSameFloatGE(d.TE, 0.0)))
+							aslFlag = (int)roundf(d.TE * 1000.0f);
 					}
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
@@ -5698,6 +5852,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					printError("Too many slices to track dimensions. Only up to %d are supported\n", kMaxSlice2D);
 					break;
 				}
+				initTDCMdim(dcmDim, &nDcmDimInit, numDimensionIndexValues + 1);
 				uint32_t dimensionIndexOrder[MAX_NUMBER_OF_DIMENSIONS];
 				for (int i = 0; i < nDimIndxVal; i++)
 					dimensionIndexOrder[i] = i;
@@ -5720,6 +5875,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dcmDim[numDimensionIndexValues].isPhase = isPhase;
 				dcmDim[numDimensionIndexValues].isReal = isReal;
 				dcmDim[numDimensionIndexValues].isImaginary = isImaginary;
+				dcmDim[numDimensionIndexValues].isRealIsPhaseMapHz = isRealIsPhaseMapHz;
+				dcmDim[numDimensionIndexValues].dixonType = dixonType;
 				dcmDim[numDimensionIndexValues].intenScalePhilips = d.intenScalePhilips;
 				dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 				dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
@@ -5866,6 +6023,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0; // Do not skip kItemTag - required to determine nesting of Philips Enhanced
+			}
+			if ((isParametricMap) && (groupElement == kRealWorldValueMappingSequence)) { // issue 1041: holds LUTLabel; PM only, Philips RWV parsing stays as before
+				vr[0] = 'S';
+				vr[1] = 'Q';
+				lLength = 0;
 			}
 			if (groupElement == kDiffusionGradientDirectionSQ) { // https://github.com/rordenlab/dcm2niix/issues/144
 				vr[0] = 'S';
@@ -6065,6 +6227,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isDerived = true;										  // Segmentation IOD, issue 572
 			else if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.66") != NULL)
 				d.isRawDataStorage = true; // e.g. Raw Data IOD, https://dicom.nema.org/dicom/2013/output/chtml/part04/sect_i.4.html
+			if (strcmp(mediaUID, "1.2.840.10008.5.1.4.1.1.30") == 0)
+				isParametricMap = true;
 			if (strstr(mediaUID, "1.2.840.10008.5.1.4.1.1.77.1.6") != NULL)
 				d.isMicroscopy = true;
 			if (strstr(mediaUID, "1.3.46.670589.11.0.0.12.1") != NULL)
@@ -6221,8 +6385,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				// d.isDerived = true; //this would have 'i- y' skip MoCo images
 				isMoCo = true;
 			}
-			if ((slen > 5) && strstr(d.imageType, "B0") && strstr(d.imageType, "MAP"))
+			if ((slen > 5) && strstr(d.imageType, "B0") && strstr(d.imageType, "MAP")) {
 				d.isRealIsPhaseMapHz = true;
+				isRealIsPhaseMapHz = true;
+			}
 			if ((slen > 5) && strstr(d.imageType, "_ADC_"))
 				d.isDerived = true;
 			if ((slen > 5) && strstr(d.imageType, "_TRACEW_"))
@@ -6264,6 +6430,17 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.isHasPhase = true;
 				isPhase = true;
 			}
+			// issue 1038: Philips Dixon tokens from classic or legacy (2005,140F) ImageType, stable 5.1-12.3; ungated as Manufacturer is not yet read
+			if ((slen > 3) && (strstr(d.imageType, "_W_") != NULL))
+				dixonType = kDIXON_WATER;
+			if ((slen > 3) && (strstr(d.imageType, "_F_") != NULL))
+				dixonType = kDIXON_FAT;
+			if ((slen > 4) && (strstr(d.imageType, "_IP_") != NULL))
+				dixonType = kDIXON_IN_PHASE;
+			if ((slen > 4) && (strstr(d.imageType, "_OP_") != NULL))
+				dixonType = kDIXON_OUT_PHASE;
+			if (dixonType != kDIXON_NONE)
+				d.dixonType = dixonType;
 			if ((slen > 6) && (strstr(d.imageType, "_REAL_") != NULL)) {
 				d.isHasReal = true;
 				isReal = true;
@@ -6373,6 +6550,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			isReal = false;
 			isImaginary = false;
 			isMagnitude = false;
+			dixonType = kDIXON_NONE;
+			isRealIsPhaseMapHz = false;
 			// see Table C.8-85 http://dicom.nema.org/medical/Dicom/2017c/output/chtml/part03/sect_C.8.13.3.html
 			if ((buffer[lPos] == 'R') && (toupper(buffer[lPos + 1]) == 'E'))
 				isReal = true;
@@ -6771,7 +6950,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.dataPointColumns = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
 		case kMRSpectroscopyAcquisitionType: { // (0018,9200) CS — MRS acquisition type enum
-			char acqType[kDICOMStr];
+			char acqType[kDICOMStr] = ""; // dcmStr leaves it untouched if lLength < 1 (Philips enhanced)
 			dcmStr(lLength, &buffer[lPos], acqType);
 			if (strstr(acqType, "SINGLE_VOXEL") != NULL)
 				d.mrsAcqType = kMRSAcqSingleVoxel;
@@ -7106,6 +7285,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dimensionIndexPointer[dimensionIndexPointerCounter++] = dcmAttributeTag(&buffer[lPos], d.isLittleEndian);
 			break;
 		case kFrameContentSequence:
+			pmFrame++;
 			// if (!(d.manufacturer == kMANUFACTURER_BRUKER)) break; //see https://github.com/rordenlab/dcm2niix/issues/241
 			if (sqDepth == 0)
 				sqDepth = 1; // should not happen, in case faulty anonymization
@@ -7465,6 +7645,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.radiopharmaceuticalSpecificActivity = dcmStrDouble(lLength, &buffer[lPos]);
 			break;
 		case kEffectiveTE: {
+			if (d.manufacturer == kMANUFACTURER_UIH)
+				break; // issue1035: UIH stores EffectiveEchoSpacing (ms) here, not TE
 			TE = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			// handle multi-echo packed into single enhanced DICOM PR 988
 			// if (d.TE <= 0.0)
@@ -8375,6 +8557,34 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// hits the few tags spec2nii's process_siemens_svs_vx reads.
 			readCSAforMRS(&buffer[lPos], lLength, &d);
 			break;
+		case kLUTLabel: { // issue 1041: channel = first per-frame LUTLabel of frame pmFrame-1 (FrameContentSequence precedes it; 0 in shared group)
+			if ((!isParametricMap) || (nPMChannel < 0) || (pmFrame < 1) || (pmFrame > kMaxSlice2D))
+				break;
+			initTDCMdim(dcmDim, &nDcmDimInit, pmFrame);
+			if (dcmDim[pmFrame - 1].pmChannel > 0)
+				break;
+			char label[kDICOMStr];
+			label[0] = 0;
+			dcmStr(lLength, &buffer[lPos], label);
+			label[16] = 0; // SH
+			if (!label[0])
+				break; // unlabeled frame: validated before splitting
+			int ch = 1;
+			while ((ch <= nPMChannel) && (strcmp(label, dti4D->pmLabel[ch]) != 0))
+				ch++;
+			if (ch >= kMaxPMChannel) {
+				printWarning("Parametric Map has more than %d channels (issue 1041)\n", kMaxPMChannel - 1);
+				nPMChannel = -1;
+				break;
+			}
+			if (ch > nPMChannel) {
+				nPMChannel = ch;
+				strcpy(dti4D->pmLabel[ch], label);
+			}
+			dcmDim[pmFrame - 1].pmChannel = ch;
+			dcmDim[pmFrame - 1].pmTime = temporalPositionIndex; // FrameContentSequence precedes this
+			break;
+		}
 		case kRealWorldIntercept:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
@@ -8931,7 +9141,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			d.imageStart = encapsulatedDataFragmentStart;
 		} else if (encapsulatedDataFragments > 1) {
 			// issue 1017: a single frame split across multiple fragments. Reassembly happens at decode time (see dicom_fragments.cpp). Limited to numberOfFrames <= 1: multi-frame with fragments-per-frame > 1 would need real frame-to-fragment boundary parsing, which the reassembly helper does not provide (it concatenates ALL following fragments).
-			if ((numberOfFrames <= 1) && (d.compressionScheme == kCompressC3 || d.compressionScheme == kCompressJP2K)) {
+			if ((d.compressionScheme == kCompressC3) || ((numberOfFrames <= 1) && (d.compressionScheme == kCompressJP2K))) { // C3 multi-frame: split at SOI in nii_loadImgJPEGC3
 				d.imageStart = encapsulatedDataFragmentStart;
 			} else {
 				printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);
@@ -9015,6 +9225,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if ((d.manufacturer == kMANUFACTURER_GE) && (d.locationsInAcquisition == 0))
 		d.locationsInAcquisition = locationsInAcquisitionGE;
+	if ((d.manufacturer == kMANUFACTURER_GE) && (swVers >= 30) && (imagesInAcquisition > 0) && (locationsInAcquisitionGE == 0))
+		d.isImagesInAcqGE = true; // MR30+ (0020,1002) counts every image; older GE counts slices
+	// Retain a total only when it describes whole volumes beyond the explicit GE spatial count.
+	if ((d.manufacturer == kMANUFACTURER_GE) && (locationsInAcquisitionGE > 0) && (imagesInAcquisition > locationsInAcquisitionGE) && ((imagesInAcquisition % locationsInAcquisitionGE) == 0))
+		d.imagesInAcquisitionGE = imagesInAcquisition;
 	if (d.zSpacing > 0.0)
 		d.xyzMM[3] = d.zSpacing; // use zSpacing if provided: depending on vendor, kZThick may or may not include a slice gap
 	// Single-volume Enhanced-DICOM slice-spacing fallback. When (0018,0088)
@@ -9087,8 +9302,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if ((isHasBMatrix) && (!isHasBVec))
 		printWarning("Underspecified BMatrix without BVector (issue 265)\n");
+#ifdef myTurboJPEG
 	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8)) {
-		// dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit: we can only decode 8/24-bit
+#else // nanojpeg also decodes 12-bit grayscale (.51)
+	if ((d.compressionScheme == kCompress50) && (d.bitsAllocated > 8) && ((d.bitsAllocated != 16) || (d.bitsStored > 12) || (d.samplesPerPixel != 1))) {
+#endif
+		// dcmcjpg with +ee can create .51 syntax images that are 8,12,16,24-bit
 		printError("Unable to decode %d-bit images with Transfer Syntax 1.2.840.10008.1.2.4.51, decompress with dcmdjpg or gdcmconv\n", d.bitsAllocated);
 		d.isValid = false;
 	}
@@ -9180,6 +9399,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		exit(kEXIT_CORRUPT_FILE_FOUND);
 #endif
 	}
+	initTDCMdim(dcmDim, &nDcmDimInit, (numberOfFrames > numDimensionIndexValues) ? numberOfFrames : numDimensionIndexValues); // later reads stay below this, except the per-volume loop below
 	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { // issue 372
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numberOfFrames);
 		for (int i = 0; i < numberOfFrames; i++) {
@@ -9263,6 +9483,36 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.xyzDim[4] = 1;
 		d.xyzDim[3] = numDimensionIndexValues;
 	} // issue839
+	if (nPMChannel > 1) { // issue 1041: one volume per channel and time point
+		// isKludgeIssue809 owns dimIdx[6..7]; compressed frames are assembled in disk order, ignoring sliceOrder
+		// shape from counts, not xyzDim: temporal/stack/segment heuristics above may already have split it
+		int nTime = (maxTemporalPositionIndex > minTemporalPositionIndex) ? (maxTemporalPositionIndex - minTemporalPositionIndex + 1) : 1;
+		int nVol = nPMChannel * nTime;
+		bool isSplit = (!isKludgeIssue809) && (d.compressionScheme == kCompressNone) && (pmFrame == numberOfFrames) && (numDimensionIndexValues == numberOfFrames) && (nTime <= numberOfFrames) && ((numberOfFrames % nVol) == 0);
+		int nSlice = isSplit ? (numberOfFrames / nVol) : 0;
+		if ((maxInStackPositionNumber > 1) && (nSlice != maxInStackPositionNumber))
+			isSplit = false; // e.g. several stacks
+		if (isSplit) { // every (channel, time) cell must hold nSlice frames: catches unlabeled frames, TPI gaps, uneven channels/times
+			int *nCell = (int *)calloc(nVol, sizeof(int));
+			for (int i = 0; isSplit && (i < numberOfFrames); i++) {
+				int c = dcmDim[i].pmChannel - 1;
+				int t = (nTime > 1) ? ((int)dcmDim[i].pmTime - minTemporalPositionIndex) : 0;
+				isSplit = (c >= 0) && (t >= 0) && (t < nTime) && (++nCell[c * nTime + t] <= nSlice);
+			}
+			free(nCell);
+		}
+		if (isSplit) {
+			// ponytail: top two slots assumed unused, a PM with 7+ index dimensions would lose its last ones
+			for (int i = 0; i < numberOfFrames; i++) {
+				dcmDim[i].dimIdx[MAX_NUMBER_OF_DIMENSIONS - 1] = dcmDim[i].pmChannel; // sort by channel, then time
+				dcmDim[i].dimIdx[MAX_NUMBER_OF_DIMENSIONS - 2] = dcmDim[i].pmTime;
+			}
+			d.xyzDim[3] = nSlice;
+			d.xyzDim[4] = nVol;
+		} else // unsplit: no volume is labeled
+			for (int i = 0; (i < pmFrame) && (i < kMaxSlice2D); i++)
+				dcmDim[i].pmChannel = 0;
+	}
 	if ((numDimensionIndexValues > 1) && (numDimensionIndexValues == numberOfFrames)) {
 		// Philips enhanced datasets can have custom slice orders and pack images with different TE, Phase/Magnitude/Etc.
 		int maxVariableItem = 0;
@@ -9354,6 +9604,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		//  https://github.com/rordenlab/dcm2niix/commit/8207877de984dab59e0374906c7ad212756f85a6#diff-120bb215d28dcbddeca8ea56dbb97e237501901ac2dfa1fbe4182282a8dd2b75
 		// if (!(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 		if ((d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { // record variations in TE
+			initTDCMdim(dcmDim, &nDcmDimInit, d.xyzDim[3] * d.xyzDim[4]); // reads slice j + i * xyzDim[3]
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;
@@ -9367,6 +9618,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dti4D->isPhase[i] = dcmDim[slice].isPhase;
 				dti4D->isReal[i] = dcmDim[slice].isReal;
 				dti4D->isImaginary[i] = dcmDim[slice].isImaginary;
+				dti4D->isRealIsPhaseMapHz[i] = dcmDim[slice].isRealIsPhaseMapHz;
+				dti4D->dixonType[i] = dcmDim[slice].dixonType;
+				dti4D->pmChannel[i] = dcmDim[slice].pmChannel; // 0 unless a Parametric Map was split
+				if (dti4D->pmChannel[i] != dti4D->pmChannel[0])
+					d.isScaleOrTEVaries = true;
 				dti4D->triggerDelayTime[i] = dcmDim[slice].triggerDelayTime;
 				dti4D->S[i].V[0] = dcmDim[slice].V[0];
 				dti4D->S[i].V[1] = dcmDim[slice].V[1];
@@ -9382,6 +9638,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				if (dti4D->isReal[i] != isReal)
 					d.isScaleOrTEVaries = true;
 				if (dti4D->isImaginary[i] != isImaginary)
+					d.isScaleOrTEVaries = true;
+				if (dti4D->dixonType[i] != dixonType) // TSE Dixon: all types share one TE
 					d.isScaleOrTEVaries = true;
 				/*Philips can vary intensity scalings for separate slices within a volume!
 				dti4D->intenScale[i] = dcmDim[slice].intenScale;
@@ -9648,6 +9906,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		d.numberOfDiffusionDirectionGE = 0;
 	if ((d.manufacturer == kMANUFACTURER_GE) && (seriesdiffusionDirectionTypeGE > 0) && (seriesdiffusionDirectionTypeGE != 16))
 		d.numberOfDiffusionDirectionGE = 0;
+	// GE DFAX "ALL" DWI stores zero vectors: flags 3/4/5 are R/L, A/P, S/I (patient axes, so world LPS); oblique 9/10/11 left as is
+	// flag 14 is T2 (b=0 reference): older GE reports bval>0 with zero vector, which would be mistaken for trace
+	if ((d.manufacturer == kMANUFACTURER_GE) && isSameFloat(d.CSA.dtiV[1], 0.0f) && isSameFloat(d.CSA.dtiV[2], 0.0f) && isSameFloat(d.CSA.dtiV[3], 0.0f)) {
+		if ((d.isEPI) && (diffusionDirectionTypeGE >= 3) && (diffusionDirectionTypeGE <= 5) && (d.CSA.dtiV[0] > 0.0f)) { // EPI: PC-MRA may reuse 3/4/5 for flow
+			d.CSA.dtiV[diffusionDirectionTypeGE - 2] = 1.0f;
+			d.isBVecWorldCoordinates = true;
+		} else if (diffusionDirectionTypeGE == 14)
+			d.CSA.dtiV[0] = 0.0f;
+	}
 	// issue 542
 	if ((d.manufacturer == kMANUFACTURER_GE) && (isNeologica) && (!isSameFloat(d.CSA.dtiV[0], 0.0f)) && ((isSameFloat(d.CSA.dtiV[1], 0.0f)) && (isSameFloat(d.CSA.dtiV[2], 0.0f)) && (isSameFloat(d.CSA.dtiV[3], 0.0f))))
 		printWarning("GE DWI vectors may have been removed by Neologica DICOM Anonymizer Pro (Issue 542)\n");

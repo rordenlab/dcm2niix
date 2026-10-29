@@ -29,11 +29,12 @@ Evaluated top-to-bottom as an `if / else if` chain; the **first** matching row s
 | 2 | `DERIVED` + `DIFFUSION` in ImageType | `discard` | `derivedDWI` | console FA/ADC/colFA/trace/TENSOR |
 | 3 | non-spatial (IOP 0020,0037 absent → `orient[]` all 0) | `discard` | `nonspatial` | e.g. Siemens color-FA |
 | 4 | `b1map` | `fmap` | `TB1TFL` | `_acq-famp` if ImageType `FLIP ANGLE MAP`, else `_acq-anat` |
+| 4a | `ep3d` and 3D acquisition (DZNE `dzne_ep3d`, `vx_ep3d`; ScanningSequence `RM`, so the GR/EP rows miss it; not DWI/ASL, which fall through to their rows). Classic VB/VE leave `AcquisitionDuration` 0, so an ep3d QSM there guesses `bold` | `anat` if `AcquisitionDuration` > 10 s, else `func` | `T2starw` (SWI/QSM, `_part-`) / `bold` (`_dir-` label) | |
 | 5 | `tfl` \| `mp2rage` \| `wip925` | `anat` | `MP2RAGE` if `isDualTI` else `T1w` | ImageType `T1 MAP`→`T1map`; `_UNI`→`UNIT1` (+`_rec-denoise` if "DENOISED IMAGE") |
 | 6 | CSA `numDti>0` \| `_diff` \| `resolve` \| `PtkSms…` \| `ep2d_stejskal_386` | `dwi` | `dwi` (or `sbref` if SeriesDescription `_SBRef`) | `_dir-` label added |
 | 7 | `fairest` \| `_asl` \| `_pasl` \| `pcasl`/`PCASL` | `perf` | `asl` (or `m0scan` if `_m0`) | bare `AC=PERFUSION` is **not** enough → Unknown |
-| 8 | `pulseSequenceName` has `spcR` | `anat` | `T2w` | |
-| 9 | `tse_vfl` \| `\space` (SPACE) | `anat` | `FLAIR` if `spcir` (in any of seq/pulse/details) else `T2w` | `\space` backslash-anchored (avoids "spaceship") |
+| 8 | `pulseSequenceName` has `spcR` | `anat` | `T1w` if `MRWeightingGuess` (spin echo) returns T1, else `T2w` | |
+| 9 | `tse_vfl` \| `\space` (SPACE) | `anat` | `FLAIR` if `spcir` (in any of seq/pulse/details), `T1w` if `MRWeightingGuess` (spin echo) returns T1, else `T2w` | `\space` backslash-anchored (avoids "spaceship") |
 | 10 | `tse` | `anat` | `tir`→`FLAIR`; then **independently** `tse2d`→**`MRWeightingGuess`(SE)** overwrites: `T2`→`T2w` else `PDw` | The two sub-checks are sequential, not exclusive: a `tse2d` that also matched `tir` ends as `T2w`/`PDw` (the `tse2d` block runs last and overwrites `FLAIR`). `_echo` suppressed (PD/T2 pair) |
 | 11 | `ep2d_ase` | *(none)* | `oef_ase` | ASE OEF; BIDS suffix not yet standardized |
 | 12 | `ep2d_se` | `fmap` | `epi` | `_dir-` label |

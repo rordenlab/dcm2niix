@@ -58,7 +58,7 @@ UIH supports two ways of archiving the DWI/DTI and fMRI data. One way is one DIC
 | :0018,9073 | Acquisition Duration | FD | 1 |   |  |
 | :0065,100C | MRExperimental Status | SH | 1 |   | rest/active|
 
-The tag BandwidthPerPixelPhaseEncode (0019,1028) can be used to determine the [FSL definition for TotalReadoutTime](https://github.com/rordenlab/dcm2niix/issues/531). Specifically, TotalReadoutTime = effectiveEchoSpacing * (reconMatrixPE-1.0)).
+The tag BandwidthPerPixelPhaseEncode (0019,1028) can be used to determine the [FSL definition for TotalReadoutTime](https://github.com/rordenlab/dcm2niix/issues/531). Specifically, TotalReadoutTime = effectiveEchoSpacing * (reconMatrixPE-1.0). Since UIH defines this bandwidth per acquired pixel, effectiveEchoSpacing = 1/(BandwidthPerPixelPhaseEncode * AcquisitionMatrixPE), which matches `(0018,9082)` (UIH stores EffectiveEchoSpacing in ms there, not echo time; [issue 1035](https://github.com/rordenlab/dcm2niix/issues/1035)).
 
 ## Sample Datasets
 

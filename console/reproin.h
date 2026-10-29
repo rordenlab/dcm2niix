@@ -21,9 +21,11 @@ struct TReproinSpec {
 	char rec[32];
 	char dir[16];
 	char run[16];			// numeric token (literal); zero-padded at format time
+	char inv[8];			// inversion index (protocol inv-, or MP2RAGE BidsGuess)
 	char bids[kReproinStr]; // unrecognised key-value tokens, joined with '_'
 	bool isSbref;
 	bool isDerived;
+	bool hasPrefix; // text preceded the datatype token (ignored)
 	bool valid;
 };
 

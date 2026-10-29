@@ -73,11 +73,11 @@ all:
 	fi
 
 sanitize:
-	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer $(LFLAGS) $(UFILES)
+	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I. $(JSFLAGS) $(LFLAGS) $(UFILES)
   #  -fstack-usage
 
 debug:
-	g++ -O0 $(LFLAGS) $(UFILES)
+	g++ -O0 -I. $(JSFLAGS) $(LFLAGS) $(UFILES)
 
 turbo:
 	g++ -O0 $(LFLAGS) $(UFILES) -DmyTurboJPEG -I/opt/homebrew/include -L/opt/homebrew/lib -lturbojpeg
@@ -89,10 +89,15 @@ noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois
 
 wasm:
-	emcc -O3 $(UFILES) -lz -s USE_ZLIB -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -o ../js/src/dcm2niix.js
+	# C-side check only: the npm package ships the wasm-jpeg build
+	emcc -O3 cJSON.cpp $(UFILES) -lz -s USE_ZLIB -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -lworkerfs.js -s MAXIMUM_MEMORY=4GB -s INITIAL_MEMORY=32MB -o ../js/src/dcm2niix.js
 	# STACK_SIZE=16MB is the minimum value found to work with the current codebase when targeting WASM
+	# -lworkerfs.js: the worker mounts input Files without copying them into memory
+	# MAXIMUM_MEMORY=4GB: the wasm32 limit; the 2GB default cannot hold a long fMRI run or a large CT series
+	# INITIAL_MEMORY=32MB: with a maximum set, the 16MB default is too small for the 16MB stack
 
 wasm-jpeg:
-	emcc -O3 $(JFLAGS) $(CFILES) -DUSE_OPENJPEG -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/src/lib/openjp2/ -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/src/lib/openjp2/ -L${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/bin/ -lopenjp2 -lz -s USE_ZLIB -s DEMANGLE_SUPPORT=1 -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "allocateUTF8", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -o ../js/src/dcm2niix.jpeg.js
+	emcc -O3 cJSON.cpp $(JFLAGS) $(CFILES) -DUSE_OPENJPEG -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/src/lib/openjp2/ -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/src/lib/openjp2/ -L${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/bin/ -lopenjp2 -lz -s USE_ZLIB -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "getValue", "stringToUTF8", "setValue"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -lworkerfs.js -s MAXIMUM_MEMORY=4GB -s INITIAL_MEMORY=32MB -s ENVIRONMENT=web,worker -o ../js/src/dcm2niix.jpeg.js
+	# ENVIRONMENT=web,worker: omit the Node branch, which made bundlers emit an unused copy of the glue
 	# STACK_SIZE=16MB is the minimum value found to work with the current codebase when targeting WASM
 

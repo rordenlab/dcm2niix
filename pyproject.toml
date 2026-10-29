@@ -1,8 +1,10 @@
 [build-system]
 requires = [
   "setuptools_scm>=7",
-  "scikit-build-core>=0.11; python_version >= '3.9'",
-  "scikit-build-core[pyproject]>=0.5; python_version < '3.9'"
+  # scikit-build-core 0.11+ already supports Python 3.8, and the `pyproject`
+  # extra it carried was dropped in 1.0 — requesting it made pip's resolver fail
+  # on the cp38 wheel. One unconditional requirement covers every target.
+  "scikit-build-core>=0.11"
 ]
 build-backend = "scikit_build_core.build"
 

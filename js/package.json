@@ -1,24 +1,41 @@
 {
   "name": "@niivue/dcm2niix",
-  "version": "1.3.0",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
+  "version": "1.4.20261029",
+  "description": "Run Chris Rorden's dcm2niix (WebAssembly) in the browser to convert DICOM to NIfTI with no upload.",
+  "type": "module",
+  "main": "dist/index.jpeg.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.jpeg.js"
-    }
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.jpeg.js"
+    },
+    "./jpeg": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.jpeg.js"
+    },
+    "./plain": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.jpeg.js"
+    },
+    "./package.json": "./package.json"
   },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "NOTICES"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node esbuild.config.js && node esbuild.config.jpeg.js",
-    "makeWasm": "make wasm -C ../console",
+    "test": "node test/unit.mjs && node test/browser.mjs",
+    "test:consumer": "node test/consumer.mjs",
+    "build": "node esbuild.config.cjs",
     "makeWasmJpeg": "JPEGLS=1 make wasm-jpeg -C ../console",
-    "fixWasmJs": "node scripts/pre-build.js -i src/dcm2niix.js -o src/dcm2niix.js",
-    "fixWasmJsJpeg": "node scripts/pre-build.js -i src/dcm2niix.jpeg.js -o src/dcm2niix.jpeg.js",
-    "prebuild": "npm run makeWasm && npm run makeWasmJpeg && npm run fixWasmJs && npm run fixWasmJsJpeg",
+    "fixWasmJsJpeg": "node scripts/pre-build.cjs -i src/dcm2niix.jpeg.js -o src/dcm2niix.jpeg.js",
+    "prebuild": "npm run makeWasmJpeg && npm run fixWasmJsJpeg",
+    "check-dist": "node scripts/check-dist.mjs",
+    "prepack": "npm run check-dist",
     "demo": "npm run build && npx http-server .",
-    "demo-no-build": "npx http-server .",
-    "pub": "npm publish --access public"
+    "demo-no-build": "npx http-server ."
   },
   "keywords": [
     "niivue",
@@ -32,11 +49,10 @@
   ],
   "author": "dcm2niix developers",
   "license": "BSD-2-Clause",
-  "description": "A javascript library to easily use the WASM build of Chris Rorden's dcm2niix command line program but in the browser.",
-  "files": [
-    "dist/"
-  ],
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "playwright": "^1.61.1",
+    "typescript": "~5.8.3",
+    "vite": "^6.4.5"
   }
 }

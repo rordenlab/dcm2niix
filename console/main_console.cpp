@@ -67,7 +67,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 #else
 #define kQstr ""
 #endif
-	printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%g=accession number, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID; %%z=sequence name; default '%s')\n", kQstr, opts.filename);
+	printf("  -f : filename (%%a=antenna (coil) name, %%b=basename, %%c=comments, %%d=description, %%e=echo number, %%f=folder name, %%g=accession number, %%i=ID of patient, %%j=seriesInstanceUID, %%k=studyInstanceUID, %%m=manufacturer, %%n=name of patient, %%o=mediaObjectInstanceUID, %%p=protocol,%s %%r=instance number, %%s=series number, %%t=time, %%u=acquisition number, %%v=vendor, %%x=study ID, %%z=sequence name, %%@=station name, %%==device serial number; default '%s')\n", kQstr, opts.filename);
 	printf("  -g : generate defaults file (y/n/o/i [o=only: reset and write defaults; i=ignore: reset defaults], default n)\n");
 	printf("  -h : show help\n");
 	printf("  -i : ignore derived, localizer and 2D images (y/n/o, default n, o overrides keeping non-planar localizers)\n");
@@ -78,7 +78,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 		max16Ch = 'o';
 	printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n/o [yes=scale, no=no, but uint16->int16, o=original], default %c)\n", max16Ch);
 	printf("  -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
-	printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all)\n", MAX_NUM_SERIES);
+	printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all; -1 = list series; -2 = list series to <outdir>/dcm2niix_series.json)\n", MAX_NUM_SERIES);
 	printf("  -o : output directory (omit to save to input folder)\n");
 	printf("  -p : Philips precise float (not display) scaling (y/n/o, default y; o to override and ignore variable intensity scaling)\n");
 	printf("  -q : only search directory for DICOMs (y/l/n, default y) [y=show number of DICOMs found, l=additionally list DICOMs found, n=no]\n");
@@ -588,7 +588,9 @@ int main(int argc, const char *argv[]) {
 			} else if ((argv[i][1] == 'n') && ((i + 1) < argc)) {
 				i++;
 				double seriesNumber = atof(argv[i]);
-				if (seriesNumber < 0)
+				if (seriesNumber <= kSeriesListJSON)
+					opts.numSeries = kSeriesListJSON; // list series as JSON: convert none
+				else if (seriesNumber < 0)
 					opts.numSeries = -1.0; // report series: convert none
 				else if ((opts.numSeries >= 0) && (opts.numSeries < MAX_NUM_SERIES)) {
 					opts.seriesNumber[opts.numSeries] = seriesNumber;

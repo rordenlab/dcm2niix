@@ -42,6 +42,8 @@ void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmL
 extern "C" {
 #endif
 
+#define kSeriesListJSON (-2) // opts.numSeries: write <outdir>/dcm2niix_series.json, convert none
+
 #include <stdbool.h> //requires VS 2015 or later
 #include <string.h>
 #ifndef USING_R
@@ -90,9 +92,10 @@ struct TDCMopts {
 	// independent — `o` sets isAnonymizeBIDS=false, isOmitPiiBIDS=true.
 	bool isKeepDirectionVaries, isIgnoreTriggerTimes, isTestx0021x105E, isAddNamePostFixes, isSaveNativeEndian, isOneDirAtATime, isRenameNotConvert, isSave3D, isZStd, isGz, isPipedGz, isFlipY, isCreateBIDS, isSortDTIbyBVal, isAnonymizeBIDS, isOmitPiiBIDS, isOnlyBIDS, isCreateText, isForceOnsetTimes, isIgnoreDerivedAnd2D, isPhilipsFloatNotDisplayScaling, isIgnoreIntensityScaling, isTiltCorrect, isRGBplanar, isOnlySingleFile, isForceStackDCE, isIgnoreSeriesInstanceUID, isRotate3DAcq, isCrop, isGuessBidsFilename, isBidsRoot;
 	int saveFormat, isMaximize16BitRange, isForceStackSameSeries, nameConflictBehavior, isVerbose, isProgress, compressFlag, dirSearchDepth, onlySearchDirForDICOM, gzLevel, diffCyclingModeGE; // support for compressed data 0=none,
+	int numRenameSkip, numRenameConflict; // -r rename mode: byte-identical duplicates skipped, distinct-file naming conflicts
 	char filename[kOptsStr], outdir[kOptsStr], indir[kOptsStr], pigzname[kOptsStr], optsname[kOptsStr], indirParent[kOptsStr], imageComments[24], bidsSubject[kOptsStr], bidsSession[kOptsStr], bidsRoot[kOptsStr];
 	double seriesNumber[MAX_NUM_SERIES]; // requires double must store -1 (report but do not convert) as well as seriesUidCrc (uint32)
-	long numSeries;
+	long numSeries; // -1: report series, -2 (kSeriesListJSON): list series as JSON
 #ifdef USING_R
 	bool isScanOnly, isImageInMemory;
 	void *imageList;

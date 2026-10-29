@@ -7,7 +7,7 @@
 //
 // CONTRACT: callers must guarantee the input is single-frame (e.g. numberOfFrames <= 1). For multi-frame encapsulated
 // data with multiple fragments per frame, this helper would silently mix frames; the parser gate in nii_dicom.cpp
-// rejects that layout. See issue #1017.
+// rejects that layout, except JPEG Lossless (C3), which nii_loadImgJPEGC3 splits at SOI markers. See issue #1017.
 //
 // Returns a malloc'd buffer holding the concatenated codec bitstream (caller frees) with `*outLen` set to its byte
 // length. Returns NULL when the file actually holds a single fragment (caller should decode the original file with
