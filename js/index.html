@@ -24,27 +24,35 @@
 
     const $ = (id) => document.getElementById(id);
     let controller = null;
+    let urls = [];
 
     async function run(files) {
+      if (controller) return; // one conversion at a time
       controller = new AbortController();
       $('cancel').disabled = false;
+      $('folder').disabled = true;
+      for (const url of urls) URL.revokeObjectURL(url); // release the previous outputs
+      urls = [];
       $('results').replaceChildren();
       $('status').textContent = `Converting ${files.length} file(s)…`;
       try {
         const { series, files: outputs, exitCode } = await convert(files, {
-          args: ['-z', 'y', '--progress', 'y'],
+          args: ['-z', 'y'],
           signal: controller.signal,
           onProgress: (p) => ($('progress').value = p),
         });
         for (const file of outputs) {
-          const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: file.name, textContent: file.name });
+          urls.push(URL.createObjectURL(file));
+          const a = Object.assign(document.createElement('a'), { href: urls.at(-1), download: file.name, textContent: file.name });
           $('results').appendChild(document.createElement('li')).appendChild(a);
         }
         $('status').textContent = `${series.length} image(s), exit code ${exitCode}.`;
       } catch (e) {
         $('status').textContent = e.name === 'AbortError' ? 'Cancelled.' : `Failed: ${e.message}`;
       } finally {
+        controller = null;
         $('cancel').disabled = true;
+        $('folder').disabled = false;
       }
     }
 

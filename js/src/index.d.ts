@@ -34,7 +34,7 @@ export interface ConvertOptions {
   timeoutMs?: number;
   /** Called with each console line. */
   onLog?: (text: string, stream: 'stdout' | 'stderr') => void;
-  /** Called with a 0..1 fraction; requires args to include '--progress', 'y'. */
+  /** Called with a 0..1 fraction; adds '--progress', 'y' unless args already set --progress. */
   onProgress?: (fraction: number) => void;
   /** Advanced: supply your own Worker (e.g. when a bundler cannot resolve the packaged worker URL). */
   createWorker?: () => Worker;
@@ -80,8 +80,25 @@ export function filesFromDataTransfer(items: DataTransferItemList): Promise<File
 /** Alias of `filesFromDataTransfer` (@niivue/nv-ext-dcm2niix name). */
 export function traverseDataTransferItems(items: DataTransferItemList): Promise<File[]>;
 
-/** @niivue/nv-ext-dcm2niix compatible: NIfTI outputs only by default; rejects unless dcm2niix succeeds. */
-export function runDcm2niix(files: InputFiles | null | undefined, options?: { niftiOnly?: boolean }): Promise<File[]>;
+/** @niivue/nv-ext-dcm2niix compatible: NIfTI outputs only by default; rejects unless dcm2niix succeeds. Other options go to `convert`. */
+export function runDcm2niix(files: InputFiles | null | undefined, options?: { niftiOnly?: boolean } & ConvertOptions): Promise<File[]>;
+
+/** dcm2niix exit codes (`ConvertResult.exitCode`); mirrors kEXIT_* in console/nii_dicom.h. */
+export const exitCodes: Readonly<{
+  ok: 0;
+  error: 1;
+  noValidFiles: 2;
+  version: 3;
+  corruptFile: 4;
+  inputFolderInvalid: 5;
+  outputFolderInvalid: 6;
+  outputFolderReadOnly: 7;
+  someOkSomeBad: 8;
+  renameError: 9;
+  incompleteVolumes: 10;
+  nominal: 11;
+  invalidParam: 12;
+}>;
 
 /** Chainable dcm2niix command-line builder (advanced). */
 export interface Processor {
@@ -132,6 +149,9 @@ export interface Processor {
   terse(): Processor;
   xml(): Processor;
 }
+
+/** Name used by downstream type shims written before declarations shipped. */
+export type Dcm2niixProcessor = Processor;
 
 export class Dcm2niix {
   /** Underlying worker; null before init(). Call worker.terminate() when done. */

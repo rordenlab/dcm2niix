@@ -1,4 +1,4 @@
-// Public API shared by both builds; each entry file supplies the worker factory so bundlers see a literal worker URL.
+// Public API; the entry file supplies the worker factory so bundlers see a literal worker URL.
 
 const IMAGE_EXT = /\.(nii\.gz|nii|nrrd|nhdr|mgz|mgh|jnii|bnii)$/i;
 const STEM_EXT = /\.(nii\.gz|nii|nrrd|nhdr|mgz|mgh|jnii|bnii|json|bval|bvec)$/i;
@@ -11,6 +11,23 @@ const conformFileList = (files) =>
 const errorFrom = (eventOrError, fallback) => new Error((eventOrError && eventOrError.message) || fallback);
 
 const abortError = (signal) => (signal && signal.reason !== undefined ? signal.reason : new DOMException('dcm2niix conversion aborted', 'AbortError'));
+
+/** dcm2niix exit codes; mirrors kEXIT_* in console/nii_dicom.h. */
+export const exitCodes = Object.freeze({
+  ok: 0,
+  error: 1,
+  noValidFiles: 2,
+  version: 3,
+  corruptFile: 4,
+  inputFolderInvalid: 5,
+  outputFolderInvalid: 6,
+  outputFolderReadOnly: 7,
+  someOkSomeBad: 8,
+  renameError: 9,
+  incompleteVolumes: 10,
+  nominal: 11,
+  invalidParam: 12,
+});
 
 const tail = (log, n = 5) => (log && log.length ? `: ${log.slice(-n).join(' | ')}` : '');
 
@@ -138,6 +155,7 @@ export function createApi(defaultCreateWorker) {
    */
   async function convert(files, { args = [], signal, timeoutMs, onLog, onProgress, createWorker = defaultCreateWorker } = {}) {
     if (signal && signal.aborted) throw abortError(signal);
+    if (onProgress && !args.includes('--progress')) args = [...args, '--progress', 'y']; // an explicit --progress wins
     const worker = createWorker();
     let timer;
     let onAbort;
@@ -169,9 +187,9 @@ export function createApi(defaultCreateWorker) {
   }
 
   /** @niivue/nv-ext-dcm2niix compatible: NIfTI files only by default; rejects unless dcm2niix succeeds. */
-  async function runDcm2niix(files, { niftiOnly = true } = {}) {
+  async function runDcm2niix(files, { niftiOnly = true, ...options } = {}) {
     if (!files || files.length === 0) return [];
-    const { files: outputs, exitCode, log } = await convert(files);
+    const { files: outputs, exitCode, log } = await convert(files, options);
     if (exitCode !== 0 && exitCode !== 3) throw new Error(`dcm2niix processing failed with exit code ${exitCode}${tail(log)}`);
     return niftiOnly ? outputs.filter((f) => /\.nii(\.gz)?$/i.test(f.name)) : outputs;
   }

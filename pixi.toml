@@ -16,7 +16,8 @@ download = "wget https://github.com/uclouvain/openjpeg/archive/refs/tags/v2.5.3.
 extract = "tar -xvf v2.5.3.tar.gz"
 embuild-j2k = "cd openjpeg-2.5.3 && rm -rf build && mkdir -p build && cd build && emcmake cmake .. -DCMAKE_BUILD_TYPE=Release && emmake make"
 clean = "rm -rf openjpeg-2.5.3 v2.5.3.tar.gz"
-publish-npm = { cmd = "cd ./js && npm run pub", depends-on = ["wasm"] }
+# Release preparation: tests then a checked tarball in js/; publish that tarball by hand (npm publish <tgz> --tag rc|latest)
+pack-npm = { cmd = "cd ./js && npm test && npm run test:consumer && npm pack", depends-on = ["wasm"] }
 
 [dependencies]
 wget = ">=1.21.4,<2"

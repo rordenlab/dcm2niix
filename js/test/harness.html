@@ -2,8 +2,7 @@
 <meta charset="utf-8">
 <title>dcm2niix browser tests</title>
 <script type="module">
-  import * as plain from '/js/dist/index.js';
-  import * as jpeg from '/js/dist/index.jpeg.js';
+  import * as dcm from '/js/dist/index.jpeg.js';
   // Fetch a fixture folder as Files, tagged like a webkitdirectory selection of that folder.
   async function load(dir) {
     const names = await (await fetch(`/${dir}/?list`)).json();
@@ -14,6 +13,7 @@
       return file;
     }));
   }
-  Object.assign(window, { plain, jpeg, load });
+  const sha256 = async (blob) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  Object.assign(window, { dcm, load, sha256 });
   window.ready = true;
 </script>

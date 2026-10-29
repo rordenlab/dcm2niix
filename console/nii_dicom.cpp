@@ -280,6 +280,12 @@ unsigned char *nii_loadImgCoreOpenJPEG(char *imgname, struct nifti_1_header hdr,
 		goto cleanup1;
 	}
 	ret = imagetoimg(jpx);
+	// imagetoimg sizes its output from the codestream; callers copy header-sized slices
+	if ((ret != NULL) && (((int)jpx->comps[0].w != hdr.dim[1]) || ((int)jpx->comps[0].h != hdr.dim[2]) || ((int)(((jpx->comps[0].prec + 7) >> 3) * 8 * jpx->numcomps) != hdr.bitpix) || ((size_t)jpx->comps[0].w * jpx->comps[0].h * ((jpx->comps[0].prec + 7) >> 3) * jpx->numcomps != nii_ImgBytes(hdr)))) { // last term: one codestream for a multi-frame header
+		printError("JPEG2000 frame %dx%d %d-bit %d-component does not match DICOM %dx%dx%d %d-bit %s\n", jpx->comps[0].w, jpx->comps[0].h, jpx->comps[0].prec, jpx->numcomps, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.bitpix, imgname);
+		free(ret);
+		ret = NULL;
+	}
 cleanup1:
 	opj_image_destroy(jpx);
 cleanup2:
@@ -2099,7 +2105,7 @@ void dcmMultiShorts(int lByteLength, unsigned char lBuffer[], int lnShorts, uint
 	// read array of unsigned shorts US http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
 	if ((lnShorts < 1) || (lByteLength != (lnShorts * 2)))
 		return;
-	memcpy(&lShorts[0], (uint16_t *)&lBuffer[0], lByteLength);
+	memcpy(&lShorts[0], &lBuffer[0], lByteLength); // no typed cast: lBuffer may be unaligned
 	bool swap = (littleEndian != littleEndianPlatform());
 	if (swap)
 		nifti_swap_2bytes(lnShorts, &lShorts[0]);
@@ -2109,7 +2115,7 @@ void dcmMultiLongs(int lByteLength, unsigned char lBuffer[], int lnLongs, uint32
 	// read array of unsigned longs UL http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_6.2.html
 	if ((lnLongs < 1) || (lByteLength != (lnLongs * 4)))
 		return;
-	memcpy(&lLongs[0], (uint32_t *)&lBuffer[0], lByteLength);
+	memcpy(&lLongs[0], &lBuffer[0], lByteLength); // no typed cast: lBuffer may be unaligned
 	bool swap = (littleEndian != littleEndianPlatform());
 	if (swap)
 		nifti_swap_4bytes(lnLongs, &lLongs[0]);
@@ -3980,6 +3986,14 @@ TJPEG *decode_JPEG_SOF_0XC3_stack(const char *fn, int skipBytes, int isVerbose, 
 	return lOffsetRA;
 }
 
+// Decoder output is sized from the SOF (comps may hold several slices); callers copy nSlices header-sized slices.
+static bool isJPEGC3SliceOK(int dimX, int dimY, int bits, int comps, int nSlices, struct nifti_1_header hdr) {
+	if ((dimX == hdr.dim[1]) && (dimY == hdr.dim[2]) && (((bits <= 8) ? 8 : 16) * comps == hdr.bitpix * nSlices))
+		return true;
+	printError("JPEG lossless frame %dx%d %d-bit %d-component does not match DICOM %dx%d %d-bit\n", dimX, dimY, bits, comps, hdr.dim[1], hdr.dim[2], hdr.bitpix);
+	return false;
+}
+
 unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm, int isVerbose, int dataType) {
 	// arcane and inefficient lossless compression method popularized by dcmcjpeg, examples at http://www.osirix-viewer.com/resources/dicom-image-library/
 	int dimX, dimY, bits, frames;
@@ -4014,6 +4028,10 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 			ret = decode_JPEG_SOF_0XC3_mem(fragBuf, fragBufLen, (int)i, false, &dimX, &dimY, &bits, &frames, 0);
 			if (ret == NULL)
 				break;
+			if (!isJPEGC3SliceOK(dimX, dimY, bits, frames, 1, hdr)) {
+				free(ret);
+				break;
+			}
 			memcpy(&bImg[slicesz * frame], ret, slicesz);
 			free(ret);
 			frame++;
@@ -4036,6 +4054,7 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 		printMessage("Unable to decode JPEG. Please use dcmdjpeg to uncompress data.\n");
 		return NULL;
 	}
+	int comps = frames;
 	if (dataType == DT_RGB24)
 		frames = frames / 3;
 	if (nFrames != frames) { // multi-slice image saved as multiple image fragments rather than a single image
@@ -4059,12 +4078,22 @@ unsigned char *nii_loadImgJPEGC3(char *imgname, struct nifti_1_header hdr, struc
 				free(offsetRA);
 				return NULL;
 			}
+			if (!isJPEGC3SliceOK(dimX, dimY, bits, frames, 1, hdr)) {
+				free(ret);
+				free(bImg);
+				free(offsetRA);
+				return NULL;
+			}
 			memcpy(&bImg[pos], ret, slicesz); // dest, src, size
 			free(ret);
 			pos += slicesz;
 		}
 		free(offsetRA);
 		return bImg;
+	}
+	if (!isJPEGC3SliceOK(dimX, dimY, bits, comps, nFrames, hdr)) {
+		free(ret);
+		return NULL;
 	}
 	return ret;
 }
@@ -4101,11 +4130,18 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	fseek(f, dcm.imageStart, SEEK_SET);
 	_jpegSize = (long unsigned int)fread(_compressedImage, 1, _jpegSize, f);
 	fclose(f);
-	int jpegSubsamp, width, height;
+	int jpegSubsamp = 0, width = 0, height = 0;
 	// printMessage("Decoding with turboJPEG\n");
 	tjhandle _jpegDecompressor = tjInitDecompress();
-	tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp);
+	if (tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp) != 0)
+		width = 0; // fails the size check below
 	int COLOR_COMPONENTS = dcm.samplesPerPixel;
+	if ((width != dcm.xyzDim[1]) || (height != dcm.xyzDim[2]) || (dcm.bitsAllocated != 8)) { // output is sized from the JPEG; callers copy header-sized slices
+		printError("JPEG %dx%d 8-bit image does not match DICOM %dx%d %d-bit '%s'\n", width, height, dcm.xyzDim[1], dcm.xyzDim[2], dcm.bitsAllocated, imgname);
+		tjDestroy(_jpegDecompressor);
+		free(_compressedImage);
+		return NULL;
+	}
 	// printMessage("turboJPEG h*w %d*%d sampling %d components %d\n", width, height, jpegSubsamp, COLOR_COMPONENTS);
 	if ((jpegSubsamp == TJSAMP_GRAY) && (COLOR_COMPONENTS != 1)) {
 		printError("Grayscale jpegs should not have %d components '%s'\n", COLOR_COMPONENTS, imgname);
@@ -4121,6 +4157,7 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 		tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, bImg, width, 0 /*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
 	// printMessage("turboJPEG h*w %d*%d (sampling %d)\n", width, height, jpegSubsamp);
 	tjDestroy(_jpegDecompressor);
+	free(_compressedImage);
 	return bImg;
 }
 
@@ -4411,6 +4448,21 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 	if (JpegLsReadHeader(cImg, dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
 #endif
 		printMessage("CharLS failed to read header.\n");
+		free(cImg);
+		free(bImg);
+		return NULL;
+	}
+#ifdef myEnableJPEGLS1
+	int jlsBits = params.bitspersample;
+#else
+	int jlsBits = params.bitsPerSample;
+#endif
+	// CharLS accepts a larger destination and leaves the excess uninitialized, so the codestream must fill exactly the header-sized image
+	size_t jlsBytes = (size_t)params.width * params.height * params.components * ((jlsBits <= 8) ? 1 : 2);
+	if ((params.width != hdr.dim[1]) || ((((jlsBits <= 8) ? 8 : 16) * params.components) != hdr.bitpix) || (jlsBytes != imgsz)) {
+		printError("JPEG-LS frame %dx%d %d-bit %d-component (%zu bytes) does not match DICOM %dx%d %d-bit (%zu bytes) %s\n", params.width, params.height, jlsBits, params.components, jlsBytes, hdr.dim[1], hdr.dim[2], hdr.bitpix, imgsz, imgname);
+		free(cImg);
+		free(bImg);
 		return NULL;
 	}
 #ifdef myEnableJPEGLS1
@@ -4419,9 +4471,11 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
 #endif
 		free(bImg);
+		free(cImg);
 		printMessage("CharLS failed to read image.\n");
 		return NULL;
 	}
+	free(cImg);
 	return (bImg);
 }
 #endif
@@ -4454,6 +4508,11 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		return NULL;
 #else
 		img = nii_loadImgJPEG50(imgname, dcm);
+		if ((img != NULL) && ((size_t)dcm.xyzDim[1] * dcm.xyzDim[2] * dcm.samplesPerPixel * (dcm.bitsAllocated / 8) != nii_ImgBytes(*hdr))) { // decoders return one slice; a single codestream cannot fill a multi-frame header
+			printError("Baseline JPEG holds one frame but DICOM expects %d frames %s\n", hdr->dim[3] * ((hdr->dim[4] > 1) ? hdr->dim[4] : 1), imgname);
+			free(img);
+			return NULL;
+		}
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
 															 // n.b. turboJPEG and nanoJPEG should both automatically convert YBR to RGB
@@ -4576,11 +4635,21 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 			free(hdr2D);
 			return NULL;
 		}
+		if (nii_ImgBytes(*hdr2D) != sliceBytes2D) { // e.g. a mosaic frame was demosaiced: malformed multi-frame mosaic
+			printError("Frame %d/%d decodes to %zu bytes, expected %zu: %s\n", (i + 1), frames, (size_t)nii_ImgBytes(*hdr2D), sliceBytes2D, imgname);
+			if (fp)
+				fclose(fp);
+			free(img2D);
+			free(img);
+			free(hdr2D);
+			return NULL;
+		}
 		// Copy the 2D slice into the correct position in the 3D/4D image buffer
 		memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
 		free(img2D);
 	}
-	fclose(fp);
+	if (fp)
+		fclose(fp);
 	free(hdr2D);
 	return nii_loadImgXLFinish(img, hdr, dcm, iVaries, dti4D);
 } // nii_loadImgXL()
@@ -4912,6 +4981,16 @@ struct TDCMdim { // DimensionIndexValues
 	unsigned char pmChannel; // issue 1041
 	uint16_t pmTime; // ponytail: TemporalPositionIndex truncated to 16 bits
 };
+
+// Zero entries [*nInit, n) on demand: zeroing all kMaxSlice2D (~9 MB) per file dominated WASM conversion time.
+static void initTDCMdim(struct TDCMdim *dcmDim, int *nInit, int n) {
+	if (n > kMaxSlice2D)
+		n = kMaxSlice2D;
+	for (; *nInit < n; (*nInit)++) {
+		memset(&dcmDim[*nInit], 0, sizeof(struct TDCMdim));
+		dcmDim[*nInit].diskPos = *nInit;
+	}
+}
 
 void getFileNameX(char *pathParent, const char *path, int maxLen) { // if path is c:\d1\d2 then filename is 'd2'
 	const char *filename = strrchr(path, '/');						// UNIX
@@ -5603,10 +5682,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int numDimensionIndexValues = 0;
 	bool isSiemensXA = false;
 	// don't use stack! TDCMdim dcmDim[kMaxSlice2D];
-	// calloc: the issue 372 fallback never fills TE/scale/etc., later read per volume (issue 1041)
-	TDCMdim *dcmDim = (TDCMdim *)calloc(kMaxSlice2D, sizeof(TDCMdim));
-	for (int i = 0; i < kMaxSlice2D; i++)
-		dcmDim[i].diskPos = i;
+	// zeroed on use (initTDCMdim): the issue 372 fallback never fills TE/scale/etc., later read per volume (issue 1041)
+	TDCMdim *dcmDim = (TDCMdim *)malloc(kMaxSlice2D * sizeof(TDCMdim));
+	int nDcmDimInit = 0;
 // http://dicom.nema.org/dicom/2013/output/chtml/part05/sect_7.5.html
 // The array nestPos tracks explicit lengths for Data Element Tag of Value (FFFE,E000)
 // a delimiter (fffe,e000) can have an explicit length, in which case there is no delimiter (fffe,e00d)
@@ -5774,6 +5852,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					printError("Too many slices to track dimensions. Only up to %d are supported\n", kMaxSlice2D);
 					break;
 				}
+				initTDCMdim(dcmDim, &nDcmDimInit, numDimensionIndexValues + 1);
 				uint32_t dimensionIndexOrder[MAX_NUMBER_OF_DIMENSIONS];
 				for (int i = 0; i < nDimIndxVal; i++)
 					dimensionIndexOrder[i] = i;
@@ -8479,7 +8558,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			readCSAforMRS(&buffer[lPos], lLength, &d);
 			break;
 		case kLUTLabel: { // issue 1041: channel = first per-frame LUTLabel of frame pmFrame-1 (FrameContentSequence precedes it; 0 in shared group)
-			if ((!isParametricMap) || (nPMChannel < 0) || (pmFrame < 1) || (pmFrame > kMaxSlice2D) || (dcmDim[pmFrame - 1].pmChannel > 0))
+			if ((!isParametricMap) || (nPMChannel < 0) || (pmFrame < 1) || (pmFrame > kMaxSlice2D))
+				break;
+			initTDCMdim(dcmDim, &nDcmDimInit, pmFrame);
+			if (dcmDim[pmFrame - 1].pmChannel > 0)
 				break;
 			char label[kDICOMStr];
 			label[0] = 0;
@@ -9317,6 +9399,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		exit(kEXIT_CORRUPT_FILE_FOUND);
 #endif
 	}
+	initTDCMdim(dcmDim, &nDcmDimInit, (numberOfFrames > numDimensionIndexValues) ? numberOfFrames : numDimensionIndexValues); // later reads stay below this, except the per-volume loop below
 	if ((numberOfFrames > 1) && (numDimensionIndexValues == 0) && (numberOfFrames == nSliceMM)) { // issue 372
 		fidx *objects = (fidx *)malloc(sizeof(struct fidx) * numberOfFrames);
 		for (int i = 0; i < numberOfFrames; i++) {
@@ -9521,6 +9604,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		//  https://github.com/rordenlab/dcm2niix/commit/8207877de984dab59e0374906c7ad212756f85a6#diff-120bb215d28dcbddeca8ea56dbb97e237501901ac2dfa1fbe4182282a8dd2b75
 		// if (!(d.manufacturer == kMANUFACTURER_BRUKER && d.isDiffusion) && (d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { //record variations in TE
 		if ((d.xyzDim[4] > 1) && (d.xyzDim[4] < kMaxDTI4D)) { // record variations in TE
+			initTDCMdim(dcmDim, &nDcmDimInit, d.xyzDim[3] * d.xyzDim[4]); // reads slice j + i * xyzDim[3]
 			d.isScaleOrTEVaries = false;
 			bool isTEvaries = false;
 			bool isScaleVaries = false;

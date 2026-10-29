@@ -576,7 +576,7 @@ static int skip_segment(DataStream *ds) {
 static inline int jpeg_extend(uint32_t v, int n) {
 	uint32_t half = 1u << (n - 1);
 	if (v < half) {
-		return (int)(v + (((-1) << n) + 1));
+		return (int)v - (int)(2 * half) + 1; // v + ((-1) << n) + 1 without shifting a negative value
 	}
 	return (int)v;
 }

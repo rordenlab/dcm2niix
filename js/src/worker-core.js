@@ -1,4 +1,4 @@
-// Worker body shared by both builds. `Module` is the Emscripten factory (EXPORT_ES6, MODULARIZE).
+// Worker body. `Module` is the Emscripten factory (EXPORT_ES6, MODULARIZE).
 const IN_DIR = '/input';
 const OUT_DIR = '/output';
 
@@ -9,7 +9,8 @@ const mimeType = (name) => {
   return 'application/octet-stream'; // no registered NIfTI/NRRD/MGH type
 };
 
-const MAX_CACHED_FILE = 8 * 1024 * 1024; // bigger files gain little from batching; caps memory overshoot
+const MAX_CACHED_FILE = 64 * 1024 * 1024; // whole-file cache limit: dcm2niix reads a file in many small pieces, each a FileReaderSync call if uncached; caps memory overshoot
+const READAHEAD_FILE = 8 * 1024 * 1024; // only smaller files are batched with neighbours
 const READAHEAD_BYTES = 16 * 1024 * 1024;
 const CACHE_BYTES = 256 * 1024 * 1024;
 
@@ -28,7 +29,7 @@ const cachingReads = (FS) => {
     const batch = [node];
     let size = node.size;
     if (node === nextInOrder)
-      for (let n = node.nextFile; n && !cache.has(n) && n.size <= MAX_CACHED_FILE && size + n.size <= READAHEAD_BYTES; n = n.nextFile) {
+      for (let n = node.nextFile; n && !cache.has(n) && n.size <= READAHEAD_FILE && size + n.size <= READAHEAD_BYTES; n = n.nextFile) {
         batch.push(n);
         size += n.size;
       }
@@ -127,6 +128,7 @@ export function serve(Module) {
     remove(IN_DIR);
   };
 
+  // Returns the path passed to dcm2niix: the shared top folder when there is one, so %f names outputs after it (as the CLI does) rather than "input".
   const stageInput = (fileList) => {
     const FS = mod.FS;
     const names = fileList.map((item, i) => safeRelativePath(item.webkitRelativePath, item.file.name || `file${i}`));
@@ -141,6 +143,8 @@ export function serve(Module) {
     FS.mkdir(IN_DIR);
     FS.mount(FS.filesystems.WORKERFS, { blobs }, IN_DIR); // reads lazily from the File, no copy; needs -lworkerfs.js
     resetCache(filesInWalkOrder(IN_DIR));
+    const top = blobs.length ? blobs[0].name.split('/')[0] : '';
+    return blobs.length && blobs.every((b) => b.name.startsWith(`${top}/`)) ? `${IN_DIR}/${top}` : IN_DIR;
   };
 
   const collectOutput = (dir, rel, out) => {
@@ -160,17 +164,17 @@ export function serve(Module) {
     return out;
   };
 
-  self.addEventListener('message', async (e) => {
+  self.addEventListener('message', (e) => {
     try {
       const { fileList, cmd } = e.data;
       if (!mod) throw new Error('dcm2niix WASM module not loaded yet');
-      stageInput(fileList);
+      const inputPath = stageInput(fileList);
       mod.FS.mkdir(OUT_DIR);
       log = [];
       let exitCode = 0;
       try {
         // -d 9: keep finding deep folders (inputs are no longer flattened); -o last so it wins over a user -o
-        exitCode = mod.callMain(['-d', '9', ...cmd, '-o', OUT_DIR, IN_DIR]);
+        exitCode = mod.callMain(['-d', '9', ...cmd, '-o', OUT_DIR, inputPath]);
       } catch (err) {
         // Emscripten exit() throws ExitStatus even for exit(0)
         if (err && typeof err === 'object' && 'status' in err) exitCode = err.status;
