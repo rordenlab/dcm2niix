@@ -722,6 +722,29 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 } // phoenixOffsetCSASeriesHeader()
 
 #define kMaxWipFree 64
+
+// out[k * stride] = reader("<prefix>k<suffix>") for k < n (n <= 512) in one pass over prefix hits: a full scan per absent index dominated XA conversion.
+static void readKeyArray(const char *prefix, const char *suffix, char *buffer, int remLength, float *out, int stride, int n, float (*reader)(const char *, char *, int)) {
+	bool seen[512] = {false};
+	if (n > 512)
+		n = 512;
+	size_t plen = strlen(prefix), slen = strlen(suffix);
+	char *end = buffer + remLength;
+	for (char *p = buffer; (p < end) && (p = (char *)memmem(p, end - p, prefix, plen)); p++) {
+		char *d = p + plen;
+		int k = 0, nDigits = 0;
+		while ((d < end) && (*d >= '0') && (*d <= '9') && (nDigits < 6)) {
+			k = k * 10 + (*d++ - '0');
+			nDigits++;
+		}
+		if ((nDigits < 1) || ((size_t)(end - d) < slen) || (memcmp(d, suffix, slen) != 0) || ((nDigits > 1) && (p[plen] == '0')) || (k >= n) || (seen[k]))
+			continue;
+		seen[k] = true;
+		char key[1024];
+		snprintf(key, sizeof(key), "%s%d%s", prefix, k, suffix);
+		out[k * stride] = reader(key, p, (int)(end - p));
+	}
+}
 #define freeDiffusionMaxN 512
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
@@ -923,13 +946,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		char keyStrTiFree[] = "alTI[";
 		// check if ANY csaAscii.alFree tags exist
 		char *keyPosTi = (char *)memmem(keyPos, csaLengthTrim, keyStrTiFree, strlen(keyStrTiFree));
-		if (keyPosTi) {
-			for (int k = 0; k < kMaxWipFree; k++) {
-				char txt[1024] = {""};
-				snprintf(txt, 1024, "%s%d]", keyStrTiFree, k);
-				csaAscii->alTI[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
-			}
-		}
+		if (keyPosTi)
+			readKeyArray(keyStrTiFree, "]", keyPos, csaLengthTrim, csaAscii->alTI, 1, kMaxWipFree, readKeyFloatNan);
 		// read ALL alTE[*] values. The single-echo DICOM tag (0018,0081)
 		// reports just alTE[0]; multi-echo MRS sequences (e.g. Siemens
 		// sLASER) split the total echo across alTE[0..N] and downstream
@@ -939,26 +957,16 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 			csaAscii->alTE[k] = NAN;
 		char keyStrTeFree[] = "alTE[";
 		char *keyPosTe = (char *)memmem(keyPos, csaLengthTrim, keyStrTeFree, strlen(keyStrTeFree));
-		if (keyPosTe) {
-			for (int k = 0; k < kMaxWipFree; k++) {
-				char txt[1024] = {""};
-				snprintf(txt, 1024, "%s%d]", keyStrTeFree, k);
-				csaAscii->alTE[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
-			}
-		}
+		if (keyPosTe)
+			readKeyArray(keyStrTeFree, "]", keyPos, csaLengthTrim, csaAscii->alTE, 1, kMaxWipFree, readKeyFloatNan);
 		// read ALL csaAscii.alFree[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
 			csaAscii->alFree[k] = 0.0;
 		char keyStrAlFree[] = "sWipMemBlock.alFree[";
 		// check if ANY csaAscii.alFree tags exist
 		char *keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAlFree, strlen(keyStrAlFree));
-		if (keyPosFree) {
-			for (int k = 0; k < kMaxWipFree; k++) {
-				char txt[1024] = {""};
-				snprintf(txt, 1024, "%s%d]", keyStrAlFree, k);
-				csaAscii->alFree[k] = readKeyFloat(txt, keyPos, csaLengthTrim);
-			}
-		}
+		if (keyPosFree)
+			readKeyArray(keyStrAlFree, "]", keyPos, csaLengthTrim, csaAscii->alFree, 1, kMaxWipFree, readKeyFloat);
 		// read ALL csaAscii.adFree[*] values
 		for (int k = 0; k < kMaxWipFree; k++)
 			csaAscii->adFree[k] = NAN;
@@ -971,13 +979,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 			strcpy(keyStrAdFree, "sWiPMemBlock.adFree[");
 			keyPosFree = (char *)memmem(keyPos, csaLengthTrim, keyStrAdFree, strlen(keyStrAdFree));
 		}
-		if (keyPosFree) {
-			for (int k = 0; k < kMaxWipFree; k++) {
-				char txt[1024] = {""};
-				snprintf(txt, 1024, "%s%d]", keyStrAdFree, k);
-				csaAscii->adFree[k] = readKeyFloatNan(txt, keyPos, csaLengthTrim);
-			}
-		}
+		if (keyPosFree)
+			readKeyArray(keyStrAdFree, "]", keyPos, csaLengthTrim, csaAscii->adFree, 1, kMaxWipFree, readKeyFloatNan);
 		// read labelling plane
 		char keyStrDThickness[] = "sRSatArray.asElm[1].dThickness";
 		csaAscii->dThickness = readKeyFloat(keyStrDThickness, keyPos, csaLengthTrim);
@@ -1036,22 +1039,12 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 
 		// printMessage("Free diffusion: %i\n", csaAscii->freeDiffusionN);
 
-		for (int k = 0; k < csaAscii->freeDiffusionN; k++) {
-			char txt[128];
-
-			snprintf(txt, 128, "sDiffusion.sFreeDiffusionData.asDiffDirVector[%i].dSag", k);
-			float x = readKeyFloat(txt, keyPos, csaLengthTrim);
-
-			snprintf(txt, 128, "sDiffusion.sFreeDiffusionData.asDiffDirVector[%i].dCor", k);
-			float y = readKeyFloat(txt, keyPos, csaLengthTrim);
-
-			snprintf(txt, 128, "sDiffusion.sFreeDiffusionData.asDiffDirVector[%i].dTra", k);
-			float z = readKeyFloat(txt, keyPos, csaLengthTrim);
-
-			csaAscii->freeDiffusionVec[k].v[0] = x;
-			csaAscii->freeDiffusionVec[k].v[1] = y;
-			csaAscii->freeDiffusionVec[k].v[2] = z;
-		}
+		// readKeyFloat gives 0 for an absent component
+		for (int k = 0; k < csaAscii->freeDiffusionN; k++)
+			csaAscii->freeDiffusionVec[k].v[0] = csaAscii->freeDiffusionVec[k].v[1] = csaAscii->freeDiffusionVec[k].v[2] = 0.0f;
+		const char *suffixes[3] = {"].dSag", "].dCor", "].dTra"};
+		for (int c = 0; c < 3; c++)
+			readKeyArray("sDiffusion.sFreeDiffusionData.asDiffDirVector[", suffixes[c], keyPos, csaLengthTrim, (float *)csaAscii->freeDiffusionVec + c, sizeof(vec3) / sizeof(float), csaAscii->freeDiffusionN, readKeyFloat);
 	}
 	free(buffer);
 	return;
@@ -11888,9 +11881,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				if ((nConvert % dcmList[indx0].locationsInAcquisition) == 0)
 					nAcq = nConvert / dcmList[indx0].locationsInAcquisition;
 				else if (dcmList[indx0].imagesInAcquisitionGE > 0)
-					printMessage("There appear to be missing DICOM images, expected %d slices with %d spatial positions but found %d.\n", dcmList[indx0].imagesInAcquisitionGE, dcmList[indx0].locationsInAcquisition, nConvert);
+					printMessage("There appear to be missing DICOM images, expected %d images (%d spatial positions per volume) but found %d.\n", dcmList[indx0].imagesInAcquisitionGE, dcmList[indx0].locationsInAcquisition, nConvert);
 				else if (dcmList[indx0].isImagesInAcqGE)
-					printMessage("There appear to be missing DICOM images, expected %d slices but found %d.\n", dcmList[indx0].locationsInAcquisition, nConvert);
+					printMessage("There appear to be missing DICOM images, expected %d images but found %d.\n", dcmList[indx0].locationsInAcquisition, nConvert);
 				else
 					printMessage("There appear to be missing DICOM images, expected %d spatial positions per volume but found %d slices.\n", dcmList[indx0].locationsInAcquisition, nConvert);
 			}

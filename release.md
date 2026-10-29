@@ -25,8 +25,8 @@ Changes since v1.0.20260724.
 
 - Malformed JPEG lossless, JPEG 2000 and JPEG-LS frames whose size disagrees with the DICOM header (including one codestream under a multi-frame header, or a mosaic split into frames) are rejected instead of over-reading memory or returning uninitialized pixels; TurboJPEG builds check the same; JPEG-LS and TurboJPEG no longer leak their input buffers.
 - JPEG: lossless multi-frame images with several fragments per frame, Extended JPEG (.51) including 12-bit ([issue 1054](https://github.com/rordenlab/dcm2niix/issues/1054)), and encapsulated multi-frame files decoded at their own item offsets.
-- GE MR30 DWI: VascularCollapseFlag 3/4/5 gradients and per-volume trace detection; clearer missing-image messages report the image total and spatial positions (thanks to [PR #1056](https://github.com/rordenlab/dcm2niix/pull/1056)).
-- Faster conversion of many classic DICOM files: per-file parser setup no longer zeroes a 9 MB table (regression from the Parametric Map split).
+- GE MR30 DWI: VascularCollapseFlag 3/4/5 gradients and per-volume trace detection; clearer missing-image messages report the image total ("expected 210 images (42 spatial positions per volume)") (thanks to [PR #1056](https://github.com/rordenlab/dcm2niix/pull/1056)).
+- Faster conversion: per-file parser setup no longer zeroes a 9 MB table (regression from the Parametric Map split), and Siemens ASCII protocol arrays (`alTI`, `alTE`, WipMemBlock `alFree`/`adFree`, free diffusion directions) are read in one pass instead of one full scan per index (XA studies 2.3× faster natively, ~25% in the browser).
 - Compressed (JPEG-LS, JPEG 2000, RLE) enhanced DICOM keeps Dimension Index frame order and per-frame scaling; 4D JPEG lossless decodes all frames; RLE RGB planar configuration 1.
 - Rename mode (`-r y`) fails closed on read/write errors; byte-identical inputs are skipped, true conflicts return exit 8.
 - Stack overflows: macOS MRSI segfault (PR #1042) and Windows 32 MB stack reserve ([issue 1040](https://github.com/rordenlab/dcm2niix/issues/1040)).
