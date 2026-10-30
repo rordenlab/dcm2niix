@@ -86,7 +86,7 @@ deploy:
     release: version $(RELEASE_VERSION) ($(APPVEYOR_REPO_TAG_NAME))
     description: ""
     auth_token:
-      secure: gCltVLQEWsjSTRlsi8qw7FGP54ujBq60apjXkWTV954b65bOHl95hXMxxkQ734L4
+      secure: XN1TLgqDhbf30+PPesG6bdrwb9or07h7tXUhK7WVrDfr5/0jRNoMc3CjpiR70sUk
     artifact: /dcm2niix_.*\.zip/
     draft: false
     prerelease: false
