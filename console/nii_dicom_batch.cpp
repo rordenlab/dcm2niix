@@ -14430,9 +14430,11 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		return false;
 	}
 #ifndef myIgnoreStudyTime
-	if (!isSameTime) { // beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
+	// '-m y' stacks despite Study Time jitter when both UIDs match (e.g. TCIA/CTP anonymization)
+	bool isForceSameUIDs = (opts->isForceStackSameSeries == 1) && isSameStudyInstanceUID && (d1.seriesUidCrc == d2.seriesUidCrc);
+	if ((!isSameTime) && (!isForceSameUIDs)) { // beware, some vendors incorrectly store Image Time (0008,0033) as Study Time (0008,0030).
 		if (!warnings->dateTimeVaries)
-			printMessage("Slices not stacked: Study Date/Time (0008,0020;0008,0030) varies %12.12f ~= %12.12f\n", d1.dateTime, d2.dateTime);
+			printMessage("Slices not stacked: Study Date/Time (0008,0020;0008,0030) varies %12.12f ~= %12.12f (use '-m y' to merge if Study and Series UIDs match)\n", d1.dateTime, d2.dateTime);
 		warnings->dateTimeVaries = true;
 		return false;
 	}

@@ -77,7 +77,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	if (opts.isMaximize16BitRange == kMaximize16BitRange_Raw)
 		max16Ch = 'o';
 	printf("  -l : losslessly scale 16-bit integers to use dynamic range (y/n/o [yes=scale, no=no, but uint16->int16, o=original], default %c)\n", max16Ch);
-	printf("  -m : merge 2D slices from same series regardless of echo, exposure, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
+	printf("  -m : merge 2D slices from same series regardless of echo, exposure, study time, etc. (n/y or 0/1/2, default 2) [no, yes, auto]\n");
 	printf("  -n : only convert this series CRC number - can be used up to %i times (default convert all; -1 = list series; -2 = list series to <outdir>/dcm2niix_series.json)\n", MAX_NUM_SERIES);
 	printf("  -o : output directory (omit to save to input folder)\n");
 	printf("  -p : Philips precise float (not display) scaling (y/n/o, default y; o to override and ignore variable intensity scaling)\n");
