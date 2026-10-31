@@ -32,3 +32,5 @@ Pre-push minimum includes `dcm_qa` plus `git ls-files | xargs codespell`. C/C++ 
 ## Packaging Gotchas
 
 Repo-controlled release channels are PyPI `pyproject.toml`, GitHub release `.appveyor.yml`, CI `.github/workflows/build.yml`, and `Dockerfile`. conda-forge and NeuroDebian are external feedstocks. zlib-ng is pinned at `2.3.3` with `ZLIB_COMPAT=ON`; OpenJPEG is pinned at `2.5.3`. Windows stack overflow (0xC00000FD) is silent: no stderr, no output. The reserve is fixed at link time, so every Windows build path (CMake MSVC/MinGW, `windows.bat`, COMPILE.md `cl`) must carry the 32 MB `/STACK`/`--stack` (issue 1040).
+
+Vendored cJSON (`console/cJSON.{cpp,h}`) is upstream 1.7.19 plus a local `sprintf`->`snprintf` patch; on bump re-apply it and diff JNIfTI, MRS ecode 44, physio and `-n -2` JSON (1.7.19 changed last-digit float output). dcm2niix never calls `cJSON_Parse`.

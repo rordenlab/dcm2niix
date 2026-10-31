@@ -7146,6 +7146,8 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 			cJSON_AddStringToObject(dat, "_ArrayZipData_", (const char *)buf);
 		} else {
 			printError("Failed to compress data stream, error code=%d, status code=%d\n", ret, status);
+			free(compressed);
+			cJSON_Delete(root);
 			return EXIT_FAILURE;
 		}
 		if (compressed)
@@ -7167,6 +7169,7 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 
 	/* now save JSON to file */
 	jsonstr = cJSON_Print(root);
+	cJSON_Delete(root);
 	if (jsonstr == NULL) {
 		printMessage("Error: error when converting to JNIfTI\n");
 		return EXIT_FAILURE;
@@ -7175,15 +7178,17 @@ int nii_savejnii(char *niiFilename, struct nifti_1_header hdr, unsigned char *im
 	fp = fopen(fname, "wt");
 	if (fp == NULL) {
 		printMessage("Error: error when writing to JNIfTI file\n");
+		free(jsonstr);
 		return EXIT_FAILURE;
 	}
-	fprintf(fp, "%s\n", jsonstr);
-	fclose(fp);
-
-	if (jsonstr)
-		free(jsonstr);
-	if (root)
-		cJSON_Delete(root);
+	bool isWriteOK = (fprintf(fp, "%s\n", jsonstr) >= 0);
+	isWriteOK = (fclose(fp) == 0) && isWriteOK;
+	free(jsonstr);
+	if (!isWriteOK) {
+		printMessage("Error: error when writing to JNIfTI file\n");
+		remove(fname);
+		return EXIT_FAILURE;
+	}
 	return EXIT_SUCCESS;
 } // nii_savejnii()
 #endif // #ifdef myEnableJNIFTI
@@ -10717,15 +10722,9 @@ static bool xaPhysioWriteStreamFiles(const char *baseName, const char *label,
 	cJSON_AddItemToObject(root, "StartTime", startT);
 	if (cmrrMeasurementUuid != NULL)
 		cJSON_AddStringToObject(root, kCMRRMeasurementUuidJsonKey, cmrrMeasurementUuid);
-	// The bundled cJSON's public cJSON_AddItemTo{Array,Object} return void, but
-	// the private add_item_to_object can still fail (key strdup OOM) — silently
-	// dropping a BIDS-required key while cJSON_Print happily serializes the
-	// short object as "success". Verify every attach landed (expected column
-	// count + all three object keys present) before trusting the sidecar; fail
-	// closed otherwise, matching the cycle-3 physio fail-closed contract. (A
-	// sub-strdup OOM here also orphans the dropped item; on this already-doomed
-	// allocator-failure path the one-shot leak is acceptable versus the bug
-	// risk of manual orphan tracking against a void-returning vendored API.)
+	// An attach can fail (key strdup OOM), silently dropping a BIDS-required key;
+	// verify every attach landed and fail closed (physio contract). The dropped
+	// item leaks on this already-failing OOM path.
 	int expectCols = 1 + ((trigName != NULL) ? 1 : 0) + ((peakName != NULL) ? 1 : 0);
 	if ((cJSON_GetArraySize(cols) != expectCols) ||
 		(cJSON_GetObjectItem(root, "PhysioType") == NULL) ||

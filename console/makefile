@@ -17,7 +17,7 @@ LFLAGS=
 
 #Leak tests:
 # https://clang.llvm.org/docs/AddressSanitizer.html
-# clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.c -o dcm2niix -DmyDisableOpenJPEG
+# clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.cpp -o dcm2niix -DmyDisableOpenJPEG
 
 #run "ZLIB=1 make" for ZLIB build
 ifeq "$(ZLIB)" "1"
