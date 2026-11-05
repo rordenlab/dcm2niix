@@ -151,18 +151,17 @@ endif()
 
 if(USE_JPEGLS)
     add_definitions(-DmyEnableJPEGLS)
-    if(MSVC)
-        add_definitions(-DCHARLS_STATIC)
-    else()
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}) # CharLS sources include "charls/*.h"
+    add_definitions(-DCHARLS_STATIC) # else _WIN32 non-MSVC (MinGW) gets __declspec(dllimport)
+    if(NOT MSVC)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
     endif()
 
     set(CHARLS_SRCS
         charls/jpegls.cpp
-        charls/jpegmarkersegment.cpp
-        charls/interface.cpp
-        charls/jpegstreamwriter.cpp
-        charls/jpegstreamreader.cpp)
+        charls/charls_jpegls_decoder.cpp
+        charls/jpeg_stream_reader.cpp
+        charls/jpegls_error.cpp)
     add_executable(dcm2niix ${DCM2NIIX_SRCS} ${CHARLS_SRCS})
 
     if(BUILD_DCM2NIIXFSLIB)

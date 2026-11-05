@@ -5,17 +5,17 @@ JPEG-LS is a low-complexity image compression standard that matches JPEG 2000 co
 
 # CharLS and dcm2niix
 
-[CharLS](https://github.com/team-charls/charls) is an optional module for dcm2niix. If included, it allows dcm2niix to handle the [JPEG-LS transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The included code was downloaded from the CharLS website on 6 June 2018.
+[CharLS](https://github.com/team-charls/charls) is an optional module for dcm2niix. If included, it allows dcm2niix to handle the [JPEG-LS transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#DICOM_Transfer_Syntaxes_and_Compressed_Images). The included code is [CharLS 2.4.5](https://github.com/team-charls/charls/releases/tag/2.4.5) (the C++14 2.x branch; 3.x requires C++17). To update, copy `include/charls/*.h`, `src/*.h` and the decoder sources `src/{jpegls,charls_jpegls_decoder,jpeg_stream_reader,jpegls_error}.cpp` into this folder, and `LICENSE.md` to `License.txt`.
 
 It is worth noting that DICOM can specify three different [lossless forms of the JPEG](http://www.mccauslandcenter.sc.edu/crnl/tools/jpeg-formats) image standard. CharLS is used only for the JPEG-LS form (transfer syntaxes 1.2.840.10008.1.2.4.80/81; ISO/IEC 14495-1:1999 ITU-T.87). In contrast, dcm2niix uses bespoke code to handle the older JPEG-Lossless (1.2.840.10008.1.2.4.57/70; ISO/IEC 10918-1:1994 ITU-T.81). Finally, dcm2niix handles the very complex JPEG-2000 lossless (1.2.840.10008.1.2.4.90/91; ISO/IEC 15444-1:2004 ITU-T.800) using the [OpenJPEG](https://github.com/uclouvain/openjpeg) library.
 
-To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as a few file sin the `charls` folder. You will also need to specify `-std=c++14` and use a compiler that supports c++14 or later. Therefore, a minimal compile should look like this:
+To enable support you will need to include the `myEnableJPEGLS` compiler flag as well as four files in the `charls` folder. You will also need to specify `-std=c++14` (or later) and `-I.` (the sources include `"charls/*.h"`). Therefore, a minimal compile should look like this:
 
-`g++ -I. -std=c++14 -DmyEnableJPEGLS charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp  charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG`
+`g++ -I. -std=c++14 -DmyEnableJPEGLS charls/jpegls.cpp charls/charls_jpegls_decoder.cpp charls/jpeg_stream_reader.cpp charls/jpegls_error.cpp main_console.cpp cJSON.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp -o dcm2niix -DmyDisableOpenJPEG`
 
-The option `myEnableJPEGLS` specifies the latest version of CharLS (currently version 2). Alternatively, you can specify `myEnableJPEGLS1` to compile for  CharLS version 1. This older code is not included with dcm2niix, but you can  [download it from Github](https://github.com/team-charls/charls/tree/1.x-master). Note that CharLS version 1 is designed for c++03:
+The legacy `myEnableJPEGLS1` option instead compiles against CharLS 1.x (c++03, untested; [download it](https://github.com/team-charls/charls/tree/1.x-master) into `charls1/`):
 
-`g++ -I. -std=c++03 -DmyEnableJPEGLS1  charls1/header.cpp charls1/jpegls.cpp charls1/jpegmarkersegment.cpp charls1/interface.cpp  charls1/jpegstreamwriter.cpp main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp  -o dcm2niix -DmyDisableOpenJPEG`
+`g++ -I. -std=c++03 -DmyEnableJPEGLS1  charls1/header.cpp charls1/jpegls.cpp charls1/jpegmarkersegment.cpp charls1/interface.cpp  charls1/jpegstreamwriter.cpp main_console.cpp cJSON.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp reproin.cpp dicom_fragments.cpp -o dcm2niix -DmyDisableOpenJPEG`
 
 Note that in these examples we have disabled OpenJPEG's JPEG2000 support. In reality, you will probably want to support both JPEG2000 and JPEG-LS, this will allow you to convert a broader range of images, and JPEG2000 includes lossy variations that do not have analogues for JPEG-LS. For details on adding the JPEG2000 module see this  [compile page](https://github.com/rordenlab/dcm2niix/blob/master/COMPILE.md).
 
@@ -56,7 +56,7 @@ Tip: the ITU makes their version of the JPEG-LS standard (ITU-T.87) freely avail
 
 ## About this software
 
-This project's goal is to provide a full implementation of the ISO/IEC 14495-1:1999, "Lossless and near-lossless compression of continuous-tone still images: Baseline" standard. This library is written from scratch in portable C++. The master branch uses modern C++14. The 1.x branch is maintained in C++03. All mainstream JPEG-LS features are implemented by this library.
+This project's goal is to provide a full implementation of the ISO/IEC 14495-1:1999, "Lossless and near-lossless compression of continuous-tone still images: Baseline" standard. This library is written from scratch in portable C++. The 2.x branch uses C++14, 3.x uses C++17 and the 1.x branch C++03. All mainstream JPEG-LS features are implemented by this library.
 According to preliminary test results published on http://imagecompression.info/gralic, CharLS is about *twice as fast* as the original HP code, and beats both JPEG-XR and JPEG 2000 by a factor 3.
 
 ### Limitations

@@ -1,854 +1,907 @@
-//
-// (C) Jan de Vaan 2007-2010, all rights reserved. See the accompanying "License.txt" for licensed use.
-//
+// Copyright (c) Team CharLS.
+// SPDX-License-Identifier: BSD-3-Clause
 
-#ifndef CHARLS_SCAN
-#define CHARLS_SCAN
+#pragma once
 
-#include "lookuptable.h"
-#include "contextrunmode.h"
-#include "context.h"
-#include "colortransform.h"
-#include "processline.h"
+#include "coding_parameters.h"
+#include "color_transform.h"
+#include "context_regular_mode.h"
+#include "context_run_mode.h"
+#include "jpeg_marker_code.h"
+#include "lookup_table.h"
+#include "process_line.h"
+
+#include <array>
 #include <sstream>
+#include <limits>
 
 // This file contains the code for handling a "scan". Usually an image is encoded as a single scan.
+// Note: the functions in this header could be moved into jpegls.cpp as they are only used in that file.
 
+namespace charls {
 
-#ifdef _MSC_VER
-#pragma warning (disable: 4127) // conditional expression is constant (caused by some template methods that are not fully specialized) [VS2017]
-#endif
+class decoder_strategy;
+class encoder_strategy;
 
+extern const std::array<golomb_code_table, max_k_value> decoding_tables;
+extern const std::vector<int8_t> quantization_lut_lossless_8;
+extern const std::vector<int8_t> quantization_lut_lossless_10;
+extern const std::vector<int8_t> quantization_lut_lossless_12;
+extern const std::vector<int8_t> quantization_lut_lossless_16;
 
-extern CTable decodingTables[16];
-extern std::vector<signed char> rgquant8Ll;
-extern std::vector<signed char> rgquant10Ll;
-extern std::vector<signed char> rgquant12Ll;
-extern std::vector<signed char> rgquant16Ll;
+// Used to determine how large runs should be encoded at a time. Defined by the JPEG-LS standard, A.2.1., Initialization
+// step 3.
+constexpr std::array<int, 32> J{
+    {0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 9, 10, 11, 12, 13, 14, 15}};
 
-inline int32_t ApplySign(int32_t i, int32_t sign) noexcept
+constexpr int32_t apply_sign(const int32_t i, const int32_t sign) noexcept
 {
     return (sign ^ i) - sign;
 }
 
 
-// Two alternatives for GetPredictedValue() (second is slightly faster due to reduced branching)
-
-#if 0
-
-inline int32_t GetPredictedValue(int32_t Ra, int32_t Rb, int32_t Rc)
-{
-    if (Ra < Rb)
-    {
-        if (Rc < Ra)
-            return Rb;
-
-        if (Rc > Rb)
-            return Ra;
-    }
-    else
-    {
-        if (Rc < Rb)
-            return Ra;
-
-        if (Rc > Ra)
-            return Rb;
-    }
-
-    return Ra + Rb - Rc;
-}
-
-#else
-
-inline int32_t GetPredictedValue(int32_t Ra, int32_t Rb, int32_t Rc) noexcept
+inline int32_t get_predicted_value(const int32_t ra, const int32_t rb, const int32_t rc) noexcept
 {
     // sign trick reduces the number of if statements (branches)
-    const int32_t sgn = BitWiseSign(Rb - Ra);
+    const int32_t sign{bit_wise_sign(rb - ra)};
 
     // is Ra between Rc and Rb?
-    if ((sgn ^ (Rc - Ra)) < 0)
+    if ((sign ^ (rc - ra)) < 0)
     {
-        return Rb;
+        return rb;
     }
-    if ((sgn ^ (Rb - Rc)) < 0)
+    if ((sign ^ (rb - rc)) < 0)
     {
-        return Ra;
+        return ra;
     }
 
     // default case, valid if Rc element of [Ra,Rb]
-    return Ra + Rb - Rc;
+    return ra + rb - rc;
 }
 
-#endif
 
-inline int32_t UnMapErrVal(int32_t mappedError) noexcept
+/// <summary>
+/// This is the optimized inverse algorithm of ISO/IEC 14495-1, A.5.2, Code Segment A.11 (second else branch)
+/// It will map unsigned values back to signed values.
+/// </summary>
+CHARLS_CONSTEXPR int32_t unmap_error_value(const int32_t mapped_error) noexcept
 {
-    const int32_t sign = static_cast<int32_t>(mappedError << (int32_t_bit_count-1)) >> (int32_t_bit_count-1);
-    return sign ^ (mappedError >> 1);
+    const int32_t sign{static_cast<int32_t>(static_cast<uint32_t>(mapped_error) << (int32_t_bit_count - 1)) >>
+                       (int32_t_bit_count - 1)};
+    return sign ^ (mapped_error >> 1);
 }
 
-inline int32_t GetMappedErrVal(int32_t Errval) noexcept
+
+/// <summary>
+/// This is the algorithm of ISO/IEC 14495-1, A.5.2, Code Segment A.11 (second else branch)
+/// It will map signed values to unsigned values. It has been optimized to prevent branching.
+/// </summary>
+CHARLS_CONSTEXPR int32_t map_error_value(const int32_t error_value) noexcept
 {
-    const int32_t mappedError = (Errval >> (int32_t_bit_count-2)) ^ (2 * Errval);
-    return mappedError;
+    ASSERT(error_value <= std::numeric_limits<int32_t>::max() / 2);
+
+    const int32_t mapped_error{(error_value >> (int32_t_bit_count - 2)) ^ (2 * error_value)};
+    return mapped_error;
 }
 
-inline int32_t ComputeContextID(int32_t Q1, int32_t Q2, int32_t Q3) noexcept
+
+constexpr int32_t compute_context_id(const int32_t q1, const int32_t q2, const int32_t q3) noexcept
 {
-    return (Q1 * 9 + Q2) * 9 + Q3;
+    return (q1 * 9 + q2) * 9 + q3;
 }
 
 
 template<typename Traits, typename Strategy>
-class JlsCodec : public Strategy
+class jls_codec final : public Strategy
 {
 public:
-    using PIXEL = typename Traits::PIXEL;
-    using SAMPLE = typename Traits::SAMPLE;
+    using pixel_type = typename Traits::pixel_type;
+    using sample_type = typename Traits::sample_type;
 
-    WARNING_SUPPRESS(26495) // false warning that _contextRunmode is uninitialized
-    JlsCodec(const Traits& inTraits, const JlsParameters& params) :
-        Strategy(params),
-        traits(inTraits),
-        _rect(),
-        _width(params.width),
-        T1(0),
-        T2(0),
-        T3(0),
-        _RUNindex(0),
-        _previousLine(),
-        _currentLine(),
-        _pquant(nullptr)
+    jls_codec(Traits traits, const frame_info& frame_info, const coding_parameters& parameters) noexcept :
+        Strategy{update_component_count(frame_info, parameters), parameters},
+        traits_{std::move(traits)},
+        width_{frame_info.width}
     {
-        if (Info().interleaveMode == InterleaveMode::None)
+        ASSERT((parameters.interleave_mode == interleave_mode::none && this->frame_info().component_count == 1) ||
+               parameters.interleave_mode != interleave_mode::none);
+        ASSERT(traits_.is_valid());
+    }
+
+    // Factory function for ProcessLine objects to copy/transform un encoded pixels to/from our scan line buffers.
+    std::unique_ptr<process_line> create_process_line(byte_span info, const size_t stride) override
+    {
+        if (!is_interleaved())
         {
-            Info().components = 1;
+            if (frame_info().bits_per_sample == sizeof(sample_type) * 8)
+            {
+                return std::make_unique<post_process_single_component>(info.data, stride,
+                                                                       sizeof(typename Traits::pixel_type));
+            }
+
+            return std::make_unique<post_process_single_component_masked>(
+                info.data, stride, sizeof(typename Traits::pixel_type), frame_info().bits_per_sample);
+        }
+
+        if (parameters().transformation == color_transformation::none)
+            return std::make_unique<process_transformed<transform_none<typename Traits::sample_type>>>(
+                info, stride, frame_info(), parameters(), transform_none<sample_type>());
+
+        if (frame_info().bits_per_sample == sizeof(sample_type) * 8)
+        {
+            switch (parameters().transformation)
+            {
+            case color_transformation::hp1:
+                return std::make_unique<process_transformed<transform_hp1<sample_type>>>(
+                    info, stride, frame_info(), parameters(), transform_hp1<sample_type>());
+            case color_transformation::hp2:
+                return std::make_unique<process_transformed<transform_hp2<sample_type>>>(
+                    info, stride, frame_info(), parameters(), transform_hp2<sample_type>());
+            case color_transformation::hp3:
+                return std::make_unique<process_transformed<transform_hp3<sample_type>>>(
+                    info, stride, frame_info(), parameters(), transform_hp3<sample_type>());
+            default:
+                impl::throw_jpegls_error(jpegls_errc::color_transform_not_supported);
+            }
+        }
+
+        impl::throw_jpegls_error(jpegls_errc::bit_depth_for_transform_not_supported);
+    }
+
+private:
+    void set_presets(const jpegls_pc_parameters& presets, const uint32_t restart_interval) override
+    {
+        initialize_parameters(presets.threshold1, presets.threshold2, presets.threshold3, presets.reset_value);
+        restart_interval_ = restart_interval;
+    }
+
+    bool is_interleaved() noexcept
+    {
+        ASSERT((parameters().interleave_mode == interleave_mode::none && frame_info().component_count == 1) ||
+               parameters().interleave_mode != interleave_mode::none);
+
+        return parameters().interleave_mode != interleave_mode::none;
+    }
+
+    const coding_parameters& parameters() const noexcept
+    {
+        return Strategy::parameters_;
+    }
+
+    const charls::frame_info& frame_info() const noexcept
+    {
+        return Strategy::frame_info_;
+    }
+
+    int8_t quantize_gradient_org(const int32_t di) const noexcept
+    {
+        if (di <= -t3_)
+            return -4;
+        if (di <= -t2_)
+            return -3;
+        if (di <= -t1_)
+            return -2;
+        if (di < -traits_.near_lossless)
+            return -1;
+        if (di <= traits_.near_lossless)
+            return 0;
+        if (di < t1_)
+            return 1;
+        if (di < t2_)
+            return 2;
+        if (di < t3_)
+            return 3;
+
+        return 4;
+    }
+
+    FORCE_INLINE int32_t quantize_gradient(const int32_t di) const noexcept
+    {
+        ASSERT(quantize_gradient_org(di) == *(quantization_ + di));
+        return *(quantization_ + di);
+    }
+
+    // C4127 = conditional expression is constant (caused by some template methods that are not fully specialized) [VS2017]
+    // C6326 = Potential comparison of a constant with another constant. (false warning, triggered by template construction
+    // in Checked build)
+    // C26814 = The const variable 'RANGE' can be computed at compile-time. [incorrect warning, VS 16.3.0 P3]
+    MSVC_WARNING_SUPPRESS(4127 6326 26814)
+
+    void initialize_quantization_lut()
+    {
+        // for lossless mode with default parameters, we have precomputed the look up table for bit counts 8, 10, 12 and 16.
+        if (traits_.near_lossless == 0 && traits_.maximum_sample_value == (1 << traits_.bits_per_pixel) - 1)
+        {
+            const jpegls_pc_parameters presets{compute_default(traits_.maximum_sample_value, traits_.near_lossless)};
+            if (presets.threshold1 == t1_ && presets.threshold2 == t2_ && presets.threshold3 == t3_)
+            {
+                if (traits_.bits_per_pixel == 8)
+                {
+                    quantization_ = &quantization_lut_lossless_8[quantization_lut_lossless_8.size() / 2];
+                    return;
+                }
+                if (traits_.bits_per_pixel == 10)
+                {
+                    quantization_ = &quantization_lut_lossless_10[quantization_lut_lossless_10.size() / 2];
+                    return;
+                }
+                if (traits_.bits_per_pixel == 12)
+                {
+                    quantization_ = &quantization_lut_lossless_12[quantization_lut_lossless_12.size() / 2];
+                    return;
+                }
+                if (traits_.bits_per_pixel == 16)
+                {
+                    quantization_ = &quantization_lut_lossless_16[quantization_lut_lossless_16.size() / 2];
+                    return;
+                }
+            }
+        }
+
+        // Initialize the quantization lookup table dynamic.
+        const int32_t range{1 << traits_.bits_per_pixel};
+        quantization_lut_.resize(static_cast<size_t>(range) * 2);
+        for (size_t i{}; i < quantization_lut_.size(); ++i)
+        {
+            quantization_lut_[i] = quantize_gradient_org(-range + static_cast<int32_t>(i));
+        }
+
+        quantization_ = &quantization_lut_[range];
+    }
+    MSVC_WARNING_UNSUPPRESS()
+
+    int32_t decode_value(const int32_t k, const int32_t limit, const int32_t quantized_bits_per_pixel)
+    {
+        const int32_t high_bits{Strategy::read_high_bits()};
+
+        if (high_bits >= limit - (quantized_bits_per_pixel + 1))
+            return Strategy::read_value(quantized_bits_per_pixel) + 1;
+
+        if (k == 0)
+            return high_bits;
+
+        return (high_bits << k) + Strategy::read_value(k);
+    }
+
+    FORCE_INLINE void encode_mapped_value(const int32_t k, const int32_t mapped_error, const int32_t limit)
+    {
+        int32_t high_bits{mapped_error >> k};
+
+        if (high_bits < limit - traits_.quantized_bits_per_pixel - 1)
+        {
+            if (high_bits + 1 > 31)
+            {
+                Strategy::append_to_bit_stream(0, high_bits / 2);
+                high_bits = high_bits - high_bits / 2;
+            }
+            Strategy::append_to_bit_stream(1, high_bits + 1);
+            Strategy::append_to_bit_stream((mapped_error & ((1 << k) - 1)), k);
+            return;
+        }
+
+        if (limit - traits_.quantized_bits_per_pixel > 31)
+        {
+            Strategy::append_to_bit_stream(0, 31);
+            Strategy::append_to_bit_stream(1, limit - traits_.quantized_bits_per_pixel - 31);
+        }
+        else
+        {
+            Strategy::append_to_bit_stream(1, limit - traits_.quantized_bits_per_pixel);
+        }
+        Strategy::append_to_bit_stream((mapped_error - 1) & ((1 << traits_.quantized_bits_per_pixel) - 1),
+                                       traits_.quantized_bits_per_pixel);
+    }
+
+    void increment_run_index() noexcept
+    {
+        run_index_ = std::min(31, run_index_ + 1);
+    }
+
+    void decrement_run_index() noexcept
+    {
+        run_index_ = std::max(0, run_index_ - 1);
+    }
+
+    FORCE_INLINE sample_type do_regular(const int32_t qs, int32_t /*x*/, const int32_t predicted,
+                                        decoder_strategy* /*template_selector*/)
+    {
+        const int32_t sign{bit_wise_sign(qs)};
+        context_regular_mode& context{contexts_[apply_sign(qs, sign)]};
+        const int32_t k{context.get_golomb_coding_parameter()};
+        const int32_t predicted_value{traits_.correct_prediction(predicted + apply_sign(context.c(), sign))};
+
+        int32_t error_value;
+        const golomb_code& code = decoding_tables[k].get(Strategy::peek_byte());
+        if (code.length() != 0)
+        {
+            Strategy::skip(code.length());
+            error_value = code.value();
+            ASSERT(std::abs(error_value) < 65535);
+        }
+        else
+        {
+            error_value = unmap_error_value(decode_value(k, traits_.limit, traits_.quantized_bits_per_pixel));
+            if (UNLIKELY(std::abs(error_value) > 65535))
+                impl::throw_jpegls_error(jpegls_errc::invalid_encoded_data);
+        }
+        if (k == 0)
+        {
+            error_value = error_value ^ context.get_error_correction(traits_.near_lossless);
+        }
+        context.update_variables_and_bias(error_value, traits_.near_lossless, traits_.reset_threshold);
+        error_value = apply_sign(error_value, sign);
+        return traits_.compute_reconstructed_sample(predicted_value, error_value);
+    }
+
+    FORCE_INLINE sample_type do_regular(const int32_t qs, const int32_t x, const int32_t predicted,
+                                        encoder_strategy* /*template_selector*/)
+    {
+        const int32_t sign{bit_wise_sign(qs)};
+        context_regular_mode& context{contexts_[apply_sign(qs, sign)]};
+        const int32_t k{context.get_golomb_coding_parameter()};
+        const int32_t predicted_value{traits_.correct_prediction(predicted + apply_sign(context.c(), sign))};
+        const int32_t error_value{traits_.compute_error_value(apply_sign(x - predicted_value, sign))};
+
+        encode_mapped_value(k, map_error_value(context.get_error_correction(k | traits_.near_lossless) ^ error_value),
+                            traits_.limit);
+        context.update_variables_and_bias(error_value, traits_.near_lossless, traits_.reset_threshold);
+        ASSERT(traits_.is_near(traits_.compute_reconstructed_sample(predicted_value, apply_sign(error_value, sign)), x));
+        return static_cast<sample_type>(
+            traits_.compute_reconstructed_sample(predicted_value, apply_sign(error_value, sign)));
+    }
+
+    /// <summary>Encodes/Decodes a scan line of samples</summary>
+    FORCE_INLINE void do_line(sample_type* /*template_selector*/)
+    {
+        int32_t index{};
+        int32_t rb{previous_line_[index - 1]};
+        int32_t rd{previous_line_[index]};
+
+        while (static_cast<uint32_t>(index) < width_)
+        {
+            const int32_t ra{current_line_[index - 1]};
+            const int32_t rc{rb};
+            rb = rd;
+            rd = previous_line_[index + 1];
+
+            const int32_t qs{
+                compute_context_id(quantize_gradient(rd - rb), quantize_gradient(rb - rc), quantize_gradient(rc - ra))};
+
+            if (qs != 0)
+            {
+                current_line_[index] =
+                    do_regular(qs, current_line_[index], get_predicted_value(ra, rb, rc), static_cast<Strategy*>(nullptr));
+                ++index;
+            }
+            else
+            {
+                index += do_run_mode(index, static_cast<Strategy*>(nullptr));
+                rb = previous_line_[index - 1];
+                rd = previous_line_[index];
+            }
         }
     }
-    WARNING_UNSUPPRESS()
 
-    void SetPresets(const JpegLSPresetCodingParameters& presets) override
+    /// <summary>Encodes/Decodes a scan line of triplets in ILV_SAMPLE mode</summary>
+    void do_line(triplet<sample_type>* /*template_selector*/)
     {
-        const JpegLSPresetCodingParameters presetDefault = ComputeDefault(traits.MAXVAL, traits.NEAR);
+        int32_t index{};
+        while (static_cast<uint32_t>(index) < width_)
+        {
+            const triplet<sample_type> ra{current_line_[index - 1]};
+            const triplet<sample_type> rc{previous_line_[index - 1]};
+            const triplet<sample_type> rb{previous_line_[index]};
+            const triplet<sample_type> rd{previous_line_[index + 1]};
 
-        InitParams(presets.Threshold1 != 0 ? presets.Threshold1 : presetDefault.Threshold1,
-                   presets.Threshold2 != 0 ? presets.Threshold2 : presetDefault.Threshold2,
-                   presets.Threshold3 != 0 ? presets.Threshold3 : presetDefault.Threshold3,
-                   presets.ResetValue != 0 ? presets.ResetValue : presetDefault.ResetValue);
+            const int32_t qs1{compute_context_id(quantize_gradient(rd.v1 - rb.v1), quantize_gradient(rb.v1 - rc.v1),
+                                                 quantize_gradient(rc.v1 - ra.v1))};
+            const int32_t qs2{compute_context_id(quantize_gradient(rd.v2 - rb.v2), quantize_gradient(rb.v2 - rc.v2),
+                                                 quantize_gradient(rc.v2 - ra.v2))};
+            const int32_t qs3{compute_context_id(quantize_gradient(rd.v3 - rb.v3), quantize_gradient(rb.v3 - rc.v3),
+                                                 quantize_gradient(rc.v3 - ra.v3))};
+
+            if (qs1 == 0 && qs2 == 0 && qs3 == 0)
+            {
+                index += do_run_mode(index, static_cast<Strategy*>(nullptr));
+            }
+            else
+            {
+                triplet<sample_type> rx;
+                rx.v1 = do_regular(qs1, current_line_[index].v1, get_predicted_value(ra.v1, rb.v1, rc.v1),
+                                   static_cast<Strategy*>(nullptr));
+                rx.v2 = do_regular(qs2, current_line_[index].v2, get_predicted_value(ra.v2, rb.v2, rc.v2),
+                                   static_cast<Strategy*>(nullptr));
+                rx.v3 = do_regular(qs3, current_line_[index].v3, get_predicted_value(ra.v3, rb.v3, rc.v3),
+                                   static_cast<Strategy*>(nullptr));
+                current_line_[index] = rx;
+                ++index;
+            }
+        }
     }
 
-    std::unique_ptr<ProcessLine> CreateProcess(ByteStreamInfo info) override;
-
-    bool IsInterleaved() noexcept
-    {
-        if (Info().interleaveMode == InterleaveMode::None)
-            return false;
-
-        if (Info().components == 1)
-            return false;
-
-        return true;
-    }
-
-    JlsParameters& Info() noexcept
-    {
-        return Strategy::_params;
-    }
-
-    signed char QuantizeGratientOrg(int32_t Di) const noexcept;
-
-    FORCE_INLINE int32_t QuantizeGratient(int32_t Di) const noexcept
-    {
-        ASSERT(QuantizeGratientOrg(Di) == *(_pquant + Di));
-        return *(_pquant + Di);
-    }
-
-    void InitQuantizationLUT();
-
-    int32_t DecodeValue(int32_t k, int32_t limit, int32_t qbpp);
-    FORCE_INLINE void EncodeMappedValue(int32_t k, int32_t mappedError, int32_t limit);
-
-    void IncrementRunIndex() noexcept
-    {
-        _RUNindex = std::min(31, _RUNindex + 1);
-    }
-
-    void DecrementRunIndex() noexcept
-    {
-        _RUNindex = std::max(0, _RUNindex - 1);
-    }
-
-    int32_t DecodeRIError(CContextRunMode& ctx);
-    Triplet<SAMPLE> DecodeRIPixel(Triplet<SAMPLE> Ra, Triplet<SAMPLE> Rb);
-    SAMPLE DecodeRIPixel(int32_t Ra, int32_t Rb);
-    int32_t DecodeRunPixels(PIXEL Ra, PIXEL* startPos, int32_t cpixelMac);
-    int32_t DoRunMode(int32_t startIndex, DecoderStrategy*);
-
-    void EncodeRIError(CContextRunMode& ctx, int32_t Errval);
-    SAMPLE EncodeRIPixel(int32_t x, int32_t Ra, int32_t Rb);
-    Triplet<SAMPLE> EncodeRIPixel(Triplet<SAMPLE> x, Triplet<SAMPLE> Ra, Triplet<SAMPLE> Rb);
-    void EncodeRunPixels(int32_t runLength, bool endOfLine);
-    int32_t DoRunMode(int32_t index, EncoderStrategy*);
-
-    FORCE_INLINE SAMPLE DoRegular(int32_t Qs, int32_t, int32_t pred, DecoderStrategy*);
-    FORCE_INLINE SAMPLE DoRegular(int32_t Qs, int32_t x, int32_t pred, EncoderStrategy*);
-
-    void DoLine(SAMPLE* pdummy);
-    void DoLine(Triplet<SAMPLE>* pdummy);
-    void DoScan();
-
-    void InitParams(int32_t t1, int32_t t2, int32_t t3, int32_t nReset);
-
+    // Setup codec for encoding and calls do_scan
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winconsistent-missing-override"
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wsuggest-override"
 #endif
 
-    // Note: depending on the base class EncodeScan OR DecodeScan will be virtual and abstract, cannot use override in all cases.
-    size_t EncodeScan(std::unique_ptr<ProcessLine> processLine, ByteStreamInfo& compressedData);
-    void DecodeScan(std::unique_ptr<ProcessLine> processLine, const JlsRect& rect, ByteStreamInfo& compressedData);
+    MSVC_WARNING_SUPPRESS(26433) // C.128: Virtual functions should specify exactly one of virtual, override, or final
+
+    // Note: depending on the base class encode_scan OR decode_scan will be virtual and abstract,
+    // cannot use override in all cases.
+    // clang-format off
+    // NOLINTNEXTLINE(cppcoreguidelines-explicit-virtual-functions, hicpp-use-override, modernize-use-override,clang-diagnostic-suggest-override)
+    size_t encode_scan(std::unique_ptr<process_line> process_line, byte_span destination)
+    {
+        Strategy::process_line_ = std::move(process_line);
+
+        Strategy::initialize(destination);
+        encode_lines();
+
+        return Strategy::get_length();
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-explicit-virtual-functions, hicpp-use-override, modernize-use-override, clang-diagnostic-suggest-override)
+    size_t decode_scan(std::unique_ptr<process_line> process_line, const JlsRect& rect, const_byte_span encoded_source)
+    {
+        Strategy::process_line_ = std::move(process_line);
+
+        const auto* scan_begin{encoded_source.begin()};
+        rect_ = rect;
+
+        Strategy::initialize(encoded_source);
+
+        // Process images without a restart interval, as 1 large restart interval.
+        if (restart_interval_ == 0)
+        {
+            restart_interval_ = frame_info().height;
+        }
+
+        decode_lines();
+
+        return Strategy::get_cur_byte_pos() - scan_begin;
+    }
+
+    // clang-format on
+    MSVC_WARNING_UNSUPPRESS()
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
 
-protected:
+    void initialize_parameters(const int32_t t1, const int32_t t2, const int32_t t3, const int32_t reset_threshold)
+    {
+        t1_ = t1;
+        t2_ = t2;
+        t3_ = t3;
+        reset_threshold_ = static_cast<uint8_t>(reset_threshold);
+
+        initialize_quantization_lut();
+        reset_parameters();
+    }
+
+    void reset_parameters() noexcept
+    {
+        const context_regular_mode context_initial_value(traits_.range);
+        for (auto& context : contexts_)
+        {
+            context = context_initial_value;
+        }
+
+        context_run_mode_[0] = context_run_mode(0, traits_.range);
+        context_run_mode_[1] = context_run_mode(1, traits_.range);
+        run_index_ = 0;
+    }
+
+    static charls::frame_info update_component_count(charls::frame_info frame, const coding_parameters& parameters) noexcept
+    {
+        if (parameters.interleave_mode == interleave_mode::none)
+        {
+            frame.component_count = 1;
+        }
+
+        return frame;
+    }
+
+    // In ILV_SAMPLE mode, multiple components are handled in do_line
+    // In ILV_LINE mode, a call to do_line is made for every component
+    // In ILV_NONE mode, do_scan is called for each component
+    void encode_lines()
+    {
+        const uint32_t pixel_stride{width_ + 4U};
+        const size_t component_count{
+            parameters().interleave_mode == interleave_mode::line ? static_cast<size_t>(frame_info().component_count) : 1U};
+
+        std::vector<pixel_type> line_buffer(component_count * pixel_stride * 2);
+        std::vector<int32_t> run_index(component_count);
+
+        for (uint32_t line{}; line < frame_info().height; ++line)
+        {
+            previous_line_ = &line_buffer[1];
+            current_line_ = &line_buffer[1 + static_cast<size_t>(component_count) * pixel_stride];
+            if ((line & 1) == 1)
+            {
+                std::swap(previous_line_, current_line_);
+            }
+
+            Strategy::on_line_begin(current_line_, width_, pixel_stride);
+
+            for (size_t component{}; component < component_count; ++component)
+            {
+                run_index_ = run_index[component];
+
+                // initialize edge pixels used for prediction
+                previous_line_[width_] = previous_line_[width_ - 1];
+                current_line_[-1] = previous_line_[0];
+                do_line(static_cast<pixel_type*>(nullptr)); // dummy argument for overload resolution
+
+                run_index[component] = run_index_;
+                previous_line_ += pixel_stride;
+                current_line_ += pixel_stride;
+            }
+        }
+
+        Strategy::end_scan();
+    }
+
+    void decode_lines()
+    {
+        const uint32_t pixel_stride{width_ + 4U};
+        const size_t component_count{
+            parameters().interleave_mode == interleave_mode::line ? static_cast<size_t>(frame_info().component_count) : 1U};
+
+        std::vector<pixel_type> line_buffer(component_count * pixel_stride * 2);
+        std::vector<int32_t> run_index(component_count);
+
+        for (uint32_t line{};;)
+        {
+            const uint32_t lines_in_interval{std::min(frame_info().height - line, restart_interval_)};
+
+            for (uint32_t mcu{}; mcu < lines_in_interval; ++mcu, ++line)
+            {
+                previous_line_ = &line_buffer[1];
+                current_line_ = &line_buffer[1 + static_cast<size_t>(component_count) * pixel_stride];
+                if ((line & 1) == 1)
+                {
+                    std::swap(previous_line_, current_line_);
+                }
+
+                for (size_t component{}; component < component_count; ++component)
+                {
+                    run_index_ = run_index[component];
+
+                    // initialize edge pixels used for prediction
+                    previous_line_[width_] = previous_line_[width_ - 1];
+                    current_line_[-1] = previous_line_[0];
+                    do_line(static_cast<pixel_type*>(nullptr)); // dummy argument for overload resolution
+
+                    run_index[component] = run_index_;
+                    previous_line_ += pixel_stride;
+                    current_line_ += pixel_stride;
+                }
+
+                // Only copy the line if it is part of the output rectangle.
+                if (static_cast<uint32_t>(rect_.Y) <= line && line < static_cast<uint32_t>(rect_.Y + rect_.Height))
+                {
+                    Strategy::on_line_end(current_line_ + rect_.X - (static_cast<size_t>(component_count) * pixel_stride),
+                                          rect_.Width,
+                                          pixel_stride);
+                }
+            }
+
+            if (line == frame_info().height)
+                break;
+
+            // At this point in the byte stream a restart marker should be present: process it.
+            read_restart_marker();
+            restart_interval_counter_ = (restart_interval_counter_ + 1) % jpeg_restart_marker_range;
+
+            // After a restart marker it is required to reset the decoder.
+            Strategy::reset();
+            std::fill(line_buffer.begin(), line_buffer.end(), pixel_type{});
+            std::fill(run_index.begin(), run_index.end(), 0);
+            reset_parameters();
+        }
+
+        Strategy::end_scan();
+    }
+
+    void read_restart_marker()
+    {
+        auto byte{Strategy::read_byte()};
+        if (UNLIKELY(byte != jpeg_marker_start_byte))
+            impl::throw_jpegls_error(jpegls_errc::restart_marker_not_found);
+
+        // Read all preceding 0xFF fill values until a non 0xFF value has been found. (see T.81, B.1.1.2)
+        do
+        {
+            byte = Strategy::read_byte();
+        } while (byte == jpeg_marker_start_byte);
+
+        if (UNLIKELY(byte != jpeg_restart_marker_base + restart_interval_counter_))
+            impl::throw_jpegls_error(jpegls_errc::restart_marker_not_found);
+    }
+
+    /// <summary>Encodes/Decodes a scan line of quads in ILV_SAMPLE mode</summary>
+    void do_line(quad<sample_type>* /*template_selector*/)
+    {
+        int32_t index{};
+        while (static_cast<uint32_t>(index) < width_)
+        {
+            const quad<sample_type> ra{current_line_[index - 1]};
+            const quad<sample_type> rc{previous_line_[index - 1]};
+            const quad<sample_type> rb{previous_line_[index]};
+            const quad<sample_type> rd{previous_line_[index + 1]};
+
+            const int32_t qs1{compute_context_id(quantize_gradient(rd.v1 - rb.v1), quantize_gradient(rb.v1 - rc.v1),
+                                                 quantize_gradient(rc.v1 - ra.v1))};
+            const int32_t qs2{compute_context_id(quantize_gradient(rd.v2 - rb.v2), quantize_gradient(rb.v2 - rc.v2),
+                                                 quantize_gradient(rc.v2 - ra.v2))};
+            const int32_t qs3{compute_context_id(quantize_gradient(rd.v3 - rb.v3), quantize_gradient(rb.v3 - rc.v3),
+                                                 quantize_gradient(rc.v3 - ra.v3))};
+            const int32_t qs4{compute_context_id(quantize_gradient(rd.v4 - rb.v4), quantize_gradient(rb.v4 - rc.v4),
+                                                 quantize_gradient(rc.v4 - ra.v4))};
+
+            if (qs1 == 0 && qs2 == 0 && qs3 == 0 && qs4 == 0)
+            {
+                index += do_run_mode(index, static_cast<Strategy*>(nullptr));
+            }
+            else
+            {
+                quad<sample_type> rx;
+                rx.v1 = do_regular(qs1, current_line_[index].v1, get_predicted_value(ra.v1, rb.v1, rc.v1),
+                                   static_cast<Strategy*>(nullptr));
+                rx.v2 = do_regular(qs2, current_line_[index].v2, get_predicted_value(ra.v2, rb.v2, rc.v2),
+                                   static_cast<Strategy*>(nullptr));
+                rx.v3 = do_regular(qs3, current_line_[index].v3, get_predicted_value(ra.v3, rb.v3, rc.v3),
+                                   static_cast<Strategy*>(nullptr));
+                rx.v4 = do_regular(qs4, current_line_[index].v4, get_predicted_value(ra.v4, rb.v4, rc.v4),
+                                   static_cast<Strategy*>(nullptr));
+                current_line_[index] = rx;
+                ++index;
+            }
+        }
+    }
+
+    int32_t decode_run_interruption_error(context_run_mode& context)
+    {
+        const int32_t k{context.get_golomb_code()};
+        const int32_t e_mapped_error_value{
+            decode_value(k, traits_.limit - J[run_index_] - 1, traits_.quantized_bits_per_pixel)};
+        const int32_t error_value{context.compute_error_value(e_mapped_error_value + context.run_interruption_type(), k)};
+        context.update_variables(error_value, e_mapped_error_value, reset_threshold_);
+        return error_value;
+    }
+
+    triplet<sample_type> decode_run_interruption_pixel(triplet<sample_type> ra, triplet<sample_type> rb)
+    {
+        const int32_t error_value1{decode_run_interruption_error(context_run_mode_[0])};
+        const int32_t error_value2{decode_run_interruption_error(context_run_mode_[0])};
+        const int32_t error_value3{decode_run_interruption_error(context_run_mode_[0])};
+
+        return triplet<sample_type>(traits_.compute_reconstructed_sample(rb.v1, error_value1 * sign(rb.v1 - ra.v1)),
+                                    traits_.compute_reconstructed_sample(rb.v2, error_value2 * sign(rb.v2 - ra.v2)),
+                                    traits_.compute_reconstructed_sample(rb.v3, error_value3 * sign(rb.v3 - ra.v3)));
+    }
+
+    quad<sample_type> decode_run_interruption_pixel(quad<sample_type> ra, quad<sample_type> rb)
+    {
+        const int32_t error_value1{decode_run_interruption_error(context_run_mode_[0])};
+        const int32_t error_value2{decode_run_interruption_error(context_run_mode_[0])};
+        const int32_t error_value3{decode_run_interruption_error(context_run_mode_[0])};
+        const int32_t error_value4{decode_run_interruption_error(context_run_mode_[0])};
+
+        return quad<sample_type>(
+            triplet<sample_type>(traits_.compute_reconstructed_sample(rb.v1, error_value1 * sign(rb.v1 - ra.v1)),
+                                 traits_.compute_reconstructed_sample(rb.v2, error_value2 * sign(rb.v2 - ra.v2)),
+                                 traits_.compute_reconstructed_sample(rb.v3, error_value3 * sign(rb.v3 - ra.v3))),
+            traits_.compute_reconstructed_sample(rb.v4, error_value4 * sign(rb.v4 - ra.v4)));
+    }
+
+    sample_type decode_run_interruption_pixel(int32_t ra, int32_t rb)
+    {
+        if (std::abs(ra - rb) <= traits_.near_lossless)
+        {
+            const int32_t error_value{decode_run_interruption_error(context_run_mode_[1])};
+            return static_cast<sample_type>(traits_.compute_reconstructed_sample(ra, error_value));
+        }
+
+        const int32_t error_value{decode_run_interruption_error(context_run_mode_[0])};
+        return static_cast<sample_type>(traits_.compute_reconstructed_sample(rb, error_value * sign(rb - ra)));
+    }
+
+    int32_t decode_run_pixels(pixel_type ra, pixel_type* start_pos, const int32_t pixel_count)
+    {
+        int32_t index{};
+        while (Strategy::read_bit())
+        {
+            const int count{std::min(1 << J[run_index_], pixel_count - index)};
+            index += count;
+            ASSERT(index <= pixel_count);
+
+            if (count == (1 << J[run_index_]))
+            {
+                increment_run_index();
+            }
+
+            if (index == pixel_count)
+                break;
+        }
+
+        if (index != pixel_count)
+        {
+            // incomplete run.
+            index += (J[run_index_] > 0) ? Strategy::read_value(J[run_index_]) : 0;
+        }
+
+        if (UNLIKELY(index > pixel_count))
+            impl::throw_jpegls_error(jpegls_errc::invalid_encoded_data);
+
+        for (int32_t i{}; i < index; ++i)
+        {
+            start_pos[i] = ra;
+        }
+
+        return index;
+    }
+
+    int32_t do_run_mode(const int32_t start_index, decoder_strategy* /*template_selector*/)
+    {
+        const pixel_type ra{current_line_[start_index - 1]};
+
+        const int32_t run_length{decode_run_pixels(ra, current_line_ + start_index, width_ - start_index)};
+        const uint32_t end_index{static_cast<uint32_t>(start_index + run_length)};
+
+        if (end_index == width_)
+            return end_index - start_index;
+
+        // run interruption
+        const pixel_type rb{previous_line_[end_index]};
+        current_line_[end_index] = decode_run_interruption_pixel(ra, rb);
+        decrement_run_index();
+        return end_index - start_index + 1;
+    }
+
+    void encode_run_interruption_error(context_run_mode& context, const int32_t error_value)
+    {
+        const int32_t k{context.get_golomb_code()};
+        const bool map{context.compute_map(error_value, k)};
+        const int32_t e_mapped_error_value{2 * std::abs(error_value) - context.run_interruption_type() -
+                                           static_cast<int32_t>(map)};
+
+        ASSERT(error_value == context.compute_error_value(e_mapped_error_value + context.run_interruption_type(), k));
+        encode_mapped_value(k, e_mapped_error_value, traits_.limit - J[run_index_] - 1);
+        context.update_variables(error_value, e_mapped_error_value, reset_threshold_);
+    }
+
+    sample_type encode_run_interruption_pixel(const int32_t x, const int32_t ra, const int32_t rb)
+    {
+        if (std::abs(ra - rb) <= traits_.near_lossless)
+        {
+            const int32_t error_value{traits_.compute_error_value(x - ra)};
+            encode_run_interruption_error(context_run_mode_[1], error_value);
+            return static_cast<sample_type>(traits_.compute_reconstructed_sample(ra, error_value));
+        }
+
+        const int32_t error_value{traits_.compute_error_value((x - rb) * sign(rb - ra))};
+        encode_run_interruption_error(context_run_mode_[0], error_value);
+        return static_cast<sample_type>(traits_.compute_reconstructed_sample(rb, error_value * sign(rb - ra)));
+    }
+
+    triplet<sample_type> encode_run_interruption_pixel(const triplet<sample_type> x, const triplet<sample_type> ra,
+                                                       const triplet<sample_type> rb)
+    {
+        const int32_t error_value1{traits_.compute_error_value(sign(rb.v1 - ra.v1) * (x.v1 - rb.v1))};
+        encode_run_interruption_error(context_run_mode_[0], error_value1);
+
+        const int32_t error_value2{traits_.compute_error_value(sign(rb.v2 - ra.v2) * (x.v2 - rb.v2))};
+        encode_run_interruption_error(context_run_mode_[0], error_value2);
+
+        const int32_t error_value3{traits_.compute_error_value(sign(rb.v3 - ra.v3) * (x.v3 - rb.v3))};
+        encode_run_interruption_error(context_run_mode_[0], error_value3);
+
+        return triplet<sample_type>(traits_.compute_reconstructed_sample(rb.v1, error_value1 * sign(rb.v1 - ra.v1)),
+                                    traits_.compute_reconstructed_sample(rb.v2, error_value2 * sign(rb.v2 - ra.v2)),
+                                    traits_.compute_reconstructed_sample(rb.v3, error_value3 * sign(rb.v3 - ra.v3)));
+    }
+
+    quad<sample_type> encode_run_interruption_pixel(const quad<sample_type> x, const quad<sample_type> ra,
+                                                    const quad<sample_type> rb)
+    {
+        const int32_t error_value1{traits_.compute_error_value(sign(rb.v1 - ra.v1) * (x.v1 - rb.v1))};
+        encode_run_interruption_error(context_run_mode_[0], error_value1);
+
+        const int32_t error_value2{traits_.compute_error_value(sign(rb.v2 - ra.v2) * (x.v2 - rb.v2))};
+        encode_run_interruption_error(context_run_mode_[0], error_value2);
+
+        const int32_t error_value3{traits_.compute_error_value(sign(rb.v3 - ra.v3) * (x.v3 - rb.v3))};
+        encode_run_interruption_error(context_run_mode_[0], error_value3);
+
+        const int32_t error_value4{traits_.compute_error_value(sign(rb.v4 - ra.v4) * (x.v4 - rb.v4))};
+        encode_run_interruption_error(context_run_mode_[0], error_value4);
+
+        return quad<sample_type>(
+            triplet<sample_type>(traits_.compute_reconstructed_sample(rb.v1, error_value1 * sign(rb.v1 - ra.v1)),
+                                 traits_.compute_reconstructed_sample(rb.v2, error_value2 * sign(rb.v2 - ra.v2)),
+                                 traits_.compute_reconstructed_sample(rb.v3, error_value3 * sign(rb.v3 - ra.v3))),
+            traits_.compute_reconstructed_sample(rb.v4, error_value4 * sign(rb.v4 - ra.v4)));
+    }
+
+    void encode_run_pixels(int32_t run_length, const bool end_of_line)
+    {
+        while (run_length >= 1 << J[run_index_])
+        {
+            Strategy::append_ones_to_bit_stream(1);
+            run_length = run_length - (1 << J[run_index_]);
+            increment_run_index();
+        }
+
+        if (end_of_line)
+        {
+            if (run_length != 0)
+            {
+                Strategy::append_ones_to_bit_stream(1);
+            }
+        }
+        else
+        {
+            Strategy::append_to_bit_stream(run_length, J[run_index_] + 1); // leading 0 + actual remaining length
+        }
+    }
+
+    int32_t do_run_mode(const int32_t index, encoder_strategy* /*strategy*/)
+    {
+        const int32_t count_type_remain = width_ - index;
+        pixel_type* type_cur_x{current_line_ + index};
+        const pixel_type* type_prev_x{previous_line_ + index};
+
+        const pixel_type ra{type_cur_x[-1]};
+
+        int32_t run_length{};
+        while (traits_.is_near(type_cur_x[run_length], ra))
+        {
+            type_cur_x[run_length] = ra;
+            ++run_length;
+
+            if (run_length == count_type_remain)
+                break;
+        }
+
+        encode_run_pixels(run_length, run_length == count_type_remain);
+
+        if (run_length == count_type_remain)
+            return run_length;
+
+        type_cur_x[run_length] = encode_run_interruption_pixel(type_cur_x[run_length], ra, type_prev_x[run_length]);
+        decrement_run_index();
+        return run_length + 1;
+    }
+
     // codec parameters
-    Traits traits;
-    JlsRect _rect;
-    int _width;
-    int32_t T1;
-    int32_t T2;
-    int32_t T3;
+    Traits traits_;
+    JlsRect rect_{};
+    uint32_t width_;
+    int32_t t1_{};
+    int32_t t2_{};
+    int32_t t3_{};
+    uint8_t reset_threshold_{};
+    uint32_t restart_interval_{};
+    uint32_t restart_interval_counter_{};
 
     // compression context
-    JlsContext _contexts[365];
-    CContextRunMode _contextRunmode[2];
-    int32_t _RUNindex;
-    PIXEL* _previousLine;
-    PIXEL* _currentLine;
+    std::array<context_regular_mode, 365> contexts_;
+    std::array<context_run_mode, 2> context_run_mode_;
+    int32_t run_index_{};
+    pixel_type* previous_line_{};
+    pixel_type* current_line_{};
 
     // quantization lookup table
-    signed char* _pquant;
-    std::vector<signed char> _rgquant;
+    const int8_t* quantization_{};
+    std::vector<int8_t> quantization_lut_;
 };
 
 
-// Encode/decode a single sample. Performance wise the #1 important functions
-template<typename Traits, typename Strategy>
-typename Traits::SAMPLE JlsCodec<Traits,Strategy>::DoRegular(int32_t Qs, int32_t, int32_t pred, DecoderStrategy*)
-{
-    const int32_t sign = BitWiseSign(Qs);
-    JlsContext& ctx = _contexts[ApplySign(Qs, sign)];
-    const int32_t k = ctx.GetGolomb();
-    const int32_t Px = traits.CorrectPrediction(pred + ApplySign(ctx.C, sign));
 
-    int32_t ErrVal;
-    const Code& code = decodingTables[k].Get(Strategy::PeekByte());
-    if (code.GetLength() != 0)
-    {
-        Strategy::Skip(code.GetLength());
-        ErrVal = code.GetValue();
-        ASSERT(std::abs(ErrVal) < 65535);
-    }
-    else
-    {
-        ErrVal = UnMapErrVal(DecodeValue(k, traits.LIMIT, traits.qbpp));
-        if (std::abs(ErrVal) > 65535)
-            throw charls_error(charls::ApiResult::InvalidCompressedData);
-    }
-    if (k == 0)
-    {
-        ErrVal = ErrVal ^ ctx.GetErrorCorrection(traits.NEAR);
-    }
-    ctx.UpdateVariables(ErrVal, traits.NEAR, traits.RESET);
-    ErrVal = ApplySign(ErrVal, sign);
-    return traits.ComputeReconstructedSample(Px, ErrVal);
-}
-
-
-template<typename Traits, typename Strategy>
-typename Traits::SAMPLE JlsCodec<Traits,Strategy>::DoRegular(int32_t Qs, int32_t x, int32_t pred, EncoderStrategy*)
-{
-    const int32_t sign = BitWiseSign(Qs);
-    JlsContext& ctx = _contexts[ApplySign(Qs, sign)];
-    const int32_t k = ctx.GetGolomb();
-    const int32_t Px = traits.CorrectPrediction(pred + ApplySign(ctx.C, sign));
-    const int32_t ErrVal = traits.ComputeErrVal(ApplySign(x - Px, sign));
-
-    EncodeMappedValue(k, GetMappedErrVal(ctx.GetErrorCorrection(k | traits.NEAR) ^ ErrVal), traits.LIMIT);
-    ctx.UpdateVariables(ErrVal, traits.NEAR, traits.RESET);
-    ASSERT(traits.IsNear(traits.ComputeReconstructedSample(Px, ApplySign(ErrVal, sign)), x));
-    return static_cast<SAMPLE>(traits.ComputeReconstructedSample(Px, ApplySign(ErrVal, sign)));
-}
-
-
-// Functions to build tables used to decode short Golomb codes.
-
-inline std::pair<int32_t, int32_t> CreateEncodedValue(int32_t k, int32_t mappedError) noexcept
-{
-    const int32_t highbits = mappedError >> k;
-    return std::make_pair(highbits + k + 1, (static_cast<int32_t>(1) << k) | (mappedError & ((static_cast<int32_t>(1) << k) - 1)));
-}
-
-
-inline CTable InitTable(int32_t k) noexcept
-{
-    CTable table;
-    for (short nerr = 0; ; nerr++)
-    {
-        // Q is not used when k != 0
-        const int32_t merrval = GetMappedErrVal(nerr);
-        const std::pair<int32_t, int32_t> paircode = CreateEncodedValue(k, merrval);
-        if (static_cast<size_t>(paircode.first) > CTable::byte_bit_count)
-            break;
-
-        const Code code(nerr, static_cast<short>(paircode.first));
-        table.AddEntry(static_cast<uint8_t>(paircode.second), code);
-    }
-
-    for (short nerr = -1; ; nerr--)
-    {
-        // Q is not used when k != 0
-        const int32_t merrval = GetMappedErrVal(nerr);
-        const std::pair<int32_t, int32_t> paircode = CreateEncodedValue(k, merrval);
-        if (static_cast<size_t>(paircode.first) > CTable::byte_bit_count)
-            break;
-
-        const Code code = Code(nerr, static_cast<short>(paircode.first));
-        table.AddEntry(static_cast<uint8_t>(paircode.second), code);
-    }
-
-    return table;
-}
-
-
-// Encoding/decoding of Golomb codes
-
-template<typename Traits, typename Strategy>
-int32_t JlsCodec<Traits, Strategy>::DecodeValue(int32_t k, int32_t limit, int32_t qbpp)
-{
-    const int32_t highbits = Strategy::ReadHighbits();
-
-    if (highbits >= limit - (qbpp + 1))
-        return Strategy::ReadValue(qbpp) + 1;
-
-    if (k == 0)
-        return highbits;
-
-    return (highbits << k) + Strategy::ReadValue(k);
-}
-
-
-template<typename Traits, typename Strategy>
-FORCE_INLINE void JlsCodec<Traits, Strategy>::EncodeMappedValue(int32_t k, int32_t mappedError, int32_t limit)
-{
-    int32_t highbits = mappedError >> k;
-
-    if (highbits < limit - traits.qbpp - 1)
-    {
-        if (highbits + 1 > 31)
-        {
-            Strategy::AppendToBitStream(0, highbits / 2);
-            highbits = highbits - highbits / 2;
-        }
-        Strategy::AppendToBitStream(1, highbits + 1);
-        Strategy::AppendToBitStream((mappedError & ((1 << k) - 1)), k);
-        return;
-    }
-
-    if (limit - traits.qbpp > 31)
-    {
-        Strategy::AppendToBitStream(0, 31);
-        Strategy::AppendToBitStream(1, limit - traits.qbpp - 31);
-    }
-    else
-    {
-        Strategy::AppendToBitStream(1, limit - traits.qbpp);
-    }
-    Strategy::AppendToBitStream((mappedError - 1) & ((1 << traits.qbpp) - 1), traits.qbpp);
-}
-
-
-// Disable the Microsoft Static Analyzer warning: Potential comparison of a constant with another constant. (false warning, triggered by template construction)
-#ifdef _PREFAST_
-#pragma warning(push)
-#pragma warning(disable:6326)
-#endif
-
-// Sets up a lookup table to "Quantize" sample difference.
-
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::InitQuantizationLUT()
-{
-    // for lossless mode with default parameters, we have precomputed the look up table for bit counts 8, 10, 12 and 16.
-    if (traits.NEAR == 0 && traits.MAXVAL == (1 << traits.bpp) - 1)
-    {
-        const JpegLSPresetCodingParameters presets = ComputeDefault(traits.MAXVAL, traits.NEAR);
-        if (presets.Threshold1 == T1 && presets.Threshold2 == T2 && presets.Threshold3 == T3)
-        {
-            if (traits.bpp == 8)
-            {
-                _pquant = &rgquant8Ll[rgquant8Ll.size() / 2];
-                return;
-            }
-            if (traits.bpp == 10)
-            {
-                _pquant = &rgquant10Ll[rgquant10Ll.size() / 2];
-                return;
-            }
-            if (traits.bpp == 12)
-            {
-                _pquant = &rgquant12Ll[rgquant12Ll.size() / 2];
-                return;
-            }
-            if (traits.bpp == 16)
-            {
-                _pquant = &rgquant16Ll[rgquant16Ll.size() / 2];
-                return;
-            }
-        }
-    }
-
-    const int32_t RANGE = 1 << traits.bpp;
-
-    _rgquant.resize(static_cast<size_t>(RANGE) * 2);
-
-    _pquant = &_rgquant[RANGE];
-    for (int32_t i = -RANGE; i < RANGE; ++i)
-    {
-        _pquant[i] = QuantizeGratientOrg(i);
-    }
-}
-
-#ifdef _PREFAST_
-#pragma warning(pop)
-#endif
-
-template<typename Traits, typename Strategy>
-signed char JlsCodec<Traits,Strategy>::QuantizeGratientOrg(int32_t Di) const noexcept
-{
-    if (Di <= -T3) return  -4;
-    if (Di <= -T2) return  -3;
-    if (Di <= -T1) return  -2;
-    if (Di < -traits.NEAR)  return  -1;
-    if (Di <=  traits.NEAR) return   0;
-    if (Di < T1)   return   1;
-    if (Di < T2)   return   2;
-    if (Di < T3)   return   3;
-
-    return  4;
-}
-
-
-// RI = Run interruption: functions that handle the sample terminating a run.
-
-template<typename Traits, typename Strategy>
-int32_t JlsCodec<Traits,Strategy>::DecodeRIError(CContextRunMode& ctx)
-{
-    const int32_t k = ctx.GetGolomb();
-    const int32_t EMErrval = DecodeValue(k, traits.LIMIT - J[_RUNindex]-1, traits.qbpp);
-    const int32_t Errval = ctx.ComputeErrVal(EMErrval + ctx._nRItype, k);
-    ctx.UpdateVariables(Errval, EMErrval);
-    return Errval;
-}
-
-
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits,Strategy>::EncodeRIError(CContextRunMode& ctx, int32_t Errval)
-{
-    const int32_t k = ctx.GetGolomb();
-    const bool map = ctx.ComputeMap(Errval, k);
-    const int32_t EMErrval = 2 * std::abs(Errval) - ctx._nRItype - static_cast<int32_t>(map);
-
-    ASSERT(Errval == ctx.ComputeErrVal(EMErrval + ctx._nRItype, k));
-    EncodeMappedValue(k, EMErrval, traits.LIMIT-J[_RUNindex]-1);
-    ctx.UpdateVariables(Errval, EMErrval);
-}
-
-
-template<typename Traits, typename Strategy>
-Triplet<typename Traits::SAMPLE> JlsCodec<Traits,Strategy>::DecodeRIPixel(Triplet<SAMPLE> Ra, Triplet<SAMPLE> Rb)
-{
-    const int32_t Errval1 = DecodeRIError(_contextRunmode[0]);
-    const int32_t Errval2 = DecodeRIError(_contextRunmode[0]);
-    const int32_t Errval3 = DecodeRIError(_contextRunmode[0]);
-
-    return Triplet<SAMPLE>(traits.ComputeReconstructedSample(Rb.v1, Errval1 * Sign(Rb.v1  - Ra.v1)),
-                           traits.ComputeReconstructedSample(Rb.v2, Errval2 * Sign(Rb.v2  - Ra.v2)),
-                           traits.ComputeReconstructedSample(Rb.v3, Errval3 * Sign(Rb.v3  - Ra.v3)));
-}
-
-
-template<typename Traits, typename Strategy>
-Triplet<typename Traits::SAMPLE> JlsCodec<Traits,Strategy>::EncodeRIPixel(Triplet<SAMPLE> x, Triplet<SAMPLE> Ra, Triplet<SAMPLE> Rb)
-{
-    const int32_t errval1 = traits.ComputeErrVal(Sign(Rb.v1 - Ra.v1) * (x.v1 - Rb.v1));
-    EncodeRIError(_contextRunmode[0], errval1);
-
-    const int32_t errval2 = traits.ComputeErrVal(Sign(Rb.v2 - Ra.v2) * (x.v2 - Rb.v2));
-    EncodeRIError(_contextRunmode[0], errval2);
-
-    const int32_t errval3 = traits.ComputeErrVal(Sign(Rb.v3 - Ra.v3) * (x.v3 - Rb.v3));
-    EncodeRIError(_contextRunmode[0], errval3);
-
-    return Triplet<SAMPLE>(traits.ComputeReconstructedSample(Rb.v1, errval1 * Sign(Rb.v1  - Ra.v1)),
-                           traits.ComputeReconstructedSample(Rb.v2, errval2 * Sign(Rb.v2  - Ra.v2)),
-                           traits.ComputeReconstructedSample(Rb.v3, errval3 * Sign(Rb.v3  - Ra.v3)));
-}
-
-
-template<typename Traits, typename Strategy>
-typename Traits::SAMPLE JlsCodec<Traits,Strategy>::DecodeRIPixel(int32_t Ra, int32_t Rb)
-{
-    if (std::abs(Ra - Rb) <= traits.NEAR)
-    {
-        const int32_t ErrVal = DecodeRIError(_contextRunmode[1]);
-        return static_cast<SAMPLE>(traits.ComputeReconstructedSample(Ra, ErrVal));
-    }
-
-    const int32_t ErrVal = DecodeRIError(_contextRunmode[0]);
-    return static_cast<SAMPLE>(traits.ComputeReconstructedSample(Rb, ErrVal * Sign(Rb - Ra)));
-}
-
-
-template<typename Traits, typename Strategy>
-typename Traits::SAMPLE JlsCodec<Traits,Strategy>::EncodeRIPixel(int32_t x, int32_t Ra, int32_t Rb)
-{
-    if (std::abs(Ra - Rb) <= traits.NEAR)
-    {
-        const int32_t ErrVal = traits.ComputeErrVal(x - Ra);
-        EncodeRIError(_contextRunmode[1], ErrVal);
-        return static_cast<SAMPLE>(traits.ComputeReconstructedSample(Ra, ErrVal));
-    }
-
-    const int32_t ErrVal = traits.ComputeErrVal((x - Rb) * Sign(Rb - Ra));
-    EncodeRIError(_contextRunmode[0], ErrVal);
-    return static_cast<SAMPLE>(traits.ComputeReconstructedSample(Rb, ErrVal * Sign(Rb - Ra)));
-}
-
-
-// RunMode: Functions that handle run-length encoding
-
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::EncodeRunPixels(int32_t runLength, bool endOfLine)
-{
-    while (runLength >= static_cast<int32_t>(1 << J[_RUNindex]))
-    {
-        Strategy::AppendOnesToBitStream(1);
-        runLength = runLength - static_cast<int32_t>(1 << J[_RUNindex]);
-        IncrementRunIndex();
-    }
-
-    if (endOfLine)
-    {
-        if (runLength != 0)
-        {
-            Strategy::AppendOnesToBitStream(1);
-        }
-    }
-    else
-    {
-        Strategy::AppendToBitStream(runLength, J[_RUNindex] + 1); // leading 0 + actual remaining length
-    }
-}
-
-
-template<typename Traits, typename Strategy>
-int32_t JlsCodec<Traits, Strategy>::DecodeRunPixels(PIXEL Ra, PIXEL* startPos, int32_t cpixelMac)
-{
-    int32_t index = 0;
-    while (Strategy::ReadBit())
-    {
-        const int count = std::min(1 << J[_RUNindex], int(cpixelMac - index));
-        index += count;
-        ASSERT(index <= cpixelMac);
-
-        if (count == (1 << J[_RUNindex]))
-        {
-            IncrementRunIndex();
-        }
-
-        if (index == cpixelMac)
-            break;
-    }
-
-    if (index != cpixelMac)
-    {
-        // incomplete run.
-        index += (J[_RUNindex] > 0) ? Strategy::ReadValue(J[_RUNindex]) : 0;
-    }
-
-    if (index > cpixelMac)
-        throw charls_error(charls::ApiResult::InvalidCompressedData);
-
-    for (int32_t i = 0; i < index; ++i)
-    {
-        startPos[i] = Ra;
-    }
-
-    return index;
-}
-
-template<typename Traits, typename Strategy>
-int32_t JlsCodec<Traits, Strategy>::DoRunMode(int32_t index, EncoderStrategy*)
-{
-    const int32_t ctypeRem = _width - index;
-    PIXEL* ptypeCurX = _currentLine + index;
-    const PIXEL* ptypePrevX = _previousLine + index;
-
-    const PIXEL Ra = ptypeCurX[-1];
-
-    int32_t runLength = 0;
-
-    while (traits.IsNear(ptypeCurX[runLength],Ra))
-    {
-        ptypeCurX[runLength] = Ra;
-        runLength++;
-
-        if (runLength == ctypeRem)
-            break;
-    }
-
-    EncodeRunPixels(runLength, runLength == ctypeRem);
-
-    if (runLength == ctypeRem)
-        return runLength;
-
-    ptypeCurX[runLength] = EncodeRIPixel(ptypeCurX[runLength], Ra, ptypePrevX[runLength]);
-    DecrementRunIndex();
-    return runLength + 1;
-}
-
-
-template<typename Traits, typename Strategy>
-int32_t JlsCodec<Traits, Strategy>::DoRunMode(int32_t startIndex, DecoderStrategy*)
-{
-    const PIXEL Ra = _currentLine[startIndex-1];
-
-    const int32_t runLength = DecodeRunPixels(Ra, _currentLine + startIndex, _width - startIndex);
-    const int32_t endIndex = startIndex + runLength;
-
-    if (endIndex == _width)
-        return endIndex - startIndex;
-
-    // run interruption
-    const PIXEL Rb = _previousLine[endIndex];
-    _currentLine[endIndex] = DecodeRIPixel(Ra, Rb);
-    DecrementRunIndex();
-    return endIndex - startIndex + 1;
-}
-
-
-/// <summary>Encodes/Decodes a scan line of samples</summary>
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::DoLine(SAMPLE*)
-{
-    int32_t index = 0;
-    int32_t Rb = _previousLine[index-1];
-    int32_t Rd = _previousLine[index];
-
-    while (index < _width)
-    {
-        const int32_t Ra = _currentLine[index -1];
-        const int32_t Rc = Rb;
-        Rb = Rd;
-        Rd = _previousLine[index + 1];
-
-        const int32_t Qs = ComputeContextID(QuantizeGratient(Rd - Rb), QuantizeGratient(Rb - Rc), QuantizeGratient(Rc - Ra));
-
-        if (Qs != 0)
-        {
-            _currentLine[index] = DoRegular(Qs, _currentLine[index], GetPredictedValue(Ra, Rb, Rc), static_cast<Strategy*>(nullptr));
-            index++;
-        }
-        else
-        {
-            index += DoRunMode(index, static_cast<Strategy*>(nullptr));
-            Rb = _previousLine[index - 1];
-            Rd = _previousLine[index];
-        }
-    }
-}
-
-
-/// <summary>Encodes/Decodes a scan line of triplets in ILV_SAMPLE mode</summary>
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::DoLine(Triplet<SAMPLE>*)
-{
-    int32_t index = 0;
-    while(index < _width)
-    {
-        const Triplet<SAMPLE> Ra = _currentLine[index - 1];
-        const Triplet<SAMPLE> Rc = _previousLine[index - 1];
-        const Triplet<SAMPLE> Rb = _previousLine[index];
-        const Triplet<SAMPLE> Rd = _previousLine[index + 1];
-
-        const int32_t Qs1 = ComputeContextID(QuantizeGratient(Rd.v1 - Rb.v1), QuantizeGratient(Rb.v1 - Rc.v1), QuantizeGratient(Rc.v1 - Ra.v1));
-        const int32_t Qs2 = ComputeContextID(QuantizeGratient(Rd.v2 - Rb.v2), QuantizeGratient(Rb.v2 - Rc.v2), QuantizeGratient(Rc.v2 - Ra.v2));
-        const int32_t Qs3 = ComputeContextID(QuantizeGratient(Rd.v3 - Rb.v3), QuantizeGratient(Rb.v3 - Rc.v3), QuantizeGratient(Rc.v3 - Ra.v3));
-
-        if (Qs1 == 0 && Qs2 == 0 && Qs3 == 0)
-        {
-            index += DoRunMode(index, static_cast<Strategy*>(nullptr));
-        }
-        else
-        {
-            Triplet<SAMPLE> Rx;
-            Rx.v1 = DoRegular(Qs1, _currentLine[index].v1, GetPredictedValue(Ra.v1, Rb.v1, Rc.v1), static_cast<Strategy*>(nullptr));
-            Rx.v2 = DoRegular(Qs2, _currentLine[index].v2, GetPredictedValue(Ra.v2, Rb.v2, Rc.v2), static_cast<Strategy*>(nullptr));
-            Rx.v3 = DoRegular(Qs3, _currentLine[index].v3, GetPredictedValue(Ra.v3, Rb.v3, Rc.v3), static_cast<Strategy*>(nullptr));
-            _currentLine[index] = Rx;
-            index++;
-        }
-    }
-}
-
-
-// DoScan: Encodes or decodes a scan.
-// In ILV_SAMPLE mode, multiple components are handled in DoLine
-// In ILV_LINE mode, a call do DoLine is made for every component
-// In ILV_NONE mode, DoScan is called for each component
-
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::DoScan()
-{
-    const int32_t pixelstride = _width + 4;
-    const int components = Info().interleaveMode == charls::InterleaveMode::Line ? Info().components : 1;
-
-    std::vector<PIXEL> vectmp(static_cast<size_t>(2) * components * pixelstride);
-    std::vector<int32_t> rgRUNindex(components);
-
-    for (int32_t line = 0; line < Info().height; ++line)
-    {
-        _previousLine = &vectmp[1];
-        _currentLine = &vectmp[1 + static_cast<size_t>(components) * pixelstride];
-        if ((line & 1) == 1)
-        {
-            std::swap(_previousLine, _currentLine);
-        }
-
-        Strategy::OnLineBegin(_width, _currentLine, pixelstride);
-
-        for (int component = 0; component < components; ++component)
-        {
-            _RUNindex = rgRUNindex[component];
-
-            // initialize edge pixels used for prediction
-            _previousLine[_width] = _previousLine[_width - 1];
-            _currentLine[-1] = _previousLine[0];
-            DoLine(static_cast<PIXEL*>(nullptr)); // dummy argument for overload resolution
-
-            rgRUNindex[component] = _RUNindex;
-            _previousLine += pixelstride;
-            _currentLine += pixelstride;
-        }
-
-        if (_rect.Y <= line && line < _rect.Y + _rect.Height)
-        {
-            Strategy::OnLineEnd(_rect.Width, _currentLine + _rect.X - (static_cast<size_t>(components) * pixelstride), pixelstride);
-        }
-    }
-
-    Strategy::EndScan();
-}
-
-
-// Factory function for ProcessLine objects to copy/transform un encoded pixels to/from our scan line buffers.
-template<typename Traits, typename Strategy>
-std::unique_ptr<ProcessLine> JlsCodec<Traits, Strategy>::CreateProcess(ByteStreamInfo info)
-{
-    if (!IsInterleaved())
-    {
-        return info.rawData ?
-            std::unique_ptr<ProcessLine>(std::make_unique<PostProcesSingleComponent>(info.rawData, Info(), sizeof(typename Traits::PIXEL))) :
-            std::unique_ptr<ProcessLine>(std::make_unique<PostProcesSingleStream>(info.rawStream, Info(), sizeof(typename Traits::PIXEL)));
-    }
-
-    if (Info().colorTransformation == ColorTransformation::None)
-        return std::make_unique<ProcessTransformed<TransformNone<typename Traits::SAMPLE>>>(info, Info(), TransformNone<SAMPLE>());
-
-    if (Info().bitsPerSample == sizeof(SAMPLE) * 8)
-    {
-        switch (Info().colorTransformation)
-        {
-            case ColorTransformation::HP1: return std::make_unique<ProcessTransformed<TransformHp1<SAMPLE>>>(info, Info(), TransformHp1<SAMPLE>());
-            case ColorTransformation::HP2: return std::make_unique<ProcessTransformed<TransformHp2<SAMPLE>>>(info, Info(), TransformHp2<SAMPLE>());
-            case ColorTransformation::HP3: return std::make_unique<ProcessTransformed<TransformHp3<SAMPLE>>>(info, Info(), TransformHp3<SAMPLE>());
-            default:
-                std::ostringstream message;
-                message << "Color transformation " << Info().colorTransformation << " is not supported.";
-                throw charls_error(ApiResult::UnsupportedColorTransform, message.str());
-        }
-    }
-
-    if (Info().bitsPerSample > 8)
-    {
-        const int shift = 16 - Info().bitsPerSample;
-        switch (Info().colorTransformation)
-        {
-            case ColorTransformation::HP1: return std::make_unique<ProcessTransformed<TransformShifted<TransformHp1<uint16_t>>>>(info, Info(), TransformShifted<TransformHp1<uint16_t>>(shift));
-            case ColorTransformation::HP2: return std::make_unique<ProcessTransformed<TransformShifted<TransformHp2<uint16_t>>>>(info, Info(), TransformShifted<TransformHp2<uint16_t>>(shift));
-            case ColorTransformation::HP3: return std::make_unique<ProcessTransformed<TransformShifted<TransformHp3<uint16_t>>>>(info, Info(), TransformShifted<TransformHp3<uint16_t>>(shift));
-            default:
-                std::ostringstream message;
-                message << "Color transformation " << Info().colorTransformation << " is not supported.";
-                throw charls_error(ApiResult::UnsupportedColorTransform, message.str());
-        }
-    }
-
-    throw charls_error(ApiResult::UnsupportedBitDepthForTransform);
-}
-
-
-// Setup codec for encoding and calls DoScan
-WARNING_SUPPRESS(26433)
-template<typename Traits, typename Strategy>
-size_t JlsCodec<Traits, Strategy>::EncodeScan(std::unique_ptr<ProcessLine> processLine, ByteStreamInfo& compressedData)
-{
-    Strategy::_processLine = std::move(processLine);
-
-    Strategy::Init(compressedData);
-    DoScan();
-
-    return Strategy::GetLength();
-}
-
-
-// Setup codec for decoding and calls DoScan
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::DecodeScan(std::unique_ptr<ProcessLine> processLine, const JlsRect& rect, ByteStreamInfo& compressedData)
-{
-    Strategy::_processLine = std::move(processLine);
-
-    const uint8_t* compressedBytes = compressedData.rawData;
-    _rect = rect;
-
-    Strategy::Init(compressedData);
-    DoScan();
-    SkipBytes(compressedData, Strategy::GetCurBytePos() - compressedBytes);
-}
-WARNING_UNSUPPRESS()
-
-// Initialize the codec data structures. Depends on JPEG-LS parameters like Threshold1-Threshold3.
-template<typename Traits, typename Strategy>
-void JlsCodec<Traits, Strategy>::InitParams(int32_t t1, int32_t t2, int32_t t3, int32_t nReset)
-{
-    T1 = t1;
-    T2 = t2;
-    T3 = t3;
-
-    InitQuantizationLUT();
-
-    const int32_t A = std::max(2, (traits.RANGE + 32) / 64);
-    for (unsigned int Q = 0; Q < sizeof(_contexts) / sizeof(_contexts[0]); ++Q)
-    {
-        _contexts[Q] = JlsContext(A);
-    }
-
-    _contextRunmode[0] = CContextRunMode(std::max(2, (traits.RANGE + 32) / 64), 0, nReset);
-    _contextRunmode[1] = CContextRunMode(std::max(2, (traits.RANGE + 32) / 64), 1, nReset);
-    _RUNindex = 0;
-}
-
-#endif
+} // namespace charls

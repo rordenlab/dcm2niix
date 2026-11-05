@@ -2749,7 +2749,6 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 	int num3DExpected = 0; // number of 3D volumes in the top part of the header
 	int num2DExpected = 0; // number of 2D slices described in the top part of the header
 	int maxVol = -1;
-	int patientPositionNumPhilips = 0;
 	d.isValid = false;
 	const int kMaxCols = 49;
 	float *cols = (float *)malloc(sizeof(float) * (kMaxCols + 1));
@@ -3054,7 +3053,6 @@ struct TDICOMdata nii_readParRec(char *parname, int isVerbose, struct TDTI4D *dt
 				d.patientPosition[2] = cols[kPositionAP];
 				d.patientPosition[3] = cols[kPositionFH];
 			}
-			patientPositionNumPhilips++;
 		}
 		if (true) { // for every slice
 			int slice = (int)cols[kSlice];
@@ -4665,11 +4663,10 @@ unsigned char *nii_loadImgRLE(char *imgname, struct nifti_1_header hdr, struct T
 #ifdef myEnableJPEGLS1 // use CharLS v1.* requires c++03
 //-std=c++03 -DmyEnableJPEGLS1 charls1/header.cpp charls1/jpegls.cpp charls1/jpegmarkersegment.cpp charls1/interface.cpp charls1/jpegstreamwriter.cpp
 #include "charls1/interface.h"
-#else // use latest release of CharLS: CharLS 2.x requires c++14
-//-std=c++14 -DmyEnableJPEGLS charls/jpegls.cpp charls/jpegmarkersegment.cpp charls/interface.cpp charls/jpegstreamwriter.cpp charls/jpegstreamreader.cpp
+#else // vendored CharLS 2.4.x (c++14); the legacy JlsParameters API is deprecated in 2.x and removed in 3.0
+#define CHARLS_NO_DEPRECATED_WARNING
 #include "charls/charls.h"
 #endif
-#include "charls/publictypes.h"
 
 unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struct TDICOMdata dcm) {
 	// load compressed data
@@ -4686,7 +4683,7 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 		return NULL;
 	}
 	fseek(file, (long)dcm.imageStart, SEEK_SET);
-	unsigned char *cImg = (unsigned char *)malloc(dcm.imageBytes); // compressed input
+	unsigned char *cImg = (unsigned char *)malloc(dcm.imageBytes + 2); // compressed input + EOI
 	size_t sz = fread(cImg, 1, dcm.imageBytes, file);
 	fclose(file);
 	if (sz < (size_t)dcm.imageBytes) {
@@ -4694,6 +4691,10 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 		free(cImg);
 		return NULL;
 	}
+	// CharLS 2.4 requires EOI, which the 2018 snapshot did not; bytes after an existing EOI are ignored
+	cImg[dcm.imageBytes] = 0xFF;
+	cImg[dcm.imageBytes + 1] = 0xD9;
+	size_t jlsLen = (size_t)dcm.imageBytes + 2;
 	// create buffer for uncompressed data
 	size_t imgsz = nii_ImgBytes(hdr);
 	unsigned char *bImg = (unsigned char *)malloc(imgsz); // binary output
@@ -4702,7 +4703,7 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 	if (JpegLsReadHeader(cImg, dcm.imageBytes, &params) != OK) {
 #else
 	using namespace charls;
-	if (JpegLsReadHeader(cImg, dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
+	if (JpegLsReadHeader(cImg, jlsLen, &params, nullptr) != ApiResult::OK) {
 #endif
 		printMessage("CharLS failed to read header.\n");
 		free(cImg);
@@ -4725,7 +4726,7 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 #ifdef myEnableJPEGLS1
 	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params) != OK) {
 #else
-	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], dcm.imageBytes, &params, nullptr) != ApiResult::OK) {
+	if (JpegLsDecode(&bImg[0], imgsz, &cImg[0], jlsLen, &params, nullptr) != ApiResult::OK) {
 #endif
 		free(bImg);
 		free(cImg);
@@ -4738,7 +4739,7 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 
 #ifndef myEnableJPEGLS1 // the frame decoder uses the CharLS 2 API
 // One JPEG-LS frame (.4.80 lossless, .4.81 near-lossless) for decodeFrame.
-static void *decodeJLSFrame(const unsigned char *data, size_t len, const char *pi, int bitsStored, struct TFrameInfo *info, bool rgba) {
+static void *decodeJLSFrameEOI(const unsigned char *data, size_t len, const char *pi, int bitsStored, struct TFrameInfo *info, bool rgba) {
 	using namespace charls;
 	JlsParameters params = {};
 	if (JpegLsReadHeader(data, len, &params, nullptr) != ApiResult::OK)
@@ -4797,6 +4798,23 @@ static void *decodeJLSFrame(const unsigned char *data, size_t len, const char *p
 	free(raw);
 	return out;
 }
+
+// CharLS 2.4 requires EOI, which some encoders omit (nii_loadImgJPEGLS appends one too); bytes after an existing EOI are ignored.
+static void *decodeJLSFrame(const unsigned char *data, size_t len, const char *pi, int bitsStored, struct TFrameInfo *info, bool rgba) {
+	if ((len >= 2) && (data[len - 2] == 0xFF) && (data[len - 1] == 0xD9))
+		return decodeJLSFrameEOI(data, len, pi, bitsStored, info, rgba);
+	unsigned char *buf = (unsigned char *)malloc(len + 2);
+	if (buf == NULL) {
+		info->status = kFrameTooLarge;
+		return NULL;
+	}
+	memcpy(buf, data, len);
+	buf[len] = 0xFF;
+	buf[len + 1] = 0xD9;
+	void *out = decodeJLSFrameEOI(buf, len + 2, pi, bitsStored, info, rgba);
+	free(buf);
+	return out;
+}
 #endif // myEnableJPEGLS1
 #endif // JPEG-LS
 
@@ -4818,6 +4836,7 @@ static void *decodeFrame(const unsigned char *data, size_t len, const char *phot
 #ifndef myDisableOpenJPEG
 	return decodeJ2KFrame(data, len, pi, bitsStored, info, rgba);
 #else
+	(void)pi; // unused when neither codec is built
 	return NULL;
 #endif
 }

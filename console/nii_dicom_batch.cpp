@@ -3019,10 +3019,8 @@ tse3d: T2*/
 				// n.b. M0Type requires information about other series
 				// either "Separate" or "Absent"
 				// fprintf(fp, "\t\"M0Type\": \"Separate\",\n");
-				int totalAcquiredPairs = h->dim[4] / nContrasts;
 			} else if (((h->dim[4] - 1) % (nContrasts * 2)) == 0) {
 				fprintf(fp, "\t\"M0Type\": \"Included\",\n");
-				int totalAcquiredPairs = (h->dim[4] - 1) / nContrasts;
 			} else {
 				printWarning("Unable to determine M0Type\n");
 			}
@@ -4579,7 +4577,6 @@ bool ensureSequentialSlicePositions(int d3, int d4, struct TDCMsort dcmSort[], s
 	}
 	if (nFrameIs1 > 1) {
 		// all samples of ReferencedFrameNumber (0008,1160) should have identical ImagePositionPatient
-		int lastVol = idxFrame1;
 		float maxDx = 0.0;
 		for (int i = 0; i < idxFrame1; i++) {
 			if (dcmList[dcmSort[i].indx].frameNum != 1)
@@ -4890,8 +4887,6 @@ void heudiconvStr(char *cString) {
 	int len = strlen(cString);
 	int j = 0;
 	int i = 0;
-	const char kTempPathSeparator = '\a';
-	bool hasCaret = false;
 	while (i < len) {
 		if (cString[i] != '-') {
 			cString[j] = cString[i];
@@ -8939,7 +8934,6 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 	int lContrasts = 0; // detect me-mprage
 #ifdef myReadAsciiCsa
 	if ((d->CSA.SeriesHeader_offset > 0) && (d->CSA.SeriesHeader_length > 0)) {
-		float pf = 1.0f; // partial fourier
 		float shimSetting[8];
 		char protocolName[kDICOMStrLarge], fmriExternalInfo[kDICOMStrLarge], coilID[kDICOMStrLarge], consistencyInfo[kDICOMStrLarge], coilElements[kDICOMStrLarge], wipMemBlock[kDICOMStrExtraLarge];
 		TCsaAscii csaAscii;
@@ -9342,7 +9336,6 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 	strcpy(seqName, d->sequenceVariant);
 	char modalityBIDS[kDICOMStrLarge] = ""; //_acq-FL3p2m2
 	bool isReportEcho = true;
-	bool isDirLabel = false;	   // report phase encoding direction
 	bool isDerived = d->isDerived; // report phase encoding direction
 	bool isAddSeriesToRun = true;
 	bool isPart = false;
@@ -9379,7 +9372,6 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		strcpy(dataTypeBIDS, "fmap");
 		strcpy(modalityBIDS, "epi");
 		printWarning("Unable to estimate BIDS `_dir` for fmap epi as Philips DICOMs do not report phase encoding polarity\n");
-		isDirLabel = true;
 	} else if ((!d->isDiffusion) && (strstr(seqName, "SK") != NULL) && (strstr(d->scanningSequence, "SE") != NULL)) {
 		strcpy(dataTypeBIDS, "anat");
 		if (false) //((strstr(d->scanningSequence, "IR") != NULL))
@@ -9402,7 +9394,6 @@ void setBidsPhilips(struct TDICOMdata *d, int nConvert, int isVerbose) {
 		// nb older Philips data does not record EPI so use 2005,1063 fMRIStatusIndication
 		strcpy(dataTypeBIDS, "func");
 		strcpy(modalityBIDS, "bold");
-		isDirLabel = true;
 	} else if ((strstr(seqName, "SS") != NULL) && (strstr(d->scanningSequence, "GR") != NULL)) {
 		strcpy(dataTypeBIDS, "anat");
 		strcpy(modalityBIDS, "T2starw");
@@ -9536,9 +9527,6 @@ void setBidsGE(struct TDICOMdata *d, int nConvert, int isVerbose, const char *fi
 			isEPSE = true;
 	}
 #endif
-	int nVol = 1;
-	if (d->locationsInAcquisition > 0)
-		nVol = nConvert / d->locationsInAcquisition;
 	if (((d->xyzDim[3] < 2) && (nConvert < 4)) || (d->isLocalizer)) {
 		strcpy(dataTypeBIDS, "discard");
 		strcpy(modalityBIDS, "localizer");
@@ -12133,7 +12121,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 						//	printf("%g ", intersliceDistance(dcmList[dcmSort[0].indx],dcmList[dcmSort[i].indx]) );
 						// printf("\n");
 						isInconsistentSliceDir = false;
-						int slicePositionRepeats = 1; // how many times is first position repeated
+						slicePositionRepeats = 1; // recount after reordering (was a shadowing declaration, so the message below reported the stale count)
 						if (nConvert > 2) {
 							float dxPrev = intersliceDistance(dcmList[dcmSort[0].indx], dcmList[dcmSort[1].indx]);
 							if (isSameFloatGE(dxPrev, 0.0))
@@ -12500,7 +12488,6 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		float thetaRad = dcmList[indx0].gantryTilt * M_PI / 180.0;
 		float c = cos(thetaRad);
 		if (!isSameFloatGE(c, 0.0)) {
-			mat33 shearMat;
 			// gantry tilt formula changed with issue697
 			/*printf("a=[%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1];\n",
 				hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
