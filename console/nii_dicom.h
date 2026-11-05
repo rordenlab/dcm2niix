@@ -395,7 +395,8 @@ void setQSForm(struct nifti_1_header *h, mat44 Q44i, bool isVerbose);
 int headerDcm2Nii2(struct TDICOMdata d, struct TDICOMdata d2, struct nifti_1_header *h, int isVerbose);
 int headerDcm2Nii(struct TDICOMdata d, struct nifti_1_header *h, bool isComputeSForm);
 unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D);
-// nii_decodeFrameRGBA: one tile's codestream to RGBA8 (DICOM-WSI display; see nii_dicom.cpp).
+// nii_decodeFrameRGBA / nii_decodeFrame: one tile's codestream (JPEG 2000, or JPEG-LS in
+// JPEGLS=1 builds) to RGBA8 or to samples (DICOM-WSI display; see nii_dicom.cpp).
 // Layout is part of the WASM ABI (read as eight int32 from JS): append fields only.
 enum { kFrameOK = 0,
 	   kFrameDecodeError = 1,
@@ -409,7 +410,8 @@ enum { kFrameOK = 0,
 struct TFrameInfo {
 	int status, width, height, components, bitsStored, isSigned, mct, isYCbCr;
 };
-unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const char *photometric, struct TFrameInfo *info); // OpenJPEG builds only
+unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const char *photometric, int bitsStored, struct TFrameInfo *info); // bitsStored: DICOM (0028,0101), 0 if unknown
+void *nii_decodeFrame(const unsigned char *data, size_t len, const char *photometric, struct TFrameInfo *info); // samples: uint8 if bitsStored <= 8, else uint16
 #ifdef USING_DCM2NIIXFSWRAPPER
 void remove_specialchars(char *buf);
 #endif

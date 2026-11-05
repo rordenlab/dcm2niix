@@ -49,8 +49,10 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
         if (!job) return; // terminated or failed meanwhile
         pending.delete(data.id);
         slot.busy--;
-        if (data.rgba) settle(job, true, { width: data.info.width, height: data.info.height, rgba: data.rgba, info: data.info });
-        else settle(job, false, new FrameDecodeError(data.info)); // no-op if the caller aborted
+        const { info } = data;
+        if (data.rgba) settle(job, true, { width: info.width, height: info.height, rgba: data.rgba, info });
+        else if (data.samples) settle(job, true, { width: info.width, height: info.height, samples: data.samples, components: info.components, bitsStored: info.bitsStored, info });
+        else settle(job, false, new FrameDecodeError(info)); // no-op if the caller aborted
       };
       slot.worker.onerror = (e) => {
         if (e.preventDefault) e.preventDefault();
@@ -60,12 +62,13 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
     }
 
     /**
-     * Decode one frame's codestream (item payload only) to RGBA8.
-     * `bytes` is copied, so the caller keeps its buffer.
+     * Decode one frame's codestream (item payload only) to RGBA8, or with output 'samples' to
+     * its samples. `bytes` is copied, so the caller keeps its buffer.
      */
-    const decode = (bytes, { photometric = '', signal } = {}) =>
+    const decode = (bytes, { photometric = '', bitsStored = 0, output = 'rgba', signal } = {}) =>
       new Promise((resolve, reject) => {
         if (closed) return reject(new Error('frame decoder terminated'));
+        if (output !== 'rgba' && output !== 'samples') return reject(new TypeError(`output must be 'rgba' or 'samples', not ${output}`));
         if (signal && signal.aborted) return reject(abortError(signal));
         if (pending.size >= maxPending) return reject(new Error(`frame decoder busy: ${maxPending} decodes pending`));
         let copy; // first: a bad input must fail before it holds any capacity
@@ -87,7 +90,8 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
           job.onAbort = () => settle(job, false, abortError(signal)); // capacity is released by the reply
           signal.addEventListener('abort', job.onAbort, { once: true });
         }
-        slot.worker.postMessage({ id, bytes: copy, photometric: String(photometric ?? '') }, [copy]); // DICOM parsers give null for a missing tag
+        // DICOM parsers give null for a missing tag
+        slot.worker.postMessage({ id, bytes: copy, photometric: String(photometric ?? ''), bitsStored: Number(bitsStored) || 0, output }, [copy]);
       });
 
     const terminate = () => {

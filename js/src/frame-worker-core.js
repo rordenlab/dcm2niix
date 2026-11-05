@@ -1,6 +1,7 @@
 // Tile decoding worker: one dcm2niix WASM instance, kept for the worker's life and
 // reused for every frame (convert() instead runs main() once per call). Each message
-// decodes one encapsulated frame's codestream to RGBA8 with nii_decodeFrameRGBA.
+// decodes one encapsulated frame's codestream to RGBA8 (nii_decodeFrameRGBA) or to its
+// samples (nii_decodeFrame).
 
 // Index = TFrameInfo.status (kFrame* in console/nii_dicom.h).
 const frameStatus = ['ok', 'decode-error', 'unsupported-precision', 'unsupported-components', 'unsupported-subsampling', 'unsupported-photometric', 'unsupported-signed', 'too-large'];
@@ -19,7 +20,8 @@ export function serveFrames(Module) {
   });
   ready.catch((err) => self.postMessage({ type: 'error', message: `dcm2niix WASM failed to load: ${(err && err.message) || err}` }));
 
-  const decode = ({ id, bytes, photometric }) => {
+  const decode = ({ id, bytes, photometric, bitsStored, output }) => {
+    const samples = output === 'samples';
     const input = new Uint8Array(bytes);
     const inPtr = mod._malloc(input.length);
     if (!inPtr) return self.postMessage({ id, info: { status: 'too-large' } }); // heap could not grow
@@ -27,7 +29,7 @@ export function serveFrames(Module) {
     try {
       mod.HEAPU8.set(input, inPtr);
       mod.stringToUTF8(photometric, photometricPtr, PHOTOMETRIC_BYTES);
-      outPtr = mod._nii_decodeFrameRGBA(inPtr, input.length, photometricPtr, infoPtr);
+      outPtr = samples ? mod._nii_decodeFrame(inPtr, input.length, photometricPtr, infoPtr) : mod._nii_decodeFrameRGBA(inPtr, input.length, photometricPtr, bitsStored, infoPtr);
     } catch (err) {
       const message = String((err && err.message) || err);
       self.postMessage({ id, info: { status: 'decode-error', message } });
@@ -45,9 +47,12 @@ export function serveFrames(Module) {
       self.postMessage({ id, info });
       return;
     }
-    const rgba = new Uint8ClampedArray(mod.HEAPU8.subarray(outPtr, outPtr + info.width * info.height * 4)); // a copy, then the heap is freed
+    const wide = samples && info.bitsStored > 8; // samples: uint8 for <= 8 bits stored, else uint16
+    const outBytes = info.width * info.height * (samples ? info.components * (wide ? 2 : 1) : 4);
+    const buf = mod.HEAPU8.slice(outPtr, outPtr + outBytes).buffer; // a copy, then the heap is freed
     mod._free(outPtr);
-    self.postMessage({ id, info, rgba }, [rgba.buffer]);
+    const View = samples ? (wide ? Uint16Array : Uint8Array) : Uint8ClampedArray;
+    self.postMessage({ id, info, [samples ? 'samples' : 'rgba']: new View(buf) }, [buf]);
   };
 
   // A load failure posts 'error' above, which fails this worker's jobs in frames.js.

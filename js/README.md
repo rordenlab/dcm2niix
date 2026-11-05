@@ -58,7 +58,7 @@ The listing is not a one-to-one list of outputs: entries such as Siemens physio 
 
 ## Decode WSI tiles
 
-`createFrameDecoder` decodes single frames of DICOM whole-slide images (tiles) to RGBA for display, without converting to NIfTI. Your viewer reads the DICOM and finds each frame; dcm2niix decodes it.
+`createFrameDecoder` decodes single frames of DICOM whole-slide images (tiles) to RGBA for display, or to their samples, without converting to NIfTI. Your viewer reads the DICOM and finds each frame; dcm2niix decodes it.
 
 ```javascript
 import { createFrameDecoder, FrameDecodeError } from '@niivue/dcm2niix';
@@ -82,11 +82,13 @@ decoder.terminate(); // when the slide closes
 | `maxPending` | decodes in flight before `decode` rejects with a busy error; default 256 |
 | `createWorker` | advanced: supply your own `Worker` running `frame-worker.jpeg.js` |
 | `decode(…, { photometric })` | DICOM PhotometricInterpretation (`null` or absent is fine); where it disagrees with the codestream, the codestream wins (ICT/RCT inverted by the codec are not converted again) |
+| `decode(…, { bitsStored })` | DICOM BitsStored, used to scale more than 8 bits to RGBA (DCMTK writes 12-bit JPEG-LS at 16-bit precision, so pass it) |
+| `decode(…, { output: 'samples' })` | resolve `{ width, height, samples, components, bitsStored, info }`: interleaved samples (`Uint8Array` up to 8 bits, else `Uint16Array`), 1 component without polarity for your own window/level, or 3 as RGB. Other `output` values reject with a `TypeError` |
 | `decode(…, { signal })` | `AbortSignal`; rejects at once, but the worker still finishes the frame and it counts toward `maxPending` until then |
 
-`FrameDecodeError.status`: `decode-error`, `unsupported-precision`, `unsupported-components`, `unsupported-subsampling`, `unsupported-photometric` (YBR_RCT on full-resolution chroma without MCT), `unsupported-signed`, `too-large`; `info` holds what the codestream declared (`width`, `height`, `components`, `bitsStored`, `isSigned`, `mct`, `isYCbCr`). `too-large` also means an input over 64 MB (refused before it is copied) or a worker heap that could not grow. `decode-error` with `info.message` (and no other fields) means the worker, not the decoder, failed on the frame; on a WASM trap (`WebAssembly.RuntimeError`) that worker is also terminated, as is any worker that fails to load or crashes, and its other pending decodes reject with an `Error`; the remaining workers carry on, and `decode` rejects once none is left.
+`FrameDecodeError.status`: `decode-error`, `unsupported-precision`, `unsupported-components`, `unsupported-subsampling`, `unsupported-photometric` (e.g. YBR_RCT on full-resolution chroma without MCT, or YCbCr above 8 bits), `unsupported-signed`, `too-large`; `info` holds what the codestream declared (`width`, `height`, `components`, `bitsStored`, `isSigned`, `mct`, `isYCbCr`). `too-large` also means an input over 64 MB (refused before it is copied) or a worker heap that could not grow. `decode-error` with `info.message` (and no other fields) means the worker, not the decoder, failed on the frame; on a WASM trap (`WebAssembly.RuntimeError`) that worker is also terminated, as is any worker that fails to load or crashes, and its other pending decodes reject with an `Error`; the remaining workers carry on, and `decode` rejects once none is left.
 
-Limits: JPEG 2000 only today; unsigned 8-bit samples; 1 or 3 components (4:2:2/4:2:0 chroma is upsampled); frames up to 2048×2048, refused from the header before decoding (`too-large`), so a hostile codestream cannot make a worker decode more than about 64 MB. Unlike `convert`, the workers stay alive until `terminate()`.
+Limits: JPEG 2000 and JPEG-LS; unsigned 8–16-bit samples; 1 or 3 components (4:2:2/4:2:0 chroma is upsampled); frames up to 2048×2048, refused from the header before decoding (`too-large`), so a hostile codestream cannot make a worker decode more than about 64 MB. Unlike `convert`, the workers stay alive until `terminate()`.
 
 Performance (Chromium, M-series Mac, 80–130 KB 256² tiles): 28 ms from cold start to the first tile plus the WASM download; 92/182/360 tiles/s with 1/2/4 workers, on par with Cornerstone's JPEG 2000 decoder.
 
@@ -147,7 +149,7 @@ Manually, from `js/` (inside `pixi shell` so `emcc` is the pinned version):
 ```bash
 npm install
 npm run build          # prebuild compiles the WASM via ../console/makefile
-npm test               # Node unit tests (output grouping, frame-decoder pool), then Playwright browser tests on the dcm_qa/dcm_qa_nih/dcm_qa_uih submodules and test/frames
+npm test               # Node unit tests (output grouping, frame-decoder pool), then Playwright browser tests on the dcm_qa/dcm_qa_nih/dcm_qa_uih submodules and sibling dcm_validate/wsi_frames/fixtures
 npm run test:consumer  # pack, install into a Vite app, build/dev/type-check
 npm run demo           # build and serve index.html
 ```

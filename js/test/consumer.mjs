@@ -10,11 +10,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { build, createServer } from 'vite';
+import { FRAMES } from './server.mjs';
 
 const js = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = path.join(js, '..', 'dcm_qa_nih', 'In', '20180918GE');
-const rct = [...fs.readFileSync(path.join(js, 'test', 'frames', 'rct.j2k'))];
-const rctSha = JSON.parse(fs.readFileSync(path.join(js, 'test', 'frames', 'expected.json'), 'utf8')).rct.sha256;
+const rct = [...fs.readFileSync(path.join(FRAMES, 'rct.j2k'))];
+const rctSha = JSON.parse(fs.readFileSync(path.join(FRAMES, 'expected.json'), 'utf8')).rct.sha256;
+const jls = [...fs.readFileSync(path.join(FRAMES, 'jls_mono16.jls'))];
+const jlsSha = JSON.parse(fs.readFileSync(path.join(FRAMES, 'samples.json'), 'utf8')).jls_mono16.samplesSha256;
 const version = /#define kDCMdate "(v[0-9.]+)"/.exec(fs.readFileSync(path.join(js, '..', 'console', 'nii_dicom.h'), 'utf8'))[1];
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dcm2niix-consumer-'))); // Vite rejects the /var -> /private/var symlink on macOS
 const app = path.join(tmp, 'app');
@@ -46,8 +49,9 @@ const convertAt = async (browser, url) => {
   assert.ok(r.names.every((n) => n.startsWith('20180918GE_')), `names ${r.names}`);
   assert.ok(r.version.includes(version), `version ${r.version}`);
   assert.ok(r.aliases, '/jpeg and /plain resolve to the root module');
-  const f = await page.evaluate((b) => window.runFrame(new Uint8Array(b)), rct);
+  const f = await page.evaluate(([b, j]) => window.runFrame(new Uint8Array(b), new Uint8Array(j)), [rct, jls]);
   assert.equal(f.sha256, rctSha, 'createFrameDecoder decodes a JPEG 2000 frame');
+  assert.equal(f.samplesSha256, jlsSha, 'createFrameDecoder decodes a JPEG-LS frame to samples');
   assert.equal(f.garbage, 'FrameDecodeError:decode-error');
   assert.deepEqual(errors, []);
   await page.close();

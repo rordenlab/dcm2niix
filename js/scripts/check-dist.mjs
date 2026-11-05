@@ -23,8 +23,9 @@ if (dist.includes('index.d.ts') && fs.readFileSync(at('dist', 'index.d.ts'), 'ut
   errors.push('dist/index.d.ts differs from src/index.d.ts');
 
 // Bundles must be newer than every source they include.
-if (dist.includes('dcm2niix.jpeg.js') && !fs.readFileSync(at('dist', 'dcm2niix.jpeg.js'), 'utf8').includes('_nii_decodeFrameRGBA'))
-  errors.push('dist/dcm2niix.jpeg.js does not export _nii_decodeFrameRGBA (stale WASM? rebuild with pixi run wasm)');
+for (const fn of ['_nii_decodeFrameRGBA', '_nii_decodeFrame'])
+  if (dist.includes('dcm2niix.jpeg.js') && !new RegExp(`\\b${fn}\\b`).test(fs.readFileSync(at('dist', 'dcm2niix.jpeg.js'), 'utf8')))
+    errors.push(`dist/dcm2niix.jpeg.js does not export ${fn} (stale WASM? rebuild with pixi run wasm)`);
 const built = Math.min(...['index.jpeg.js', 'worker.jpeg.js', 'frame-worker.jpeg.js'].filter((f) => dist.includes(f)).map((f) => fs.statSync(at('dist', f)).mtimeMs));
 for (const f of ['core.js', 'worker-core.js', 'frames.js', 'frame-worker-core.js', 'index.jpeg.js', 'worker.jpeg.js', 'frame-worker.jpeg.js', 'dcm2niix.jpeg.js', 'dcm2niix.jpeg.wasm'])
   if (fs.statSync(at('src', f)).mtimeMs > built) errors.push(`src/${f} is newer than the dist bundles`);

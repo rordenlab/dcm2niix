@@ -102,4 +102,23 @@ const settled = (p) => p.then((v) => ['ok', v], (e) => ['err', e]);
   assert.equal(w.posted.length, 2, 'an oversized input never reaches the worker');
   dec.terminate();
 }
+// Output and bitsStored reach the worker; a samples reply resolves with the samples; a bad output is refused.
+{
+  const dec = createFrameDecoder({ workers: 1 });
+  const w = fakeWorkers.at(-1);
+  const rgba = dec.decode(new Uint8Array(8), { bitsStored: null }); // a missing DICOM tag
+  assert.deepEqual([w.posted[0].output, w.posted[0].bitsStored], ['rgba', 0]);
+  w.reply(w.posted[0]);
+  assert.ok((await rgba).rgba instanceof Uint8ClampedArray);
+  const samples = dec.decode(new Uint8Array(8), { output: 'samples', bitsStored: 12 });
+  assert.deepEqual([w.posted[1].output, w.posted[1].bitsStored], ['samples', 12]);
+  const info = { status: 'ok', width: 2, height: 1, components: 1, bitsStored: 16 };
+  w.onmessage({ data: { id: w.posted[1].id, info, samples: new Uint16Array([0, 65535]) } });
+  const r = await samples;
+  assert.deepEqual([r.width, r.height, r.components, r.bitsStored, [...r.samples]], [2, 1, 1, 16, [0, 65535]]);
+  const typo = await settled(dec.decode(new Uint8Array(8), { output: 'sample' }));
+  assert.ok(typo[1] instanceof TypeError);
+  assert.equal(w.posted.length, 2, 'a bad output never reaches the worker');
+  dec.terminate();
+}
 console.log('ok   createFrameDecoder pool accounting');

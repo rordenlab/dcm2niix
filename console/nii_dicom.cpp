@@ -63,6 +63,123 @@ static inline uint8_t clamp255(int x) {
 
 unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr);
 
+// DICOM-WSI frame output (nii_decodeFrameRGBA, nii_decodeFrame), shared by the JPEG 2000 and
+// JPEG-LS frame decoders. Component k of pixel i is c[k][i * STEP]; samples are unsigned and
+// within bitsStored (both codecs clamp their reconstruction).
+
+// 8-bit samples to RGBA8 (OUT 4, alpha opaque), RGB8 (OUT 3) or gray (OUT 1).
+template <typename T, int STEP, int OUT>
+static void frameTo8(const T *const c[3], size_t npix, int n, bool isYCbCr, unsigned char inv, unsigned char *o) {
+	const T *v0 = c[0], *v1 = c[1], *v2 = c[2];
+	if (n == 1) {
+		for (size_t i = 0; i < npix; i++, o += OUT) {
+			unsigned char g = clamp255(v0[i * STEP]) ^ inv; // x ^ 255 == 255 - x for 0..255
+			o[0] = g;
+			if (OUT > 1)
+				o[1] = o[2] = g;
+			if (OUT == 4)
+				o[3] = 255;
+		}
+	} else if (isYCbCr) { // nii_ybr2rgb: ITU-R BT.601 full-range YCbCr, same coefficients and rounding
+		for (size_t i = 0; i < npix; i++, o += OUT) {
+			int Y = v0[i * STEP], Cb = v1[i * STEP], Cr = v2[i * STEP];
+			float r = Y + 1.402f * (Cr - 128);
+			float g = Y - 0.344136f * (Cb - 128) - 0.714136f * (Cr - 128);
+			float b = Y + 1.772f * (Cb - 128);
+			o[0] = clamp255((int)(r + 0.5f));
+			o[1] = clamp255((int)(g + 0.5f));
+			o[2] = clamp255((int)(b + 0.5f));
+			if (OUT == 4)
+				o[3] = 255;
+		}
+	} else {
+		for (size_t i = 0; i < npix; i++, o += OUT) {
+			o[0] = clamp255(v0[i * STEP]);
+			o[1] = clamp255(v1[i * STEP]);
+			o[2] = clamp255(v2[i * STEP]);
+			if (OUT == 4)
+				o[3] = 255;
+		}
+	}
+}
+
+// 9-16-bit samples to RGBA8 with one fixed mapping for every tile and level (D9 in the
+// DICOM-WSI plan): round(v * 255 / (2^bits - 1)). Exact in integers: the divisor is odd, so no
+// value sits on a half. The table covers every uint16, so out-of-range input saturates.
+template <typename T, int STEP>
+static void frameToRGBA8hi(const T *const c[3], size_t npix, int n, int bits, unsigned char inv, unsigned char *o) {
+	unsigned char lut[65536];
+	uint32_t maxv = (1u << bits) - 1;
+	for (uint32_t v = 0; v <= maxv; v++)
+		lut[v] = (unsigned char)((v * 255 + maxv / 2) / maxv) ^ inv;
+	memset(lut + maxv + 1, 255 ^ inv, 65535 - maxv);
+	const T *v0 = c[0], *v1 = c[1], *v2 = c[2];
+	if (n == 1) {
+		for (size_t i = 0; i < npix; i++, o += 4) {
+			o[0] = o[1] = o[2] = lut[(uint16_t)v0[i * STEP]];
+			o[3] = 255;
+		}
+	} else {
+		for (size_t i = 0; i < npix; i++, o += 4) {
+			o[0] = lut[(uint16_t)v0[i * STEP]];
+			o[1] = lut[(uint16_t)v1[i * STEP]];
+			o[2] = lut[(uint16_t)v2[i * STEP]];
+			o[3] = 255;
+		}
+	}
+}
+
+// Samples unchanged, interleaved: uint8 for <= 8 bits, else uint16.
+template <typename T, int STEP, typename O>
+static void frameToSamples(const T *const c[3], size_t npix, int n, O *o) {
+	const T *v0 = c[0], *v1 = c[1], *v2 = c[2];
+	if (n == 1) {
+		for (size_t i = 0; i < npix; i++)
+			o[i] = (O)v0[i * STEP];
+	} else {
+		for (size_t i = 0; i < npix; i++, o += 3) {
+			o[0] = (O)v0[i * STEP];
+			o[1] = (O)v1[i * STEP];
+			o[2] = (O)v2[i * STEP];
+		}
+	}
+}
+
+// A decoded frame (geometry and isYCbCr already in info) to the requested output: RGBA8, or
+// samples (gray or RGB, polarity not applied). bitsStored (DICOM 0028,0101; 0 = unknown) narrows
+// the RGBA mapping when the codestream is wider, as DCMTK's lossless JPEG-LS writes 12-bit data
+// with 16-bit precision. Returns a malloc'd buffer, or NULL with status set.
+template <typename T, int STEP>
+static void *frameOutput(const T *const c[3], const char *pi, int bitsStored, struct TFrameInfo *info, bool rgba) {
+	size_t npix = (size_t)info->width * info->height;
+	int n = info->components;
+	bool hi = info->bitsStored > 8;
+	if (hi && info->isYCbCr) { // DICOM YBR photometrics are 8-bit
+		info->status = kFrameUnsupportedPhotometric;
+		return NULL;
+	}
+	size_t bytes = rgba ? npix * 4 : npix * n * (hi ? 2 : 1);
+	unsigned char *out = (unsigned char *)malloc(bytes);
+	if (out == NULL) {
+		info->status = kFrameTooLarge;
+		return NULL;
+	}
+	unsigned char inv = (rgba && (n == 1) && (strncmp(pi, "MONOCHROME1", 11) == 0)) ? 255 : 0;
+	int mapBits = ((bitsStored >= 8) && (bitsStored < info->bitsStored)) ? bitsStored : info->bitsStored;
+	if (rgba && hi)
+		frameToRGBA8hi<T, STEP>(c, npix, n, mapBits, inv, out);
+	else if (rgba)
+		frameTo8<T, STEP, 4>(c, npix, n, info->isYCbCr, inv, out);
+	else if (hi)
+		frameToSamples<T, STEP, uint16_t>(c, npix, n, (uint16_t *)out);
+	else if (n == 1)
+		frameToSamples<T, STEP, uint8_t>(c, npix, n, out);
+	else
+		frameTo8<T, STEP, 3>(c, npix, n, info->isYCbCr, 0, out);
+	info->status = kFrameOK;
+	return out;
+}
+
 #ifndef myDisableOpenJPEG
 #include "openjpeg.h"
 
@@ -366,15 +483,15 @@ static int j2kFrameAdmit(opj_image_t *image, struct TFrameInfo *info) {
 	for (OPJ_UINT32 c = 0; c < image->numcomps; c++) {
 		if (image->comps[c].sgnd)
 			return kFrameUnsupportedSigned;
-		if ((image->comps[c].prec != c0->prec) || (c0->prec != 8)) // 8-bit WSI; >8-bit display is a later milestone
+		if ((image->comps[c].prec != c0->prec) || (c0->prec < 8) || (c0->prec > 16))
 			return kFrameUnsupportedPrecision;
 	}
 	uint64_t pixels = (uint64_t)(image->x1 - image->x0) * (image->y1 - image->y0); // 64-bit: size_t is 32-bit in WASM
 	return (pixels > kFrameMaxPixels) ? kFrameTooLarge : kFrameOK;
 }
 
-// Decoded JPEG 2000 image (admitted by j2kFrameAdmit) to interleaved RGBA8.
-static unsigned char *j2kToRGBA(opj_image_t *image, const char *photometric, struct TFrameInfo *info) {
+// Decoded JPEG 2000 image (admitted by j2kFrameAdmit) to RGBA8 or samples (frameOutput).
+static void *j2kFrameOutput(opj_image_t *image, const char *pi, int bitsStored, struct TFrameInfo *info, bool rgba) {
 	bool isSub = upsampleJ2KChroma(image);
 	opj_image_comp_t *c0 = &image->comps[0];
 	int n = image->numcomps;
@@ -385,7 +502,6 @@ static unsigned char *j2kToRGBA(opj_image_t *image, const char *photometric, str
 			return NULL;
 		}
 	}
-	const char *pi = (photometric != NULL) ? photometric : "";
 	bool isYCbCr = false;
 	if ((n == 3) && (info->mct == 0)) { // with MCT, OpenJPEG has already inverted ICT/RCT to RGB
 		if (!isSub && (strncmp(pi, "YBR_RCT", 7) == 0)) { // reversible transform outside the codestream: not supported
@@ -397,53 +513,12 @@ static unsigned char *j2kToRGBA(opj_image_t *image, const char *photometric, str
 		isYCbCr = isSub || (image->color_space == OPJ_CLRSPC_SYCC) || (strncmp(pi, "YBR_FULL", 8) == 0) || (strncmp(pi, "YBR_ICT", 7) == 0);
 	}
 	info->isYCbCr = isYCbCr;
-	size_t npix = (size_t)c0->w * c0->h;
-	unsigned char *rgba = (unsigned char *)malloc(npix * 4);
-	if (rgba == NULL) {
-		info->status = kFrameTooLarge;
-		return NULL;
-	}
-	const OPJ_INT32 *v0 = c0->data;
-	const OPJ_INT32 *v1 = (n == 3) ? image->comps[1].data : v0;
-	const OPJ_INT32 *v2 = (n == 3) ? image->comps[2].data : v0;
-	unsigned char *o = rgba;
-	if (n == 1) {
-		unsigned char inv = (strncmp(pi, "MONOCHROME1", 11) == 0) ? 255 : 0; // x ^ 255 == 255 - x for 0..255
-		for (size_t i = 0; i < npix; i++, o += 4) {
-			o[0] = o[1] = o[2] = clamp255(v0[i]) ^ inv;
-			o[3] = 255;
-		}
-	} else if (isYCbCr) { // nii_ybr2rgb: ITU-R BT.601 full-range YCbCr, same coefficients and rounding
-		for (size_t i = 0; i < npix; i++, o += 4) {
-			int Y = v0[i], Cb = v1[i], Cr = v2[i];
-			float r = Y + 1.402f * (Cr - 128);
-			float g = Y - 0.344136f * (Cb - 128) - 0.714136f * (Cr - 128);
-			float b = Y + 1.772f * (Cb - 128);
-			o[0] = clamp255((int)(r + 0.5f));
-			o[1] = clamp255((int)(g + 0.5f));
-			o[2] = clamp255((int)(b + 0.5f));
-			o[3] = 255;
-		}
-	} else {
-		for (size_t i = 0; i < npix; i++, o += 4) {
-			o[0] = clamp255(v0[i]);
-			o[1] = clamp255(v1[i]);
-			o[2] = clamp255(v2[i]);
-			o[3] = 255;
-		}
-	}
-	info->status = kFrameOK;
-	return rgba;
+	const OPJ_INT32 *planes[3] = {c0->data, (n == 3) ? image->comps[1].data : c0->data, (n == 3) ? image->comps[2].data : c0->data};
+	return frameOutput<OPJ_INT32, 1>(planes, pi, bitsStored, info, rgba);
 }
 
-// One encapsulated frame's codestream (item payload, no item headers) to interleaved RGBA8
-// for tile display (DICOM-WSI). Returns a malloc'd width*height*4 buffer for the caller to
-// free(), or NULL; info->status always says which. Colour rules: docs/PARSER_GOTCHAS.md.
-unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const char *photometric, struct TFrameInfo *info) {
-	memset(info, 0, sizeof(*info));
-	info->status = kFrameDecodeError;
-	if ((data == NULL) || (len < 4) || (len > 0x7FFFFFFF)) // the buffer stream takes a 32-bit size
-		return NULL;
+// One JPEG 2000 frame (J2K codestream or JP2) for decodeFrame.
+static void *decodeJ2KFrame(const unsigned char *data, size_t len, const char *photometric, int bitsStored, struct TFrameInfo *info, bool rgba) {
 	OPJ_CODEC_FORMAT format = ((data[0] == 0xFF) && (data[1] == 0x4F)) ? OPJ_CODEC_J2K : OPJ_CODEC_JP2;
 	BufInfo dx;
 	dx.buf = (unsigned char *)data; // read-only: the stream never writes or frees it
@@ -456,7 +531,7 @@ unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const 
 	opj_dparameters_t params;
 	opj_set_default_decoder_parameters(&params);
 	opj_image_t *jpx = NULL;
-	unsigned char *rgba = NULL;
+	void *out = NULL;
 	if (opj_setup_decoder(codec, &params) && opj_read_header(stream, codec, &jpx)) {
 		opj_codestream_info_v2_t *cstr = opj_get_cstr_info(codec);
 		if (cstr != NULL) {
@@ -466,14 +541,19 @@ unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const 
 		int admit = j2kFrameAdmit(jpx, info);
 		if (admit != kFrameOK)
 			info->status = admit;
-		else if (opj_decode(codec, stream, jpx) && opj_end_decompress(codec, stream))
-			rgba = j2kToRGBA(jpx, photometric, info);
+		else if (opj_decode(codec, stream, jpx) && opj_end_decompress(codec, stream)) {
+			admit = j2kFrameAdmit(jpx, info); // a JP2 palette (pclr) expands to 3 components during decode
+			if (admit != kFrameOK)
+				info->status = admit;
+			else
+				out = j2kFrameOutput(jpx, photometric, bitsStored, info, rgba);
+		}
 	}
 	if (jpx != NULL)
 		opj_image_destroy(jpx);
 	opj_stream_destroy(stream);
 	opj_destroy_codec(codec);
-	return rgba;
+	return out;
 }
 #endif // myDisableOpenJPEG
 
@@ -4655,7 +4735,105 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 	free(cImg);
 	return (bImg);
 }
+
+#ifndef myEnableJPEGLS1 // the frame decoder uses the CharLS 2 API
+// One JPEG-LS frame (.4.80 lossless, .4.81 near-lossless) for decodeFrame.
+static void *decodeJLSFrame(const unsigned char *data, size_t len, const char *pi, int bitsStored, struct TFrameInfo *info, bool rgba) {
+	using namespace charls;
+	JlsParameters params = {};
+	if (JpegLsReadHeader(data, len, &params, nullptr) != ApiResult::OK)
+		return NULL;
+	int n = params.components;
+	info->width = params.width;
+	info->height = params.height;
+	info->components = n;
+	info->bitsStored = params.bitsPerSample;
+	if ((n != 1) && (n != 3)) {
+		info->status = kFrameUnsupportedComponents;
+		return NULL;
+	}
+	if ((params.bitsPerSample < 8) || (params.bitsPerSample > 16)) {
+		info->status = kFrameUnsupportedPrecision;
+		return NULL;
+	}
+	// HP colour transforms are a non-standard extension; DICOM JPEG-LS colour is RGB or YBR_FULL.
+	if ((params.colorTransformation != ColorTransformation::None) || ((n == 3) && (strncmp(pi, "YBR", 3) == 0) && (strncmp(pi, "YBR_FULL", 8) != 0))) {
+		info->status = kFrameUnsupportedPhotometric;
+		return NULL;
+	}
+	if ((uint64_t)params.width * params.height > kFrameMaxPixels) { // 64-bit: size_t is 32-bit in WASM
+		info->status = kFrameTooLarge;
+		return NULL;
+	}
+	info->isYCbCr = (n == 3) && (strncmp(pi, "YBR_FULL", 8) == 0);
+	size_t npix = (size_t)params.width * params.height;
+	size_t bps = (params.bitsPerSample > 8) ? 2 : 1;
+	size_t sz = npix * n * bps;
+	unsigned char *raw = (unsigned char *)malloc(sz);
+	if (raw == NULL) {
+		info->status = kFrameTooLarge;
+		return NULL;
+	}
+	params.stride = 0; // CharLS derives it: whole rows, planar for InterleaveMode::None, else RGB triplets
+	if (JpegLsDecode(raw, sz, data, len, &params, nullptr) != ApiResult::OK) {
+		free(raw);
+		return NULL;
+	}
+	bool planar = (n == 3) && (params.interleaveMode == InterleaveMode::None);
+	if (!rgba && !planar && !info->isYCbCr) { // already the samples layout
+		info->status = kFrameOK;
+		return raw;
+	}
+	void *out;
+	if (bps == 1) {
+		const uint8_t *v = raw;
+		const uint8_t *c[3] = {v, planar ? v + npix : v + 1, planar ? v + 2 * npix : v + 2};
+		out = (planar || (n == 1)) ? frameOutput<uint8_t, 1>(c, pi, bitsStored, info, rgba) : frameOutput<uint8_t, 3>(c, pi, bitsStored, info, rgba);
+	} else {
+		const uint16_t *v = (const uint16_t *)raw;
+		const uint16_t *c[3] = {v, planar ? v + npix : v + 1, planar ? v + 2 * npix : v + 2};
+		out = (planar || (n == 1)) ? frameOutput<uint16_t, 1>(c, pi, bitsStored, info, rgba) : frameOutput<uint16_t, 3>(c, pi, bitsStored, info, rgba);
+	}
+	free(raw);
+	return out;
+}
+#endif // myEnableJPEGLS1
+#endif // JPEG-LS
+
+// One encapsulated frame (item payload, no item headers): JPEG 2000 (J2K or JP2) or JPEG-LS,
+// told apart by the leading marker. NULL with info->status set on failure.
+static void *decodeFrame(const unsigned char *data, size_t len, const char *photometric, int bitsStored, struct TFrameInfo *info, bool rgba) {
+	memset(info, 0, sizeof(*info));
+	info->status = kFrameDecodeError;
+	if ((data == NULL) || (len < 4) || (len > 0x7FFFFFFF)) // OpenJPEG's buffer stream takes a 32-bit size
+		return NULL;
+	const char *pi = (photometric != NULL) ? photometric : "";
+	if ((data[0] == 0xFF) && (data[1] == 0xD8)) { // JPEG family SOI: JPEG-LS (baseline JPEG fails its header)
+#if defined(myEnableJPEGLS)
+		return decodeJLSFrame(data, len, pi, bitsStored, info, rgba);
+#else
+		return NULL;
 #endif
+	}
+#ifndef myDisableOpenJPEG
+	return decodeJ2KFrame(data, len, pi, bitsStored, info, rgba);
+#else
+	return NULL;
+#endif
+}
+
+// RGBA8 for display (DICOM-WSI tiles): a malloc'd width*height*4 buffer for the caller to
+// free(), or NULL; info->status always says which. Colour rules: docs/PARSER_GOTCHAS.md.
+// More than 8 bits map to 8 by round(v * 255 / (2^bits - 1)), bits = bitsStored when given.
+unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const char *photometric, int bitsStored, struct TFrameInfo *info) {
+	return (unsigned char *)decodeFrame(data, len, photometric, bitsStored, info, true);
+}
+
+// The frame's samples, interleaved: uint8 when bitsStored <= 8, else uint16; 1 component
+// (MONOCHROME1/2, polarity not applied) or 3 (8-bit YBR converted to RGB as above).
+void *nii_decodeFrame(const unsigned char *data, size_t len, const char *photometric, struct TFrameInfo *info) {
+	return decodeFrame(data, len, photometric, 0, info, false);
+}
 
 // Whole-image steps; run once after per-frame decode (per frame, reorder is a no-op and scaling changes frame size).
 static unsigned char *nii_loadImgXLFinish(unsigned char *img, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, struct TDTI4D *dti4D) {

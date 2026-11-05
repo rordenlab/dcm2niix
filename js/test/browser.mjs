@@ -17,12 +17,12 @@ const run = (fn, arg) => page.evaluate(fn, arg);
 
 test('createFrameDecoder: JPEG 2000 WSI frames match the native decoder', async () => {
   const r = await run(async () => {
-    const expected = await (await fetch('/js/test/frames/expected.json')).json();
+    const expected = await (await fetch('/frames/expected.json')).json();
     const decoder = dcm.createFrameDecoder({ workers: 2 });
     const out = {};
     try {
       for (const [name, e] of Object.entries(expected)) {
-        const bytes = new Uint8Array(await (await fetch(`/js/test/frames/${name}.j2k`)).arrayBuffer());
+        const bytes = new Uint8Array(await (await fetch(`/frames/${name}.j2k`)).arrayBuffer());
         const f = await decoder.decode(bytes, { photometric: e.photometric });
         const n = f.width * f.height;
         const mean = [0, 1, 2].map((c) => { let t = 0; for (let p = 0; p < n; p++) t += f.rgba[4 * p + c]; return t / n; });
@@ -48,11 +48,44 @@ test('createFrameDecoder: JPEG 2000 WSI frames match the native decoder', async 
   assert.equal(r.out.ybr422.isYCbCr, 1, '4:2:2: converted from YCbCr');
 });
 
+test('createFrameDecoder: monochrome, >8-bit and JPEG-LS frames, as samples and RGBA', async () => {
+  const r = await run(async () => {
+    const entries = await (await fetch('/frames/samples.json')).json();
+    const decoder = dcm.createFrameDecoder({ workers: 2 });
+    const out = {};
+    try {
+      for (const [name, e] of Object.entries(entries)) {
+        const bytes = new Uint8Array(await (await fetch(`/frames/${e.file}`)).arrayBuffer());
+        const opts = { photometric: e.photometric, bitsStored: e.bitsStored };
+        const s = await decoder.decode(bytes, { ...opts, output: 'samples' }).catch((err) => err);
+        if (s instanceof Error) {
+          out[name] = { status: s.status };
+          continue;
+        }
+        const rgba = (await decoder.decode(bytes, opts)).rgba;
+        out[name] = { status: 'ok', wide: s.samples instanceof Uint16Array, components: s.components, samplesSha256: await sha256(new Blob([s.samples])), rgbaSha256: await sha256(new Blob([rgba])) };
+      }
+    } finally {
+      decoder.terminate();
+    }
+    return { entries, out };
+  });
+  for (const [name, e] of Object.entries(r.entries)) {
+    const o = r.out[name];
+    assert.equal(o.status, e.status || 'ok', `${name} status`);
+    if (e.status) continue;
+    assert.equal(o.components, e.components, `${name} components`);
+    assert.equal(o.samplesSha256, e.samplesSha256, `${name} samples`);
+    assert.equal(o.rgbaSha256, e.rgbaSha256, `${name} RGBA`);
+  }
+  assert.ok(r.out.j2k_mono12.wide && !r.out.jls_mono8.wide, 'Uint16Array above 8 bits, else Uint8Array');
+});
+
 test('createFrameDecoder: failures are typed and pending decodes settle', async () => {
   const r = await run(async () => {
     const decoder = dcm.createFrameDecoder({ workers: 1 });
     const garbage = await decoder.decode(new Uint8Array([0xff, 0x4f, 0xff, 0x51, 1, 2, 3, 4])).then(() => 'resolved', (e) => `${e.name}:${e.status}`);
-    const bytes = new Uint8Array(await (await fetch('/js/test/frames/rct.j2k')).arrayBuffer());
+    const bytes = new Uint8Array(await (await fetch('/frames/rct.j2k')).arrayBuffer());
     const pending = decoder.decode(bytes).then(() => 'resolved', (e) => e.message);
     decoder.terminate();
     const after = await decoder.decode(bytes).then(() => 'resolved', (e) => e.message);

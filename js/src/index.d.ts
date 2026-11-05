@@ -197,22 +197,50 @@ export interface DecodedFrame {
   info: FrameInfo;
 }
 
+/** A frame's samples (output 'samples'). Owned by the caller. */
+export interface DecodedFrameSamples {
+  width: number;
+  height: number;
+  /**
+   * Interleaved, unchanged: Uint8Array when the codestream stores at most 8 bits, else Uint16Array.
+   * Monochrome has 1 component, polarity not applied (MONOCHROME1 is the caller's to invert);
+   * colour has 3, RGB, with 8-bit YCbCr converted as for RGBA output.
+   */
+  samples: Uint8Array | Uint16Array;
+  components: 1 | 3;
+  /** The codestream's precision (may exceed DICOM BitsStored, e.g. DCMTK's lossless JPEG-LS). */
+  bitsStored: number;
+  info: FrameInfo;
+}
+
 export interface FrameDecodeOptions {
   /** DICOM PhotometricInterpretation, e.g. 'YBR_FULL_422'. The codestream decides where they disagree. */
   photometric?: string | null;
+  /**
+   * DICOM BitsStored (0028,0101). RGBA output maps more than 8 bits to 8 by
+   * round(v * 255 / (2^bits - 1)), with bits the smaller of this and the codestream's precision.
+   * Default 0: the codestream's precision.
+   */
+  bitsStored?: number | null;
+  /** 'rgba' (default) or 'samples'. */
+  output?: 'rgba' | 'samples';
   /** Aborting drops the result; the worker still finishes the frame. */
   signal?: AbortSignal;
 }
 
 export interface FrameDecoder {
   /**
-   * Decode one encapsulated frame (its item payload, no item header) to RGBA8.
-   * JPEG 2000, 8-bit, at most 64 MB of input (else 'too-large'). The input is copied. Rejects with FrameDecodeError when dcm2niix
+   * Decode one encapsulated frame (its item payload, no item header) to RGBA8, or with
+   * `output: 'samples'` to its samples. JPEG 2000 or JPEG-LS, 8-16-bit unsigned, 1 or 3
+   * components, at most 64 MB of input (else 'too-large'). The input is copied. Rejects with FrameDecodeError when dcm2niix
    * cannot decode the frame, with the signal's reason (by default a DOMException named
-   * 'AbortError') when aborted, or Error when the pool is busy, failed or terminated.
+   * 'AbortError') when aborted, TypeError for an unknown output, or Error when the pool is busy, failed or terminated.
    * An aborted decode keeps counting toward maxPending until its worker finishes it.
    */
-  decode(bytes: Uint8Array | ArrayBuffer, options?: FrameDecodeOptions): Promise<DecodedFrame>;
+  decode(bytes: Uint8Array | ArrayBuffer, options: FrameDecodeOptions & { output: 'samples' }): Promise<DecodedFrameSamples>;
+  decode(bytes: Uint8Array | ArrayBuffer, options?: FrameDecodeOptions & { output?: 'rgba' }): Promise<DecodedFrame>;
+  /** Output chosen at run time (a FrameDecodeOptions variable): narrow the result with `'rgba' in frame`. */
+  decode(bytes: Uint8Array | ArrayBuffer, options?: FrameDecodeOptions): Promise<DecodedFrame | DecodedFrameSamples>;
   /** Stop every worker and reject pending decodes. */
   terminate(): void;
 }
@@ -226,7 +254,7 @@ export interface FrameDecoderOptions {
   createWorker?: () => Worker;
 }
 
-/** A pool of persistent workers that decode DICOM-WSI tiles to RGBA8. */
+/** A pool of persistent workers that decode DICOM-WSI tiles to RGBA8 or samples. */
 export function createFrameDecoder(options?: FrameDecoderOptions): FrameDecoder;
 
 export class FrameDecodeError extends Error {
