@@ -1,0 +1,75 @@
+{
+ "ict": {
+  "photometric": "YBR_ICT",
+  "source": "CMU-1-JP2K-ICT-v2 img_0.dcm frame 5744 (sha256 5d56b2f75f7d0742...)",
+  "lossy": true,
+  "width": 256,
+  "height": 256,
+  "sha256": "f23b9869abce6e2d917d91b30614a3a7fcc80e4f33f4b1980a32c7a8d9fdbcce",
+  "pixel0": [
+   205,
+   131,
+   183,
+   255
+  ],
+  "pixelMid": [
+   183,
+   138,
+   177,
+   255
+  ],
+  "meanRGB": [
+   190.4886,
+   133.8712,
+   167.5602
+  ]
+ },
+ "rct": {
+  "photometric": "YBR_RCT",
+  "source": "CMU-1-JP2K-RCT-v2 DCM_0.dcm frame 5744 (sha256 554990026ecd6af8...)",
+  "width": 256,
+  "height": 256,
+  "sha256": "6efeb9f0a49e20e965acc7ae64b31516d3c818ecba3fbb07b1a5a87b2fdec200",
+  "pixel0": [
+   206,
+   131,
+   183,
+   255
+  ],
+  "pixelMid": [
+   183,
+   137,
+   178,
+   255
+  ],
+  "meanRGB": [
+   190.5135,
+   133.8843,
+   167.5674
+  ]
+ },
+ "ybr422": {
+  "photometric": "YBR_FULL_422",
+  "source": "synthetic from rct.j2k (see make_js_fixtures.py)",
+  "width": 256,
+  "height": 256,
+  "sha256": "fe76ef0eb9a445b53ae3bf8d6bd1a7e9bffdca61051593c594eaa56b93741057",
+  "pixel0": [
+   204,
+   134,
+   168,
+   255
+  ],
+  "pixelMid": [
+   168,
+   144,
+   176,
+   255
+  ],
+  "meanRGB": [
+   190.2408,
+   133.8858,
+   167.4692
+  ]
+ }
+}

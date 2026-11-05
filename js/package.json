@@ -1,6 +1,6 @@
 {
   "name": "@niivue/dcm2niix",
-  "version": "1.4.20261029",
+  "version": "1.4.20261105-rc.0",
   "description": "Run Chris Rorden's dcm2niix (WebAssembly) in the browser to convert DICOM to NIfTI with no upload.",
   "type": "module",
   "main": "dist/index.jpeg.js",

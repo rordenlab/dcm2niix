@@ -13,6 +13,8 @@ import { build, createServer } from 'vite';
 
 const js = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = path.join(js, '..', 'dcm_qa_nih', 'In', '20180918GE');
+const rct = [...fs.readFileSync(path.join(js, 'test', 'frames', 'rct.j2k'))];
+const rctSha = JSON.parse(fs.readFileSync(path.join(js, 'test', 'frames', 'expected.json'), 'utf8')).rct.sha256;
 const version = /#define kDCMdate "(v[0-9.]+)"/.exec(fs.readFileSync(path.join(js, '..', 'console', 'nii_dicom.h'), 'utf8'))[1];
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dcm2niix-consumer-'))); // Vite rejects the /var -> /private/var symlink on macOS
 const app = path.join(tmp, 'app');
@@ -44,6 +46,9 @@ const convertAt = async (browser, url) => {
   assert.ok(r.names.every((n) => n.startsWith('20180918GE_')), `names ${r.names}`);
   assert.ok(r.version.includes(version), `version ${r.version}`);
   assert.ok(r.aliases, '/jpeg and /plain resolve to the root module');
+  const f = await page.evaluate((b) => window.runFrame(new Uint8Array(b)), rct);
+  assert.equal(f.sha256, rctSha, 'createFrameDecoder decodes a JPEG 2000 frame');
+  assert.equal(f.garbage, 'FrameDecodeError:decode-error');
   assert.deepEqual(errors, []);
   await page.close();
 };
@@ -63,10 +68,11 @@ try {
     const assets = fs.readdirSync(path.join(app, 'dist', 'assets'));
     assert.equal(assets.filter((a) => a.endsWith('.wasm')).length, 1, `assets ${assets}`);
     assert.equal(assets.filter((a) => a.startsWith('worker.jpeg')).length, 1, `assets ${assets}`);
+    assert.equal(assets.filter((a) => a.startsWith('frame-worker.jpeg')).length, 1, `assets ${assets}`);
     assert.equal(assets.filter((a) => a.startsWith('index.jpeg')).length, 0, `dead glue copy in ${assets}`);
   });
 
-  await check('production build served from /sub/ converts; /jpeg and /plain are aliases', async () => {
+  await check('production build served from /sub/ converts and decodes a frame; /jpeg and /plain are aliases', async () => {
     const dist = path.join(app, 'dist');
     const mime = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm' };
     const server = http.createServer((req, res) => {
@@ -80,7 +86,7 @@ try {
     await convertAt(browser, `http://127.0.0.1:${server.address().port}/sub/`);
   });
 
-  await check('vite dev server with optimizeDeps.exclude converts', async () => {
+  await check('vite dev server with optimizeDeps.exclude converts and decodes a frame', async () => {
     const server = await createServer({ root: app, base: '/sub/', logLevel: 'warn', optimizeDeps: { exclude: ['@niivue/dcm2niix'] }, server: { port: 0, host: '127.0.0.1' } });
     await server.listen();
     closers.push(() => server.close());

@@ -9,6 +9,7 @@ fs.rmSync('./dist', { recursive: true, force: true }); // no stale files from ea
 Promise.all([
   esbuild.build({ ...common, entryPoints: ['./src/index.jpeg.js'] }),
   esbuild.build({ ...common, entryPoints: ['./src/worker.jpeg.js'], external: ['./dcm2niix.jpeg.js'] }),
+  esbuild.build({ ...common, entryPoints: ['./src/frame-worker.jpeg.js'], external: ['./dcm2niix.jpeg.js'] }),
 ])
   .then(() => {
     for (const f of ['dcm2niix.jpeg.js', 'dcm2niix.jpeg.wasm', 'index.d.ts']) fs.copyFileSync(`./src/${f}`, `./dist/${f}`);

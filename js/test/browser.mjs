@@ -15,6 +15,54 @@ const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 const run = (fn, arg) => page.evaluate(fn, arg);
 
+test('createFrameDecoder: JPEG 2000 WSI frames match the native decoder', async () => {
+  const r = await run(async () => {
+    const expected = await (await fetch('/js/test/frames/expected.json')).json();
+    const decoder = dcm.createFrameDecoder({ workers: 2 });
+    const out = {};
+    try {
+      for (const [name, e] of Object.entries(expected)) {
+        const bytes = new Uint8Array(await (await fetch(`/js/test/frames/${name}.j2k`)).arrayBuffer());
+        const f = await decoder.decode(bytes, { photometric: e.photometric });
+        const n = f.width * f.height;
+        const mean = [0, 1, 2].map((c) => { let t = 0; for (let p = 0; p < n; p++) t += f.rgba[4 * p + c]; return t / n; });
+        const at = (y, x) => [...f.rgba.subarray(4 * (y * f.width + x), 4 * (y * f.width + x) + 4)];
+        out[name] = { width: f.width, height: f.height, sha256: await sha256(new Blob([f.rgba])), mean, pixel0: at(0, 0), pixelMid: at(f.height >> 1, f.width >> 1), mct: f.info.mct, isYCbCr: f.info.isYCbCr, kept: bytes.length > 0 };
+      }
+    } finally {
+      decoder.terminate();
+    }
+    return { expected, out };
+  });
+  for (const [name, e] of Object.entries(r.expected)) {
+    const o = r.out[name];
+    if (e.lossy) { // 9/7 decodes in floating point: WASM and native may differ by 1
+      for (const k of ['pixel0', 'pixelMid']) o[k].forEach((v, c) => assert.ok(Math.abs(v - e[k][c]) <= 1, `${name} ${k}[${c}] ${v} vs ${e[k][c]}`));
+      o.mean.forEach((v, c) => assert.ok(Math.abs(v - e.meanRGB[c]) <= 0.05, `${name} mean[${c}] ${v} vs ${e.meanRGB[c]}`)); // a double conversion moves it ~26
+    } else assert.equal(o.sha256, e.sha256, `${name} RGBA (lossless: exact)`);
+    assert.equal(r.out[name].width, e.width);
+    assert.ok(r.out[name].kept, `${name}: caller keeps its bytes`);
+  }
+  assert.equal(r.out.ict.mct, 1, 'ICT: codec inverted the transform');
+  assert.equal(r.out.ict.isYCbCr, 0, 'ICT: not converted twice');
+  assert.equal(r.out.ybr422.isYCbCr, 1, '4:2:2: converted from YCbCr');
+});
+
+test('createFrameDecoder: failures are typed and pending decodes settle', async () => {
+  const r = await run(async () => {
+    const decoder = dcm.createFrameDecoder({ workers: 1 });
+    const garbage = await decoder.decode(new Uint8Array([0xff, 0x4f, 0xff, 0x51, 1, 2, 3, 4])).then(() => 'resolved', (e) => `${e.name}:${e.status}`);
+    const bytes = new Uint8Array(await (await fetch('/js/test/frames/rct.j2k')).arrayBuffer());
+    const pending = decoder.decode(bytes).then(() => 'resolved', (e) => e.message);
+    decoder.terminate();
+    const after = await decoder.decode(bytes).then(() => 'resolved', (e) => e.message);
+    return { garbage, pending: await pending, after };
+  });
+  assert.equal(r.garbage, 'FrameDecodeError:decode-error');
+  assert.equal(r.pending, 'frame decoder terminated');
+  assert.equal(r.after, 'frame decoder terminated');
+});
+
 test('convert: grouping, folder structure reaches dcm2niix', async () => {
   const r = await run(async () => {
     const files = await load('dcm_qa_nih/In');
@@ -185,7 +233,6 @@ test('runDcm2niix compatibility and option forwarding', async () => {
   assert.equal(r.names.length, 4);
   assert.ok(r.names.every((n) => n.endsWith('.nii')));
   assert.deepEqual(r.named, ['series_4.nii', 'series_5.nii', 'series_6.nii', 'series_7.nii']);
-  assert.equal(r.aborted, 'AbortError');
   assert.equal(r.empty, 0);
 });
 

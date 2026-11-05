@@ -57,12 +57,61 @@
 #ifdef myEnableJasper
 #include <jasper/jasper.h>
 #endif
+static inline uint8_t clamp255(int x) {
+	return (x < 0) ? 0 : (x > 255 ? 255 : x);
+}
+
+unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr);
+
 #ifndef myDisableOpenJPEG
 #include "openjpeg.h"
 
 #ifdef myEnableJasper
 ERROR : YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY
 #endif
+
+// True when 3-component component `comp` is chroma sampled at 1/dx, 1/dy of a
+// full-resolution component 0 (dx, dy in {1, 2}), e.g. YBR_FULL_422 JPEG 2000 with
+// no MCT (DICOM-WSI). Its size must be exactly what the codestream implies.
+static bool isJ2KChromaSubsampled(opj_image_t *image, int comp) {
+	opj_image_comp_t *c0 = &image->comps[0];
+	opj_image_comp_t *c = &image->comps[comp];
+	if ((image->numcomps != 3) || (comp < 1) || (c0->dx != 1) || (c0->dy != 1))
+		return false;
+	if ((c->dx < 1) || (c->dx > 2) || (c->dy < 1) || (c->dy > 2) || ((c->dx == 1) && (c->dy == 1)))
+		return false;
+	return (c->w == (c0->w + c->dx - 1) / c->dx) && (c->h == (c0->h + c->dy - 1) / c->dy);
+}
+
+// Repeat subsampled chroma to full size in place, so every later step sees equal
+// components. Uses OpenJPEG's allocator: opj_image_destroy frees the new planes.
+// Returns true if any plane was upsampled (the data is then YCbCr, whatever its label).
+static bool upsampleJ2KChroma(opj_image_t *image) {
+	bool isSub = false;
+	for (int c = 1; c < (int)image->numcomps; c++) {
+		if (!isJ2KChromaSubsampled(image, c))
+			continue;
+		opj_image_comp_t *c0 = &image->comps[0], *ci = &image->comps[c];
+		OPJ_INT32 *full = (OPJ_INT32 *)opj_image_data_alloc((size_t)c0->w * c0->h * sizeof(OPJ_INT32));
+		if (full == NULL)
+			return isSub; // leaves this plane subsampled: imagetoimg/j2kToRGBA then reject it
+		int sx = ci->dx - 1, sy = ci->dy - 1; // dx, dy are 1 or 2
+		for (OPJ_UINT32 y = 0; y < c0->h; y++) {
+			const OPJ_INT32 *src = ci->data + (size_t)(y >> sy) * ci->w;
+			OPJ_INT32 *dst = full + (size_t)y * c0->w;
+			for (OPJ_UINT32 x = 0; x < c0->w; x++)
+				dst[x] = src[x >> sx];
+		}
+		opj_image_data_free(ci->data);
+		ci->data = full;
+		ci->w = c0->w;
+		ci->h = c0->h;
+		ci->dx = c0->dx;
+		ci->dy = c0->dy;
+		isSub = true;
+	}
+	return isSub;
+}
 
 		unsigned char *
 		imagetoimg(opj_image_t *image) {
@@ -71,7 +120,7 @@ ERROR : YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTION
 	int width = image->comps[0].w;
 	int height = image->comps[0].h;
 	int bpp = (image->comps[0].prec + 7) >> 3; // e.g. 12 bits requires 2 bytes
-	int imgbytes = bpp * width * height * numcmpts;
+	size_t imgbytes = (size_t)bpp * width * height * numcmpts; // 64-bit: crafted sizes wrapped an int
 	bool isOK = true;
 	if (numcmpts > 1) {
 		for (int comp = 1; comp < numcmpts; comp++) { // check RGB data
@@ -154,39 +203,41 @@ static void my_stream_free(void *p_user_data) { // do nothing
 												// free(d.buf);
 } // my_stream_free()
 
-static OPJ_UINT32 opj_read_from_buffer(void *p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo *p_file) {
-	OPJ_UINT32 l_nb_read;
-	if (p_file->cur + p_nb_bytes < p_file->buf + p_file->len) {
-		l_nb_read = p_nb_bytes;
-	} else {
-		l_nb_read = (OPJ_UINT32)(p_file->buf + p_file->len - p_file->cur);
-	}
+// The four callbacks match OpenJPEG's typedefs exactly (opj_stream_read_fn etc.): a 32-bit
+// return made the end-of-stream -1 read as 4 GB on 64-bit hosts (heap over-read on a
+// truncated codestream), and a 32-bit offset trapped WASM's typed indirect call.
+static OPJ_SIZE_T opj_read_from_buffer(void *p_buffer, OPJ_SIZE_T p_nb_bytes, void *p_user_data) {
+	BufInfo *p_file = (BufInfo *)p_user_data;
+	size_t remain = p_file->len - (size_t)(p_file->cur - p_file->buf);
+	OPJ_SIZE_T l_nb_read = (p_nb_bytes < remain) ? p_nb_bytes : remain;
 	memcpy(p_buffer, p_file->cur, l_nb_read);
 	p_file->cur += l_nb_read;
-
-	return l_nb_read ? l_nb_read : ((OPJ_UINT32)-1);
+	return l_nb_read ? l_nb_read : ((OPJ_SIZE_T)-1);
 } // opj_read_from_buffer()
 
-static OPJ_UINT32 opj_write_from_buffer(void *p_buffer, OPJ_UINT32 p_nb_bytes, BufInfo *p_file) {
+static OPJ_SIZE_T opj_write_from_buffer(void *p_buffer, OPJ_SIZE_T p_nb_bytes, void *p_user_data) {
+	BufInfo *p_file = (BufInfo *)p_user_data;
 	memcpy(p_file->cur, p_buffer, p_nb_bytes);
 	p_file->cur += p_nb_bytes;
 	p_file->len += p_nb_bytes;
 	return p_nb_bytes;
 } // opj_write_from_buffer()
 
-static OPJ_SIZE_T opj_skip_from_buffer(OPJ_SIZE_T p_nb_bytes, BufInfo *p_file) {
-	if (p_file->cur + p_nb_bytes < p_file->buf + p_file->len) {
+static OPJ_OFF_T opj_skip_from_buffer(OPJ_OFF_T p_nb_bytes, void *p_user_data) {
+	BufInfo *p_file = (BufInfo *)p_user_data;
+	size_t remain = p_file->len - (size_t)(p_file->cur - p_file->buf);
+	if ((p_nb_bytes >= 0) && ((size_t)p_nb_bytes < remain)) {
 		p_file->cur += p_nb_bytes;
 		return p_nb_bytes;
 	}
 	p_file->cur = p_file->buf + p_file->len;
-	return (OPJ_SIZE_T)-1;
+	return (OPJ_OFF_T)-1;
 } // opj_skip_from_buffer()
 
 // fix for https://github.com/neurolabusc/dcm_qa/issues/5
-static OPJ_BOOL opj_seek_from_buffer(OPJ_SIZE_T p_nb_bytes, BufInfo *p_file) {
-	// printf("opj_seek_from_buffer %d + %d -> %d + %d\n", p_file->cur , p_nb_bytes, p_file->buf, p_file->len);
-	if (p_nb_bytes < p_file->len) {
+static OPJ_BOOL opj_seek_from_buffer(OPJ_OFF_T p_nb_bytes, void *p_user_data) {
+	BufInfo *p_file = (BufInfo *)p_user_data;
+	if ((p_nb_bytes >= 0) && ((size_t)p_nb_bytes < p_file->len)) {
 		p_file->cur = p_file->buf + p_nb_bytes;
 		return OPJ_TRUE;
 	}
@@ -203,10 +254,10 @@ opj_stream_t *opj_stream_create_buffer_stream(BufInfo *p_file, OPJ_UINT32 p_size
 		return NULL;
 	opj_stream_set_user_data(l_stream, p_file, my_stream_free);
 	opj_stream_set_user_data_length(l_stream, p_file->len);
-	opj_stream_set_read_function(l_stream, (opj_stream_read_fn)opj_read_from_buffer);
-	opj_stream_set_write_function(l_stream, (opj_stream_write_fn)opj_write_from_buffer);
-	opj_stream_set_skip_function(l_stream, (opj_stream_skip_fn)opj_skip_from_buffer);
-	opj_stream_set_seek_function(l_stream, (opj_stream_seek_fn)opj_seek_from_buffer);
+	opj_stream_set_read_function(l_stream, opj_read_from_buffer);
+	opj_stream_set_write_function(l_stream, opj_write_from_buffer);
+	opj_stream_set_skip_function(l_stream, opj_skip_from_buffer);
+	opj_stream_set_seek_function(l_stream, opj_seek_from_buffer);
 	return l_stream;
 } // opj_stream_create_buffer_stream()
 
@@ -215,6 +266,7 @@ unsigned char *nii_loadImgCoreOpenJPEG(char *imgname, struct nifti_1_header hdr,
 	// Since the JPEG is embedded in a DICOM we need to skip bytes at the start of the file
 	//  In theory we might also want to strip data that exists AFTER the image, see gdcmJPEG2000Codec.c
 	unsigned char *ret = NULL;
+	bool isSub = false;
 	opj_dparameters_t params;
 	opj_codec_t *codec;
 	opj_image_t *jpx;
@@ -274,18 +326,23 @@ unsigned char *nii_loadImgCoreOpenJPEG(char *imgname, struct nifti_1_header hdr,
 #endif
 		goto cleanup2;
 	}
+	// Check the codestream against the header before decoding (component sizes are known
+	// once the header is read): imagetoimg sizes its output from the codestream while
+	// callers copy header-sized slices, and a crafted size makes the decode itself allocate
+	// gigabytes. Last term: one codestream for a multi-frame header.
+	if (((int)jpx->comps[0].w != hdr.dim[1]) || ((int)jpx->comps[0].h != hdr.dim[2]) || ((int)(((jpx->comps[0].prec + 7) >> 3) * 8 * jpx->numcomps) != hdr.bitpix) || ((size_t)jpx->comps[0].w * jpx->comps[0].h * ((jpx->comps[0].prec + 7) >> 3) * jpx->numcomps != nii_ImgBytes(hdr))) {
+		printError("JPEG2000 frame %dx%d %d-bit %d-component does not match DICOM %dx%dx%d %d-bit %s\n", jpx->comps[0].w, jpx->comps[0].h, jpx->comps[0].prec, jpx->numcomps, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.bitpix, imgname);
+		goto cleanup1;
+	}
 	// Get the decoded image
 	if (!(opj_decode(codec, stream, jpx) && opj_end_decompress(codec, stream))) {
 		printError("OpenJPEG j2k_to_image failed to decode %s\n", imgname);
 		goto cleanup1;
 	}
+	isSub = upsampleJ2KChroma(jpx); // subsampled chroma is YCbCr whatever the label
 	ret = imagetoimg(jpx);
-	// imagetoimg sizes its output from the codestream; callers copy header-sized slices
-	if ((ret != NULL) && (((int)jpx->comps[0].w != hdr.dim[1]) || ((int)jpx->comps[0].h != hdr.dim[2]) || ((int)(((jpx->comps[0].prec + 7) >> 3) * 8 * jpx->numcomps) != hdr.bitpix) || ((size_t)jpx->comps[0].w * jpx->comps[0].h * ((jpx->comps[0].prec + 7) >> 3) * jpx->numcomps != nii_ImgBytes(hdr)))) { // last term: one codestream for a multi-frame header
-		printError("JPEG2000 frame %dx%d %d-bit %d-component does not match DICOM %dx%dx%d %d-bit %s\n", jpx->comps[0].w, jpx->comps[0].h, jpx->comps[0].prec, jpx->numcomps, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.bitpix, imgname);
-		free(ret);
-		ret = NULL;
-	}
+	if ((ret != NULL) && isSub && !dcm.isYBRfull) // YBR_FULL[_422] is converted by the caller
+		ret = nii_ybr2rgb(ret, &hdr);
 cleanup1:
 	opj_image_destroy(jpx);
 cleanup2:
@@ -293,6 +350,130 @@ cleanup2:
 	opj_stream_destroy(stream);
 	opj_destroy_codec(codec);
 	return ret;
+}
+
+// Header-level admission, before opj_decode allocates anything: a codestream is untrusted
+// input, and a few hundred bytes can declare gigabytes. Sets info's geometry fields.
+static int j2kFrameAdmit(opj_image_t *image, struct TFrameInfo *info) {
+	opj_image_comp_t *c0 = &image->comps[0];
+	info->width = c0->w;
+	info->height = c0->h;
+	info->components = image->numcomps;
+	info->bitsStored = c0->prec;
+	info->isSigned = c0->sgnd;
+	if ((image->numcomps != 1) && (image->numcomps != 3))
+		return kFrameUnsupportedComponents;
+	for (OPJ_UINT32 c = 0; c < image->numcomps; c++) {
+		if (image->comps[c].sgnd)
+			return kFrameUnsupportedSigned;
+		if ((image->comps[c].prec != c0->prec) || (c0->prec != 8)) // 8-bit WSI; >8-bit display is a later milestone
+			return kFrameUnsupportedPrecision;
+	}
+	uint64_t pixels = (uint64_t)(image->x1 - image->x0) * (image->y1 - image->y0); // 64-bit: size_t is 32-bit in WASM
+	return (pixels > kFrameMaxPixels) ? kFrameTooLarge : kFrameOK;
+}
+
+// Decoded JPEG 2000 image (admitted by j2kFrameAdmit) to interleaved RGBA8.
+static unsigned char *j2kToRGBA(opj_image_t *image, const char *photometric, struct TFrameInfo *info) {
+	bool isSub = upsampleJ2KChroma(image);
+	opj_image_comp_t *c0 = &image->comps[0];
+	int n = image->numcomps;
+	for (int c = 1; c < n; c++) { // after upsampling, every component must match component 0
+		opj_image_comp_t *ci = &image->comps[c];
+		if ((ci->w != c0->w) || (ci->h != c0->h) || (ci->dx != c0->dx) || (ci->dy != c0->dy)) {
+			info->status = kFrameUnsupportedSubsampling;
+			return NULL;
+		}
+	}
+	const char *pi = (photometric != NULL) ? photometric : "";
+	bool isYCbCr = false;
+	if ((n == 3) && (info->mct == 0)) { // with MCT, OpenJPEG has already inverted ICT/RCT to RGB
+		if (!isSub && (strncmp(pi, "YBR_RCT", 7) == 0)) { // reversible transform outside the codestream: not supported
+			info->status = kFrameUnsupportedPhotometric;
+			return NULL;
+		}
+		// Subsampled chroma is YCbCr whatever the label says; YBR_ICT without MCT carries
+		// level-shifted full-range YCbCr (as JP2K-33003-1's first DICOM conversion did).
+		isYCbCr = isSub || (image->color_space == OPJ_CLRSPC_SYCC) || (strncmp(pi, "YBR_FULL", 8) == 0) || (strncmp(pi, "YBR_ICT", 7) == 0);
+	}
+	info->isYCbCr = isYCbCr;
+	size_t npix = (size_t)c0->w * c0->h;
+	unsigned char *rgba = (unsigned char *)malloc(npix * 4);
+	if (rgba == NULL) {
+		info->status = kFrameTooLarge;
+		return NULL;
+	}
+	const OPJ_INT32 *v0 = c0->data;
+	const OPJ_INT32 *v1 = (n == 3) ? image->comps[1].data : v0;
+	const OPJ_INT32 *v2 = (n == 3) ? image->comps[2].data : v0;
+	unsigned char *o = rgba;
+	if (n == 1) {
+		unsigned char inv = (strncmp(pi, "MONOCHROME1", 11) == 0) ? 255 : 0; // x ^ 255 == 255 - x for 0..255
+		for (size_t i = 0; i < npix; i++, o += 4) {
+			o[0] = o[1] = o[2] = clamp255(v0[i]) ^ inv;
+			o[3] = 255;
+		}
+	} else if (isYCbCr) { // nii_ybr2rgb: ITU-R BT.601 full-range YCbCr, same coefficients and rounding
+		for (size_t i = 0; i < npix; i++, o += 4) {
+			int Y = v0[i], Cb = v1[i], Cr = v2[i];
+			float r = Y + 1.402f * (Cr - 128);
+			float g = Y - 0.344136f * (Cb - 128) - 0.714136f * (Cr - 128);
+			float b = Y + 1.772f * (Cb - 128);
+			o[0] = clamp255((int)(r + 0.5f));
+			o[1] = clamp255((int)(g + 0.5f));
+			o[2] = clamp255((int)(b + 0.5f));
+			o[3] = 255;
+		}
+	} else {
+		for (size_t i = 0; i < npix; i++, o += 4) {
+			o[0] = clamp255(v0[i]);
+			o[1] = clamp255(v1[i]);
+			o[2] = clamp255(v2[i]);
+			o[3] = 255;
+		}
+	}
+	info->status = kFrameOK;
+	return rgba;
+}
+
+// One encapsulated frame's codestream (item payload, no item headers) to interleaved RGBA8
+// for tile display (DICOM-WSI). Returns a malloc'd width*height*4 buffer for the caller to
+// free(), or NULL; info->status always says which. Colour rules: docs/PARSER_GOTCHAS.md.
+unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const char *photometric, struct TFrameInfo *info) {
+	memset(info, 0, sizeof(*info));
+	info->status = kFrameDecodeError;
+	if ((data == NULL) || (len < 4) || (len > 0x7FFFFFFF)) // the buffer stream takes a 32-bit size
+		return NULL;
+	OPJ_CODEC_FORMAT format = ((data[0] == 0xFF) && (data[1] == 0x4F)) ? OPJ_CODEC_J2K : OPJ_CODEC_JP2;
+	BufInfo dx;
+	dx.buf = (unsigned char *)data; // read-only: the stream never writes or frees it
+	dx.cur = dx.buf;
+	dx.len = len;
+	opj_stream_t *stream = opj_stream_create_buffer_stream(&dx, (OPJ_UINT32)len, true);
+	if (stream == NULL)
+		return NULL;
+	opj_codec_t *codec = opj_create_decompress(format);
+	opj_dparameters_t params;
+	opj_set_default_decoder_parameters(&params);
+	opj_image_t *jpx = NULL;
+	unsigned char *rgba = NULL;
+	if (opj_setup_decoder(codec, &params) && opj_read_header(stream, codec, &jpx)) {
+		opj_codestream_info_v2_t *cstr = opj_get_cstr_info(codec);
+		if (cstr != NULL) {
+			info->mct = (int)cstr->m_default_tile_info.mct;
+			opj_destroy_cstr_info(&cstr);
+		}
+		int admit = j2kFrameAdmit(jpx, info);
+		if (admit != kFrameOK)
+			info->status = admit;
+		else if (opj_decode(codec, stream, jpx) && opj_end_decompress(codec, stream))
+			rgba = j2kToRGBA(jpx, photometric, info);
+	}
+	if (jpx != NULL)
+		opj_image_destroy(jpx);
+	opj_stream_destroy(stream);
+	opj_destroy_codec(codec);
+	return rgba;
 }
 #endif // myDisableOpenJPEG
 
@@ -3601,10 +3782,6 @@ unsigned char *nii_planar2rgb(unsigned char *bImg, struct nifti_1_header *hdr, i
 	return bImg;
 }
 
-static inline uint8_t clamp255(int x) {
-	return (x < 0) ? 0 : (x > 255 ? 255 : x);
-}
-
 unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr) {
 	// YBR->RGB: PhotometricInterpretation (0028,0004) YBR_FULL
 	// ITU-R BT.601 YCbCr → RGB (full-range) transform
@@ -3864,7 +4041,7 @@ unsigned char *nii_loadImgCoreJasper(char *imgname, struct nifti_1_header hdr, s
 	}
 	// extract the data
 	int bpp = (prec + 7) >> 3; // e.g. 12 bits requires 2 bytes
-	int imgbytes = bpp * width * height * numcmpts;
+	size_t imgbytes = (size_t)bpp * width * height * numcmpts; // 64-bit: crafted sizes wrapped an int
 	if ((bpp < 1) || (bpp > 2) || (width < 1) || (height < 1) || (imgbytes < 1)) {
 		printError("Catastrophic decompression error\n");
 		return NULL;

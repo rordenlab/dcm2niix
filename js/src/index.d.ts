@@ -163,3 +163,73 @@ export class Dcm2niix {
   inputFromWebkitDirectory(files: InputFiles): Processor;
   inputFromDropItems(files: InputFiles): Processor;
 }
+
+/** Why a frame could not be decoded (TFrameInfo.status in console/nii_dicom.h). */
+export type FrameStatus =
+  | 'ok'
+  | 'decode-error'
+  | 'unsupported-precision'
+  | 'unsupported-components'
+  | 'unsupported-subsampling'
+  | 'unsupported-photometric'
+  | 'unsupported-signed'
+  | 'too-large';
+
+/** What the codestream held. `mct` 1: the codec inverted ICT/RCT; `isYCbCr` 1: converted here. */
+export interface FrameInfo {
+  status: FrameStatus;
+  /** Why the worker, not the decoder, refused the frame (e.g. a WASM trap, which also retires the worker). Fields other than `status` may then be absent. */
+  message?: string;
+  width: number;
+  height: number;
+  components: number;
+  bitsStored: number;
+  isSigned: number;
+  mct: number;
+  isYCbCr: number;
+}
+
+export interface DecodedFrame {
+  width: number;
+  height: number;
+  /** Interleaved RGBA, alpha 255. Owned by the caller. */
+  rgba: Uint8ClampedArray;
+  info: FrameInfo;
+}
+
+export interface FrameDecodeOptions {
+  /** DICOM PhotometricInterpretation, e.g. 'YBR_FULL_422'. The codestream decides where they disagree. */
+  photometric?: string | null;
+  /** Aborting drops the result; the worker still finishes the frame. */
+  signal?: AbortSignal;
+}
+
+export interface FrameDecoder {
+  /**
+   * Decode one encapsulated frame (its item payload, no item header) to RGBA8.
+   * JPEG 2000, 8-bit, at most 64 MB of input (else 'too-large'). The input is copied. Rejects with FrameDecodeError when dcm2niix
+   * cannot decode the frame, with the signal's reason (by default a DOMException named
+   * 'AbortError') when aborted, or Error when the pool is busy, failed or terminated.
+   * An aborted decode keeps counting toward maxPending until its worker finishes it.
+   */
+  decode(bytes: Uint8Array | ArrayBuffer, options?: FrameDecodeOptions): Promise<DecodedFrame>;
+  /** Stop every worker and reject pending decodes. */
+  terminate(): void;
+}
+
+export interface FrameDecoderOptions {
+  /** Persistent workers, each with its own WASM instance. Default 2. */
+  workers?: number;
+  /** Decodes in flight before decode() rejects. Default 256. */
+  maxPending?: number;
+  /** Custom worker factory, e.g. for a non-Vite bundler or a CDN copy of frame-worker.jpeg.js. */
+  createWorker?: () => Worker;
+}
+
+/** A pool of persistent workers that decode DICOM-WSI tiles to RGBA8. */
+export function createFrameDecoder(options?: FrameDecoderOptions): FrameDecoder;
+
+export class FrameDecodeError extends Error {
+  status: FrameStatus;
+  info: FrameInfo;
+}

@@ -56,9 +56,43 @@ const { series } = await convert(files, { args: pick.flatMap((s) => ['-n', s.CRC
 
 The listing is not a one-to-one list of outputs: entries such as Siemens physio logs (`Rows`/`Columns` 1) produce no image, and one entry can produce several images (e.g. `_e2` echoes). Pass `CRC` back to `-n` and use the `series` that conversion returns; do not build filenames from the listing. It has no voxel size or volume count. `StudyInstanceUID`/`SeriesInstanceUID` appear unless `-ba y`; `PatientID` only with `-ba n`. The listing does not apply `-i y` skips.
 
+## Decode WSI tiles
+
+`createFrameDecoder` decodes single frames of DICOM whole-slide images (tiles) to RGBA for display, without converting to NIfTI. Your viewer reads the DICOM and finds each frame; dcm2niix decodes it.
+
+```javascript
+import { createFrameDecoder, FrameDecodeError } from '@niivue/dcm2niix';
+
+const decoder = createFrameDecoder({ workers: 4 });
+try {
+  const { width, height, rgba } = await decoder.decode(frameBytes, { photometric: 'YBR_FULL_422', signal });
+  ctx.putImageData(new ImageData(rgba, width, height), x, y);
+} catch (e) {
+  if (e instanceof FrameDecodeError) console.warn(e.status, e.info); // e.g. 'unsupported-precision'
+  else throw e; // abort (the signal's reason), busy, worker failure or terminated
+}
+decoder.terminate(); // when the slide closes
+```
+
+`frameBytes` is one frame's encapsulated codestream: the `(FFFE,E000)` item payload, without the 8-byte item header. It is copied, so you keep your buffer. `rgba` is a `Uint8ClampedArray` (alpha 255) that you own: it is copied out of the WASM heap and transferred from the worker.
+
+| Option | |
+|---|---|
+| `workers` | persistent workers, each with its own WASM instance (~32 MB); default 2 |
+| `maxPending` | decodes in flight before `decode` rejects with a busy error; default 256 |
+| `createWorker` | advanced: supply your own `Worker` running `frame-worker.jpeg.js` |
+| `decode(…, { photometric })` | DICOM PhotometricInterpretation (`null` or absent is fine); where it disagrees with the codestream, the codestream wins (ICT/RCT inverted by the codec are not converted again) |
+| `decode(…, { signal })` | `AbortSignal`; rejects at once, but the worker still finishes the frame and it counts toward `maxPending` until then |
+
+`FrameDecodeError.status`: `decode-error`, `unsupported-precision`, `unsupported-components`, `unsupported-subsampling`, `unsupported-photometric` (YBR_RCT on full-resolution chroma without MCT), `unsupported-signed`, `too-large`; `info` holds what the codestream declared (`width`, `height`, `components`, `bitsStored`, `isSigned`, `mct`, `isYCbCr`). `too-large` also means an input over 64 MB (refused before it is copied) or a worker heap that could not grow. `decode-error` with `info.message` (and no other fields) means the worker, not the decoder, failed on the frame; on a WASM trap (`WebAssembly.RuntimeError`) that worker is also terminated, as is any worker that fails to load or crashes, and its other pending decodes reject with an `Error`; the remaining workers carry on, and `decode` rejects once none is left.
+
+Limits: JPEG 2000 only today; unsigned 8-bit samples; 1 or 3 components (4:2:2/4:2:0 chroma is upsampled); frames up to 2048×2048, refused from the header before decoding (`too-large`), so a hostile codestream cannot make a worker decode more than about 64 MB. Unlike `convert`, the workers stay alive until `terminate()`.
+
+Performance (Chromium, M-series Mac, 80–130 KB 256² tiles): 28 ms from cold start to the first tile plus the WASM download; 92/182/360 tiles/s with 1/2/4 workers, on par with Cornerstone's JPEG 2000 decoder.
+
 ## Bundlers
 
-The package creates its worker with `new Worker(new URL('./worker.jpeg.js', import.meta.url), { type: 'module' })`. Tested with Vite 6 (production build under a subpath, and the dev server). **Vite's dev server** pre-bundles dependencies and loses the worker, so exclude the package:
+The package creates its workers with `new Worker(new URL('./worker.jpeg.js', import.meta.url), { type: 'module' })` (and `./frame-worker.jpeg.js` for `createFrameDecoder`). Tested with Vite 6 (production build under a subpath, and the dev server). **Vite's dev server** pre-bundles dependencies and loses the worker, so exclude the package:
 
 ```javascript
 // vite.config.js
@@ -67,7 +101,7 @@ export default { optimizeDeps: { exclude: ['@niivue/dcm2niix'] } };
 
 webpack 5 supports this worker pattern but is not tested here. esbuild does not emit the worker or WASM: copy them and pass `createWorker`.
 
-To host the worker yourself, serve `worker.jpeg.js`, `dcm2niix.jpeg.js` and `dcm2niix.jpeg.wasm` from `dist/` side by side and pass `createWorker: () => new Worker(url, { type: 'module' })`.
+To host the worker yourself, serve `worker.jpeg.js` (and `frame-worker.jpeg.js`), `dcm2niix.jpeg.js` and `dcm2niix.jpeg.wasm` from `dist/` side by side and pass `createWorker: () => new Worker(url, { type: 'module' })`.
 
 ## Upgrading from 1.2/1.3 or @niivue/nv-ext-dcm2niix
 
@@ -113,7 +147,7 @@ Manually, from `js/` (inside `pixi shell` so `emcc` is the pinned version):
 ```bash
 npm install
 npm run build          # prebuild compiles the WASM via ../console/makefile
-npm test               # Node grouping tests, then Playwright browser tests on the dcm_qa/dcm_qa_nih/dcm_qa_uih submodules
+npm test               # Node unit tests (output grouping, frame-decoder pool), then Playwright browser tests on the dcm_qa/dcm_qa_nih/dcm_qa_uih submodules and test/frames
 npm run test:consumer  # pack, install into a Vite app, build/dev/type-check
 npm run demo           # build and serve index.html
 ```
