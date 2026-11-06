@@ -269,6 +269,46 @@ test('runDcm2niix compatibility and option forwarding', async () => {
   assert.equal(r.empty, 0);
 });
 
+test('createFrameDecoder.iccLut: a linear-light profile bakes to the sRGB curve; a bad profile is null', async () => {
+  const r = await run(async () => {
+    // A v2 matrix/TRC profile with sRGB primaries (D50) and identity curves: its RGB is linear light.
+    const tags = [['wtpt', [0.9642, 1, 0.8249]], ['rXYZ', [0.4360747, 0.2225045, 0.0139322]], ['gXYZ', [0.3850649, 0.7168786, 0.0971045]], ['bXYZ', [0.1430804, 0.0606169, 0.7141733]]];
+    const size = 128 + 4 + 12 * 7 + 20 * 4 + 12;
+    const b = new DataView(new ArrayBuffer(size));
+    const sig = (o, s) => [...s].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+    const fixed = (o, v) => b.setInt32(o, Math.round(v * 65536));
+    b.setUint32(0, size);
+    b.setUint32(8, 0x02100000);
+    sig(12, 'mntr'); sig(16, 'RGB '); sig(20, 'XYZ '); sig(36, 'acsp');
+    [0.9642, 1, 0.8249].forEach((v, i) => fixed(68 + 4 * i, v));
+    b.setUint32(128, 7);
+    let data = 128 + 4 + 12 * 7;
+    tags.forEach(([name, xyz], i) => {
+      sig(132 + 12 * i, name); b.setUint32(136 + 12 * i, data); b.setUint32(140 + 12 * i, 20);
+      sig(data, 'XYZ '); xyz.forEach((v, k) => fixed(data + 8 + 4 * k, v));
+      data += 20;
+    });
+    sig(data, 'curv'); // count 0: identity, shared by the three TRC tags
+    ['rTRC', 'gTRC', 'bTRC'].forEach((name, i) => { sig(132 + 12 * (4 + i), name); b.setUint32(136 + 12 * (4 + i), data); b.setUint32(140 + 12 * (4 + i), 12); });
+    const decoder = dcm.createFrameDecoder({ workers: 1 });
+    try {
+      const n = 17;
+      const lut = await decoder.iccLut(new Uint8Array(b.buffer), { size: n });
+      const grey = [...Array(n).keys()].map((k) => lut[4 * (k * n * n + k * n + k)]);
+      const red = [...lut.subarray(4 * (n - 1), 4 * (n - 1) + 4)];
+      const bad = await decoder.iccLut(new Uint8Array(200));
+      return { length: lut.length, grey, red, bad };
+    } finally {
+      decoder.terminate();
+    }
+  });
+  assert.equal(r.length, 17 ** 3 * 4);
+  const encode = (v) => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+  r.grey.forEach((v, k) => assert.ok(Math.abs(v - encode(k / 16)) <= 1, `grey ${k}/16: ${v} vs ${encode(k / 16).toFixed(1)}`));
+  assert.ok(r.red[0] >= 254 && r.red[1] <= 1 && r.red[2] <= 1 && r.red[3] === 255, `red primary stays red: ${r.red}`);
+  assert.equal(r.bad, null, 'not a profile: null');
+});
+
 test('exitCodes', async () => {
   const r = await run(async () => ({ codes: { ...dcm.exitCodes }, frozen: Object.isFrozen(dcm.exitCodes), empty: (await dcm.convert([])).exitCode }));
   assert.equal(r.frozen, true);

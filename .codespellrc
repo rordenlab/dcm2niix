@@ -1,5 +1,5 @@
 [codespell]
-skip = .git,*.json,dcm_qa*
+skip = .git,*.json,dcm_qa*,./console/lcms2,console/lcms2/*
 # te - the TE used in the code often
 # clen - another common variable for length of smth
 # tage - for \tAge, inline ignores are yet to be released

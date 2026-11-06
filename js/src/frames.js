@@ -49,6 +49,7 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
         if (!job) return; // terminated or failed meanwhile
         pending.delete(data.id);
         slot.busy--;
+        if ('lut' in data) return settle(job, true, data.lut); // iccLut: the table, or null
         const { info } = data;
         if (data.rgba) settle(job, true, { width: info.width, height: info.height, rgba: data.rgba, info });
         else if (data.samples) settle(job, true, { width: info.width, height: info.height, samples: data.samples, components: info.components, bitsStored: info.bitsStored, info });
@@ -65,10 +66,25 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
      * Decode one frame's codestream (item payload only) to RGBA8, or with output 'samples' to
      * its samples. `bytes` is copied, so the caller keeps its buffer.
      */
-    const decode = (bytes, { photometric = '', bitsStored = 0, output = 'rgba', signal } = {}) =>
+    const decode = (bytes, { photometric = '', bitsStored = 0, output = 'rgba', signal } = {}) => {
+      if (output !== 'rgba' && output !== 'samples') return Promise.reject(new TypeError(`output must be 'rgba' or 'samples', not ${output}`));
+      // DICOM parsers give null for a missing tag
+      return submit(bytes, signal, (id, copy) => ({ id, bytes: copy, photometric: String(photometric ?? ''), bitsStored: Number(bitsStored) || 0, output }));
+    };
+
+    /**
+     * Bake an ICC profile into a size^3 RGBA8 lookup table mapping its RGB to sRGB (red
+     * fastest), or null when the profile is not an RGB profile dcm2niix can transform.
+     */
+    const iccLut = (profile, { size = 33, signal } = {}) => {
+      if (!Number.isInteger(size) || size < 2 || size > 129) return Promise.reject(new RangeError(`size must be an integer in 2..129, not ${size}`));
+      return submit(profile, signal, (id, copy) => ({ id, kind: 'icc', bytes: copy, size }));
+    };
+
+    // Queue one job on the least busy live worker; `message` builds what it posts.
+    const submit = (bytes, signal, message) =>
       new Promise((resolve, reject) => {
         if (closed) return reject(new Error('frame decoder terminated'));
-        if (output !== 'rgba' && output !== 'samples') return reject(new TypeError(`output must be 'rgba' or 'samples', not ${output}`));
         if (signal && signal.aborted) return reject(abortError(signal));
         if (pending.size >= maxPending) return reject(new Error(`frame decoder busy: ${maxPending} decodes pending`));
         let copy; // first: a bad input must fail before it holds any capacity
@@ -90,8 +106,7 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
           job.onAbort = () => settle(job, false, abortError(signal)); // capacity is released by the reply
           signal.addEventListener('abort', job.onAbort, { once: true });
         }
-        // DICOM parsers give null for a missing tag
-        slot.worker.postMessage({ id, bytes: copy, photometric: String(photometric ?? ''), bitsStored: Number(bitsStored) || 0, output }, [copy]);
+        slot.worker.postMessage(message(id, copy), [copy]);
       });
 
     const terminate = () => {
@@ -103,6 +118,6 @@ export function createFrameDecoderFactory(defaultCreateWorker) {
       for (const slot of pool) slot.worker.terminate();
     };
 
-    return { decode, terminate };
+    return { decode, iccLut, terminate };
   };
 }

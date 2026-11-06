@@ -241,6 +241,13 @@ export interface FrameDecoder {
   decode(bytes: Uint8Array | ArrayBuffer, options?: FrameDecodeOptions & { output?: 'rgba' }): Promise<DecodedFrame>;
   /** Output chosen at run time (a FrameDecodeOptions variable): narrow the result with `'rgba' in frame`. */
   decode(bytes: Uint8Array | ArrayBuffer, options?: FrameDecodeOptions): Promise<DecodedFrame | DecodedFrameSamples>;
+  /**
+   * Bake an ICC profile into a `size`^3 RGBA8 lookup table (alpha 255, red fastest) mapping
+   * the profile's RGB to sRGB with LittleCMS (perceptual intent), for a viewer to apply by
+   * trilinear lookup. Resolves null when the profile is not an RGB profile LittleCMS can open, or needs more memory than its budget.
+   * `size` defaults to 33 (2..129). The profile is copied.
+   */
+  iccLut(profile: Uint8Array | ArrayBuffer, options?: { size?: number; signal?: AbortSignal }): Promise<Uint8Array | null>;
   /** Stop every worker and reject pending decodes. */
   terminate(): void;
 }

@@ -4854,6 +4854,93 @@ void *nii_decodeFrame(const unsigned char *data, size_t len, const char *photome
 	return decodeFrame(data, len, photometric, 0, info, false);
 }
 
+#ifdef myEnableLCMS
+#define CMS_NO_REGISTER_KEYWORD 1 // lcms2.h is included from C++14
+#include "lcms2/lcms2_plugin.h"
+// lcms sizes tables from the profile's header before reading their data, so a few hundred
+// hostile bytes can claim ~500 MB, and WASM memory never shrinks. Each nii_iccLut call bounds the
+// memory lcms holds at once: tags are stored at most at twice their file size, plus room for the
+// transform. Each block carries its size in a header, so a free returns it to the budget.
+static size_t iccBudget;
+static const size_t kIccHeader = 16; // keeps the payload 16-byte aligned
+static void *iccMalloc(cmsContext, cmsUInt32Number size) {
+	if (size > iccBudget)
+		return NULL;
+	unsigned char *block = (unsigned char *)malloc(kIccHeader + size);
+	if (block == NULL)
+		return NULL;
+	iccBudget -= size;
+	memcpy(block, &size, sizeof(size));
+	return block + kIccHeader;
+}
+static void iccFree(cmsContext, void *ptr) {
+	if (ptr == NULL)
+		return;
+	unsigned char *block = (unsigned char *)ptr - kIccHeader;
+	cmsUInt32Number size;
+	memcpy(&size, block, sizeof(size));
+	iccBudget += size;
+	free(block);
+}
+static void *iccRealloc(cmsContext ctx, void *ptr, cmsUInt32Number size) {
+	void *grown = iccMalloc(ctx, size);
+	if ((grown == NULL) || (ptr == NULL))
+		return grown;
+	cmsUInt32Number old;
+	memcpy(&old, (unsigned char *)ptr - kIccHeader, sizeof(old));
+	memcpy(grown, ptr, old < size ? old : size);
+	iccFree(ctx, ptr);
+	return grown;
+}
+static cmsPluginMemHandler iccMemory = {{cmsPluginMagicNumber, 2000, cmsPluginMemHandlerSig, NULL}, iccMalloc, iccFree, iccRealloc, NULL, NULL, NULL};
+
+// DICOM-WSI colour management: an ICC profile's RGB -> sRGB mapping sampled on an n^3 grid
+// (RGBA8, alpha 255, red fastest), for the viewer to apply once per pixel by trilinear lookup.
+// Perceptual intent (lcms falls back to the profile's default). NULL when lcms cannot open the
+// profile, it is not an RGB profile (grey slides are windowed instead), it needs more memory than
+// its budget, or n is out of range.
+unsigned char *nii_iccLut(const unsigned char *profile, size_t len, int n) {
+	if ((profile == NULL) || (n < 2) || (n > 129))
+		return NULL;
+	iccBudget = 4 * len + ((size_t)64 << 20);
+	cmsContext ctx = cmsCreateContext(&iccMemory, NULL);
+	if (ctx == NULL)
+		return NULL;
+	unsigned char *lut = NULL;
+	cmsHPROFILE in = cmsOpenProfileFromMemTHR(ctx, profile, (cmsUInt32Number)len);
+	cmsHPROFILE out = cmsCreate_sRGBProfileTHR(ctx);
+	cmsHTRANSFORM xf = NULL;
+	if ((in != NULL) && (out != NULL) && (cmsGetColorSpace(in) == cmsSigRgbData))
+		xf = cmsCreateTransformTHR(ctx, in, TYPE_RGB_16, out, TYPE_RGBA_8, INTENT_PERCEPTUAL, cmsFLAGS_NOOPTIMIZE); // NOOPTIMIZE: evaluate the profile exactly, as transicc does; a precalculated table is up to 5 8-bit levels off on ScanScope
+	size_t count = (size_t)n * n * n;
+	cmsUInt16Number *grid = xf ? (cmsUInt16Number *)malloc(count * 3 * sizeof(cmsUInt16Number)) : NULL;
+	if (grid != NULL) {
+		size_t i = 0;
+		for (int b = 0; b < n; b++)
+			for (int g = 0; g < n; g++)
+				for (int r = 0; r < n; r++) {
+					grid[i++] = (cmsUInt16Number)((r * 65535 + (n - 1) / 2) / (n - 1));
+					grid[i++] = (cmsUInt16Number)((g * 65535 + (n - 1) / 2) / (n - 1));
+					grid[i++] = (cmsUInt16Number)((b * 65535 + (n - 1) / 2) / (n - 1));
+				}
+		lut = (unsigned char *)malloc(count * 4);
+		if (lut != NULL) {
+			memset(lut, 255, count * 4); // lcms leaves the output alpha untouched
+			cmsDoTransform(xf, grid, lut, (cmsUInt32Number)count);
+		}
+		free(grid);
+	}
+	if (xf != NULL)
+		cmsDeleteTransform(xf);
+	if (out != NULL)
+		cmsCloseProfile(out);
+	if (in != NULL)
+		cmsCloseProfile(in);
+	cmsDeleteContext(ctx);
+	return lut;
+}
+#endif // myEnableLCMS
+
 // Whole-image steps; run once after per-frame decode (per frame, reorder is a no-op and scaling changes frame size).
 static unsigned char *nii_loadImgXLFinish(unsigned char *img, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, struct TDTI4D *dti4D) {
 	if ((dti4D == NULL) && (!dcm.isFloat) && (iVaries)) // must do after

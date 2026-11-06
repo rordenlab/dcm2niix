@@ -19,6 +19,7 @@ Domain hazards live in on-demand docs — read the relevant one before changing 
 - Deployment build standard for repo-controlled channels: `-DZLIB_IMPLEMENTATION=zlib-ng -DUSE_JPEGLS=ON -DUSE_OPENJPEG=GitHub`; zlib-ng `2.3.3` and OpenJPEG `2.5.3` are static pinned source builds; use `GitHub`, not `ON`, for OpenJPEG.
 - Makefile: `cd console && make`; targets include `debug`, `sanitize`, `jp2`, `turbo`, `wasm`.
 - CMake options: `-DZLIB_IMPLEMENTATION=Miniz|System|Cloudflare|zlib-ng|Custom`, `-DUSE_OPENJPEG=OFF|GitHub|System`, `-DUSE_JPEGLS=ON|OFF`, `-DUSE_TURBOJPEG=ON|OFF`, `-DUSE_ZSTD=ON|OFF`, `-DBATCH_VERSION=ON`.
+- LittleCMS 2.19.1 is vendored in `console/lcms2` for the WASM build only (`myEnableLCMS`, `nii_iccLut`: ICC profile to sRGB lookup table); native source lists do not include it, and codespell skips it. See `console/lcms2/README.md`.
 - CharLS is vendored 2.4.5 (decoder only); its four `.cpp` are listed in `console/CMakeLists.txt`, `console/makefile`, `COMPILE.md` and `console/charls/README.md`. See `docs/PARSER_GOTCHAS.md`.
 - In-tree regression:
   ```bash

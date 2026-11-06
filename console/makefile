@@ -96,8 +96,13 @@ wasm:
 	# MAXIMUM_MEMORY=4GB: the wasm32 limit; the 2GB default cannot hold a long fMRI run or a large CT series
 	# INITIAL_MEMORY=32MB: with a maximum set, the 16MB default is too small for the 16MB stack
 
-wasm-jpeg:
-	emcc -O3 -fwasm-exceptions cJSON.cpp $(JFLAGS) $(CFILES) -DUSE_OPENJPEG -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/src/lib/openjp2/ -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/src/lib/openjp2/ -L${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/bin/ -lopenjp2 -lz -s USE_ZLIB -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "getValue", "stringToUTF8", "setValue", "HEAPU8", "HEAP32"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free", "_nii_decodeFrameRGBA", "_nii_decodeFrame"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -lworkerfs.js -s MAXIMUM_MEMORY=4GB -s INITIAL_MEMORY=32MB -s ENVIRONMENT=web,worker -o ../js/src/dcm2niix.jpeg.js
+# LittleCMS (C) is built as its own archive: the C++ flags below (-std=c++14) reject .c files
+LCMSWASM=${PIXI_PROJECT_ROOT}/build/lcms2-wasm
+wasm-lcms:
+	mkdir -p $(LCMSWASM) && cd $(LCMSWASM) && rm -f *.o liblcms2.a && emcc -O3 -c $(abspath $(wildcard lcms2/*.c)) && emar rcs liblcms2.a *.o
+
+wasm-jpeg: wasm-lcms
+	emcc -O3 -fwasm-exceptions cJSON.cpp $(JFLAGS) $(CFILES) -DmyEnableLCMS -L$(LCMSWASM) -llcms2 -DUSE_OPENJPEG -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/src/lib/openjp2/ -I${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/src/lib/openjp2/ -L${PIXI_PROJECT_ROOT}/openjpeg-2.5.3/build/bin/ -lopenjp2 -lz -s USE_ZLIB -s EXPORTED_RUNTIME_METHODS='["callMain", "ccall", "cwrap", "FS", "FS_createDataFile", "FS_readFile", "FS_unlink", "getValue", "stringToUTF8", "setValue", "HEAPU8", "HEAP32"]' -s STACK_OVERFLOW_CHECK=2 -s STACK_SIZE=16MB -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORT_ES6=1 -s MODULARIZE=1 -s EXPORTED_FUNCTIONS='["_main", "_malloc", "_free", "_nii_decodeFrameRGBA", "_nii_decodeFrame", "_nii_iccLut"]' -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 -lworkerfs.js -s MAXIMUM_MEMORY=4GB -s INITIAL_MEMORY=32MB -s ENVIRONMENT=web,worker -o ../js/src/dcm2niix.jpeg.js
 	# -fwasm-exceptions: CharLS reports decode errors by throwing internally; without it a corrupt JPEG-LS frame traps the module
 	# ENVIRONMENT=web,worker: omit the Node branch, which made bundlers emit an unused copy of the glue
 	# STACK_SIZE=16MB is the minimum value found to work with the current codebase when targeting WASM

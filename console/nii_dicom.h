@@ -412,6 +412,9 @@ struct TFrameInfo {
 };
 unsigned char *nii_decodeFrameRGBA(const unsigned char *data, size_t len, const char *photometric, int bitsStored, struct TFrameInfo *info); // bitsStored: DICOM (0028,0101), 0 if unknown
 void *nii_decodeFrame(const unsigned char *data, size_t len, const char *photometric, struct TFrameInfo *info); // samples: uint8 if bitsStored <= 8, else uint16
+#ifdef myEnableLCMS
+unsigned char *nii_iccLut(const unsigned char *profile, size_t len, int n); // n^3 RGBA8 profile -> sRGB table, or NULL
+#endif
 #ifdef USING_DCM2NIIXFSWRAPPER
 void remove_specialchars(char *buf);
 #endif

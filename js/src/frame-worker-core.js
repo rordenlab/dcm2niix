@@ -1,7 +1,7 @@
 // Tile decoding worker: one dcm2niix WASM instance, kept for the worker's life and
 // reused for every frame (convert() instead runs main() once per call). Each message
 // decodes one encapsulated frame's codestream to RGBA8 (nii_decodeFrameRGBA) or to its
-// samples (nii_decodeFrame).
+// samples (nii_decodeFrame); an 'icc' message bakes an ICC profile into an sRGB lookup table (nii_iccLut).
 
 // Index = TFrameInfo.status (kFrame* in console/nii_dicom.h).
 const frameStatus = ['ok', 'decode-error', 'unsupported-precision', 'unsupported-components', 'unsupported-subsampling', 'unsupported-photometric', 'unsupported-signed', 'too-large'];
@@ -55,6 +55,28 @@ export function serveFrames(Module) {
     self.postMessage({ id, info, [samples ? 'samples' : 'rgba']: new View(buf) }, [buf]);
   };
 
+  const iccLut = ({ id, bytes, size }) => {
+    const input = new Uint8Array(bytes);
+    const inPtr = mod._malloc(input.length);
+    if (!inPtr) return self.postMessage({ id, lut: null });
+    let outPtr = 0;
+    try {
+      mod.HEAPU8.set(input, inPtr);
+      outPtr = mod._nii_iccLut(inPtr, input.length, size);
+    } catch (err) {
+      self.postMessage({ id, lut: null });
+      // As for decode: a trapped instance may be inconsistent, so retire the worker.
+      if (err instanceof WebAssembly.RuntimeError) self.postMessage({ type: 'error', message: `dcm2niix frame worker trapped: ${String((err && err.message) || err)}` });
+      return;
+    } finally {
+      mod._free(inPtr);
+    }
+    if (!outPtr) return self.postMessage({ id, lut: null });
+    const lut = mod.HEAPU8.slice(outPtr, outPtr + size * size * size * 4);
+    mod._free(outPtr);
+    self.postMessage({ id, lut }, [lut.buffer]);
+  };
+
   // A load failure posts 'error' above, which fails this worker's jobs in frames.js.
-  self.onmessage = (e) => ready.then(() => decode(e.data));
+  self.onmessage = (e) => ready.then(() => (e.data.kind === 'icc' ? iccLut(e.data) : decode(e.data)));
 }
