@@ -67,21 +67,21 @@ unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr);
 // JPEG-LS frame decoders. Component k of pixel i is c[k][i * STEP]; samples are unsigned and
 // within bitsStored (both codecs clamp their reconstruction).
 
-// 8-bit samples to RGBA8 (OUT 4, alpha opaque), RGB8 (OUT 3) or gray (OUT 1).
-template <typename T, int STEP, int OUT>
+// 8-bit samples to RGBA8 (NOUT 4, alpha opaque), RGB8 (NOUT 3) or gray (NOUT 1).
+template <typename T, int STEP, int NOUT>
 static void frameTo8(const T *const c[3], size_t npix, int n, bool isYCbCr, unsigned char inv, unsigned char *o) {
 	const T *v0 = c[0], *v1 = c[1], *v2 = c[2];
 	if (n == 1) {
-		for (size_t i = 0; i < npix; i++, o += OUT) {
+		for (size_t i = 0; i < npix; i++, o += NOUT) {
 			unsigned char g = clamp255(v0[i * STEP]) ^ inv; // x ^ 255 == 255 - x for 0..255
 			o[0] = g;
-			if (OUT > 1)
+			if (NOUT > 1)
 				o[1] = o[2] = g;
-			if (OUT == 4)
+			if (NOUT == 4)
 				o[3] = 255;
 		}
 	} else if (isYCbCr) { // nii_ybr2rgb: ITU-R BT.601 full-range YCbCr, same coefficients and rounding
-		for (size_t i = 0; i < npix; i++, o += OUT) {
+		for (size_t i = 0; i < npix; i++, o += NOUT) {
 			int Y = v0[i * STEP], Cb = v1[i * STEP], Cr = v2[i * STEP];
 			float r = Y + 1.402f * (Cr - 128);
 			float g = Y - 0.344136f * (Cb - 128) - 0.714136f * (Cr - 128);
@@ -89,15 +89,15 @@ static void frameTo8(const T *const c[3], size_t npix, int n, bool isYCbCr, unsi
 			o[0] = clamp255((int)(r + 0.5f));
 			o[1] = clamp255((int)(g + 0.5f));
 			o[2] = clamp255((int)(b + 0.5f));
-			if (OUT == 4)
+			if (NOUT == 4)
 				o[3] = 255;
 		}
 	} else {
-		for (size_t i = 0; i < npix; i++, o += OUT) {
+		for (size_t i = 0; i < npix; i++, o += NOUT) {
 			o[0] = clamp255(v0[i * STEP]);
 			o[1] = clamp255(v1[i * STEP]);
 			o[2] = clamp255(v2[i * STEP]);
-			if (OUT == 4)
+			if (NOUT == 4)
 				o[3] = 255;
 		}
 	}
