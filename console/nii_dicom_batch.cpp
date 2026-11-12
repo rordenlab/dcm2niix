@@ -2533,9 +2533,11 @@ tse3d: T2*/
 		}
 	}
 	// issue 983: Siemens ConvolutionKernel is "<Type><Size>", e.g. "XYZ Gauss4.00" -> "XYZ Gauss" + 4.0
+	// Only the first value of a multi-valued kernel is parsed: Siemens CT "Bv40d\3" is not "Bv40d\" + 3
 	if (isnan(d.reconFilterSize) && (strlen(d.convolutionKernel) > 0)) {
+		int kernelLen = (int)strcspn(d.convolutionKernel, "\\");
 		int splitAt = -1;
-		for (int i = 0; d.convolutionKernel[i] != '\0'; i++) {
+		for (int i = 0; i < kernelLen; i++) {
 			char c = d.convolutionKernel[i];
 			if ((c >= '0' && c <= '9') || c == '.') {
 				if (splitAt < 0)
@@ -2551,8 +2553,7 @@ tse3d: T2*/
 			for (int i = (int)strlen(kernelName) - 1; i >= 0 && kernelName[i] == ' '; i--)
 				kernelName[i] = '\0';
 			double kernelSize = atof(&d.convolutionKernel[splitAt]);
-			if (strlen(kernelName) > 0)
-				fprintf(fp, "\t\"ReconFilterType\": \"%s\",\n", kernelName);
+			json_Str(fp, "\t\"ReconFilterType\": \"%s\",\n", kernelName);
 			if (kernelSize > 0.0)
 				fprintf(fp, "\t\"ReconFilterSize\": %g,\n", kernelSize);
 		}
