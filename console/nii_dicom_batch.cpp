@@ -14426,6 +14426,16 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		return false;
 	}
 #endif
+	bool isSameOrient = isSameFloatGE(d1.orient[1], d2.orient[1]) && isSameFloatGE(d1.orient[2], d2.orient[2]) && isSameFloatGE(d1.orient[3], d2.orient[3]) &&
+						isSameFloatGE(d1.orient[4], d2.orient[4]) && isSameFloatGE(d1.orient[5], d2.orient[5]) && isSameFloatGE(d1.orient[6], d2.orient[6]);
+	// Automatic CT stacking (-m 2) needs one orientation: orthogonal localizers in one series are separate images, not a tilted volume (gantry tilt keeps 0020,0037 fixed)
+	if ((opts->isForceStackSameSeries == 2) && (d1.isXRay) && (!isSameOrient)) {
+		if ((!warnings->orientVaries) && (!d1.isLocalizer))
+			printMessage("Slices not stacked: orientation varies\n");
+		warnings->orientVaries = true;
+		*isNonParallelSlices = true;
+		return false;
+	}
 	if ((opts->isForceStackSameSeries == 1) || ((opts->isForceStackSameSeries == 2) && (d1.isXRay))) {
 		// "isForceStackSameSeries == 2" will automatically stack CT scans but not MR
 		// if (((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) && (!d1.isXRay)) {
@@ -14517,8 +14527,7 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	}
 	if ((*isNonParallelSlices) && (d1.CSA.mosaicSlices > 1))
 		return false; // issue481
-	if ((!isSameFloatGE(d1.orient[1], d2.orient[1]) || !isSameFloatGE(d1.orient[2], d2.orient[2]) || !isSameFloatGE(d1.orient[3], d2.orient[3]) ||
-		 !isSameFloatGE(d1.orient[4], d2.orient[4]) || !isSameFloatGE(d1.orient[5], d2.orient[5]) || !isSameFloatGE(d1.orient[6], d2.orient[6]))) {
+	if (!isSameOrient) {
 		if ((!warnings->orientVaries) && (!d1.isNonParallelSlices) && (!d1.isLocalizer))
 			printMessage("Slices not stacked: orientation varies (vNav or localizer?) [%g %g %g %g %g %g] != [%g %g %g %g %g %g]\n",
 						 d1.orient[1], d1.orient[2], d1.orient[3], d1.orient[4], d1.orient[5], d1.orient[6],
