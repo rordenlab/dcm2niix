@@ -1091,6 +1091,8 @@ struct TDICOMdata clear_dicom_data() {
 	strcpy(d.scanOptions, "");
 	// strcpy(d.mrAcquisitionType, "");
 	strcpy(d.seriesInstanceUID, "");
+	strcpy(d.frameOfReferenceUID, "");
+	strcpy(d.referencedSeriesUID, "");
 	strcpy(d.instanceUID, "");
 	strcpy(d.studyID, "");
 	strcpy(d.studyInstanceUID, "");
@@ -5784,6 +5786,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kImageNum 0x0020 + (0x0013 << 16)
 #define kStudyInstanceUID 0x0020 + (0x000D << 16)
 #define kSeriesInstanceUID 0x0020 + (0x000E << 16)
+#define kFrameOfReferenceUID 0x0020 + (0x0052 << 16)
 #define kImagePositionPatient 0x0020 + (0x0032 << 16) // Actually !
 #define kOrientationACR 0x0020 + (0x0035 << 16)
 #define kOrientation 0x0020 + (0x0037 << 16)
@@ -7673,10 +7676,17 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kBandwidthPerPixelPhaseEncode:
 			d.bandwidthPerPixelPhaseEncode = dcmFloatDouble(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
+		case kFrameOfReferenceUID: // 0020,0052
+			if (sqDepth == 0)
+				dcmStr(lLength, &buffer[lPos], d.frameOfReferenceUID);
+			break;
 		case kStudyInstanceUID: // 0020,000D
 			dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
 			break;
 		case kSeriesInstanceUID: // 0020,000E
+			// first nested one: a SEG's ReferencedSeriesSequence (0008,1115) precedes other series references
+			if ((sqDepth > 0) && (!d.referencedSeriesUID[0]))
+				dcmStr(lLength, &buffer[lPos], d.referencedSeriesUID);
 			if (sqDepth > seriesInstanceUIDsqDepth)
 				break; // issue655
 			seriesInstanceUIDsqDepth = sqDepth;

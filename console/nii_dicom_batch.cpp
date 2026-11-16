@@ -2142,6 +2142,9 @@ tse3d: T2*/
 		json_Str(fp, "\t\"SeriesInstanceUID\": \"%s\",\n", d.seriesInstanceUID);
 		json_Str(fp, "\t\"StudyInstanceUID\": \"%s\",\n", d.studyInstanceUID);
 		json_Str(fp, "\t\"StudyID\": \"%s\",\n", d.studyID);
+		json_Str(fp, "\t\"FrameOfReferenceUID\": \"%s\",\n", d.frameOfReferenceUID);
+		if (d.modality == kMODALITY_SEG) // lets a viewer check the SEG belongs to the image it overlays
+			json_Str(fp, "\t\"ReferencedSeriesInstanceUID\": \"%s\",\n", d.referencedSeriesUID);
 	}
 	if (!opts.isAnonymizeBIDS && !opts.isOmitPiiBIDS) {
 		// Patient-identifying block: only emitted under `-ba n` (no anon).
