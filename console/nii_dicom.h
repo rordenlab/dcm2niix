@@ -346,8 +346,22 @@ struct TDICOMdata {
 	char phaseEncodingRC, patientSex;
 };
 
+static const int kMaxSegItems = 1024; // ponytail: segments beyond this convert without JSON metadata
+struct TSegItem {
+	int num;
+	uint16_t lab[3];					// RecommendedDisplayCIELabValue
+	char label[kDICOMStr], code[3][3][kDICOMStr]; // [category, type, type modifier][value, scheme, meaning]
+};
+struct TSEG { // DICOM SEG frame geometry and segment table; heap only (~2 MB)
+	int nFrame, nPos, nItem;
+	uint16_t frameSeg[kMaxSlice2D];	// ReferencedSegmentNumber per frame
+	float framePos[kMaxSlice2D][3]; // ImagePositionPatient per frame
+	struct TSegItem item[kMaxSegItems];
+	char type[kDICOMStr]; // SegmentationType
+};
 struct TDCMprefs {
 	int isVerbose, compressFlag, isIgnoreTriggerTimes, isKeepDirectionVaries;
+	struct TSEG *seg; // non-NULL: readDICOMx fills it (DICOM SEG only)
 };
 
 size_t nii_ImgBytes(struct nifti_1_header hdr);

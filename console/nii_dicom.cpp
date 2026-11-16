@@ -5899,7 +5899,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 //  #define kSeriesType 0x0054+(0x1000 << 16 )
 #define kDoseCalibrationFactor 0x0054 + (0x1322 << 16)
 #define kPETImageIndex 0x0054 + (0x1330 << 16)
+#define kSegmentationType 0x0062 + (0x0001 << 16)			   // CS
+#define kSegmentedPropertyCategoryCodeSequence 0x0062 + (0x0003 << 16)
+#define kSegmentNumber 0x0062 + (0x0004 << 16) // US
+#define kSegmentLabel 0x0062 + (0x0005 << 16)  // LO
 #define kReferencedSegmentNumber 0x0062 + (0x000B << 16)	   // US
+#define kRecommendedDisplayCIELabValue 0x0062 + (0x000D << 16) // US
+#define kSegmentedPropertyTypeCodeSequence 0x0062 + (0x000F << 16)
+#define kSegmentedPropertyTypeModifierCodeSequence 0x0062 + (0x0011 << 16)
 #define kPEDirectionDisplayedUIH 0x0065 + (0x1005 << 16)	   // SH
 #define kDiffusion_bValueUIH 0x0065 + (0x1009 << 16)		   // FD
 #define kParallelInformationUIH 0x0065 + (0x100D << 16)		   // SH
@@ -6096,6 +6103,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isInterpolated = false;
 	bool isIconImageSequence = false;
 	bool isDeidentificationMethodCodeSequence = false;
+	struct TSEG *seg = prefs->seg;
+	int segCode = -1, segCodeDepth = 0; // SEG code sequence being read: 0 category, 1 type, 2 type modifier; its items' depth
 	int sqDepthIcon = -1;
 	bool isSwitchToImplicitVR = false;
 	bool isSwitchToBigEndian = false;
@@ -6218,6 +6227,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			is00540016SQ = false;
 			if (sqDepth < 0)
 				sqDepth = 0; // should not happen, but protect for faulty anonymization
+			if (sqDepth < segCodeDepth)
+				segCode = -1;
 			// if we leave the folder MREchoSequence 0018,9114
 			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_UNKNOWN) || (d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; // triggered
@@ -7144,6 +7155,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kCodeValue: {
+			if (seg && segCode >= 0 && sqDepth == segCodeDepth)
+				dcmStr(lLength, &buffer[lPos], seg->item[seg->nItem - 1].code[segCode][0]);
 			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS) {
 				if (d.deID_CS == NULL)
 					d.deID_CS = (struct TDeIDCodeSequence *)calloc(MAX_DEID_CS, sizeof(struct TDeIDCodeSequence));
@@ -7153,6 +7166,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kCodingSchemeDesignator: {
+			if (seg && segCode >= 0 && sqDepth == segCodeDepth)
+				dcmStr(lLength, &buffer[lPos], seg->item[seg->nItem - 1].code[segCode][1]);
 			if (isDeidentificationMethodCodeSequence && d.deID_CS_n < MAX_DEID_CS && d.deID_CS != NULL)
 				dcmStr(lLength, &buffer[lPos], d.deID_CS[d.deID_CS_n].CodingSchemeDesignator);
 			break;
@@ -7163,6 +7178,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kCodeMeaning: {
+			if (seg && segCode >= 0 && sqDepth == segCodeDepth)
+				dcmStr(lLength, &buffer[lPos], seg->item[seg->nItem - 1].code[segCode][2]);
 			if (is00540016SQ) {
 				// issue 983: take first CodeMeaning inside (0054,0016) — RadionuclideCodeSequence ^18^Fluorine; strip DICOM caret separators
 				if (strlen(d.tracerRadionuclide) < 1) {
@@ -7664,6 +7681,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// dcmStr(lLength, &buffer[lPos], dx);
 			// printMessage("*%s*", dx);
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 3, &patientPosition[0]); // slice position
+			if (seg && seg->nPos < kMaxSlice2D) {
+				for (int k = 0; k < 3; k++)
+					seg->framePos[seg->nPos][k] = patientPosition[k + 1];
+				seg->nPos++;
+			}
 			if (isnan(d.patientPosition[1])) {
 				// dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
 				for (int k = 0; k < 4; k++)
@@ -7977,8 +7999,41 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kPETImageIndex:
 			PETImageIndex = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
+		case kSegmentationType:
+			if (seg)
+				dcmStr(lLength, &buffer[lPos], seg->type);
+			break;
+		case kSegmentedPropertyCategoryCodeSequence: // Type 1, first SEG attribute of each SegmentSequence item
+			if ((!seg) || (seg->nItem >= kMaxSegItems))
+				break;
+			seg->nItem++;
+			segCode = 0;
+			segCodeDepth = sqDepth + 1;
+			break;
+		case kSegmentedPropertyTypeCodeSequence:
+		case kSegmentedPropertyTypeModifierCodeSequence:
+			if ((!seg) || (seg->nItem < 1))
+				break;
+			segCode = (groupElement == kSegmentedPropertyTypeCodeSequence) ? 1 : 2;
+			segCodeDepth = sqDepth + 1;
+			break;
+		case kSegmentNumber:
+			if (seg && seg->nItem > 0)
+				seg->item[seg->nItem - 1].num = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			break;
+		case kSegmentLabel:
+			if (seg && seg->nItem > 0)
+				dcmStr(lLength, &buffer[lPos], seg->item[seg->nItem - 1].label);
+			break;
+		case kRecommendedDisplayCIELabValue:
+			if (seg && seg->nItem > 0 && lLength >= 6)
+				for (int i = 0; i < 3; i++)
+					seg->item[seg->nItem - 1].lab[i] = dcmInt(2, &buffer[lPos + 2 * i], d.isLittleEndian);
+			break;
 		case kReferencedSegmentNumber: { // US issue706
 			int segn = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			if (seg && seg->nFrame < kMaxSlice2D)
+				seg->frameSeg[seg->nFrame++] = segn;
 			if (segn < minReferencedSegmentNumber)
 				minReferencedSegmentNumber = segn;
 			if (segn > maxReferencedSegmentNumber)
@@ -10457,6 +10512,7 @@ void setDefaultPrefs(struct TDCMprefs *prefs) {
 	prefs->compressFlag = kCompressSupport;
 	prefs->isIgnoreTriggerTimes = false;
 	prefs->isKeepDirectionVaries = false;
+	prefs->seg = NULL;
 }
 
 struct TDICOMdata readDICOMv(char *fname, int isVerbose, int compressFlag, struct TDTI4D *dti4D) {
