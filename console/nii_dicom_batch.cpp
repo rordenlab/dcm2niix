@@ -14069,7 +14069,7 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 }
 
 // OR one BINARY frame (LSB-first bits, frames packed without padding) into its label slice.
-// hits[prev] counts voxels this frame shares with label prev (hits[0]: new voxels); cnt counts segments per voxel.
+// hits[prev] counts voxels this frame shares with label prev (hits[0]: new voxels); cnt counts segments per voxel, saturating at 2.
 template <typename T>
 static void segMergeFrame(const unsigned char *bits, size_t bit0, size_t nxy, T s, T *lbl, unsigned char *cnt, uint32_t *hits) {
 	for (size_t i = 0; i < nxy; i++) {
@@ -14077,7 +14077,7 @@ static void segMergeFrame(const unsigned char *bits, size_t bit0, size_t nxy, T 
 		unsigned char v = (bits[b >> 3] >> (b & 7)) & 1;
 		T prev = lbl[i];
 		hits[prev] += v;
-		cnt[i] += v; // ponytail: wraps beyond 255 segments on one voxel
+		cnt[i] += v & (cnt[i] < 2); // saturate: none, one or many
 		lbl[i] = v ? s : prev;
 	}
 }

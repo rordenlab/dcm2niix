@@ -25,7 +25,7 @@ def code(value, meaning):
     return Sequence([item(CodeValue=value, CodingSchemeDesignator="SCT", CodeMeaning=meaning)])
 
 
-def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=False, implicit=False):
+def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=False, implicit=False, source_seg=0):
     """3x3 frames, centre voxel set; frame f at z (along the slice normal) belongs to segs[f]."""
     row, col = np.array(orient[:3], float), np.array(orient[3:], float)
     normal = np.cross(row, col)
@@ -56,6 +56,10 @@ def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=
     for f, (z, s) in enumerate(zip(zs, segs)):
         fr = item(FrameContentSequence=Sequence([item(DimensionIndexValues=[s, f + 1])]),
                   PlanePositionSequence=Sequence([item(ImagePositionPatient=[round(float(v), 6) for v in z * normal])]))
+        if source_seg:  # a source reference may name another segment; it must not be taken as this frame's
+            fr.DerivationImageSequence = Sequence([item(DerivationCodeSequence=code("113076", "Segmentation"), SourceImageSequence=Sequence([item(
+                ReferencedSOPClassUID=ds.SOPClassUID, ReferencedSOPInstanceUID=generate_uid(), ReferencedSegmentNumber=source_seg,
+                PurposeOfReferenceCodeSequence=code("121322", "Source image for image processing operation"))]))])
         if not shared_seg:
             fr.SegmentIdentificationSequence = Sequence([item(ReferencedSegmentNumber=s)])
         frames.append(fr)
@@ -73,7 +77,7 @@ def convert(tmp, name, **kw):
     r = subprocess.run([EXE, "-s", "y", "-z", "n", "-f", name, "-o", str(out), str(out / "in.dcm")], capture_output=True, text=True)
     nii = out / f"{name}.nii"
     if not nii.exists():
-        return r.returncode, None, None, r.stdout
+        return r.returncode, None, None, r.stdout + r.stderr
     h = nii.read_bytes()
     dim = struct.unpack("<8h", h[40:56])[1:4]
     vol = np.frombuffer(h[352:], np.uint8).reshape(dim[::-1])  # [z][y][x]
@@ -95,8 +99,13 @@ def main():
             assert rc == 0 and dim == (3, 3, 4) and vol[:, 1, 1].tolist() == [1, 0, 1, 1], (name, rc, dim)
         rc, dim, vol, _ = convert(tmp, "labels", zs=[0, 1], segs=[1, 2])
         assert rc == 0 and vol[:, 1, 1].tolist() == [1, 2], (rc, dim)  # flipZ-agnostic: slice 0 is the lowest z
+        for name, shared in (("source_ref", False), ("source_ref_shared", True)):
+            rc, dim, vol, _ = convert(tmp, name, zs=[0, 1, 2], segs=[1, 1, 1], shared_seg=shared, source_seg=2)
+            assert rc == 0 and dim == (3, 3, 3) and sorted(set(vol.ravel())) == [0, 1], (name, rc, dim)
         rc, dim, _, log = convert(tmp, "overlap", zs=[0, 0], segs=[1, 2])
         assert rc != 0 and dim is None and "overlap segment 1 and 2: 1 voxels" in log, (rc, log)
+        rc, dim, _, log = convert(tmp, "overlap256", zs=[0] * 256, segs=list(range(1, 257)))  # per-voxel count must not wrap
+        assert rc != 0 and dim is None and "segments overlap (1 voxels)" in log, (rc, log)
         rc, dim, vol, _ = convert(tmp, "oblique", zs=list(range(201)), segs=[1] * 201, orient=(1, 0, 0, 0, 0.866025, 0.5))
         assert rc == 0 and dim == (3, 3, 201) and vol.sum() == 201, (rc, dim)
     print("test_seg: OK")

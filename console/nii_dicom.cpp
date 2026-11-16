@@ -6108,6 +6108,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	struct TSEG *seg = prefs->seg;
 	int segCode = -1, segCodeDepth = 0; // SEG code sequence being read: 0 category, 1 type, 2 type modifier; its items' depth
 	int segFrameDepth = -1;				// depth of PerFrameFunctionalGroupsSequence items; seg->nFrame counts them
+	int segIdDepth = -1;				// depth of the functional group's SegmentIdentificationSequence item
 	int sqDepthIcon = -1;
 	bool isSwitchToImplicitVR = false;
 	bool isSwitchToBigEndian = false;
@@ -6232,6 +6233,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				sqDepth = 0; // should not happen, but protect for faulty anonymization
 			if (sqDepth < segCodeDepth)
 				segCode = -1;
+			if (sqDepth < segIdDepth)
+				segIdDepth = -1;
 			// if we leave the folder MREchoSequence 0018,9114
 			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_UNKNOWN) || (d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; // triggered
@@ -8013,6 +8016,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (seg)
 				segFrameDepth = sqDepth + 1;
 			break;
+		case kSegmentIdentificationSequence: // only its item names the frame's segment; source references (DerivationImageSequence) may also carry ReferencedSegmentNumber
+			if (seg)
+				segIdDepth = sqDepth + 1;
+			break;
 		case kSegmentationType:
 			if (seg)
 				dcmStr(lLength, &buffer[lPos], seg->type);
@@ -8046,7 +8053,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		case kReferencedSegmentNumber: { // US issue706
 			int segn = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
-			if (seg && seg->nFrame <= kMaxSlice2D)
+			if (seg && (sqDepth == segIdDepth) && (seg->nFrame <= kMaxSlice2D))
 				*((seg->nFrame > 0) ? &seg->frameSeg[seg->nFrame - 1] : &seg->sharedSeg) = segn;
 			if (segn < minReferencedSegmentNumber)
 				minReferencedSegmentNumber = segn;
