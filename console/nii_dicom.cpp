@@ -5900,9 +5900,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 #define kDoseCalibrationFactor 0x0054 + (0x1322 << 16)
 #define kPETImageIndex 0x0054 + (0x1330 << 16)
 #define kSegmentationType 0x0062 + (0x0001 << 16)			   // CS
+#define kSegmentSequence 0x0062 + (0x0002 << 16)
 #define kSegmentedPropertyCategoryCodeSequence 0x0062 + (0x0003 << 16)
 #define kSegmentNumber 0x0062 + (0x0004 << 16) // US
 #define kSegmentLabel 0x0062 + (0x0005 << 16)  // LO
+#define kSegmentIdentificationSequence 0x0062 + (0x000A << 16)
 #define kReferencedSegmentNumber 0x0062 + (0x000B << 16)	   // US
 #define kRecommendedDisplayCIELabValue 0x0062 + (0x000D << 16) // US
 #define kSegmentedPropertyTypeCodeSequence 0x0062 + (0x000F << 16)
@@ -6105,6 +6107,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool isDeidentificationMethodCodeSequence = false;
 	struct TSEG *seg = prefs->seg;
 	int segCode = -1, segCodeDepth = 0; // SEG code sequence being read: 0 category, 1 type, 2 type modifier; its items' depth
+	int segFrameDepth = -1;				// depth of PerFrameFunctionalGroupsSequence items; seg->nFrame counts them
 	int sqDepthIcon = -1;
 	bool isSwitchToImplicitVR = false;
 	bool isSwitchToBigEndian = false;
@@ -6447,6 +6450,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			}
 			lLength = 4;
 			sqDepth++;
+			if (seg && (sqDepth == segFrameDepth) && (!isEncapsulatedData))
+				seg->nFrame++;
 		} else if (((groupElement == kItemDelimitationTag) || (groupElement == kSequenceDelimitationItemTag)) && (!isEncapsulatedData)) {
 			vr[0] = 'N';
 			vr[1] = 'A';
@@ -6497,6 +6502,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				lLength = 0; // Do not skip kItemTag - required to determine nesting of Philips Enhanced
 			}
 			if ((isParametricMap) && (groupElement == kRealWorldValueMappingSequence)) { // issue 1041: holds LUTLabel; PM only, Philips RWV parsing stays as before
+				vr[0] = 'S';
+				vr[1] = 'Q';
+				lLength = 0;
+			}
+			if (seg && ((groupElement == kSegmentSequence) || (groupElement == kSegmentIdentificationSequence) || (groupElement == kSegmentedPropertyCategoryCodeSequence) || (groupElement == kSegmentedPropertyTypeCodeSequence) || (groupElement == kSegmentedPropertyTypeModifierCodeSequence))) { // SEG re-read only
 				vr[0] = 'S';
 				vr[1] = 'Q';
 				lLength = 0;
@@ -7681,10 +7691,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// dcmStr(lLength, &buffer[lPos], dx);
 			// printMessage("*%s*", dx);
 			dcmMultiFloat(lLength, (char *)&buffer[lPos], 3, &patientPosition[0]); // slice position
-			if (seg && seg->nPos < kMaxSlice2D) {
+			if (seg && seg->nFrame <= kMaxSlice2D) { // nFrame 0: shared group (precedes the per-frame sequence)
+				float *pos = (seg->nFrame > 0) ? seg->framePos[seg->nFrame - 1] : seg->sharedPos;
 				for (int k = 0; k < 3; k++)
-					seg->framePos[seg->nPos][k] = patientPosition[k + 1];
-				seg->nPos++;
+					pos[k] = patientPosition[k + 1];
 			}
 			if (isnan(d.patientPosition[1])) {
 				// dcmMultiFloat(lLength, (char*)&buffer[lPos], 3, &d.patientPosition[0]); //slice position
@@ -7999,6 +8009,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kPETImageIndex:
 			PETImageIndex = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 			break;
+		case kPerFrameFunctionalGroupsSequence:
+			if (seg)
+				segFrameDepth = sqDepth + 1;
+			break;
 		case kSegmentationType:
 			if (seg)
 				dcmStr(lLength, &buffer[lPos], seg->type);
@@ -8032,8 +8046,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		case kReferencedSegmentNumber: { // US issue706
 			int segn = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
-			if (seg && seg->nFrame < kMaxSlice2D)
-				seg->frameSeg[seg->nFrame++] = segn;
+			if (seg && seg->nFrame <= kMaxSlice2D)
+				*((seg->nFrame > 0) ? &seg->frameSeg[seg->nFrame - 1] : &seg->sharedSeg) = segn;
 			if (segn < minReferencedSegmentNumber)
 				minReferencedSegmentNumber = segn;
 			if (segn > maxReferencedSegmentNumber)

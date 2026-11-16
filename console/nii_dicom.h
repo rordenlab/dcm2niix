@@ -353,9 +353,11 @@ struct TSegItem {
 	char label[kDICOMStr], code[3][3][kDICOMStr]; // [category, type, type modifier][value, scheme, meaning]
 };
 struct TSEG { // DICOM SEG frame geometry and segment table; heap only (~2 MB)
-	int nFrame, nPos, nItem;
-	uint16_t frameSeg[kMaxSlice2D];	// ReferencedSegmentNumber per frame
-	float framePos[kMaxSlice2D][3]; // ImagePositionPatient per frame
+	int nFrame, nItem;				// nFrame: per-frame functional group items seen
+	uint16_t sharedSeg;				// shared-group ReferencedSegmentNumber, 0 if none
+	uint16_t frameSeg[kMaxSlice2D];	// per-frame ReferencedSegmentNumber, 0 if none
+	float sharedPos[3];				// shared-group ImagePositionPatient, caller sets NaN
+	float framePos[kMaxSlice2D][3]; // per-frame ImagePositionPatient, caller sets NaN
 	struct TSegItem item[kMaxSegItems];
 	char type[kDICOMStr]; // SegmentationType
 };

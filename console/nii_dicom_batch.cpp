@@ -1933,7 +1933,50 @@ static bool mrsVoiMatrix(const struct TDICOMdata *d, double m[4][4]) {
 	return true;
 }
 
-static int nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D) {
+// DICOM CIELab (PS3.3 C.10.7.1.1: L* 0..100, a*/b* -128..127, each scaled to 0..65535) to sRGB, D65 white
+static void segLab2RGB(const uint16_t lab[3], int rgb[3]) {
+	double fy = (lab[0] * 100.0 / 65535.0 + 16.0) / 116.0;
+	double f[3] = {fy + (lab[1] * 255.0 / 65535.0 - 128.0) / 500.0, fy, fy - (lab[2] * 255.0 / 65535.0 - 128.0) / 200.0};
+	const double white[3] = {0.950456, 1.0, 1.088754};
+	double xyz[3];
+	for (int i = 0; i < 3; i++)
+		xyz[i] = white[i] * ((f[i] > 6.0 / 29.0) ? f[i] * f[i] * f[i] : (108.0 / 841.0) * (f[i] - 4.0 / 29.0));
+	const double m[3][3] = {{3.2404542, -1.5371385, -0.4985314}, {-0.9692660, 1.8760108, 0.0415560}, {0.0556434, -0.2040259, 1.0572252}};
+	for (int i = 0; i < 3; i++) {
+		double c = m[i][0] * xyz[0] + m[i][1] * xyz[1] + m[i][2] * xyz[2];
+		c = (c <= 0.0031308) ? 12.92 * c : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+		rgb[i] = (int)round(255.0 * fmin(fmax(c, 0.0), 1.0));
+	}
+}
+
+// "Segments" sidecar table: label value = segment number
+static void json_Segments(FILE *fp, const struct TSEG *seg) {
+	fprintf(fp, "\t\"Segments\": [");
+	const char *codeKey[3] = {"SegmentedPropertyCategoryCode", "SegmentedPropertyTypeCode", "SegmentedPropertyTypeModifierCode"};
+	for (int i = 0; i < seg->nItem; i++) {
+		const struct TSegItem *it = &seg->item[i];
+		fprintf(fp, "%s\n\t\t{ \"LabelValue\": %d, \"SegmentNumber\": %d", i ? "," : "", it->num, it->num);
+		json_Str(fp, ", \"SegmentLabel\": \"%s\"", (char *)it->label);
+		if (it->lab[0] || it->lab[1] || it->lab[2]) {
+			int rgb[3];
+			segLab2RGB(it->lab, rgb);
+			fprintf(fp, ", \"RGB\": [%d, %d, %d]", rgb[0], rgb[1], rgb[2]);
+		}
+		for (int c = 0; c < 3; c++) {
+			if (!it->code[c][0][0])
+				continue;
+			fprintf(fp, ", \"%s\": {", codeKey[c]);
+			json_Str(fp, "\"CodeValue\": \"%s\"", (char *)it->code[c][0]);
+			json_Str(fp, ", \"CodingSchemeDesignator\": \"%s\"", (char *)it->code[c][1]);
+			json_Str(fp, ", \"CodeMeaning\": \"%s\"", (char *)it->code[c][2]);
+			fprintf(fp, "}");
+		}
+		fprintf(fp, " }");
+	}
+	fprintf(fp, "\n\t],\n");
+}
+
+static int nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D, const struct TSEG *seg = NULL) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
 	//  sidecar JSON file (with the same filename as the .nii.gz file, but with .json extension).
@@ -3686,6 +3729,8 @@ tse3d: T2*/
 		fprintf(fp, "\t\"BidsGuess\": [\"%s\",\"%s\"],\n", d.CSA.bidsDataType, d.CSA.bidsEntitySuffix);
 	// json_Str(fp, "\t\"StationName\": \"%s\",\n", d.stationName);
 
+	if (seg)
+		json_Segments(fp, seg);
 	// Finish up with info on the conversion tool
 	fprintf(fp, "\t\"ConversionSoftware\": \"dcm2niix\",\n");
 	fprintf(fp, "\t\"ConversionSoftwareVersion\": \"%s\"\n", kDCMdate);
@@ -14023,24 +14068,8 @@ int saveDcm2NiiMRSI(int nConvert, struct TDCMsort dcmSort[],
 	return ret;
 }
 
-// DICOM CIELab (PS3.3 C.10.7.1.1: L* 0..100, a*/b* -128..127, each scaled to 0..65535) to sRGB, D65 white
-static void segLab2RGB(const uint16_t lab[3], int rgb[3]) {
-	double fy = (lab[0] * 100.0 / 65535.0 + 16.0) / 116.0;
-	double f[3] = {fy + (lab[1] * 255.0 / 65535.0 - 128.0) / 500.0, fy, fy - (lab[2] * 255.0 / 65535.0 - 128.0) / 200.0};
-	const double white[3] = {0.950456, 1.0, 1.088754};
-	double xyz[3];
-	for (int i = 0; i < 3; i++)
-		xyz[i] = white[i] * ((f[i] > 6.0 / 29.0) ? f[i] * f[i] * f[i] : (108.0 / 841.0) * (f[i] - 4.0 / 29.0));
-	const double m[3][3] = {{3.2404542, -1.5371385, -0.4985314}, {-0.9692660, 1.8760108, 0.0415560}, {0.0556434, -0.2040259, 1.0572252}};
-	for (int i = 0; i < 3; i++) {
-		double c = m[i][0] * xyz[0] + m[i][1] * xyz[1] + m[i][2] * xyz[2];
-		c = (c <= 0.0031308) ? 12.92 * c : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-		rgb[i] = (int)round(255.0 * fmin(fmax(c, 0.0), 1.0));
-	}
-}
-
-// OR one BINARY frame (LSB-first bits, frames packed without padding) into the label slice.
-// Last frame wins on overlap; hits[prev] counts voxels this frame takes over from label prev (hits[0]: new voxels).
+// OR one BINARY frame (LSB-first bits, frames packed without padding) into its label slice.
+// hits[prev] counts voxels this frame shares with label prev (hits[0]: new voxels); cnt counts segments per voxel.
 template <typename T>
 static void segMergeFrame(const unsigned char *bits, size_t bit0, size_t nxy, T s, T *lbl, unsigned char *cnt, uint32_t *hits) {
 	for (size_t i = 0; i < nxy; i++) {
@@ -14065,8 +14094,25 @@ static void segMerge(const unsigned char *bits, const struct TSEG *seg, const in
 	}
 }
 
+// true if every frame lies within 0.1 slice of a grid point mmMin + k*dz
+static bool segFitsGrid(const double *mm, int n, double mmMin, double dz) {
+	if (!(dz > 0.0))
+		return false;
+	for (int f = 0; f < n; f++) {
+		double k = (mm[f] - mmMin) / dz;
+		if (fabs(k - round(k)) > 0.1)
+			return false;
+	}
+	return true;
+}
+
+static int cmpDouble(const void *a, const void *b) {
+	double x = *(const double *)a, y = *(const double *)b;
+	return (x > y) - (x < y);
+}
+
 // DICOM SEG (BINARY) -> one 3D label NIfTI (voxel = segment number) on a regular grid spanning the frames' positions,
-// plus the BIDS sidecar with a "Segments" table. Reports overlap; overlapping voxels take the last frame's segment.
+// plus the BIDS sidecar with a "Segments" table. Overlapping segments are reported and rejected (no 4D output yet).
 static int saveDcm2NiiSEG(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmList[], struct TSearchList *nameList, struct TDCMopts opts, struct TDTI4D *dti4D) {
 	struct TDICOMdata *d = &dcmList[dcmSort[0].indx];
 	char *fname = nameList->str[dcmSort[0].indx];
@@ -14075,19 +14121,27 @@ static int saveDcm2NiiSEG(int nConvert, struct TDCMsort dcmSort[], struct TDICOM
 	struct TSEG *seg = (struct TSEG *)calloc(1, sizeof(struct TSEG));
 	if (seg == NULL)
 		return EXIT_FAILURE;
+	for (int k = 0; k < 3; k++)
+		seg->sharedPos[k] = NAN;
+	for (int f = 0; f < kMaxSlice2D; f++)
+		for (int k = 0; k < 3; k++)
+			seg->framePos[f][k] = NAN;
 	struct TDCMprefs prefs;
 	opts2Prefs(&opts, &prefs);
 	prefs.seg = seg;
 	struct TDICOMdata dSeg = readDICOMx(fname, &prefs, dti4D); // second pass collects the per-frame SEG data
 	free_TDICOMdata_deID_CS(&dSeg);
 	int ret = EXIT_FAILURE;
+	int nFrame = d->xyzDim[3] * d->xyzDim[4]; // NumberOfFrames
 	unsigned char *bits = NULL, *cnt = NULL, *img = NULL;
 	int *frameSlice = NULL;
+	double *mm = NULL;
 	uint32_t *hits = NULL, *pairs = NULL;
 	size_t nxy = (size_t)d->xyzDim[1] * d->xyzDim[2];
 	int maxSeg = 0, nSlice = 1, iMin = 0, iMax = 0;
-	float mmMin = INFINITY, mmMax = -INFINITY, dz = d->xyzMM[3];
-	vec3 sliceV = crossProduct(setVec3(d->orient[1], d->orient[2], d->orient[3]), setVec3(d->orient[4], d->orient[5], d->orient[6]));
+	double mmMin = INFINITY, mmMax = -INFINITY, dz = d->xyzMM[3]; // declared spacing
+	double n[3] = {d->orient[2] * d->orient[6] - d->orient[3] * d->orient[5], d->orient[3] * d->orient[4] - d->orient[1] * d->orient[6], d->orient[1] * d->orient[5] - d->orient[2] * d->orient[4]};
+	double nLen = sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
 	if (strcmp(seg->type, "BINARY") != 0) {
 		printError("DICOM SEG SegmentationType '%s' not supported (only BINARY): %s\n", seg->type, fname);
 		goto segExit;
@@ -14096,62 +14150,82 @@ static int saveDcm2NiiSEG(int nConvert, struct TDCMsort dcmSort[], struct TDICOM
 		printError("DICOM SEG must be uncompressed 1-bit (bits %d): %s\n", d->bitsAllocated, fname);
 		goto segExit;
 	}
-	if ((seg->nFrame < 1) || (seg->nFrame != seg->nPos) || (seg->nFrame != d->xyzDim[3] * d->xyzDim[4])) {
-		printError("DICOM SEG frames %d, ReferencedSegmentNumber %d, ImagePositionPatient %d do not match: %s\n", d->xyzDim[3] * d->xyzDim[4], seg->nFrame, seg->nPos, fname);
+	if (!d->isValid) { // e.g. per-frame orientation varies (issue 894); -s y does not filter these
+		printError("DICOM SEG not converted (invalid or orientation varies): %s\n", fname);
 		goto segExit;
 	}
-	frameSlice = (int *)malloc(seg->nFrame * sizeof(int));
-	{ // frame positions along the slice normal define the grid: spacing is the smallest gap between distinct positions
-		float *mm = (float *)malloc(seg->nFrame * sizeof(float));
-		for (int f = 0; f < seg->nFrame; f++) {
-			mm[f] = dotProduct(setVec3(seg->framePos[f][0], seg->framePos[f][1], seg->framePos[f][2]), sliceV);
-			if (mm[f] < mmMin) {
-				mmMin = mm[f];
-				iMin = f;
-			}
-			if (mm[f] > mmMax) {
-				mmMax = mm[f];
-				iMax = f;
-			}
-			if (seg->frameSeg[f] > maxSeg)
-				maxSeg = seg->frameSeg[f];
+	if ((nFrame < 1) || (nFrame > kMaxSlice2D) || (seg->nFrame != nFrame) || !(nLen > 0.0)) {
+		printError("DICOM SEG has %d frames but %d per-frame functional groups (or no orientation): %s\n", nFrame, seg->nFrame, fname);
+		goto segExit;
+	}
+	for (int k = 0; k < 3; k++)
+		n[k] /= nLen;
+	mm = (double *)malloc(nFrame * sizeof(double));
+	frameSlice = (int *)malloc(nFrame * sizeof(int));
+	for (int f = 0; f < nFrame; f++) { // resolve shared-group defaults, then project onto the unit slice normal
+		if (seg->frameSeg[f] == 0)
+			seg->frameSeg[f] = seg->sharedSeg;
+		if (isnan(seg->framePos[f][0]))
+			for (int k = 0; k < 3; k++)
+				seg->framePos[f][k] = seg->sharedPos[k];
+		if ((seg->frameSeg[f] == 0) || isnan(seg->framePos[f][0])) {
+			printError("DICOM SEG frame %d lacks ReferencedSegmentNumber or ImagePositionPatient: %s\n", f + 1, fname);
+			goto segExit;
 		}
-		float gap = INFINITY;
-		for (int f = 0; f < seg->nFrame; f++) {
-			float g = mm[f] - mmMin;
-			if ((g > 0.01f) && (g < gap))
-				gap = g; // ponytail: assumes the two lowest distinct positions are adjacent slices
+		mm[f] = n[0] * seg->framePos[f][0] + n[1] * seg->framePos[f][1] + n[2] * seg->framePos[f][2];
+		if (mm[f] < mmMin) {
+			mmMin = mm[f];
+			iMin = f;
 		}
-		if (isfinite(gap))
-			dz = gap;
-		nSlice = (int)round((mmMax - mmMin) / dz) + 1;
-		bool isRegular = (nSlice <= kMaxSlice2D);
-		for (int f = 0; f < seg->nFrame; f++) {
-			float k = (mm[f] - mmMin) / dz;
-			frameSlice[f] = (int)round(k);
-			vec3 off = setVec3(seg->framePos[f][0] - seg->framePos[iMin][0], seg->framePos[f][1] - seg->framePos[iMin][1], seg->framePos[f][2] - seg->framePos[iMin][2]);
-			float inPlane = sqrt(fmax(0.0f, dotProduct(off, off) - (mm[f] - mmMin) * (mm[f] - mmMin)));
-			if ((fabs(k - frameSlice[f]) > 0.1f) || (inPlane > 0.1f * fmin(d->xyzMM[1], d->xyzMM[2])))
-				isRegular = false;
+		if (mm[f] > mmMax) {
+			mmMax = mm[f];
+			iMax = f;
 		}
-		free(mm);
-		if (!isRegular) {
-			printError("DICOM SEG frame positions do not form a regular grid (spacing %gmm): %s\n", dz, fname);
+		if (seg->frameSeg[f] > maxSeg)
+			maxSeg = seg->frameSeg[f];
+	}
+	if (!segFitsGrid(mm, nFrame, mmMin, dz)) { // declared spacing inconsistent: smallest gap between distinct positions
+		double *sorted = (double *)malloc(nFrame * sizeof(double));
+		memcpy(sorted, mm, nFrame * sizeof(double));
+		qsort(sorted, nFrame, sizeof(double), cmpDouble);
+		dz = INFINITY;
+		for (int f = 1; f < nFrame; f++)
+			if ((sorted[f] - sorted[f - 1] > 0.01) && (sorted[f] - sorted[f - 1] < dz))
+				dz = sorted[f] - sorted[f - 1];
+		free(sorted);
+		if (!isfinite(dz))
+			dz = (d->xyzMM[3] > 0.0) ? d->xyzMM[3] : 1.0; // single position
+	}
+	nSlice = (int)round((mmMax - mmMin) / dz) + 1;
+	if ((!segFitsGrid(mm, nFrame, mmMin, dz)) || (nSlice > kMaxSlice2D)) {
+		printError("DICOM SEG frame positions do not form a regular grid (spacing %gmm): %s\n", dz, fname);
+		goto segExit;
+	}
+	for (int f = 0; f < nFrame; f++) {
+		frameSlice[f] = (int)round((mm[f] - mmMin) / dz);
+		double r2 = 0.0; // squared distance from the slice normal through the first slice
+		for (int k = 0; k < 3; k++) {
+			double off = seg->framePos[f][k] - seg->framePos[iMin][k];
+			double res = off - (mm[f] - mmMin) * n[k];
+			r2 += res * res;
+		}
+		if (sqrt(r2) > 0.1 * fmin(d->xyzMM[1], d->xyzMM[2])) {
+			printError("DICOM SEG frame %d is shifted %gmm in-plane from the grid: %s\n", f + 1, sqrt(r2), fname);
 			goto segExit;
 		}
 	}
 	{
-		size_t nBits = (size_t)seg->nFrame * nxy;
-		bits = (unsigned char *)malloc((nBits + 7) >> 3);
+		size_t nBytes = ((size_t)nFrame * nxy + 7) >> 3;
+		bits = (unsigned char *)malloc(nBytes);
 		FILE *fp = fopen(fname, "rb");
 		size_t nRead = 0;
 		if (fp) {
 			fseek(fp, d->imageStart, SEEK_SET);
-			nRead = fread(bits, 1, (nBits + 7) >> 3, fp);
+			nRead = fread(bits, 1, nBytes, fp);
 			fclose(fp);
 		}
-		if (nRead != ((nBits + 7) >> 3)) {
-			printError("Unable to read %zu bytes of SEG pixel data: %s\n", (nBits + 7) >> 3, fname);
+		if (nRead != nBytes) {
+			printError("Unable to read %zu bytes of SEG pixel data: %s\n", nBytes, fname);
 			goto segExit;
 		}
 	}
@@ -14172,14 +14246,15 @@ static int saveDcm2NiiSEG(int nConvert, struct TDCMsort dcmSort[], struct TDICOM
 			nOverlap += (cnt[i] > 1);
 			nLabeled += (cnt[i] > 0);
 		}
-		printMessage("SEG %d segments (max number %d), %d frames -> %dx%dx%d grid, %zu labeled voxels, %zu in more than one segment\n", seg->nItem, maxSeg, seg->nFrame, d->xyzDim[1], d->xyzDim[2], nSlice, nLabeled, nOverlap);
+		printMessage("SEG %d segments (max number %d), %d frames -> %dx%dx%d grid, %zu labeled voxels, %zu in more than one segment\n", seg->nItem, maxSeg, nFrame, d->xyzDim[1], d->xyzDim[2], nSlice, nLabeled, nOverlap);
 		if (nOverlap > 0) {
-			printWarning("SEG segments overlap: %zu voxels keep only the last frame's segment number\n", nOverlap);
 			if (pairs)
 				for (int a = 1; a <= maxSeg; a++)
 					for (int b = 1; b <= maxSeg; b++)
 						if (pairs[a * (maxSeg + 1) + b])
-							printMessage(" SEG overlap segment %d -> %d: %u voxels\n", a, b, pairs[a * (maxSeg + 1) + b]);
+							printMessage(" SEG overlap segment %d and %d: %u voxels\n", a, b, pairs[a * (maxSeg + 1) + b]);
+			printError("DICOM SEG segments overlap (%zu voxels): a 3D label volume would lose segments, not converted: %s\n", nOverlap, fname);
+			goto segExit;
 		}
 		// geometry for the standard header path: slice 0 at the lowest position along the normal
 		d->xyzDim[3] = nSlice;
@@ -14211,50 +14286,8 @@ static int saveDcm2NiiSEG(int nConvert, struct TDCMsort dcmSort[], struct TDICOM
 				goto segExit;
 			printMessage("Convert 1 DICOM as %s (%dx%dx%dx%d)\n", pathoutname, hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4]);
 		}
-		nii_SaveBIDS(pathoutname, *d, opts, &hdr, fname);
-		if (!opts.isCreateBIDS) {
-			ret = EXIT_SUCCESS;
-			goto segExit;
-		}
-		// append the segment table: the sidecar ends with "\n}\n"
-		char txtname[2048];
-		snprintf(txtname, sizeof(txtname), "%s.json", pathoutname);
-		FILE *fp = fopen(txtname, "r+");
-		if ((fp == NULL) || (fseek(fp, -3, SEEK_END) != 0)) {
-			if (fp)
-				fclose(fp);
-			printError("Unable to append SEG segments to %s\n", txtname);
-			goto segExit;
-		}
-		fprintf(fp, ",\n\t\"Segments\": [");
-		const char *codeKey[3] = {"SegmentedPropertyCategoryCode", "SegmentedPropertyTypeCode", "SegmentedPropertyTypeModifierCode"};
-		for (int i = 0; i < seg->nItem; i++) {
-			struct TSegItem *it = &seg->item[i];
-			int rgb[3];
-			segLab2RGB(it->lab, rgb);
-			fprintf(fp, "%s\n\t\t{ \"LabelValue\": %d, \"SegmentNumber\": %d", i ? "," : "", it->num, it->num);
-			json_Str(fp, ", \"SegmentLabel\": \"%s\"", it->label);
-			if (it->lab[0] || it->lab[1] || it->lab[2])
-				fprintf(fp, ", \"RGB\": [%d, %d, %d]", rgb[0], rgb[1], rgb[2]);
-			for (int c = 0; c < 3; c++) {
-				if (!it->code[c][0][0])
-					continue;
-				fprintf(fp, ", \"%s\": {", codeKey[c]);
-				json_Str(fp, "\"CodeValue\": \"%s\"", it->code[c][0]);
-				json_Str(fp, ", \"CodingSchemeDesignator\": \"%s\"", it->code[c][1]);
-				json_Str(fp, ", \"CodeMeaning\": \"%s\"", it->code[c][2]);
-				fprintf(fp, "}");
-			}
-			fprintf(fp, " }");
-		}
-		fprintf(fp, "\n\t]\n}\n");
-		int writeError = ferror(fp);
-		if ((fclose(fp) != 0) || writeError) {
-			printError("Unable to write %s (disk full?)\n", txtname);
-			remove(txtname);
-			goto segExit;
-		}
-		ret = EXIT_SUCCESS;
+		initTDTI4D(dti4D); // the re-read left per-file state; the sidecar needs the "unset" sentinels
+		ret = nii_SaveBIDSX(pathoutname, *d, opts, &hdr, fname, dti4D, seg);
 	}
 segExit:
 	free(seg);
@@ -14262,6 +14295,7 @@ segExit:
 	free(cnt);
 	free(img);
 	free(frameSlice);
+	free(mm);
 	free(hits);
 	free(pairs);
 	return ret;
