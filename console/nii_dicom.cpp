@@ -6000,6 +6000,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	bool is2005140FSQ = false;
 	bool isSliceOrientVaries = false; // issue894
 	int sqDepth04000561 = -1;
+	int sqDepthRefSeries = -1; // within ReferencedSeriesSequence (0008,1115): its series UIDs are a SEG's sources
 	bool is00089092SQ = false; // Referenced Image Evidence SQ
 	bool overlayOK = true;
 	int userData11GE = 0;
@@ -6706,7 +6707,12 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		if (lLength > 0) // issue695: skip empty tags, "gdcmanon --dumb --empty 0018,0089 good.dcm bad.dcm"
 			if (sqDepth < 1 && isDeidentificationMethodCodeSequence && groupElement != kItemDelimitationTag && groupElement != kItemTag)
 				isDeidentificationMethodCodeSequence = false;
+		if ((sqDepthRefSeries >= 0) && (sqDepth <= sqDepthRefSeries) && (groupElement != kItemTag) && (groupElement != kItemDelimitationTag) && (groupElement != kSequenceDelimitationItemTag))
+			sqDepthRefSeries = -1; // left (0008,1115), also when it was empty and never unnested
 		switch (groupElement) {
+		case 0x0008 + (0x1115 << 16): // ReferencedSeriesSequence, top level or inside (0008,1200) for other studies
+			sqDepthRefSeries = sqDepth;
+			break;
 		case kMediaStorageSOPClassUID: {
 			char mediaUID[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], mediaUID);
@@ -7685,14 +7691,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
 			break;
 		case kSeriesInstanceUID: // 0020,000E
-			if (sqDepth > 0) { // a SEG's ReferencedSeriesSequence (0008,1115), also within (0008,1200) for other studies: keep every distinct UID, backslash-separated
-				char uid[kDICOMStr], list[kDICOMStrLarge + 2], key[kDICOMStr + 2];
+			if ((sqDepthRefSeries >= 0) && (sqDepth > sqDepthRefSeries)) { // a referenced series: keep every distinct UID, backslash-separated
+				char uid[kDICOMStr] = "", list[kDICOMStrLarge + 2], key[kDICOMStr + 2];
 				dcmStr(lLength, &buffer[lPos], uid);
 				size_t n = strlen(d.referencedSeriesUID);
 				snprintf(list, sizeof(list), "\\%s\\", d.referencedSeriesUID); // whole-UID match: 1.2.3 is not 1.2.34
 				snprintf(key, sizeof(key), "\\%s\\", uid);
 				if (uid[0] && !strstr(list, key)) {
-					if (n + strlen(uid) + 2 <= kDICOMStrLarge) { // ponytail: 256 bytes hold three 64-char UIDs
+					if (n + strlen(uid) + 2 <= kDICOMStrLarge) { // 256 bytes: at least three 64-char UIDs
 						if (n)
 							strcat(d.referencedSeriesUID, "\\");
 						strcat(d.referencedSeriesUID, uid);

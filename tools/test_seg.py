@@ -25,7 +25,7 @@ def code(value, meaning):
     return Sequence([item(CodeValue=value, CodingSchemeDesignator="SCT", CodeMeaning=meaning)])
 
 
-def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=False, implicit=False, source_seg=0, refs=(), other_study=False):
+def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=False, implicit=False, source_seg=0, refs=(), other_study=False, related=()):
     """3x3 frames, centre voxel set; frame f at z (along the slice normal) belongs to segs[f]."""
     row, col = np.array(orient[:3], float), np.array(orient[3:], float)
     normal = np.cross(row, col)
@@ -49,6 +49,10 @@ def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=
             ds.StudiesContainingOtherReferencedInstancesSequence = Sequence([item(StudyInstanceUID=generate_uid(), ReferencedSeriesSequence=rs)])
         else:
             ds.ReferencedSeriesSequence = rs
+    if related:  # not a source: an empty ReferencedSeriesSequence, then RelatedSeriesSequence (0008,1250)
+        ds.ReferencedSeriesSequence = Sequence([])
+        ds.RelatedSeriesSequence = Sequence([item(StudyInstanceUID=generate_uid(), SeriesInstanceUID=u,
+                                                  PurposeOfReferenceCodeSequence=code("121360", "Replaced by")) for u in related])
     ds.SegmentSequence = Sequence([
         item(SegmentedPropertyCategoryCodeSequence=code("123037004", "Anatomical Structure"), SegmentNumber=s,
              SegmentLabel=f"seg{s}", RecommendedDisplayCIELabValue=[65535, 32896, 32896], SegmentAlgorithmType="MANUAL",
@@ -121,6 +125,8 @@ def main():
                 name = f"refs_{'i' if implicit else 'e'}{'_other' if other else ''}"
                 rc, _, _, js = convert(tmp, name, args=("-ba", "o"), zs=[0], segs=[1], implicit=implicit, refs=("1.2.34", "1.2.3"), other_study=other)
                 assert rc == 0 and js.get("ReferencedSeriesInstanceUID") == ["1.2.34", "1.2.3"], (name, js.get("ReferencedSeriesInstanceUID"))
+        rc, _, _, js = convert(tmp, "related_only", args=("-ba", "o"), zs=[0], segs=[1], related=("7.7.7",))
+        assert rc == 0 and "ReferencedSeriesInstanceUID" not in js, js.get("ReferencedSeriesInstanceUID")
     print("test_seg: OK")
 
 
