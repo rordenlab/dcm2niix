@@ -25,7 +25,7 @@ def code(value, meaning):
     return Sequence([item(CodeValue=value, CodingSchemeDesignator="SCT", CodeMeaning=meaning)])
 
 
-def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=False, implicit=False, source_seg=0):
+def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=False, implicit=False, source_seg=0, refs=(), other_study=False):
     """3x3 frames, centre voxel set; frame f at z (along the slice normal) belongs to segs[f]."""
     row, col = np.array(orient[:3], float), np.array(orient[3:], float)
     normal = np.cross(row, col)
@@ -42,6 +42,13 @@ def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=
     ds.BitsAllocated, ds.BitsStored, ds.HighBit, ds.PixelRepresentation = 1, 1, 0, 0
     ds.NumberOfFrames = len(zs)
     ds.SegmentationType = "BINARY"
+    if refs:  # source series; other_study puts them under (0008,1200), as for images in another study
+        rs = Sequence([item(SeriesInstanceUID=u, ReferencedInstanceSequence=Sequence([item(
+            ReferencedSOPClassUID="1.2.840.10008.5.1.4.1.1.2", ReferencedSOPInstanceUID=generate_uid())])) for u in refs])
+        if other_study:
+            ds.StudiesContainingOtherReferencedInstancesSequence = Sequence([item(StudyInstanceUID=generate_uid(), ReferencedSeriesSequence=rs)])
+        else:
+            ds.ReferencedSeriesSequence = rs
     ds.SegmentSequence = Sequence([
         item(SegmentedPropertyCategoryCodeSequence=code("123037004", "Anatomical Structure"), SegmentNumber=s,
              SegmentLabel=f"seg{s}", RecommendedDisplayCIELabValue=[65535, 32896, 32896], SegmentAlgorithmType="MANUAL",
@@ -70,11 +77,11 @@ def make_seg(path, zs, segs, orient=(1, 0, 0, 0, 1, 0), spacing=1.0, shared_seg=
     ds.save_as(path, enforce_file_format=True)
 
 
-def convert(tmp, name, **kw):
+def convert(tmp, name, args=(), **kw):
     out = tmp / name
     out.mkdir()
     make_seg(out / "in.dcm", **kw)
-    r = subprocess.run([EXE, "-s", "y", "-z", "n", "-f", name, "-o", str(out), str(out / "in.dcm")], capture_output=True, text=True)
+    r = subprocess.run([EXE, "-s", "y", "-z", "n", *args, "-f", name, "-o", str(out), str(out / "in.dcm")], capture_output=True, text=True)
     nii = out / f"{name}.nii"
     if not nii.exists():
         return r.returncode, None, None, r.stdout + r.stderr
@@ -108,6 +115,12 @@ def main():
         assert rc != 0 and dim is None and "segments overlap (1 voxels)" in log, (rc, log)
         rc, dim, vol, _ = convert(tmp, "oblique", zs=list(range(201)), segs=[1] * 201, orient=(1, 0, 0, 0, 0.866025, 0.5))
         assert rc == 0 and dim == (3, 3, 201) and vol.sum() == 201, (rc, dim)
+        # Every referenced series, in order, for both reference layouts and both VRs (1.2.3 must not swallow 1.2.34).
+        for implicit in (False, True):
+            for other in (False, True):
+                name = f"refs_{'i' if implicit else 'e'}{'_other' if other else ''}"
+                rc, _, _, js = convert(tmp, name, args=("-ba", "o"), zs=[0], segs=[1], implicit=implicit, refs=("1.2.34", "1.2.3"), other_study=other)
+                assert rc == 0 and js.get("ReferencedSeriesInstanceUID") == ["1.2.34", "1.2.3"], (name, js.get("ReferencedSeriesInstanceUID"))
     print("test_seg: OK")
 
 

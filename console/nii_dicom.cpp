@@ -5119,8 +5119,9 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 
 int isSQ(uint32_t groupElement, bool isPhilips) { // Detect sequence VR ("SQ") for implicit tags
 	// issue 983: (0054,0016), (0054,0300), (0054,0304) enable descent into RadiopharmaceuticalInformationSequence and nested code sequences for implicit-VR PET
-	static const int array_size = 37;
-	uint32_t array[array_size] = {0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16), 0x0054 + (uint32_t(0x0016) << 16), 0x0054 + (uint32_t(0x0300) << 16), 0x0054 + (uint32_t(0x0304) << 16)};
+	// (0008,1200) StudiesContainingOtherReferencedInstancesSequence: a SEG's references to series in other studies
+	static const int array_size = 38;
+	uint32_t array[array_size] = {0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1200) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16), 0x0054 + (uint32_t(0x0016) << 16), 0x0054 + (uint32_t(0x0300) << 16), 0x0054 + (uint32_t(0x0304) << 16)};
 	// uint32_t array[array_size] = {0x2005 + (uint32_t(0x140F) << 16), 0x0008 + (uint32_t(0x1111) << 16), 0x0008 + (uint32_t(0x1115) << 16), 0x0008 + (uint32_t(0x1140) << 16), 0x0008 + (uint32_t(0x1199) << 16), 0x0008 + (uint32_t(0x2218) << 16), 0x0008 + (uint32_t(0x9092) << 16), 0x0018 + (uint32_t(0x9006) << 16), 0x0018 + (uint32_t(0x9042) << 16), 0x0018 + (uint32_t(0x9045) << 16), 0x0018 + (uint32_t(0x9049) << 16), 0x0018 + (uint32_t(0x9112) << 16), 0x0018 + (uint32_t(0x9114) << 16), 0x0018 + (uint32_t(0x9115) << 16), 0x0018 + (uint32_t(0x9117) << 16), 0x0018 + (uint32_t(0x9119) << 16), 0x0018 + (uint32_t(0x9125) << 16), 0x0018 + (uint32_t(0x9152) << 16), 0x0018 + (uint32_t(0x9176) << 16), 0x0018 + (uint32_t(0x9226) << 16), 0x0018 + (uint32_t(0x9239) << 16), 0x0020 + (uint32_t(0x9071) << 16), 0x0020 + (uint32_t(0x9111) << 16), 0x0020 + (uint32_t(0x9113) << 16), 0x0020 + (uint32_t(0x9116) << 16), 0x0020 + (uint32_t(0x9221) << 16), 0x0020 + (uint32_t(0x9222) << 16), 0x0028 + (uint32_t(0x9110) << 16), 0x0028 + (uint32_t(0x9132) << 16), 0x0028 + (uint32_t(0x9145) << 16), 0x0040 + (uint32_t(0x0260) << 16), 0x0040 + (uint32_t(0x0555) << 16), 0x0040 + (uint32_t(0xa170) << 16), 0x5200 + (uint32_t(0x9229) << 16), 0x5200 + (uint32_t(0x9230) << 16)};
 	for (int i = 0; i < array_size; i++) {
 		// if (array[i] == groupElement) printMessage(" implicitSQ %04x,%04x\n",  groupElement & 65535,groupElement>>16);
@@ -7684,9 +7685,21 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], d.studyInstanceUID);
 			break;
 		case kSeriesInstanceUID: // 0020,000E
-			// first nested one: a SEG's ReferencedSeriesSequence (0008,1115) precedes other series references
-			if ((sqDepth > 0) && (!d.referencedSeriesUID[0]))
-				dcmStr(lLength, &buffer[lPos], d.referencedSeriesUID);
+			if (sqDepth > 0) { // a SEG's ReferencedSeriesSequence (0008,1115), also within (0008,1200) for other studies: keep every distinct UID, backslash-separated
+				char uid[kDICOMStr], list[kDICOMStrLarge + 2], key[kDICOMStr + 2];
+				dcmStr(lLength, &buffer[lPos], uid);
+				size_t n = strlen(d.referencedSeriesUID);
+				snprintf(list, sizeof(list), "\\%s\\", d.referencedSeriesUID); // whole-UID match: 1.2.3 is not 1.2.34
+				snprintf(key, sizeof(key), "\\%s\\", uid);
+				if (uid[0] && !strstr(list, key)) {
+					if (n + strlen(uid) + 2 <= kDICOMStrLarge) { // ponytail: 256 bytes hold three 64-char UIDs
+						if (n)
+							strcat(d.referencedSeriesUID, "\\");
+						strcat(d.referencedSeriesUID, uid);
+					} else
+						printWarning("Too many referenced series to list: %s\n", uid);
+				}
+			}
 			if (sqDepth > seriesInstanceUIDsqDepth)
 				break; // issue655
 			seriesInstanceUIDsqDepth = sqDepth;
