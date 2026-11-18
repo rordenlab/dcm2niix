@@ -31,7 +31,7 @@ Domain hazards live in on-demand docs — read the relevant one before changing 
 - CMRR physio + `CMRRMeasurementUUID` regression in sibling `dcm_qa_physio`: `./batch.sh`.
 - MRS regression in sibling `dcm_qa_mrs`: `python3 batch.py --corpus={local,spec2nii,both}`, `python3 compare_spec2nii.py --corpus={local,spec2nii,both}`; `$SPEC2NII_DATA` must point at spec2nii test data.
 - reproinx self-check: `python3 tools/test_reproinx_sbref.py`.
-- DICOM SEG: synthetic regressions live in `../dcm_validate/dcm_qa_seg` (generator and checks `make_synthetic.py`); run its `batch.sh`. Local only until it has a GitHub repository and becomes a `dcm_validate` submodule.
+- DICOM SEG: synthetic regressions live in `../dcm_validate/dcm_qa_seg` (generator and checks `make_synthetic.py`); run its `batch.sh`.
 - CT gantry tilt and unequal slice spacing: `../dcm_validate/dcm_qa_ct`; run its `batch.sh`. Tilt synthetics in `In/Synthetic` (generator and IPP check `make_synthetic.py`); unequal spacing in `In/GE` (`SlicePositions` in `Ref/_2.json`).
 - WSI frame decoder regression: sibling `dcm_validate/wsi_frames` (`check_frames.py` vs raw OpenJPEG planes, `check_samples.py` vs source gradients; see its README). Its `fixtures/` feed `js` `npm test` and `test:consumer` (sibling path or `DCM2NIIX_FRAMES`). The WASM-trap path (`WebAssembly.RuntimeError` retires the worker) has no checked-in test.
 - Sibling `dcm_validate` scripts: `python3 test_jpeg_header_mismatch.py <dcm2niix>` (JPEG-LS/J2K build, pydicom >= 3), `python3 test_ge_missing_images.py <dcm2niix>`.
