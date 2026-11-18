@@ -756,7 +756,7 @@ static void readKeyArray(const char *prefix, const char *suffix, char *buffer, i
 typedef struct {
 	float TE0, TE1, delayTimeInTR, phaseOversampling, phaseResolution, txRefAmp, accelFactTotal;
 	int lInvContrasts, lContrasts, lConc, turboFactor, phaseEncodingLines, existUcImageNumb, ucMode, baseResolution, interp, partialFourier, echoSpacing,
-		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, accelFact3D, freeDiffusionN;
+		difBipolar, parallelReductionFactorInPlane, refLinesPE, combineMode, patMode, ucMTC, rfSpoiling, incrGradientSpoiling, accelFact3D, freeDiffusionN;
 	float alFree[kMaxWipFree];
 	float adFree[kMaxWipFree];
 	float alTI[kMaxWipFree];
@@ -795,6 +795,8 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 	csaAscii->combineMode = 0;
 	csaAscii->patMode = 0;
 	csaAscii->ucMTC = 0;
+	csaAscii->rfSpoiling = 0;
+	csaAscii->incrGradientSpoiling = 0;
 	csaAscii->freeDiffusionN = 0;
 	for (int i = 0; i < 8; i++)
 		shimSetting[i] = 0.0;
@@ -872,6 +874,10 @@ void siemensCsaAscii(const char *filename, TCsaAscii *csaAscii, int csaOffset, i
 		csaAscii->lInvContrasts = readKey(keyStrNumInv, keyPos, csaLengthTrim);
 		char keyStrTurbo[] = "sFastImaging.lTurboFactor";
 		csaAscii->turboFactor = readKey(keyStrTurbo, keyPos, csaLengthTrim);
+		char keyStrRFSpoil[] = "sFastImaging.ulEnableRFSpoiling";
+		csaAscii->rfSpoiling = readKey(keyStrRFSpoil, keyPos, csaLengthTrim);
+		char keyStrGradSpoil[] = "sFastImaging.ucIncrGradientSpoiling";
+		csaAscii->incrGradientSpoiling = readKey(keyStrGradSpoil, keyPos, csaLengthTrim);
 		char keyStrNumEcho[] = "lContrasts";
 		csaAscii->lContrasts = readKey(keyStrNumEcho, keyPos, csaLengthTrim);
 		// issue 1024: number of concatenations. On the DZNE 3D-EPI (vx_ep3d) this
@@ -9034,6 +9040,16 @@ void setBidsSiemens(struct TDICOMdata *d, int nConvert, int isVerbose, const cha
 			d->numberOfConcatenations = csaAscii.lConc;
 		if ((d->accelFactOOP < 1.0) && (csaAscii.accelFact3D > 0)) // issue 1024: some XA 3D-EPI omit (0018,9155); fill-if-missing (DICOM tag wins) so the volume-TR fallback, which runs before nii_SaveBIDSX, can divide by it. Distinct from nii_SaveBIDSX:3033, which applies unconditional CSA precedence (issue672) to its by-value sidecar copy only — do not "unify" these.
 			d->accelFactOOP = csaAscii.accelFact3D;
+		// issue 1061: V-series omit (0018,9016); derive SpoilingType from Phoenix flags for spoiled (SP) gradient echo only: TSE/SE-EPI protocols also carry ulEnableRFSpoiling
+		bool isSP = (strncmp(d->sequenceVariant, "SP\\", 3) == 0) || (strcmp(d->sequenceVariant, "SP") == 0) || (strstr(d->sequenceVariant, "\\SP") != NULL);
+		if ((d->spoiling == kSPOILING_UNKNOWN) && isSP && (strstr(d->scanningSequence, "GR") != NULL)) {
+			if (csaAscii.rfSpoiling && csaAscii.incrGradientSpoiling)
+				d->spoiling = kSPOILING_RF_AND_GRADIENT;
+			else if (csaAscii.rfSpoiling)
+				d->spoiling = kSPOILING_RF;
+			else if (csaAscii.incrGradientSpoiling)
+				d->spoiling = kSPOILING_GRADIENT;
+		}
 		// If parameter lInvContrasts exists in the protocol, a value of 1 indicates MPRAGE and a value of 2 MP2RAGE. Note that lInvContrasts is different from lContrasts and that only lInvContrasts must be considered.
 		// If parameter lInvContrasts does not exist, then the presence of alTI[1] indicates that this is an MP2RAGE protocol. An MPRAGE protocol will only contain alTI[0].
 		if (csaAscii.lInvContrasts == 1) // explicitly reports one TI
