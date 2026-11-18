@@ -39,6 +39,7 @@ Multi-delay pCASL (Siemens XA `tgse_pcasl_loft`, LOFT/Danny Wang) → BIDS ASL. 
 - CT with unequal slice spacing (one classic 3D stack): the sidecar adds `SlicePositions`, each NIfTI slice's distance (mm, along the bed) from slice 0 in NIfTI slice order; absent when spacing is equal. The raw image's slice step is the minimax step (see docs/PARSER_GOTCHAS.md).
 - Gantry-tilt CT: the raw (non-`_Tilt`) sform places every slice at its ImagePositionPatient, and `pixdim[3]` is the voxel thickness (pixdim x*y*z = voxel volume; an Enhanced CT without SpacingBetweenSlices previously stored the bed step).
 - `--interpolated n` skips the resampled `_Tilt` and `_Eq` outputs.
+- Overlay planes (60xx) of a 4D stack (e.g. a two-frame surview) write `_ROI<n>` with one volume per frame; it was an empty 3D plane.
 
 ## Behaviour Changes (v1.0.20261024)
 

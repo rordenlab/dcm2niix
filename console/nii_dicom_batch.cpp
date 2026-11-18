@@ -33,7 +33,6 @@
 #include "nifti1.h"
 #endif
 #include "nii_dicom_batch.h"
-#include <vector>
 #ifndef USING_R
 #include "nii_foreign.h"
 #endif
@@ -12453,9 +12452,20 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				break;
 			}
 	}
-	std::vector<float> slicePos;
+	float *slicePos = NULL;
+	int nSlicePos = 0;
 	if ((sliceMMarray != NULL) && !(isRotate3D && isSliceEquidistant) && (hdr0.dim[4] < 2) && (nConvert == hdr0.dim[3]) && (!isNanPosition(dcmList[dcmSort[0].indx]))) {
 		int n = hdr0.dim[3];
+		slicePos = (float *)malloc(n * sizeof(float));
+		if (slicePos == NULL) {
+			printError("Unable to allocate slice positions\n");
+			free(sliceMMarray);
+#ifndef USING_DCM2NIIXFSWRAPPER
+			free(imgM);
+#endif
+			return EXIT_FAILURE;
+		}
+		nSlicePos = n;
 #ifndef USING_DCM2NIIXFSWRAPPER
 		bool isRev = sliceDir < 0; // nii_flipZ below reverses the slices
 #else
@@ -12464,17 +12474,18 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		float *p0 = dcmList[dcmSort[isRev ? n - 1 : 0].indx].patientPosition;
 		for (int k = 0; k < n; k++) {
 			float *pk = dcmList[dcmSort[isRev ? n - 1 - k : k].indx].patientPosition;
-			slicePos.push_back(vec3Length(setVec3(pk[1] - p0[1], pk[2] - p0[2], pk[3] - p0[3])));
+			slicePos[k] = vec3Length(setVec3(pk[1] - p0[1], pk[2] - p0[2], pk[3] - p0[3]));
 		}
-		for (float v : slicePos)
-			if (isnan(v)) { // a slice without ImagePositionPatient: no positions
-				slicePos.clear();
+		for (int k = 0; k < n; k++)
+			if (isnan(slicePos[k])) { // a slice without ImagePositionPatient: no positions
+				nSlicePos = 0;
 				break;
 			}
 	}
 	if (opts.numSeries >= 0) // issue453
-		bidsStatus = nii_SaveBIDSX(bidsPathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D, NULL, slicePos.data(), (int)slicePos.size());
+		bidsStatus = nii_SaveBIDSX(bidsPathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D, NULL, slicePos, nSlicePos);
 	if (opts.isOnlyBIDS) {
+		free(slicePos);
 		if (isBIDSSidecar && (bidsStatus == EXIT_SUCCESS))
 			reproinAppendProvenance(bidsPathoutname, dcmList[dcmSort[0].indx], opts);
 		// note we waste time loading every image, however this ensures hdr0 matches actual output
@@ -12484,6 +12495,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		return bidsStatus;
 	}
 	if (bidsStatus != EXIT_SUCCESS) {
+		free(slicePos);
 #ifndef USING_DCM2NIIXFSWRAPPER
 		free(imgM);
 #endif
@@ -12498,6 +12510,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		if (nVol < 1) {
 			printError("Series %d does not exist\n", segVol);
 			removeBIDSSidecar(bidsPathoutname);
+			free(slicePos);
 			return EXIT_FAILURE;
 		}
 		size_t imgsz4D = imgsz;
@@ -12525,6 +12538,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	for (int i = 0; i < nConvert; ++i)
 		dcmList[dcmSort[i].indx].converted2NII = 1;
 	if (opts.numSeries < 0) { // report series number but do not convert
+		free(slicePos);
 		int segVolEcho = segVol;
 		if ((dcmList[dcmSort[0].indx].echoNum > 1) && (segVolEcho <= 0))
 			segVolEcho = dcmList[dcmSort[0].indx].echoNum + 1;
@@ -12621,7 +12635,8 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	float *pN = (dcmList[indx0].xyzDim[3] > 1) ? dcmList[indx0].patientPositionLast : dcmList[dcmSort[nConvert - 1].indx].patientPosition;
 	vec3 rawSpan = setVec3(p1[1] - pN[1], p1[2] - pN[2], pN[3] - p1[3]);
 	// The raw slice step: minimax over the slice positions when spacing varies, else the mean (NaN: no positions).
-	float rawStep = (hdr0.dim[3] < 2) ? 0.0f : slicePos.empty() ? vec3Length(rawSpan) / (hdr0.dim[3] - 1) : minimaxSliceStep(slicePos.data(), (int)slicePos.size());
+	float rawStep = (hdr0.dim[3] < 2) ? 0.0f : (nSlicePos == 0) ? vec3Length(rawSpan) / (hdr0.dim[3] - 1) : minimaxSliceStep(slicePos, nSlicePos);
+	free(slicePos);
 	if (!isSameFloatGE(dcmList[indx0].gantryTilt, 0.0)) {
 		float thetaRad = dcmList[indx0].gantryTilt * M_PI / 180.0;
 		float c = cos(thetaRad);
@@ -12665,7 +12680,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 											 setQSForm(&hdr0, shearForm, true);
 											 */
 		} // avoid div/0: cosine not zero
-	} else if (!slicePos.empty() && !isSetOrtho) { // unequal spacing without tilt: the slice normal, minimax step
+	} else if ((nSlicePos > 0) && !isSetOrtho) { // unequal spacing without tilt: the slice normal, minimax step
 		float len = sqrtf(sForm.m[0][2] * sForm.m[0][2] + sForm.m[1][2] * sForm.m[1][2] + sForm.m[2][2] * sForm.m[2][2]);
 		if ((len > 0.0f) && (rawStep > 0.0f)) {
 			hdr0.srow_x[2] = sForm.m[0][2] * rawStep / len;
@@ -12737,26 +12752,28 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				snprintf(append, 127, "_ROI%d", j + 1);
 				strcat(pathoutnameROI, append);
 				struct nifti_1_header hdrr = hdrrx;
-				hdrr.dim[0] = 3;
 				if (hdrr.dim[1] < 1)
 					hdrr.dim[1] = 1;
 				if (hdrr.dim[2] < 1)
 					hdrr.dim[2] = 1;
 				if (hdrr.dim[3] < 1)
 					hdrr.dim[3] = 1;
-				hdrr.dim[4] = 1;
+				// One ROI volume per image volume: a 4D series stacks its files as the image does.
+				int nVol = ((hdrr.dim[4] > 1) && (nConvert == hdrr.dim[3] * hdrr.dim[4])) ? hdrr.dim[4] : 1;
+				hdrr.dim[0] = (nVol > 1) ? 4 : 3;
+				hdrr.dim[4] = nVol;
 				hdrr.bitpix = 8;
 				hdrr.datatype = 2;
 				hdrr.scl_inter = 0.0;
 				hdrr.scl_slope = 1.0;
-				int nvox = hdrr.dim[1] * hdrr.dim[2] * hdrr.dim[3];
+				int nvox = hdrr.dim[1] * hdrr.dim[2] * hdrr.dim[3] * nVol;
 				unsigned char *imgR = (unsigned char *)malloc(nvox);
 				for (int v = 0; v < nvox; v++)
 					imgR[v] = 0;
 				if (nConvert == 1) {
 					int indx = dcmSort[0].indx;
 					loadOverlay(nameList->str[indx], imgR, dcmList[indx].overlayStart[j], hdrr.dim[1], hdrr.dim[2], hdrr.dim[3]);
-				} else if (nConvert == hdrr.dim[3]) {
+				} else if (nConvert == hdrr.dim[3] * nVol) {
 					for (int i = 0; i < nConvert; i++) {
 						int indx = dcmSort[i].indx;
 						if (dcmList[indx].overlayStart[j] > 0) {
