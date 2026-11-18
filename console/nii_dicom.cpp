@@ -1648,21 +1648,30 @@ int dcmStrManufacturer(const int lByteLength, unsigned char lBuffer[]) { // read
 	return ret;
 } // dcmStrManufacturer
 
-float csaMultiFloat(unsigned char buff[], int nItems, float Floats[], int *ItemsOK) {
+// Copy CSA item lI's header at buff[*lPos] (len bytes available) and advance past
+// it; false when the header or its payload would cross the end of the buffer.
+static bool csaItem(unsigned char buff[], int len, int *lPos, TCSAitem *item) {
+	if ((*lPos < 0) || (*lPos > len - (int)sizeof(TCSAitem)))
+		return false;
+	memcpy(item, &buff[*lPos], sizeof(TCSAitem));
+	*lPos += sizeof(TCSAitem);
+	if (!littleEndianPlatform())
+		nifti_swap_4bytes(1, &item->xx2_Len);
+	return (item->xx2_Len >= 0) && (item->xx2_Len <= len - *lPos);
+}
+
+float csaMultiFloat(unsigned char buff[], int len, int nItems, float Floats[], int *ItemsOK) {
 	// warning: lFloats indexed from 1! will fill lFloats[1]..[nFloats]
 	// if lnItems == 1, returns first item, if lnItems > 1 returns index of final successful conversion
 	TCSAitem itemCSA;
 	*ItemsOK = 0;
 	if (nItems < 1)
 		return 0.0f;
-	Floats[1] = 0;
+	bool isFirst = false; // item 1 parsed: the scalar return
 	int lPos = 0;
 	for (int lI = 1; lI <= nItems; lI++) {
-		memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
-		lPos += sizeof(itemCSA);
-		// Storage order is always little-endian, so byte-swap required values if necessary
-		if (!littleEndianPlatform())
-			nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+		if (!csaItem(buff, len, &lPos, &itemCSA))
+			break;
 		if (itemCSA.xx2_Len > 0) {
 			// Allocate +1 byte for an explicit NUL — atof needs a terminator,
 			// and CSA item payloads are not guaranteed to carry one inside
@@ -1680,29 +1689,44 @@ float csaMultiFloat(unsigned char buff[], int nItems, float Floats[], int *Items
 			// printMessage(" %d item length %d = %s\n",lI, itemCSA.xx2_Len, cString);
 			Floats[lI] = (float)atof(cString);
 			*ItemsOK = lI; // some sequences have store empty items
+			isFirst = isFirst || (lI == 1);
 			free(cString);
 		}
 	} // for each item
-	return Floats[1];
+	return isFirst ? Floats[1] : 0.0f;
 } // csaMultiFloat()
+
+// CSA vector of n (<= 6) components into v[1..n], only when every component
+// parsed: an empty or truncated item must not leave a previous tag's value.
+static bool csaVector(unsigned char buff[], int len, int n, float v[]) {
+	float f[7];
+	int itemsOK;
+	for (int k = 1; k <= n; k++)
+		f[k] = NAN;
+	csaMultiFloat(buff, len, n, f, &itemsOK);
+	for (int k = 1; k <= n; k++)
+		if (isnan(f[k]))
+			return false;
+	for (int k = 1; k <= n; k++)
+		v[k] = f[k];
+	return true;
+}
 
 // Phase 6 MRSI VOI emission needs full DS-text precision (float32 round of
 // the "9.43373076"-style CSA string is "9.43373108", which spec2nii parses
 // as float64 and emits losslessly). Sibling that parses CSA DS items as
 // double; mirror of csaMultiFloat layout with identical NUL-terminator
 // safety (audit round-3 M2).
-double csaMultiDouble(unsigned char buff[], int nItems, double Doubles[], int *ItemsOK) {
+double csaMultiDouble(unsigned char buff[], int len, int nItems, double Doubles[], int *ItemsOK) {
 	TCSAitem itemCSA;
 	*ItemsOK = 0;
 	if (nItems < 1)
 		return 0.0;
-	Doubles[1] = 0.0;
+	bool isFirst = false; // item 1 parsed: the scalar return
 	int lPos = 0;
 	for (int lI = 1; lI <= nItems; lI++) {
-		memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
-		lPos += sizeof(itemCSA);
-		if (!littleEndianPlatform())
-			nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+		if (!csaItem(buff, len, &lPos, &itemCSA))
+			break;
 		if (itemCSA.xx2_Len > 0) {
 			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
 			if (cString == NULL) {
@@ -1714,22 +1738,23 @@ double csaMultiDouble(unsigned char buff[], int nItems, double Doubles[], int *I
 			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
 			Doubles[lI] = atof(cString);
 			*ItemsOK = lI;
+			isFirst = isFirst || (lI == 1);
 			free(cString);
 		}
 	}
-	return Doubles[1];
+	return isFirst ? Doubles[1] : 0.0;
 } // csaMultiDouble()
 
-int csaICEdims(unsigned char buff[]) {
+int csaICEdims(unsigned char buff[], int len) {
 	// determine coil number from CSA header
 	// Combined images start with a letter: X_1_1_1_1_1_1_1_1_1_1_1_106
 	// Coil data starts with coil number: 29_1_1_1_1_1_7_1_1_1_1_1_3000012
 	TCSAitem itemCSA;
 	int lPos = 0;
-	memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
 	int coilNumber = -1;
+	if (!csaItem(buff, len, &lPos, &itemCSA))
+		return coilNumber;
 	if (itemCSA.xx2_Len > 0) {
-		lPos += sizeof(itemCSA);
 		// Allocate +1 byte for an explicit NUL — dcmStrDigitsOnly (strlen)
 		// and strtol both need a terminator, and CSA item payloads are not
 		// guaranteed to carry one inside xx2_Len. Mirrors the csaMultiFloat
@@ -1751,27 +1776,23 @@ int csaICEdims(unsigned char buff[]) {
 	return coilNumber;
 } // csaICEdims()
 
-bool csaIsPhaseMap(unsigned char buff[], int nItems) {
+bool csaIsPhaseMap(unsigned char buff[], int len, int nItems) {
 	// returns true if the tag "ImageHistory" has an item named "CC:ComplexAdd"
 	TCSAitem itemCSA;
 	if (nItems < 1)
 		return false;
 	int lPos = 0;
+	const char key[] = "CC:ComplexAdd";
 	for (int lI = 1; lI <= nItems; lI++) {
-		memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
-		lPos += sizeof(itemCSA);
-		// Storage order is always little-endian, so byte-swap required values if necessary
-		if (!littleEndianPlatform())
-			nifti_swap_4bytes(1, &itemCSA.xx2_Len);
-		if (itemCSA.xx2_Len > 0) {
-			char *cString = (char *)malloc(sizeof(char) * (itemCSA.xx2_Len + 1));
-			memcpy(cString, &buff[lPos], sizeof(itemCSA.xx2_Len)); // TPX memcpy(&cString, &buff[lPos], sizeof(cString));
-			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
-			// printMessage(" %d item length %d = %s\n",lI, itemCSA.xx2_Len, cString);
-			if (strcmp(cString, "CC:ComplexAdd") == 0)
-				return true;
-			free(cString);
-		}
+		if (!csaItem(buff, len, &lPos, &itemCSA))
+			break;
+		// The payload may carry trailing NULs/padding: compare up to the first NUL.
+		int n = 0;
+		while ((n < itemCSA.xx2_Len) && (buff[lPos + n] != 0))
+			n++;
+		if ((n == (int)strlen(key)) && (memcmp(&buff[lPos], key, n) == 0))
+			return true;
+		lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
 	} // for each item
 	return false;
 } // csaIsPhaseMap()
@@ -1879,8 +1900,11 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 	int itemsOK;
 	float lFloats[7];
 	for (int lT = 1; lT <= lnTag; lT++) {
+		if (lPos > lLength - (int)sizeof(tagCSA))
+			break;
 		memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); // read tag
 		lPos += sizeof(tagCSA);
+		tagCSA.name[sizeof(tagCSA.name) - 1] = 0;
 		// Storage order is always little-endian, so byte-swap required values if necessary
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
@@ -1888,46 +1912,41 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 			printMessage("   %d CSA of %s %d\n", lPos, tagCSA.name, tagCSA.nitems);
 		if (tagCSA.nitems > 0) {
 			if (strcmp(tagCSA.name, "ImageHistory") == 0)
-				CSA->isPhaseMap = csaIsPhaseMap(&buff[lPos], tagCSA.nitems);
+				CSA->isPhaseMap = csaIsPhaseMap(&buff[lPos], lLength - lPos, tagCSA.nitems);
 			else if (strcmp(tagCSA.name, "ICE_Dims") == 0)
-				CSA->coilNumber = csaICEdims(&buff[lPos]);
+				CSA->coilNumber = csaICEdims(&buff[lPos], lLength - lPos);
 			else if (strcmp(tagCSA.name, "NumberOfImagesInMosaic") == 0)
-				CSA->mosaicSlices = (int)round(csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK));
+				CSA->mosaicSlices = (int)round(csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK));
 			else if (strcmp(tagCSA.name, "B_value") == 0) {
-				CSA->dtiV[0] = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				CSA->dtiV[0] = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 				if (CSA->dtiV[0] < 0.0) {
 					printWarning("(Corrupt) CSA reports negative b-value! %g\n", CSA->dtiV[0]);
 					CSA->dtiV[0] = 0.0;
 				}
 				CSA->numDti = 1; // triggered by b-value, as B0 images do not have DiffusionGradientDirection tag
 			} else if ((strcmp(tagCSA.name, "DiffusionGradientDirection") == 0) && (tagCSA.nitems > 2)) {
-				CSA->dtiV[1] = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-				CSA->dtiV[2] = lFloats[2];
-				CSA->dtiV[3] = lFloats[3];
-				if (isVerbose)
-					printMessage("DiffusionGradientDirection %f %f %f\n", lFloats[1], lFloats[2], lFloats[3]);
+				if (csaVector(&buff[lPos], lLength - lPos, 3, CSA->dtiV) && isVerbose)
+					printMessage("DiffusionGradientDirection %f %f %f\n", CSA->dtiV[1], CSA->dtiV[2], CSA->dtiV[3]);
 			} else if ((strcmp(tagCSA.name, "SliceNormalVector") == 0) && (tagCSA.nitems > 2)) {
-				CSA->sliceNormV[1] = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-				CSA->sliceNormV[2] = lFloats[2];
-				CSA->sliceNormV[3] = lFloats[3];
-				if (isVerbose > 1)
+				if (csaVector(&buff[lPos], lLength - lPos, 3, CSA->sliceNormV) && (isVerbose > 1))
 					printMessage("   SliceNormalVector %f %f %f\n", CSA->sliceNormV[1], CSA->sliceNormV[2], CSA->sliceNormV[3]);
 			} else if (strcmp(tagCSA.name, "SliceMeasurementDuration") == 0)
-				CSA->sliceMeasurementDuration = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
+				CSA->sliceMeasurementDuration = csaMultiFloat(&buff[lPos], lLength - lPos, 3, lFloats, &itemsOK);
 			else if (strcmp(tagCSA.name, "BandwidthPerPixelPhaseEncode") == 0)
-				CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
+				CSA->bandwidthPerPixelPhaseEncode = csaMultiFloat(&buff[lPos], lLength - lPos, 3, lFloats, &itemsOK);
 			else if (strcmp(tagCSA.name, "ImaRelTablePosition") == 0) { // issue890
-				csaMultiFloat(&buff[lPos], 3, lFloats, &itemsOK);
-				CSA->tablePos[0] = 1.0;
-				CSA->tablePos[1] = lFloats[1];
-				CSA->tablePos[2] = lFloats[2];
-				CSA->tablePos[3] = -lFloats[3];
+				if (csaVector(&buff[lPos], lLength - lPos, 3, lFloats)) {
+					CSA->tablePos[0] = 1.0;
+					CSA->tablePos[1] = lFloats[1];
+					CSA->tablePos[2] = lFloats[2];
+					CSA->tablePos[3] = -lFloats[3];
+				}
 			} else if ((strcmp(tagCSA.name, "MosaicRefAcqTimes") == 0) && (tagCSA.nitems > 3)) {
-				if (itemsOK > kMaxEPI3D) {
+				if (tagCSA.nitems > kMaxEPI3D) {
 					printError("Please increase kMaxEPI3D and recompile\n");
 				} else {
-					float *sliceTimes = (float *)malloc(sizeof(float) * (tagCSA.nitems + 1));
-					csaMultiFloat(&buff[lPos], tagCSA.nitems, sliceTimes, &itemsOK);
+					float *sliceTimes = (float *)calloc(tagCSA.nitems + 1, sizeof(float)); // empty items stay 0
+					csaMultiFloat(&buff[lPos], lLength - lPos, tagCSA.nitems, sliceTimes, &itemsOK);
 					for (int z = 0; z < kMaxEPI3D; z++)
 						CSA->sliceTiming[z] = -1.0;
 					for (int z = 0; z < itemsOK; z++)
@@ -1936,15 +1955,12 @@ int readCSAImageHeader(unsigned char *buff, int lLength, struct TCSAdata *CSA, i
 					checkSliceTimes(CSA, itemsOK, isVerbose, is3DAcq);
 				}
 			} else if (strcmp(tagCSA.name, "ProtocolSliceNumber") == 0)
-				CSA->protocolSliceNumber1 = (int)round(csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK));
+				CSA->protocolSliceNumber1 = (int)round(csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK));
 			else if (strcmp(tagCSA.name, "PhaseEncodingDirectionPositive") == 0)
-				CSA->phaseEncodingDirectionPositive = (int)round(csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK));
+				CSA->phaseEncodingDirectionPositive = (int)round(csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK));
 			for (int lI = 1; lI <= tagCSA.nitems; lI++) {
-				memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
-				lPos += sizeof(itemCSA);
-				// Storage order is always little-endian, so byte-swap required values if necessary
-				if (!littleEndianPlatform())
-					nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+				if (!csaItem(buff, lLength, &lPos, &itemCSA))
+					return EXIT_SUCCESS; // truncated: keep what was read
 				lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
 			}
 		} // if at least 1 item
@@ -2005,6 +2021,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 			return;
 		memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA));
 		lPos += sizeof(tagCSA);
+		tagCSA.name[sizeof(tagCSA.name) - 1] = 0;
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
 		// Sanity-cap nitems to a small constant — the largest legitimate item
@@ -2050,8 +2067,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// d->orient when the source was truncated).
 				if ((tagCSA.nitems >= 6) &&
 					d->orient[1] == 0.0f && d->orient[2] == 0.0f && d->orient[3] == 0.0f) {
-					csaMultiFloat(&buff[lPos], 6, lFloats, &itemsOK);
-					if (itemsOK >= 6) {
+					if (csaVector(&buff[lPos], lLength - lPos, 6, lFloats)) {
 						for (int k = 0; k < 6; k++)
 							d->orient[k + 1] = lFloats[k + 1];
 					}
@@ -2064,10 +2080,10 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// float64 and our float32-stored copy diverges in the 8th
 				// significant digit (audit cycle Phase 6 finding).
 				if (tagCSA.nitems >= 3) {
-					double dItems[4];
+					double dItems[4] = {0.0, NAN, NAN, NAN}; // all three must parse
 					int dOk = 0;
-					csaMultiDouble(&buff[lPos], 3, dItems, &dOk);
-					if (dOk >= 3) {
+					csaMultiDouble(&buff[lPos], lLength - lPos, 3, dItems, &dOk);
+					if (!isnan(dItems[1]) && !isnan(dItems[2]) && !isnan(dItems[3])) {
 						d->voiCenterLPS[0] = dItems[1];
 						d->voiCenterLPS[1] = dItems[2];
 						d->voiCenterLPS[2] = dItems[3];
@@ -2088,12 +2104,12 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// saveDcm2NiiMRS. For square pixels (typical SVS) both
 				// conventions agree.
 				if (d->xyzMM[1] <= 1.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->xyzMM[1] = v;
 				}
 				if (d->xyzMM[2] <= 1.0f && tagCSA.nitems >= 2) {
-					csaMultiFloat(&buff[lPos], 2, lFloats, &itemsOK);
+					csaMultiFloat(&buff[lPos], lLength - lPos, 2, lFloats, &itemsOK);
 					if (itemsOK >= 2 && lFloats[2] > 0.0f)
 						d->xyzMM[2] = lFloats[2];
 				}
@@ -2103,7 +2119,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// thickness within a larger VOI slab. Always read; the
 				// VoiThickness branch below uses the same `zThick == 0` gate.
 				if (d->zThick == 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f) {
 						d->zThick = v;
 						if (d->xyzMM[3] <= 1.0f)
@@ -2116,14 +2132,14 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// MRSI the voxel size came from PixelSpacing earlier, so
 				// xyzMM[1] is already set; VoiPhaseFoV here only feeds the
 				// VOI sidecar emission. Sentinel-guard the xyzMM write.
-				float vv = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				float vv = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 				if (vv > 0.0f) {
 					if (d->xyzMM[1] <= 1.0f)
 						d->xyzMM[1] = vv;
 					d->voiPhaseFoV = vv;
 				}
 			} else if (strcmp(tagCSA.name, "VoiReadoutFoV") == 0) {
-				float vv = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				float vv = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 				if (vv > 0.0f) {
 					if (d->xyzMM[2] <= 1.0f)
 						d->xyzMM[2] = vv;
@@ -2135,11 +2151,11 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// emission; sentinel-guard the xyzMM/zThick writes so the
 				// SliceThickness handler's (MRSI per-voxel) value isn't
 				// overwritten.
-				float vt = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+				float vt = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 				if (vt > 0.0f)
 					d->voiThickness = vt;
 				if (d->zThick == 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f) {
 						d->zThick = v;
 						if (d->xyzMM[3] <= 1.0f)
@@ -2149,13 +2165,13 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 			} else if (strcmp(tagCSA.name, "RealDwellTime") == 0) {
 				// Nanoseconds. SpectralWidth = 1 / dwell_time_seconds.
 				if (d->spectralWidth <= 0.0) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->spectralWidth = 1.0e9 / (double)v;
 				}
 			} else if (strcmp(tagCSA.name, "ImagingFrequency") == 0) {
 				if (d->imagingFrequency <= 0.0) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->imagingFrequency = (double)v;
 				}
@@ -2182,7 +2198,7 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 			} else if (strcmp(tagCSA.name, "SpectroscopyAcquisitionDataColumns") == 0) {
 				// Equivalent of public (0028,9002) DataPointColumns for VB/VE.
 				if (d->dataPointColumns <= 0) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->dataPointColumns = (int)v;
 				}
@@ -2196,19 +2212,19 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// the public-tag path left xyzDim at its <=1 default — the
 				// xyzDim defaults to 1 not 0 (see TDICOMdata init).
 				if (d->xyzDim[2] <= 1) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->xyzDim[2] = (int)v;
 				}
 			} else if (strcmp(tagCSA.name, "Columns") == 0) {
 				if (d->xyzDim[1] <= 1) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->xyzDim[1] = (int)v;
 				}
 			} else if (strcmp(tagCSA.name, "NumberOfFrames") == 0) {
 				if (d->xyzDim[3] <= 1) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->xyzDim[3] = (int)v;
 				}
@@ -2224,31 +2240,31 @@ static void readCSAforMRS(unsigned char *buff, int lLength, struct TDICOMdata *d
 				// the Phoenix Protocol alTE sum (Phase 1.e, deferred), so
 				// re-asserting sentinel precedence here is safe.
 				if (d->TR <= 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->TR = v;
 				}
 			} else if (strcmp(tagCSA.name, "EchoTime") == 0) {
 				if (d->TE <= 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->TE = v;
 				}
 			} else if (strcmp(tagCSA.name, "InversionTime") == 0) {
 				if (d->TI <= 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v >= 0.0f)
 						d->TI = v;
 				}
 			} else if (strcmp(tagCSA.name, "FlipAngle") == 0) {
 				if (d->flipAngle <= 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->flipAngle = v;
 				}
 			} else if (strcmp(tagCSA.name, "NumberOfAverages") == 0) {
 				if (d->numberOfAverages <= 0.0f) {
-					float v = csaMultiFloat(&buff[lPos], 1, lFloats, &itemsOK);
+					float v = csaMultiFloat(&buff[lPos], lLength - lPos, 1, lFloats, &itemsOK);
 					if (v > 0.0f)
 						d->numberOfAverages = v;
 				}
@@ -5593,6 +5609,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	size_t lFileOffset = 0;
 	fseek(file, 0, SEEK_SET);
 	// Allocate memory
+	const size_t bufferAlloc = MaxBufferSz; // the header window never grows past this
 	unsigned char *buffer = (unsigned char *)malloc(MaxBufferSz + 1);
 	if (!buffer) {
 		printError("Memory exhausted!");
@@ -6573,6 +6590,38 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			groupElement = kUnused; // ignore Original Attributes
 		if ((isIconImageSequence) && ((groupElement & 0x0028) == 0x0028))
 			groupElement = kUnused; // ignore icon dimensions
+		// A value running past the loaded header window: reload the window at it when it
+		// lies inside the file, so its handler reads in bounds. A value still longer than
+		// the window may only be located (physio log, spectroscopy data); no other handler
+		// may read it, nor one that runs past the end of the file (truncated). Pixel data
+		// and encapsulated fragments are only located, never read here.
+		if (((size_t)lPos + lLength > MaxBufferSz) && (groupElement != kImageStart) && (groupElement != kImageStartFloat) && (groupElement != kImageStartDouble) && !((groupElement == kItemTag) && (isEncapsulatedData))) {
+			bool isInFile = (lFileOffset + lPos + lLength) <= (size_t)fileLen;
+#ifndef myLoadWholeFileToReadHeader
+			if (isInFile) {
+				lFileOffset += lPos;
+				MaxBufferSz = bufferAlloc;
+				if ((lFileOffset + MaxBufferSz) > (size_t)fileLen)
+					MaxBufferSz = fileLen - lFileOffset;
+				fseek(file, lFileOffset, SEEK_SET);
+				size_t sz = fread(buffer, 1, MaxBufferSz, file);
+				if (sz < MaxBufferSz) {
+					printError("Only loaded %zu of %zu bytes for %s\n", sz, MaxBufferSz, fname);
+					fclose(file);
+#ifndef USING_R
+					free(dcmDim);
+#endif
+					return d;
+				}
+				lPos = 0;
+			}
+#endif
+			// (a CSA series header is re-read from the file; its in-buffer MRS pass is gated)
+			bool isOverlayData = (((groupElement & 0xFF00) == 0x6000) && ((groupElement >> 16) == 0x3000)); // (60xx,3000)
+			bool isLocatedOnly = (groupElement == kSiemensXAPhysio) || (groupElement == kSpectroscopyData) || (groupElement == kCSASeriesHeaderInfo) || (groupElement == kCSASeriesHeaderInfoXA) || (groupElement == kPMSCT_RLE1) || isOverlayData;
+			if ((!isInFile) || (((size_t)lPos + lLength > MaxBufferSz) && (!isLocatedOnly)))
+				groupElement = kUnused;
+		}
 #ifdef salvageAgfa					// issue435
 		// Handle remapping using integers, and slower but simpler approach is with strings:
 		//  https://github.com/pydicom/pydicom/blob/master/pydicom/_private_dict.py
@@ -7103,7 +7152,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			char acquisitionTimeTxt[kDICOMStr];
 			dcmStr(lLength, &buffer[lPos], acquisitionTimeTxt);
 			d.acquisitionTime = atof(acquisitionTimeTxt);
-			if (d.manufacturer != kMANUFACTURER_UIH)
+			if ((d.manufacturer != kMANUFACTURER_UIH) || (acquisitionTimesGE_UIH >= kMaxEPI3D))
 				break;
 			// UIH slice timing- do not use for Siemens as Siemens de-identification can corrupt this field https://github.com/rordenlab/dcm2niix/issues/236
 			d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.acquisitionTime;
@@ -7890,7 +7939,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				break;
 			if ((lPos + lLength) > fileLen)
 				break;
-			d.CSA.SeriesHeader_offset = (int)lPos;
+			d.CSA.SeriesHeader_offset = (int)(lPos + lFileOffset); // re-read from the file by siemensCsaAscii
 			d.CSA.SeriesHeader_length = lLength;
 			break;
 		case kTimeAfterStart:
@@ -8159,7 +8208,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if ((d.manufacturer != kMANUFACTURER_GE) && (d.manufacturer != kMANUFACTURER_PHILIPS))
 				break;												  // issue384
 			d.triggerDelayTime = dcmStrFloat(lLength, &buffer[lPos]); //???? issue 336
-			if (d.manufacturer != kMANUFACTURER_GE)
+			if ((d.manufacturer != kMANUFACTURER_GE) || (acquisitionTimesGE_UIH >= kMaxEPI3D))
 				break;
 			d.CSA.sliceTiming[acquisitionTimesGE_UIH] = d.triggerDelayTime;
 			// printf("%g\n", d.CSA.sliceTiming[acquisitionTimesGE_UIH]);
@@ -9086,13 +9135,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kCSASeriesHeaderInfo:
 			if ((lPos + lLength) > fileLen)
 				break;
-			d.CSA.SeriesHeader_offset = (int)lPos;
+			d.CSA.SeriesHeader_offset = (int)(lPos + lFileOffset); // re-read from the file by siemensCsaAscii
 			d.CSA.SeriesHeader_length = lLength;
 			// Parse the spectroscopy-relevant tags out of the Series Header
 			// blob. The general-purpose Phoenix protocol scan still happens
 			// later via SeriesHeader_offset; this is a cheap pre-pass that
 			// hits the few tags spec2nii's process_siemens_svs_vx reads.
-			readCSAforMRS(&buffer[lPos], lLength, &d);
+			if ((size_t)lPos + lLength <= MaxBufferSz)
+				readCSAforMRS(&buffer[lPos], lLength, &d);
 			break;
 		case kLUTLabel: { // issue 1041: channel = first per-frame LUTLabel of frame pmFrame-1 (FrameContentSequence precedes it; 0 in shared group)
 			if ((!isParametricMap) || (nPMChannel < 0) || (pmFrame < 1) || (pmFrame > kMaxSlice2D))

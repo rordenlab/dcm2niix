@@ -41,7 +41,7 @@ In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 
 
  - _cNx.._cNz  where C* refers to the coil name (typically only seen for uncombined data, where a separate image is generated for each antenna)
  - _e1..eN echo number for multi-echo sequences
- - _Eq is commonly seen in [CT scans](https://github.com/neurolabusc/dcm_qa_ct). For example, CT scans of the brain often have many slices closely packed near the brain stem and only a few slices spread far apart near the top of the head. Variable between-slice spacing is rarer in MRI, and if you see this from a MRI sequence you should ensure that [all of the acquired slices have been provided to dcm2niix](https://neurostars.org/t/field-mapping-siemens-scanners-dcm2niix-output-2-bids/2075/7). NIfTI assumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume.
+ - _Eq is commonly seen in [CT scans](https://github.com/neurolabusc/dcm_qa_ct). For example, CT scans of the brain often have many slices closely packed near the brain stem and only a few slices spread far apart near the top of the head. Variable between-slice spacing is rarer in MRI, and if you see this from a MRI sequence you should ensure that [all of the acquired slices have been provided to dcm2niix](https://neurostars.org/t/field-mapping-siemens-scanners-dcm2niix-output-2-bids/2075/7). NIfTI assumes all 2D slices that form a 3D stack are equidistant. Therefore, dcm2niix reslices the input data to generate an equidistant volume (not with `--interpolated n`). The image without `_Eq` keeps the acquired slices: slice 0 is exact, the slice step minimizes the worst slice position error, and the JSON sidecar's `SlicePositions` gives each slice's distance (mm) from slice 0.
  - _i1..N appended image number for non-parallel slices
  - _imaginary imaginary component of complex image
  - _MoCo is appended to the ProtocolName if Image Type (0008,0008) includes the term 'MOCO'. This helps disambiguate Siemens fMRI runs where both motion corrected and raw data is stored for a single session.
@@ -50,7 +50,7 @@ In general dcm2niix creates images with 3D dimensions, or 4 dimensions when the 
  - _r1..rN repetition number for sequences with multiple repetition times
  - _real real component of complex image
  - _t  If the trigger delay time (0020,9153) or trigger time (0018,1060) is non-zero, it will be recorded in the file name. For example, the files "T1_t178.nii" and "T1_t511" suggests that the T1 scan was acquired with two cardiac trigger delays (178 and 511ms after the last R-peak).
- - _Tilt is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with a gantry tilt that causes a skew that can not be stored in a NIfTI qForm. Therefore, the slices are resampled to remove the effect of tilt.
+ - _Tilt is specific to [CT scans](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Computed_Tomography_.28CT.2C_CAT.29). These scans can be acquired with a gantry tilt that causes a skew that can not be stored in a NIfTI qForm. Therefore, the slices are resampled to remove the effect of tilt. The image without `_Tilt` keeps the acquired pixels and stores the skew in its sForm. `--interpolated n` saves only that image (no `_Tilt` or `_Eq`).
  - _\<LUTLabel\> channel of a multi-channel DICOM Parametric Map, named by its LUT Label (0040,9210), e.g. `_T2STAR`, `_S0`.
 
 Some post-fixes are specific to Philips DICOMs

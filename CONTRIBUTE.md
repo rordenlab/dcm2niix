@@ -20,6 +20,10 @@ The INCF suggests indicating who is responsible for maintaining software for [st
  - Rob Reid (@captainnova): Clinical modalities
  - Chris Rorden (@neurolabusc): General development, user support
  
+#### Validation
+
+Regression tests do not belong in this repository. Each validation dataset (DICOM inputs in `In`, reference outputs in `Ref`, and a `batch.sh` that converts one and compares it with the other) is its own repository, added as a submodule of [dcm_validate](https://github.com/neurolabusc/dcm_validate). Synthetic cases go there too, with the script that generates them (for example `dcm_qa/make_synthetic.py`, `dcm_qa_ct/make_synthetic.py`). When a change alters output, update the affected `Ref` files in the same round and describe the change in the dataset's commit.
+
 #### Style Guide
 
 dcm2niix is written in C. Different programmers prefer different styles of indentation. Feel free to contribute code without being concerned about matching the style of the rest of the code. Once in a while, the code base will be automatically reformatted to make it appear more consistent for all users. This is done automatically with clang-format:

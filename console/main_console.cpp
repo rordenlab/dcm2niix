@@ -134,6 +134,7 @@ void showHelp(const char *argv[], struct TDCMopts opts) {
 	}
 	printf("  --big-endian : byte order (y/n/o, default o) [y=big-end, n=little-end, o=optimal/native]\n");
 	printf("  --ignore_trigger_times : disregard values in 0018,1060 and 0020,9153\n");
+	printf("  --interpolated : also save CT resampled for gantry tilt (_Tilt) and unequal slice spacing (_Eq) (y/n, default y)\n");
 	printf("  --terse : omit filename post-fixes (can cause overwrites)\n");
 	printf("  --version : report version\n");
 	printf("  --xml : Slicer format features\n");
@@ -274,6 +275,12 @@ int main(int argc, const char *argv[]) {
 					opts.isSaveNativeEndian = false;
 					printf("NIfTI data will be little-endian\n");
 				}
+			} else if ((!strcmp(argv[i], "--interpolated")) && ((i + 1) < argc)) {
+				i++;
+				if (invalidParam(i, argv))
+					return kEXIT_INVALID_PARAM;
+				// n: only the acquired slices (a viewer that shows them as stored)
+				opts.isTiltCorrect = opts.isEquidistantCorrect = !((argv[i][0] == 'n') || (argv[i][0] == 'N') || (argv[i][0] == '0'));
 			} else if (!strcmp(argv[i], "--ignore_trigger_times")) {
 				opts.isIgnoreTriggerTimes = true;
 				printf("ignore_trigger_times may have unintended consequences (issue 499)\n");

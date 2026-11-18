@@ -33,6 +33,7 @@
 #include "nifti1.h"
 #endif
 #include "nii_dicom_batch.h"
+#include <vector>
 #ifndef USING_R
 #include "nii_foreign.h"
 #endif
@@ -699,7 +700,10 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 	TCSAtag tagCSA;
 	TCSAitem itemCSA;
 	for (int lT = 1; lT <= lnTag; lT++) {
+		if (lPos > lLength - (int)sizeof(tagCSA))
+			return 0;
 		memcpy(&tagCSA, &buff[lPos], sizeof(tagCSA)); // read tag
+		tagCSA.name[sizeof(tagCSA.name) - 1] = 0;
 		if (!littleEndianPlatform())
 			nifti_swap_4bytes(1, &tagCSA.nitems);
 		if (tagCSA.nitems > 128) {
@@ -711,10 +715,14 @@ int phoenixOffsetCSASeriesHeader(unsigned char *buff, int lLength) {
 		if (strcmp(tagCSA.name, "MrPhoenixProtocol") == 0)
 			return lPos;
 		for (int lI = 1; lI <= tagCSA.nitems; lI++) {
+			if (lPos > lLength - (int)sizeof(itemCSA))
+				return 0;
 			memcpy(&itemCSA, &buff[lPos], sizeof(itemCSA));
 			lPos += sizeof(itemCSA);
 			if (!littleEndianPlatform())
 				nifti_swap_4bytes(1, &itemCSA.xx2_Len);
+			if ((itemCSA.xx2_Len < 0) || (itemCSA.xx2_Len > lLength - lPos))
+				return 0;
 			lPos += ((itemCSA.xx2_Len + 3) / 4) * 4;
 		}
 	}
@@ -1976,7 +1984,7 @@ static void json_Segments(FILE *fp, const struct TSEG *seg) {
 	fprintf(fp, "\n\t],\n");
 }
 
-static int nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D, const struct TSEG *seg = NULL) {
+static int nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts, struct nifti_1_header *h, const char *filename, struct TDTI4D *dti4D, const struct TSEG *seg = NULL, const float *slicePositions = NULL, int nSlicePositions = 0) {
 	// https://docs.google.com/document/d/1HFUkAEE-pB-angVcYe6pf_-fVf4sCpOHKesUvfb8Grc/edit#
 	//  Generate Brain Imaging Data Structure (BIDS) info
 	//  sidecar JSON file (with the same filename as the .nii.gz file, but with .json extension).
@@ -2671,6 +2679,14 @@ tse3d: T2*/
 		// beware, not used correctly by all vendors https://public.kitware.com/pipermail/insight-users/2005-September/014711.html
 		json_Float(fp, "\t\"SliceThickness\": %g,\n", d.zThick);
 		json_Float(fp, "\t\"SpacingBetweenSlices\": %g,\n", d.zSpacing);
+	}
+	// Unequal slice spacing: each NIfTI slice's distance (mm, along the bed) from
+	// slice 0. The raw image's affine places slice 0 exactly; these place every slice.
+	if (nSlicePositions > 1) {
+		fprintf(fp, "\t\"SlicePositions\": [\n");
+		for (int k = 0; k < nSlicePositions; k++)
+			fprintf(fp, "\t\t%g%s\n", slicePositions[k], (k < nSlicePositions - 1) ? "," : "");
+		fprintf(fp, "\t],\n");
 	}
 	// if (!opts.isAnonymizeBIDS) //issue668 is SAR identifiable??
 	// an identical sequence can create different SAR and TablePosition depending on participant
@@ -4426,6 +4442,34 @@ vec3 makePositive(vec3 v) {
 
 void vecRep(vec3 v) { // normalize vector length
 	printMessage("[%g %g %g]\n", v.v[0], v.v[1], v.v[2]);
+}
+
+// Slice step s minimizing the worst error max_k |k s - pos[k]| with slice 0 fixed
+// (pos[0] = 0, ascending): for unequal spacing it is never worse than the mean or
+// the first gap ([0,2,3,4,10]: s = 2, worst 2 mm; the mean 2.5 gives 3.5 mm).
+// The error is convex in s: ternary search.
+static float minimaxSliceStep(const float *pos, int n) {
+	if (n < 2)
+		return 0.0f;
+	float lo = INFINITY, hi = 0.0f;
+	for (int k = 1; k < n; k++) {
+		lo = fminf(lo, pos[k] / k);
+		hi = fmaxf(hi, pos[k] / k);
+	}
+	auto worst = [&](float step) {
+		float e = 0.0f;
+		for (int k = 1; k < n; k++)
+			e = fmaxf(e, fabsf(k * step - pos[k]));
+		return e;
+	};
+	for (int i = 0; i < 100; i++) {
+		float a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
+		if (worst(a) <= worst(b))
+			hi = b;
+		else
+			lo = a;
+	}
+	return 0.5f * (lo + hi);
 }
 
 // Precise method for determining gantry tilt
@@ -12387,8 +12431,49 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	strcpy(bidsPathoutname, pathoutname);
 	bool isBIDSSidecar = (opts.numSeries >= 0) && opts.isCreateBIDS;
 	int bidsStatus = EXIT_SUCCESS;
+	// Unequal slice spacing (one classic 3D stack): each NIfTI slice's distance
+	// along the bed (ImagePositionPatient) from NIfTI slice 0, reversed and rebased
+	// when nii_flipZ will reverse the slices. Written to the sidecar
+	// (SlicePositions) and used for the raw image's slice step; the _Eq/_Tilt
+	// resampling keeps its own inputs (sliceMMarray, pixdim).
+	// 3D acquisitions are rotated to an orthogonal grid (nii_setOrtho, below) when their
+	// slices are equidistant within 10% (issue539); then dim 3 is no longer the slice axis.
+	// (The rotate test is repeated there: an Enhanced file's dims are not final here.)
+	bool isRotate3D = (opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (!dcmList[dcmSort[0].indx].isEPI) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4);
+	bool isSliceEquidistant = true;
+	float unequalGap[2] = {0.0f, 0.0f}; // the first pair breaking the 10% test, for the warning
+	if ((nConvert > 2) && (sliceMMarray != NULL)) {
+		float dx = sliceMMarray[1] - sliceMMarray[0];
+		float thr = fabs(dx) * 0.1;
+		for (int i = 2; i < nConvert; i++)
+			if (fabs(dx - (sliceMMarray[i] - sliceMMarray[i - 1])) > (thr)) {
+				unequalGap[0] = dx;
+				unequalGap[1] = sliceMMarray[i] - sliceMMarray[i - 1];
+				isSliceEquidistant = false;
+				break;
+			}
+	}
+	std::vector<float> slicePos;
+	if ((sliceMMarray != NULL) && !(isRotate3D && isSliceEquidistant) && (hdr0.dim[4] < 2) && (nConvert == hdr0.dim[3]) && (!isNanPosition(dcmList[dcmSort[0].indx]))) {
+		int n = hdr0.dim[3];
+#ifndef USING_DCM2NIIXFSWRAPPER
+		bool isRev = sliceDir < 0; // nii_flipZ below reverses the slices
+#else
+		bool isRev = false;
+#endif
+		float *p0 = dcmList[dcmSort[isRev ? n - 1 : 0].indx].patientPosition;
+		for (int k = 0; k < n; k++) {
+			float *pk = dcmList[dcmSort[isRev ? n - 1 - k : k].indx].patientPosition;
+			slicePos.push_back(vec3Length(setVec3(pk[1] - p0[1], pk[2] - p0[2], pk[3] - p0[3])));
+		}
+		for (float v : slicePos)
+			if (isnan(v)) { // a slice without ImagePositionPatient: no positions
+				slicePos.clear();
+				break;
+			}
+	}
 	if (opts.numSeries >= 0) // issue453
-		bidsStatus = nii_SaveBIDSX(bidsPathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D);
+		bidsStatus = nii_SaveBIDSX(bidsPathoutname, dcmList[dcmSort[0].indx], opts, &hdr0, nameList->str[dcmSort[0].indx], dti4D, NULL, slicePos.data(), (int)slicePos.size());
 	if (opts.isOnlyBIDS) {
 		if (isBIDSSidecar && (bidsStatus == EXIT_SUCCESS))
 			reproinAppendProvenance(bidsPathoutname, dcmList[dcmSort[0].indx], opts);
@@ -12501,21 +12586,11 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	bool isFlipY = false;
 	bool isSetOrtho = false;
 	if ((opts.isRotate3DAcq) && (dcmList[dcmSort[0].indx].is3DAcq) && (!dcmList[dcmSort[0].indx].isEPI) && (hdr0.dim[3] > 1) && (hdr0.dim[0] < 4)) {
-		bool isSliceEquidistant = true; // issue539
-		if ((nConvert > 0) && (sliceMMarray != NULL)) {
-			float dx = sliceMMarray[1] - sliceMMarray[0];
-			float thr = fabs(dx) * 0.1;
-			for (int i = 2; i < nConvert; i++)
-				if (fabs(dx - (sliceMMarray[i] - sliceMMarray[i - 1])) > (thr)) {
-					printWarning("Unable to rotate 3D volume: slices not equidistant: %g != %g\n", dx, sliceMMarray[i] - sliceMMarray[i - 1]);
-					isSliceEquidistant = false;
-					break;
-				}
-		}
-		if (isSliceEquidistant) {
+		if (isSliceEquidistant) { // issue539
 			imgM = nii_setOrtho(imgM, &hdr0);
 			isSetOrtho = true;
-		}
+		} else
+			printWarning("Unable to rotate 3D volume: slices not equidistant: %g != %g\n", unequalGap[0], unequalGap[1]);
 	} else if (opts.isFlipY) { //(FLIP_Y) //(dcmList[indx0].CSA.mosaicSlices < 2) &&
 		imgM = nii_flipY(imgM, &hdr0);
 		isFlipY = true;
@@ -12530,6 +12605,23 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			   hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
 			   hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3],
 			   hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]);
+	// Raw image geometry (gantry tilt, unequal slice spacing): the slice step and,
+	// with tilt, the bed direction come from ImagePositionPatient; restored after the
+	// raw save so _Tilt/_Eq keep their inputs.
+	bool isRawGeometry = false;
+	float rawSrow[3][4];
+	memcpy(rawSrow[0], hdr0.srow_x, sizeof(rawSrow[0]));
+	memcpy(rawSrow[1], hdr0.srow_y, sizeof(rawSrow[1]));
+	memcpy(rawSrow[2], hdr0.srow_z, sizeof(rawSrow[2]));
+	// pixdim and qform, also restored after the raw save
+	float rawPixdim[8], rawQform[6] = {hdr0.quatern_b, hdr0.quatern_c, hdr0.quatern_d, hdr0.qoffset_x, hdr0.qoffset_y, hdr0.qoffset_z};
+	memcpy(rawPixdim, hdr0.pixdim, sizeof(rawPixdim));
+	// First to last slice in DICOM order (RAS mm): one Enhanced file's frames or the sorted files.
+	float *p1 = dcmList[indx0].patientPosition;
+	float *pN = (dcmList[indx0].xyzDim[3] > 1) ? dcmList[indx0].patientPositionLast : dcmList[dcmSort[nConvert - 1].indx].patientPosition;
+	vec3 rawSpan = setVec3(p1[1] - pN[1], p1[2] - pN[2], pN[3] - p1[3]);
+	// The raw slice step: minimax over the slice positions when spacing varies, else the mean (NaN: no positions).
+	float rawStep = (hdr0.dim[3] < 2) ? 0.0f : slicePos.empty() ? vec3Length(rawSpan) / (hdr0.dim[3] - 1) : minimaxSliceStep(slicePos.data(), (int)slicePos.size());
 	if (!isSameFloatGE(dcmList[indx0].gantryTilt, 0.0)) {
 		float thetaRad = dcmList[indx0].gantryTilt * M_PI / 180.0;
 		float c = cos(thetaRad);
@@ -12541,7 +12633,17 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 				hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]
 			);*/
 			hdr0.srow_y[2] = 0.0;			 // remove gantry tilt
-			hdr0.srow_z[2] = hdr0.pixdim[3]; // retain distance between slices
+			// The sheared slice column moves along the bed by the bed step: the
+			// ImagePositionPatient distance between adjacent slices, over one Enhanced
+			// file's frames or the sorted files (not pixdim[3]: classic slices store the
+			// perpendicular spacing, bed step x cos(tilt), an Enhanced file without
+			// SpacingBetweenSlices the IPP distance). Unequal spacing: the minimax step.
+			// Its sign follows the slice direction.
+			float bedStep = rawStep;
+			if (!(bedStep > 0.0)) // NaN (no ImagePositionPatient) or a single slice
+				bedStep = hdr0.pixdim[3] / c;
+			hdr0.srow_z[2] = copysignf(bedStep, sForm.m[2][2]);
+			isRawGeometry = true;
 											 /*printf("b=[%g %g %g %g; %g %g %g %g; %g %g %g %g; 0 0 0 1];\n",
 												 hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3],
 												 hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3],
@@ -12563,7 +12665,38 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 											 setQSForm(&hdr0, shearForm, true);
 											 */
 		} // avoid div/0: cosine not zero
+	} else if (!slicePos.empty() && !isSetOrtho) { // unequal spacing without tilt: the slice normal, minimax step
+		float len = sqrtf(sForm.m[0][2] * sForm.m[0][2] + sForm.m[1][2] * sForm.m[1][2] + sForm.m[2][2] * sForm.m[2][2]);
+		if ((len > 0.0f) && (rawStep > 0.0f)) {
+			hdr0.srow_x[2] = sForm.m[0][2] * rawStep / len;
+			hdr0.srow_y[2] = sForm.m[1][2] * rawStep / len;
+			hdr0.srow_z[2] = sForm.m[2][2] * rawStep / len;
+			isRawGeometry = true;
+		}
 	} // if gantry tilt
+	// nii_flipZ put the origin at the last slice along the original column: put it at
+	// that slice's ImagePositionPatient (first + span in DICOM order).
+	if (isRawGeometry && isFlipZ && !isSetOrtho && !isnan(rawSpan.v[0])) {
+		hdr0.srow_x[3] += (hdr0.dim[3] - 1) * rawSrow[0][2] + rawSpan.v[0];
+		hdr0.srow_y[3] += (hdr0.dim[3] - 1) * rawSrow[1][2] + rawSpan.v[1];
+		hdr0.srow_z[3] += (hdr0.dim[3] - 1) * rawSrow[2][2] + rawSpan.v[2];
+	}
+	if (isRawGeometry) {
+		// pixdim[3] is the raw voxel's thickness, so pixdim x*y*z is its volume:
+		// |det| of the sform over the in-plane spacing (with tilt the perpendicular
+		// spacing, bed step x cos(tilt); unequal spacing: from the minimax step).
+		mat33 m33;
+		LOAD_MAT33(m33, hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2]);
+		float inPlane = hdr0.pixdim[1] * hdr0.pixdim[2];
+		if (inPlane > 0.0f)
+			hdr0.pixdim[3] = fabsf(nifti_mat33_determ(m33)) / inPlane;
+		// Without shear the sform is also a qform: keep the two in agreement.
+		if (isSameFloatGE(dcmList[indx0].gantryTilt, 0.0)) {
+			mat44 m44;
+			LOAD_MAT44(m44, hdr0.srow_x[0], hdr0.srow_x[1], hdr0.srow_x[2], hdr0.srow_x[3], hdr0.srow_y[0], hdr0.srow_y[1], hdr0.srow_y[2], hdr0.srow_y[3], hdr0.srow_z[0], hdr0.srow_z[1], hdr0.srow_z[2], hdr0.srow_z[3]);
+			setQSForm(&hdr0, m44, false);
+		}
+	}
 	// end: gantry tilt we need to save the shear in the transform
 	int returnCode = EXIT_FAILURE;
 #ifndef myNoSave
@@ -12659,6 +12792,18 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 #endif
 	}
 #endif
+	if (isRawGeometry) { // _Tilt/_Eq resample from the original transform and spacing
+		memcpy(hdr0.srow_x, rawSrow[0], sizeof(rawSrow[0]));
+		memcpy(hdr0.srow_y, rawSrow[1], sizeof(rawSrow[1]));
+		memcpy(hdr0.srow_z, rawSrow[2], sizeof(rawSrow[2]));
+		memcpy(hdr0.pixdim, rawPixdim, sizeof(rawPixdim));
+		hdr0.quatern_b = rawQform[0];
+		hdr0.quatern_c = rawQform[1];
+		hdr0.quatern_d = rawQform[2];
+		hdr0.qoffset_x = rawQform[3];
+		hdr0.qoffset_y = rawQform[4];
+		hdr0.qoffset_z = rawQform[5];
+	}
 	if (dcmList[indx0].gantryTilt != 0.0) {
 		setQSForm(&hdr0, sForm, true);
 		// if (dcmList[indx0].isResampled) { //we no detect based on image orientation https://github.com/rordenlab/dcm2niix/issues/253
@@ -12673,7 +12818,9 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 	if ((sliceMMarray != NULL) && (!isSetOrtho)) {
 		if (dcmList[indx0].isResampled) {
 			printMessage("Slice thickness correction skipped: 0008,2111 reports RESAMPLED\n");
-		} else
+		} else if (!opts.isEquidistantCorrect)
+			printMessage("Slice thickness correction skipped\n");
+		else
 			returnCode = nii_saveNII3Deq(pathoutname, hdr0, imgM, opts, dcmList[dcmSort[0].indx], sliceMMarray);
 		free(sliceMMarray);
 	}
@@ -16055,6 +16202,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	opts->isVerbose = false;
 #endif
 	opts->isTiltCorrect = true;
+	opts->isEquidistantCorrect = true;
 	opts->numSeries = 0;
 	memset(opts->seriesNumber, 0, sizeof(opts->seriesNumber));
 	strcpy(opts->filename, "%f_%p_%t_%s");

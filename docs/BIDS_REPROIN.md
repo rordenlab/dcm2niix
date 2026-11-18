@@ -34,6 +34,12 @@ Siemens RF-off (noise) volumes (issue #1025) are split C-side, not in reproinx: 
 
 Multi-delay pCASL (Siemens XA `tgse_pcasl_loft`, LOFT/Danny Wang) → BIDS ASL. XA image DICOMs expose no per-volume label/control/M0 marker, so the `tgse_pcasl_loft` handler in `nii_dicom_batch.cpp` reads the CSA WIP block — PLDs (`sWipMemBlock.alFree[1..5]`), per-PLD repeat counts (`alFree[8..12]`), labeling duration (`adFree[2]`) — and emits `ArterialSpinLabelingType`, `LabelingDuration`, `TotalAcquiredPairs`, `M0Type`, `BackgroundSuppression`, and the per-volume `PostLabelingDelay` array. Volume order is `[M0, dummy(s), label/control pairs]`; BIDS has no dummy `volume_type`, so the C side emits `ReproinxDropVolumes` and reproinx's `_emit_aslcontext` drops those volumes (NIfTI byte surgery), trims `PostLabelingDelay`, and writes `_aslcontext.tsv`. `tools/pcasl_process_bids.py` is a standalone quick-look CBF tool, not part of the pipeline.
 
+## Behaviour Changes (development)
+
+- CT with unequal slice spacing (one classic 3D stack): the sidecar adds `SlicePositions`, each NIfTI slice's distance (mm, along the bed) from slice 0 in NIfTI slice order; absent when spacing is equal. The raw image's slice step is the minimax step (see docs/PARSER_GOTCHAS.md).
+- Gantry-tilt CT: the raw (non-`_Tilt`) sform places every slice at its ImagePositionPatient, and `pixdim[3]` is the voxel thickness (pixdim x*y*z = voxel volume; an Enhanced CT without SpacingBetweenSlices previously stored the bed step).
+- `--interpolated n` skips the resampled `_Tilt` and `_Eq` outputs.
+
 ## Behaviour Changes (v1.0.20261024)
 
 - Siemens partial Fourier (CSA `ucPhasePartialFourier`, or the XA phase-line estimate) emits `PartialFourierDirection` `PHASE` when `(0018,9036)` is absent.

@@ -138,6 +138,8 @@ Options
 
 --ignore_trigger_times   Disregard values in 0018,1060 and 0020,9153
 
+--interpolated <y/n>     Also save CT resampled for gantry tilt (_Tilt) and unequal slice spacing (_Eq) (default y)
+
 --terse                  Omit filename post-fixes (can cause overwrites)
 
 --version                Report version and terminate

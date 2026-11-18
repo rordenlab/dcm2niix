@@ -28,6 +28,7 @@ isForceOnsetTimes = true
 isIgnoreDerivedAnd2D = false
 isPhilipsFloatNotDisplayScaling = true
 isTiltCorrect = true
+isEquidistantCorrect = true
 isRGBplanar = false
 isOnlySingleFile = false
 isForceStackDCE = true
