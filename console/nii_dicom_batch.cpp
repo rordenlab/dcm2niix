@@ -14888,6 +14888,14 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		*isNonParallelSlices = true;
 		return false;
 	}
+	// Dixon water/fat/in/out-phase all report MAGNITUDE; checked before the force-stack (-m y) return,
+	// else classic (one file per slice) Philips Dixon recon series merge all types into one file
+	if (d1.dixonType != d2.dixonType) {
+		if (!warnings->phaseVaries)
+			printMessage("Slices not stacked: Dixon water/fat/in-phase/out-of-phase types differ. Instances %d %d\n", d1.imageNum, d2.imageNum);
+		warnings->phaseVaries = true;
+		return false;
+	}
 	if ((opts->isForceStackSameSeries == 1) || ((opts->isForceStackSameSeries == 2) && (d1.isXRay))) {
 		// "isForceStackSameSeries == 2" will automatically stack CT scans but not MR
 		// if (((!(isSameFloat(d1.TE, d2.TE))) || (d1.echoNum != d2.echoNum)) && (!d1.isXRay)) {
@@ -14912,12 +14920,6 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 	if ((d1.isHasImaginary != d2.isHasImaginary) || (d1.isHasPhase != d2.isHasPhase) || (d1.isHasReal != d2.isHasReal)) {
 		if (!warnings->phaseVaries)
 			printMessage("Slices not stacked: some are phase/real/imaginary/phase maps, others are not. Instances %d %d\n", d1.imageNum, d2.imageNum);
-		warnings->phaseVaries = true;
-		return false;
-	}
-	if (d1.dixonType != d2.dixonType) { // Dixon water/fat/in/out-phase all report MAGNITUDE
-		if (!warnings->phaseVaries)
-			printMessage("Slices not stacked: Dixon water/fat/in-phase/out-of-phase types differ. Instances %d %d\n", d1.imageNum, d2.imageNum);
 		warnings->phaseVaries = true;
 		return false;
 	}
